@@ -51,6 +51,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageHeader, SectionHeader } from "@/components/shared/page-header";
+import { CompanyLetterhead } from "@/components/shared/company-letterhead";
 import { useGlobalScopes } from "./use-global-scopes";
 import {
   ReportAccessDenied,
@@ -386,6 +387,8 @@ function ReportRouteView({ kind }: { kind: ReportKind }) {
   if (!can("View", "Recurring Payments.Reports")) return <ReportAccessDenied />;
   return (
     <div className="space-y-5">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title={titles[kind][0]} />
       <PageHeader
         title={titles[kind][0]}
         description={titles[kind][1]}

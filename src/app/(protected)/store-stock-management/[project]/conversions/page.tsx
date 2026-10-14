@@ -3,13 +3,12 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Settings } from 'lucide-react';
 import type { BoqItem, Project } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useParams } from 'next/navigation';
 import { ConversionDialog } from '@/components/store-stock-management/ConversionDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
@@ -92,9 +91,7 @@ export default function ConversionsPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-10" /></TableCell></TableRow>
-                  ))
+                  <TableLoading colSpan={3} rows={5} />
                 ) : items.length > 0 ? (
                   items.map(item => (
                     <TableRow key={item.id}>
@@ -108,9 +105,7 @@ export default function ConversionsPage() {
                     </TableRow>
                   ))
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center h-24">No BOQ items found to define conversions.</TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={3}>No BOQ items found to define conversions.</TableEmpty>
                 )}
               </TableBody>
             </Table>

@@ -1,8 +1,17 @@
+'use client';
+
+import { useCompanyProfile } from '@/hooks/use-company-profile';
+
 /**
  * Root loading.tsx — shown by Next.js while any page is loading.
  * Uses the app's dark electric brand aesthetic with animated dots.
+ * The names come from the company profile (its shipped defaults until it has been read).
  */
 export default function RootLoading() {
+  const { profile } = useCompanyProfile();
+  // The first word of the legal name large, the rest under it ("SIDDHARTHA" / "ENGINEERING LIMITED").
+  const [leadWord = '', ...restWords] = profile.legalName.trim().split(' ').filter(Boolean);
+
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#020617]">
 
@@ -33,15 +42,15 @@ export default function RootLoading() {
             style={{ animation: 'ping-slow 2s cubic-bezier(0,0,0.2,1) infinite', background: 'rgba(6,182,212,0.2)' }}
           />
           <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-300/30 bg-gradient-to-br from-cyan-500 to-blue-600 shadow-[0_0_40px_rgba(6,182,212,0.5)]">
-            {/* SEL text logo */}
-            <span className="text-lg font-black tracking-widest text-white">SEL</span>
+            {/* Short-name text logo */}
+            <span className="text-lg font-black tracking-widest text-white">{profile.shortName}</span>
           </div>
         </div>
 
         {/* Brand name */}
         <div className="text-center">
-          <p className="text-base font-semibold tracking-[0.2em] text-cyan-100">SIDDHARTHA</p>
-          <p className="text-xs tracking-[0.35em] text-cyan-400/70">ENGINEERING LIMITED</p>
+          <p className="text-base font-semibold tracking-[0.2em] text-cyan-100 uppercase">{leadWord}</p>
+          <p className="text-xs tracking-[0.35em] text-cyan-400/70 uppercase">{restWords.join(' ')}</p>
         </div>
 
         {/* Animated loading bar */}

@@ -1,5 +1,6 @@
 
 import nodemailer from 'nodemailer';
+import { getCompanyProfile } from '@/lib/company-profile-server';
 
 /**
  * Interface for email sending options.
@@ -34,7 +35,7 @@ export async function sendEmail(options: SendEmailOptions) {
   const port = parseInt(process.env.SMTP_PORT || '587');
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const defaultFromName = process.env.SMTP_FROM_NAME || 'Siddhartha Engineering Limited';
+  const defaultFromName = process.env.SMTP_FROM_NAME || (await getCompanyProfile()).legalName;
   const defaultFromEmail = process.env.SMTP_FROM_EMAIL || 'data.management@selindia.net';
 
   if (!user || !pass) {

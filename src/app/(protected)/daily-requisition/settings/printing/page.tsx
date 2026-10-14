@@ -23,6 +23,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { diffFields } from '@/lib/activity-logger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { DEFAULT_COMPANY_PROFILE } from '@/lib/company-profile';
 
 interface PrintingSettings {
   paperSize: string;
@@ -42,7 +43,8 @@ const initialSettings: PrintingSettings = {
   orientation: 'portrait',
   margins: { top: '20', bottom: '20', left: '20', right: '20' },
   marginUnit: 'mm',
-  headerText: 'SIDDHARTHA ENGINEERING LIMITED',
+  // The company's name from Settings › Company Profile's defaults, until a header is saved here.
+  headerText: DEFAULT_COMPANY_PROFILE.legalName.toUpperCase(),
 };
 
 /** One flat row per setting, so the audit log's `changes` names "marginTop" rather than a whole margins object. */

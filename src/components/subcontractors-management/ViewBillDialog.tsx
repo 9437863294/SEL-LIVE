@@ -83,7 +83,7 @@ export default function ViewBillDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl flex flex-col min-h-0 max-h-[90vh]">
+      <DialogContent size="xl" className="flex flex-col min-h-0">
         <DialogHeader className="shrink-0 p-6 pb-2">
           <DialogTitle>Bill Details: {bill.billNo}</DialogTitle>
         </DialogHeader>

@@ -583,7 +583,7 @@ export default function BGLifecycleWorkspace({ kind }: { kind: Kind }) {
             </Table>
       </TableCard>
       <Dialog open={open} onOpenChange={(value) => !working && setOpen(value)}>
-        <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>
               New{" "}

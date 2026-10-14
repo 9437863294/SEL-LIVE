@@ -15,7 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { SearchInput } from '@/components/shared/filter-bar';
 import { TableCard } from '@/components/shared/table-card';
@@ -937,11 +937,7 @@ function DynamicWorkflowStepContent() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow>
-                  <TableCell colSpan={8} className="h-24 text-center">
-                    No entries found.
-                  </TableCell>
-                </TableRow>
+                <TableEmpty colSpan={8}>No entries found.</TableEmpty>
               )}
             </TableBody>
           </Table>

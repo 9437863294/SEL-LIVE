@@ -84,7 +84,7 @@ function ExpenseDetailDialog({ expense, open, onClose }: { expense: SASExpense |
 
   return (
     <Dialog open={open} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent size="md" className="overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             Expense Details

@@ -602,7 +602,8 @@ export function DailyRequisitionImportDialog({
       }}
     >
       <DialogContent
-        className="flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0"
+        size="xl"
+        className="flex max-h-[92dvh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
         onInteractOutside={(event) => event.preventDefault()}
       >
         <DialogHeader className="border-b px-4 py-3">

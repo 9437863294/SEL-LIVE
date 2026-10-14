@@ -38,7 +38,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LOCATION_OTP_EXPIRY_KEY, LOCATION_OTP_TOKEN_KEY } from '@/lib/location-tracking-client';
 
 // Shared with Session Management, which reuses this unlock to show GPS.
@@ -488,7 +488,7 @@ export default function LocationTrackingSettingsPage() {
                     </TableRow>
                   );
                 })}
-                {!filteredRows.length && <TableRow><TableCell colSpan={5} className="h-28 text-center text-muted-foreground">No matching users found.</TableCell></TableRow>}
+                {!filteredRows.length && <TableEmpty colSpan={5}>No matching users found.</TableEmpty>}
               </TableBody>
             </Table>
           )}

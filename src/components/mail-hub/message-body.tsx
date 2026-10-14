@@ -134,7 +134,7 @@ export function AttachmentList({ message, attachments }: { message: Pick<Message
         );
       })}
       <Dialog open={Boolean(preview)} onOpenChange={(next) => { if (!next && preview) { URL.revokeObjectURL(preview.url); setPreview(null); } }}>
-        <DialogContent className="max-h-[92vh] max-w-4xl overflow-hidden">
+        <DialogContent size="xl" className="max-h-[92vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle className="truncate">{preview?.name}</DialogTitle>
             <DialogDescription>{preview?.scan === 'clean' ? 'Scanned — no threats found.' : preview?.scan === 'not-scanned' ? 'Not scanned on this server.' : 'Preview'}</DialogDescription>

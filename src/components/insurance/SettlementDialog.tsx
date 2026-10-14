@@ -181,7 +181,7 @@ export function SettlementDialog({ isOpen, onOpenChange, policy, initialType, fo
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !isSaving && onOpenChange(open)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg" className="overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{existing ? 'Settlement Details' : 'Close Policy'}</DialogTitle>
           <DialogDescription>

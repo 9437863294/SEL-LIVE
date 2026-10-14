@@ -776,7 +776,7 @@ export default function SiteAccountMonthClosureSettings() {
 
       {/* ── Close one month ── */}
       <Dialog open={Boolean(closeTarget)} onOpenChange={open => { if (!open) setCloseTarget(null); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               Close {closeTarget ? periodLabel(closeTarget) : ''} · {scopeProject ? scopeName : 'all projects'}
@@ -836,7 +836,7 @@ export default function SiteAccountMonthClosureSettings() {
 
       {/* ── Reopen ── */}
       <Dialog open={Boolean(reopenTarget)} onOpenChange={open => { if (!open) setReopenTarget(null); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               Reopen {reopenTarget ? periodLabel(reopenTarget) : ''} · {scopeProject ? scopeName : 'all projects'}
@@ -911,7 +911,7 @@ export default function SiteAccountMonthClosureSettings() {
 
       {/* ── Bulk close ── */}
       <Dialog open={Boolean(bulkThrough)} onOpenChange={open => { if (!open) setBulkThrough(null); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>Close several months</DialogTitle>
             <DialogDescription>

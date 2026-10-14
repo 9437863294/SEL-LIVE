@@ -19,6 +19,7 @@ import {
   type CompanyAppearanceConfig,
   type ContrastPreference,
   type DashboardView,
+  type DialogSizePreference,
   type Density,
   type FontId,
   type LayoutPreferences,
@@ -53,6 +54,11 @@ export interface EffectiveAppearance {
   dashboardView: DashboardView;
   navStyle: NavStyle;
   layout: Required<LayoutPreferences>;
+  /** `null` follows the company's dialog size (set by company-design-provider as data-dialog-size). */
+  dialogSize: DialogSizePreference | null;
+  dialogControls: boolean;
+  dialogOpenMaximised: boolean;
+  dialogTextSize: TextSize;
 }
 
 export function resolveAppearance(
@@ -86,10 +92,18 @@ export function resolveAppearance(
       stickyHeader: l.stickyHeader ?? d.stickyHeader,
       dashboardCardDensity: l.dashboardCardDensity ?? d.dashboardCardDensity,
     },
+    dialogSize: p.dialogSize ?? null,
+    dialogControls: p.dialogControls ?? true,
+    dialogOpenMaximised: p.dialogOpenMaximised ?? false,
+    dialogTextSize: p.dialogTextSize ?? 'default',
   };
 }
 
-/** The `data-*` attributes set on <html>; names and values both come from fixed lists. */
+/**
+ * The `data-*` attributes set on <html>; names and values both come from fixed lists. A name in
+ * `APPEARANCE_ATTRIBUTE_NAMES` missing from the result is removed from <html> — `user-dialog-size`
+ * is absent while the user follows the company's dialog size.
+ */
 export function appearanceAttributes(effective: EffectiveAppearance): Record<string, string> {
   return {
     density: effective.density,
@@ -100,10 +114,15 @@ export function appearanceAttributes(effective: EffectiveAppearance): Record<str
     contrast: effective.contrast,
     'table-density': effective.tableDensity,
     'nav-style': effective.navStyle,
+    ...(effective.dialogSize ? { 'user-dialog-size': effective.dialogSize } : {}),
+    'dialog-controls': effective.dialogControls ? 'on' : 'off',
+    'dialog-maximised': effective.dialogOpenMaximised ? 'on' : 'off',
+    'dialog-text': effective.dialogTextSize,
   };
 }
 
-export const APPEARANCE_ATTRIBUTE_NAMES = ['density', 'text-size', 'font', 'radius', 'motion', 'contrast', 'table-density', 'nav-style'] as const;
+export const APPEARANCE_ATTRIBUTE_NAMES = ['density', 'text-size', 'font', 'radius', 'motion', 'contrast', 'table-density', 'nav-style',
+  'user-dialog-size', 'dialog-controls', 'dialog-maximised', 'dialog-text'] as const;
 
 // ── Tokens ─────────────────────────────────────────────────────────────────────────────────────
 

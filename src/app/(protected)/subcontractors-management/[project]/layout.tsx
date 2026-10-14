@@ -9,9 +9,11 @@
  * exactly what it is not: work orders and subcontractor billing measure the same civil BOQ lines
  * the JMC lane certifies.
  *
- * Using `PmShell` + `PmSidebar` here restyles every screen in the module at once, and leaves each
- * page free to add its own `PmTopbar` and `PmContent`. Navigation targets, the per-project
- * permission scoping and the `all` / print special cases are unchanged.
+ * It now sits on the shared `ModuleShell`, like every other module, so its sidebar, phone header
+ * and bottom bar read the same as the rest of the application. Pages keep the Project Management
+ * kit (`PmContent`, `PmNavCard`…), which `PmInModuleShell` tells not to pad a second time.
+ * Navigation targets, the per-project permission scoping and the `all` / print special cases are
+ * unchanged.
  */
 
 import * as React from 'react';
@@ -27,13 +29,20 @@ import {
   Users,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { projectMatchesSlug } from '@/lib/project-slug';
-import { PmShell, PmSidebar, pmAccent } from '@/components/project-management/pm-shell';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
+import { PmInModuleShell } from '@/components/project-management/pm-shell';
+import {
+  ModuleShell,
+  type ModuleNavGroup,
+  type ModuleNavTab,
+  type ModuleNavTone,
+} from '@/components/shared/module-shell';
+
+/** The accents the PM sidebar gave these rows by position (`pmAccent`). */
+const TONES: ModuleNavTone[] = ['emerald', 'sky', 'violet', 'amber', 'rose', 'cyan', 'orange'];
 
 export default function ProjectLayout({
   children,
@@ -124,62 +133,43 @@ export default function ProjectLayout({
       : []),
   ];
 
-  const isPrintPage = pathname.includes('/print');
-  if (isPrintPage) {
-    return <>{children}</>;
-  }
+  const groups = React.useMemo<ModuleNavGroup[]>(
+    () => [
+      {
+        id: 'screens',
+        items: navItems.map((item, index) => ({
+          id: item.href,
+          href: item.href,
+          label: item.label,
+          icon: item.icon,
+          tone: TONES[index % TONES.length],
+          visible: item.permission,
+          // `Projects` is the module root, so an exact match — otherwise it would light up on
+          // every screen beneath it.
+          match: item.exact ? ('exact' as const) : ('prefix' as const),
+        })),
+      },
+    ],
+    // `navItems` is rebuilt every render from these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [can, projectSlug, projectId],
+  );
 
-  // The "all projects" view spans every project, so a project-scoped rail would be lying.
-  if (projectSlug === 'all') {
+  // The "all projects" view spans every project, so a project-scoped rail would be lying. Print
+  // routes render bare (the shell's own rule; checked first here, as before).
+  if (projectSlug === 'all' && !pathname.includes('/print')) {
     return <div className="p-4 sm:p-6 lg:p-8">{children}</div>;
   }
 
   return (
-    <PmShell
-      sidebar={
-        <PmSidebar
-          title="Subcontractors"
-          subtitle={currentProject?.projectName || undefined}
-          icon={HardHat}
-          gradient="from-sky-600 to-blue-600"
-          // Phones reach these same screens from the bottom bar's "More".
-          mobileSections={false}
-          groups={[
-            {
-              label: 'Screens',
-              links: visibleNavItems.map((item, index) => ({
-                href: item.href,
-                label: item.label,
-                icon: item.icon,
-                color: pmAccent(index).color,
-                bg: pmAccent(index).bg,
-                // `Projects` is the module root, so an exact match — otherwise it would light up
-                // on every screen beneath it.
-                active:
-                  item.href === '/subcontractors-management'
-                    ? pathname === item.href
-                    : pathname.startsWith(item.href),
-              })),
-            },
-          ]}
-        />
-      }
+    <ModuleShell
+      title="Subcontractors"
+      subtitle={currentProject?.projectName || undefined}
+      icon={HardHat}
+      groups={groups}
+      mobileTabs={bottomTabs}
     >
-      {/* Below lg, where the sidebar is hidden, the module's card heads the column. The pages'
-          sticky `PageHeader` follows directly and brings its own top padding, hence `mb-0`. */}
-      <ModuleMobileHeader
-        icon={HardHat}
-        title="Subcontractors"
-        subtitle={currentProject?.projectName || undefined}
-        hideFrom="lg"
-        className="mx-4 mb-0 mt-3 md:mx-6"
-      />
-      {children}
-      <ModuleBottomNav
-        tabs={bottomTabs}
-        pages={visibleNavItems}
-        moduleName="Subcontractors Management"
-      />
-    </PmShell>
+      <PmInModuleShell>{children}</PmInModuleShell>
+    </ModuleShell>
   );
 }

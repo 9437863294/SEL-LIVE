@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -692,7 +692,7 @@ export default function ViewBoqPage() {
                 <Settings className="mr-2 h-4 w-4" /> Columns
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent size="md">
                 <DialogHeader>
                     <DialogTitle>Customize Columns</DialogTitle>
                     <DialogDescription>Reorder and toggle visibility of columns.</DialogDescription>
@@ -967,11 +967,7 @@ export default function ViewBoqPage() {
                         );
                       })
                     ) : (
-                      <TableRow>
-                        <TableCell colSpan={visibleHeaders.length + 3} className="text-center h-24">
-                          No BOQ items found.
-                        </TableCell>
-                      </TableRow>
+                      <TableEmpty colSpan={visibleHeaders.length + 3}>No BOQ items found.</TableEmpty>
                     )}
                   </TableBody>
                 </Table>
@@ -986,7 +982,7 @@ export default function ViewBoqPage() {
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader><DialogTitle>Edit BOQ Item</DialogTitle></DialogHeader>
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
               {editingItem && dialogFields.map((key: keyof BoqItem) => (

@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
@@ -14,12 +13,10 @@ import {
   FileCheck2,
   LayoutDashboard,
   ListChecks,
-  Loader2,
   Plus,
   ReceiptIndianRupee,
   Repeat2,
   Settings,
-  ShieldAlert,
   Tags,
   Users,
   WalletCards,
@@ -28,45 +25,39 @@ import {
 import { db } from '@/lib/firebase';
 import { DEFAULT_RECURRING_WORKFLOW, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 import { useAssignedWorkflowSteps } from './use-assigned-workflow';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 
 type NavItem = {
   href: string;
   label: string;
   resource: string;
   icon: LucideIcon;
-  color: string;
-  bg: string;
+  tone: ModuleNavTone;
   group: string;
   /** Set on workflow-step entries so an assignee of that step can reach it without the role. */
   stepId?: string;
 };
 
 const coreItems: NavItem[] = [
-  { href: '/recurring-payments', label: 'Dashboard', resource: 'Dashboard', icon: LayoutDashboard, color: 'text-emerald-600', bg: 'bg-emerald-50', group: 'overview' },
-  { href: '/recurring-payments/payments', label: 'All Payments', resource: 'Payments', icon: ReceiptIndianRupee, color: 'text-blue-600', bg: 'bg-blue-50', group: 'payments' },
-  { href: '/recurring-payments/upcoming', label: 'Upcoming', resource: 'Payments', icon: CalendarClock, color: 'text-cyan-600', bg: 'bg-cyan-50', group: 'payments' },
-  { href: '/recurring-payments/overdue', label: 'Overdue', resource: 'Payments', icon: CircleDollarSign, color: 'text-rose-600', bg: 'bg-rose-50', group: 'payments' },
+  { href: '/recurring-payments', label: 'Dashboard', resource: 'Dashboard', icon: LayoutDashboard, tone: 'emerald', group: 'overview' },
+  { href: '/recurring-payments/payments', label: 'All Payments', resource: 'Payments', icon: ReceiptIndianRupee, tone: 'blue', group: 'payments' },
+  { href: '/recurring-payments/upcoming', label: 'Upcoming', resource: 'Payments', icon: CalendarClock, tone: 'cyan', group: 'payments' },
+  { href: '/recurring-payments/overdue', label: 'Overdue', resource: 'Payments', icon: CircleDollarSign, tone: 'rose', group: 'payments' },
 ];
 
 const managementItems: NavItem[] = [
-  { href: '/recurring-payments/approvals', label: 'Pending Approvals', resource: 'Approvals', icon: ClipboardCheck, color: 'text-amber-600', bg: 'bg-amber-50', group: 'control' },
-  { href: '/recurring-payments/calendar', label: 'Payment Calendar', resource: 'Payments', icon: CalendarDays, color: 'text-sky-600', bg: 'bg-sky-50', group: 'control' },
-  { href: '/recurring-payments/masters', label: 'Recurring Masters', resource: 'Recurring Masters', icon: Repeat2, color: 'text-indigo-600', bg: 'bg-indigo-50', group: 'masters' },
-  { href: '/recurring-payments/vendors', label: 'Vendors', resource: 'Vendors', icon: Users, color: 'text-purple-600', bg: 'bg-purple-50', group: 'masters' },
-  { href: '/recurring-payments/categories', label: 'Categories', resource: 'Categories', icon: Tags, color: 'text-orange-600', bg: 'bg-orange-50', group: 'masters' },
-  { href: '/recurring-payments/reports', label: 'Reports', resource: 'Reports', icon: BarChart3, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', group: 'insights' },
-  { href: '/recurring-payments/settings', label: 'Settings', resource: 'Settings', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-50', group: 'settings' },
-  { href: '/recurring-payments/handbook', label: 'Handbook', resource: 'Dashboard', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50', group: 'help' },
+  { href: '/recurring-payments/approvals', label: 'Pending Approvals', resource: 'Approvals', icon: ClipboardCheck, tone: 'amber', group: 'control' },
+  { href: '/recurring-payments/calendar', label: 'Payment Calendar', resource: 'Payments', icon: CalendarDays, tone: 'sky', group: 'control' },
+  { href: '/recurring-payments/masters', label: 'Recurring Masters', resource: 'Recurring Masters', icon: Repeat2, tone: 'indigo', group: 'masters' },
+  { href: '/recurring-payments/vendors', label: 'Vendors', resource: 'Vendors', icon: Users, tone: 'purple', group: 'masters' },
+  { href: '/recurring-payments/categories', label: 'Categories', resource: 'Categories', icon: Tags, tone: 'orange', group: 'masters' },
+  { href: '/recurring-payments/reports', label: 'Reports', resource: 'Reports', icon: BarChart3, tone: 'fuchsia', group: 'insights' },
+  { href: '/recurring-payments/settings', label: 'Settings', resource: 'Settings', icon: Settings, tone: 'slate', group: 'settings' },
+  { href: '/recurring-payments/handbook', label: 'Handbook', resource: 'Dashboard', icon: BookOpen, tone: 'teal', group: 'help' },
 ];
 
-/** Section headings for the phone's "More" pop-up, keyed by each entry's `group`. */
+/** Section headings, keyed by each entry's `group`. */
 const GROUP_LABELS: Record<string, string> = {
   overview: 'Overview',
   payments: 'Payments',
@@ -78,13 +69,13 @@ const GROUP_LABELS: Record<string, string> = {
   help: 'Help',
 };
 
-const workflowPalette = [
-  { color: 'text-violet-600', bg: 'bg-violet-50', icon: FileCheck2 },
-  { color: 'text-amber-600', bg: 'bg-amber-50', icon: ClipboardCheck },
-  { color: 'text-pink-600', bg: 'bg-pink-50', icon: ListChecks },
-  { color: 'text-teal-600', bg: 'bg-teal-50', icon: WalletCards },
-  { color: 'text-green-600', bg: 'bg-green-50', icon: FileCheck2 },
-] as const;
+const workflowPalette: { tone: ModuleNavTone; icon: LucideIcon }[] = [
+  { tone: 'violet', icon: FileCheck2 },
+  { tone: 'amber', icon: ClipboardCheck },
+  { tone: 'pink', icon: ListChecks },
+  { tone: 'teal', icon: WalletCards },
+  { tone: 'green', icon: FileCheck2 },
+];
 
 function matchesPath(pathname: string, href: string) {
   if (href === '/recurring-payments') {
@@ -99,7 +90,6 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
   const { can, isLoading: authLoading } = useAuthorization();
   const { assignedStepIds, hasAssignedWork, loading: assignmentsLoading } = useAssignedWorkflowSteps();
   const [workflowSteps, setWorkflowSteps] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
-  const iconsOnly = useSidebarIconsOnly();
 
   useEffect(
     () =>
@@ -116,45 +106,67 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
     [],
   );
 
-  const workflowItems: NavItem[] = workflowSteps.map((step, index) => {
-    const palette = workflowPalette[index % workflowPalette.length];
-    const normalizedName = step.name.toLowerCase();
-    const resource = normalizedName.includes('approval')
-      ? 'Approvals'
-      : normalizedName.includes('payment') || normalizedName.includes('closure')
-        ? 'Payment Processing'
-        : 'Payments';
-    return {
-      href: `/recurring-payments/stage/${step.id}`,
-      label: step.name,
-      resource,
-      icon: palette.icon,
-      color: palette.color,
-      bg: palette.bg,
-      group: 'workflow',
-      stepId: step.id,
-    };
-  });
+  const navItems = useMemo(() => {
+    const workflowItems: NavItem[] = workflowSteps.map((step, index) => {
+      const palette = workflowPalette[index % workflowPalette.length];
+      const normalizedName = step.name.toLowerCase();
+      const resource = normalizedName.includes('approval')
+        ? 'Approvals'
+        : normalizedName.includes('payment') || normalizedName.includes('closure')
+          ? 'Payment Processing'
+          : 'Payments';
+      return {
+        href: `/recurring-payments/stage/${step.id}`,
+        label: step.name,
+        resource,
+        icon: palette.icon,
+        tone: palette.tone,
+        group: 'workflow',
+        stepId: step.id,
+      };
+    });
 
-  // Whoever the workflow named on a step gets that step's queue — and the approval centre when
-  // the step is an approval — without needing the matching role permission on top.
-  const assignedApproval = workflowSteps.some(
-    (step) => assignedStepIds.has(step.id) && step.name.toLowerCase().includes('approval'),
-  );
-  const navItems = [...coreItems, ...workflowItems, ...managementItems].filter((item) =>
-    item.stepId
-      // Assignment is the *only* gate on a workflow step queue, deliberately narrower than the
-      // rest of the module. A step page renders nothing but the signed-in user's own assigned
-      // tasks, so a role permission on its own surfaced a page that could only ever be empty —
-      // and implied the holder had work waiting when the workflow had never named them. Anyone
-      // needing oversight of other people's queues uses All Payments or the reports, which are
-      // built to show the whole organization.
-      ? assignedStepIds.has(item.stepId)
-      : can('View', `Recurring Payments.${item.resource}`) ||
-        (['Approvals', 'Payment Processing'].includes(item.resource) &&
-          can('View', 'Recurring Payments.Payments')) ||
-        (item.href === '/recurring-payments/approvals' && assignedApproval),
-  );
+    // Whoever the workflow named on a step gets that step's queue — and the approval centre when
+    // the step is an approval — without needing the matching role permission on top.
+    const assignedApproval = workflowSteps.some(
+      (step) => assignedStepIds.has(step.id) && step.name.toLowerCase().includes('approval'),
+    );
+    return [...coreItems, ...workflowItems, ...managementItems].filter((item) =>
+      item.stepId
+        // Assignment is the *only* gate on a workflow step queue, deliberately narrower than the
+        // rest of the module. A step page renders nothing but the signed-in user's own assigned
+        // tasks, so a role permission on its own surfaced a page that could only ever be empty —
+        // and implied the holder had work waiting when the workflow had never named them. Anyone
+        // needing oversight of other people's queues uses All Payments or the reports, which are
+        // built to show the whole organization.
+        ? assignedStepIds.has(item.stepId)
+        : can('View', `Recurring Payments.${item.resource}`) ||
+          (['Approvals', 'Payment Processing'].includes(item.resource) &&
+            can('View', 'Recurring Payments.Payments')) ||
+          (item.href === '/recurring-payments/approvals' && assignedApproval),
+    );
+  }, [assignedStepIds, can, workflowSteps]);
+
+  const groups = useMemo<ModuleNavGroup[]>(() => {
+    const list: ModuleNavGroup[] = [];
+    for (const item of navItems) {
+      let group = list.find((entry) => entry.id === item.group);
+      if (!group) {
+        group = { id: item.group, label: GROUP_LABELS[item.group], items: [] };
+        list.push(group);
+      }
+      group.items.push({
+        id: item.stepId ? `stage-${item.stepId}` : item.href,
+        label: item.label,
+        href: item.href,
+        icon: item.icon,
+        tone: item.tone,
+        match: item.href === '/recurring-payments' ? (path: string) => matchesPath(path, item.href) : undefined,
+      });
+    }
+    return list;
+  }, [navItems]);
+
   const canViewModule = can('View Module', 'Recurring Payments') || hasAssignedWork;
   const currentPageAllowed = safePathname.startsWith('/recurring-payments/settings/workflow')
     ? can('View Workflow', 'Recurring Payments.Settings')
@@ -184,156 +196,35 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode.
-  const navigationLinks = (compact = false) => {
-    let lastGroup = '';
-    return navItems.map((item) => {
-      const active = matchesPath(safePathname, item.href);
-      const showDivider = item.group !== lastGroup && lastGroup !== '';
-      lastGroup = item.group;
-      const Icon = item.icon;
-
-      return (
-        <div key={item.href}>
-          {showDivider && <div className="my-1 h-px bg-white/40" />}
-          <SidebarNavTooltip label={item.label} enabled={compact}>
-            <Link
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              title={compact ? item.label : undefined}
-              className={cn(
-                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
-                active
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.5)]'
-                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-                compact && 'justify-center',
-              )}
-            >
-              <span
-                className={cn(
-                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                  active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg),
-                )}
-              >
-                <Icon
-                  className={cn(
-                    'h-3.5 w-3.5 transition-transform',
-                    active ? 'scale-110 text-white' : item.color,
-                  )}
-                />
-              </span>
-              <span className={compact ? 'sr-only' : 'truncate'}>{item.label}</span>
-            </Link>
-          </SidebarNavTooltip>
-        </div>
-      );
-    });
-  };
-
-  const loader = (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
-    </div>
-  );
-
-  if (authLoading) {
-    return loader;
-  }
-
-  if (!canViewModule) {
-    // Assignment-only access resolves a moment after the role check does — wait for it rather
-    // than flashing "Access denied" at a user whose queue is about to grant them the page.
-    if (assignmentsLoading) return loader;
-    return (
-      <div className="w-full p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access denied</CardTitle>
-            <CardDescription>You do not have permission to access Recurring Payments.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center py-8">
-            <ShieldAlert className="h-14 w-14 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   // A workflow step is refused for a different reason than everything else — the user may well
   // hold the role permission and simply have no task here — so saying "no permission" would send
   // them to an administrator who has nothing to change.
   const stageRefused = safePathname.startsWith('/recurring-payments/stage/');
-  const pageAccessDenied = (
-    <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-      <CardContent className="space-y-3 py-16 text-center">
-        <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
-        <div>
-          <p className="font-semibold text-slate-800">
-            {stageRefused ? 'No tasks assigned to you at this step' : 'Access denied'}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {stageRefused
-              ? 'A workflow step only shows the tasks it has assigned to you, and none are currently with you here.'
-              : 'You do not have permission to view this Recurring Payments page.'}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {stageRefused
-              ? 'The step reappears in the menu as soon as a payment reaches you at it.'
-              : 'Contact your administrator to request access.'}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
 
+  // `recurring-payments-theme` / `-content` carry the module's table frame and print rules in
+  // globals.css; the shell itself is the shared one.
   return (
-    <div className="recurring-payments-theme relative w-full px-3 py-4 sm:px-6 lg:px-8">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40" />
-        <div className="absolute left-[8%] top-[8%] h-56 w-56 rounded-full bg-emerald-300/20 blur-3xl" />
-        <div className="absolute bottom-[6%] right-[10%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl" />
-      </div>
-
-      {/* `lg:hidden` is a min-width query, so this bar would still print on a wide sheet. */}
-      <ModuleMobileHeader
-        icon={Repeat2}
+    <div className="recurring-payments-theme w-full">
+      <ModuleShell
         title="Recurring Payments"
         subtitle="Bill & Workflow Manager"
-        hideFrom="lg"
-        className="print:hidden"
-      />
-
-      <div className={`rp-shell-grid grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
-        <TooltipProvider delayDuration={150}>
-          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
-            <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-              <div
-                className={cn('border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3', iconsOnly && 'px-2')}
-                title={iconsOnly ? 'Recurring Payments' : undefined}
-              >
-                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-                    <Repeat2 className="h-4 w-4 text-white" />
-                  </div>
-                  <div className={iconsOnly ? 'sr-only' : undefined}>
-                    <p className="text-sm font-semibold tracking-tight text-slate-800">Recurring Payments</p>
-                    <p className="text-[11px] text-muted-foreground">Bill &amp; Workflow Manager</p>
-                  </div>
-                </div>
-              </div>
-              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)] overflow-y-auto p-2">
-                {navigationLinks(iconsOnly)}
-              </CardContent>
-            </Card>
-          </aside>
-        </TooltipProvider>
-
-        <main className="recurring-payments-content min-w-0">
-          {currentPageAllowed ? children : assignmentsLoading ? loader : pageAccessDenied}
-        </main>
-      </div>
-
-      <ModuleBottomNav tabs={bottomTabs} pages={navItems} groupLabels={GROUP_LABELS} moduleName="Recurring Payments" />
+        icon={Repeat2}
+        groups={groups}
+        mobileTabs={bottomTabs}
+        gate={{
+          // Assignment-only access resolves a moment after the role check does — wait for it rather
+          // than flashing "Access denied" at a user whose queue is about to grant them the page.
+          loading: authLoading || (assignmentsLoading && (!canViewModule || !currentPageAllowed)),
+          allowed: canViewModule,
+          deniedMessage: 'You do not have permission to access Recurring Payments.',
+          pageAllowed: currentPageAllowed,
+          pageDeniedMessage: stageRefused
+            ? 'No tasks assigned to you at this step. A workflow step only shows the tasks it has assigned to you; it reappears in the menu as soon as a payment reaches you at it.'
+            : 'You do not have permission to view this Recurring Payments page.',
+        }}
+      >
+        <div className="recurring-payments-content min-w-0">{children}</div>
+      </ModuleShell>
     </div>
   );
 }

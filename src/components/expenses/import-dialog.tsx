@@ -84,7 +84,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 
@@ -633,7 +633,7 @@ export function ExpenseImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent size="xl" className="flex max-h-[92dvh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 space-y-2 border-b border-border/60 px-5 py-4 pr-12 text-left">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Upload className="h-4 w-4 text-primary" />
@@ -950,11 +950,7 @@ export function ExpenseImportDialog({
                   </TableHeader>
                   <TableBody>
                     {previewRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={PREVIEW_KEYS.length + 1} className="h-28 text-center text-muted-foreground">
-                          No rows match this filter.
-                        </TableCell>
-                      </TableRow>
+                      <TableEmpty colSpan={PREVIEW_KEYS.length + 1}>No rows match this filter.</TableEmpty>
                     ) : (
                       previewRows.slice(0, PREVIEW_LIMIT).map((line) => (
                         <TableRow

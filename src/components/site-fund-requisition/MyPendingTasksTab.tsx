@@ -18,6 +18,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -241,11 +242,7 @@ export default function MyPendingTasksTab() {
                 </TableRow>
               ))
             ) : (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center h-24">
-                  You have no pending tasks.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={6}>You have no pending tasks.</TableEmpty>
             )}
           </TableBody>
         </Table>

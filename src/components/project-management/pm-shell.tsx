@@ -22,7 +22,7 @@
  *     cannot know its count, and a confident "0" that means "not loaded" is worse than no number.
  */
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, ChevronLeft, ChevronRight, Inbox, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -446,8 +446,20 @@ export function PmShell({
 
 /* ── Content furniture ──────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Set by a layout that hosts PM-kit pages inside the shared `ModuleShell` (Subcontractors), whose
+ * content column already pads and is the page's `<main>`. `PmContent` then adds neither.
+ */
+const PmInModuleShellContext = createContext(false);
+
+export function PmInModuleShell({ children }: { children: ReactNode }) {
+  return <PmInModuleShellContext.Provider value>{children}</PmInModuleShellContext.Provider>;
+}
+
 /** The scrolling content area beneath the topbar. */
 export function PmContent({ children, className }: { children: ReactNode; className?: string }) {
+  const inModuleShell = useContext(PmInModuleShellContext);
+  if (inModuleShell) return <div className={cn("min-w-0 flex-1 pt-4", className)}>{children}</div>;
   return <main className={cn("min-w-0 flex-1 px-4 py-4 sm:py-5 md:px-6", className)}>{children}</main>;
 }
 

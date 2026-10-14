@@ -3,12 +3,11 @@
 
 import { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -292,11 +291,7 @@ export default function InventoryPage() {
                                 </TableHeader>
                                 <TableBody>
                                     {isLoading ? (
-                                        Array.from({ length: 15 }).map((_, i) => (
-                                            <TableRow key={i}>
-                                                <TableCell colSpan={9}><Skeleton className="h-6 w-full" /></TableCell>
-                                            </TableRow>
-                                        ))
+                                        <TableLoading colSpan={9} rows={15} />
                                     ) : inventoryData.length > 0 ? (
                                         inventoryData.map(item => (
                                             <Fragment key={item.id}>
@@ -366,11 +361,9 @@ export default function InventoryPage() {
                                             </Fragment>
                                         ))
                                     ) : (
-                                        <TableRow>
-                                            <TableCell colSpan={9} className="text-center h-24">
+                                        <TableEmpty colSpan={9}>
                                                 No inventory data to display for this project or selected filters.
-                                            </TableCell>
-                                        </TableRow>
+                                            </TableEmpty>
                                     )}
                                 </TableBody>
                             </Table>

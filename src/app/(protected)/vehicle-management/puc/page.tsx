@@ -726,7 +726,7 @@ export default function PucManagementPage() {
       </TableCard>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
-        <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
+        <DialogContent size="xl" className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
           <div className={cn('vm-dialog-header shrink-0 px-4 py-4 pr-12 sm:px-6 sm:py-5', VM_DIALOG_HEADER)}>
             <div className="flex items-start gap-3">
               <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', VM_ICON_CHIP)}><FileCheck2 className="h-5 w-5" /></div>

@@ -14,7 +14,7 @@ import { TableCard } from '@/components/shared/table-card';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow,
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import {
@@ -24,7 +24,6 @@ import type { Requisition, WorkflowStep, ActionLog, Department, ActionConfig, Ac
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -196,9 +195,7 @@ export default function StagePage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-8" /></TableCell></TableRow>
-              ))
+              <TableLoading colSpan={5} rows={3} />
             ) : data.length > 0 ? data.map(task => {
               const currentStep = workflow.find(s => s.id === task.currentStepId);
               const actions = Array.isArray(currentStep?.actions) ? (currentStep!.actions as (string | ActionConfig)[]) : [];
@@ -239,11 +236,7 @@ export default function StagePage() {
                 </TableRow>
               );
             }) : (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                  No {type} tasks for this stage.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={5}>No {type} tasks for this stage.</TableEmpty>
             )}
           </TableBody>
         </Table>

@@ -1079,7 +1079,7 @@ function NewPaymentForm() {
 
       {/* Requisition picker */}
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="hr-mobile-dialog gap-4 sm:max-h-[90dvh] sm:max-w-5xl">
+        <DialogContent size="xl" className="hr-mobile-dialog gap-4 sm:max-h-[90dvh]">
           <DialogHeader className="hr-dialog-header pr-8">
             <DialogTitle>Requisitions waiting for payment</DialogTitle>
             <DialogDescription>From Daily Requisition → Processed for Payment. Each is added for the amount still due.</DialogDescription>

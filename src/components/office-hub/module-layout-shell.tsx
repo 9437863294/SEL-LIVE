@@ -1,27 +1,20 @@
 'use client';
 
 /**
- * The module's chrome: sidebar on a desktop; on a phone, the floating bottom bar, whose "More"
- * opens the same grouped pop-up of pages every module uses (§53, §54).
- *
- * Modelled on `@/components/e-approval/module-layout-shell` so that a user who knows their way
- * around one module knows their way around this one — the nav grouping, the active-link treatment
- * and the phone's bottom bar all behave identically. What differs is the section list and its
- * gating.
+ * The module's chrome, on the shared `ModuleShell`: sidebar on a desktop; on a phone, the floating
+ * bottom bar, whose "More" opens the same grouped pop-up of pages every module uses (§53, §54).
  *
  * Two behaviours worth knowing:
  *
- *   • **A print route gets the page to itself.** `AppShell` already strips the app header for
- *     `/print`, but this is a *nested* layout, so it would otherwise wrap the printed minutes in the
- *     module's own sidebar. Hiding the pieces with `print:hidden` is not enough either: the mobile
- *     bar is `lg:hidden`, and print lays out at paper width (~816px), which is *below* `lg` — so the
- *     bar nobody sees on screen un-hides itself in the printout.
+ *   • **A print route gets the page to itself.** The shell drops its chrome on `/print`, and the
+ *     gate is skipped there too, so the printed minutes never wait on (or are wrapped by) the
+ *     module's own loading or access screens — the print page checks its own access.
  *
  *   • **The nav is gated, and the guide never is.** A user who cannot find anything is exactly the
  *     user who needs the guide, so it renders for everyone with access to the module.
  */
 
-import Link from 'next/link';
+import { useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import {
   BarChart3,
@@ -37,23 +30,12 @@ import {
   Plus,
   Search,
   Settings,
-  ShieldAlert,
   Upload,
   UserRound,
   Users,
+  type LucideIcon,
 } from 'lucide-react';
-import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import {
-  SIDEBAR_ICONS_DIVIDER,
-  SIDEBAR_ICONS_GRID,
-  SidebarNavTooltip,
-  useSidebarIconsOnly,
-} from '@/components/navigation/use-sidebar-mode';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 import { OFFICE_HUB_BASE_PATH } from '@/lib/office-hub';
 import { OfficeHubProvider, useOfficeHub } from './hooks';
 import { OfficeHubErrorBoundary } from './error-boundary';
@@ -76,39 +58,31 @@ type Gate =
   | 'settings'
   | 'import';
 
-const SECTIONS: {
-  href: string;
-  label: string;
-  icon: typeof Gauge;
-  color: string;
-  bg: string;
-  group: 'work' | 'registers' | 'insight' | 'config';
-  gate: Gate;
-  /** Matched with `startsWith` for detail routes; the dashboard is exact-match only. */
-  exact?: boolean;
-}[] = [
-  { href: OFFICE_HUB_BASE_PATH, label: 'Dashboard', icon: Gauge, color: 'text-sky-600', bg: 'bg-sky-100', group: 'work', gate: 'dashboard', exact: true },
-  { href: `${OFFICE_HUB_BASE_PATH}/calendar`, label: 'Calendar', icon: CalendarDays, color: 'text-indigo-600', bg: 'bg-indigo-100', group: 'work', gate: 'calendar' },
-  { href: `${OFFICE_HUB_BASE_PATH}/meetings`, label: 'Meetings', icon: ClipboardList, color: 'text-violet-600', bg: 'bg-violet-100', group: 'work', gate: 'meetings' },
-  { href: `${OFFICE_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListTodo, color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'work', gate: 'tasks' },
+type Group = 'work' | 'registers' | 'insight' | 'config';
 
-  { href: `${OFFICE_HUB_BASE_PATH}/decisions`, label: 'Decision Register', icon: Gavel, color: 'text-amber-600', bg: 'bg-amber-100', group: 'registers', gate: 'decisions' },
-  { href: `${OFFICE_HUB_BASE_PATH}/action-items`, label: 'Action Items', icon: CheckSquare, color: 'text-teal-600', bg: 'bg-teal-100', group: 'registers', gate: 'actionItems' },
-  { href: `${OFFICE_HUB_BASE_PATH}/teams`, label: 'Teams', icon: Users, color: 'text-fuchsia-600', bg: 'bg-fuchsia-100', group: 'registers', gate: 'teams' },
-  { href: `${OFFICE_HUB_BASE_PATH}/employees`, label: 'Employees', icon: UserRound, color: 'text-cyan-600', bg: 'bg-cyan-100', group: 'registers', gate: 'employees' },
+const SECTIONS: { id: string; href: string; label: string; icon: LucideIcon; tone: ModuleNavTone; group: Group; gate: Gate }[] = [
+  { id: 'dashboard', href: OFFICE_HUB_BASE_PATH, label: 'Dashboard', icon: Gauge, tone: 'sky', group: 'work', gate: 'dashboard' },
+  { id: 'calendar', href: `${OFFICE_HUB_BASE_PATH}/calendar`, label: 'Calendar', icon: CalendarDays, tone: 'indigo', group: 'work', gate: 'calendar' },
+  { id: 'meetings', href: `${OFFICE_HUB_BASE_PATH}/meetings`, label: 'Meetings', icon: ClipboardList, tone: 'violet', group: 'work', gate: 'meetings' },
+  { id: 'tasks', href: `${OFFICE_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListTodo, tone: 'emerald', group: 'work', gate: 'tasks' },
 
-  { href: `${OFFICE_HUB_BASE_PATH}/reports`, label: 'Reports', icon: BarChart3, color: 'text-blue-600', bg: 'bg-blue-100', group: 'insight', gate: 'reports' },
-  { href: `${OFFICE_HUB_BASE_PATH}/workload`, label: 'Workload', icon: FileText, color: 'text-orange-600', bg: 'bg-orange-100', group: 'insight', gate: 'workload' },
-  { href: `${OFFICE_HUB_BASE_PATH}/overview`, label: 'Management Overview', icon: Gauge, color: 'text-rose-600', bg: 'bg-rose-100', group: 'insight', gate: 'overview' },
-  { href: `${OFFICE_HUB_BASE_PATH}/search`, label: 'Search', icon: Search, color: 'text-slate-600', bg: 'bg-slate-200', group: 'insight', gate: 'always' },
+  { id: 'decisions', href: `${OFFICE_HUB_BASE_PATH}/decisions`, label: 'Decision Register', icon: Gavel, tone: 'amber', group: 'registers', gate: 'decisions' },
+  { id: 'action-items', href: `${OFFICE_HUB_BASE_PATH}/action-items`, label: 'Action Items', icon: CheckSquare, tone: 'teal', group: 'registers', gate: 'actionItems' },
+  { id: 'teams', href: `${OFFICE_HUB_BASE_PATH}/teams`, label: 'Teams', icon: Users, tone: 'fuchsia', group: 'registers', gate: 'teams' },
+  { id: 'employees', href: `${OFFICE_HUB_BASE_PATH}/employees`, label: 'Employees', icon: UserRound, tone: 'cyan', group: 'registers', gate: 'employees' },
 
-  { href: `${OFFICE_HUB_BASE_PATH}/templates`, label: 'Templates', icon: LayoutTemplate, color: 'text-indigo-600', bg: 'bg-indigo-100', group: 'config', gate: 'templates' },
-  { href: `${OFFICE_HUB_BASE_PATH}/import`, label: 'Import Employees', icon: Upload, color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'config', gate: 'import' },
-  { href: `${OFFICE_HUB_BASE_PATH}/settings`, label: 'Settings', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-200', group: 'config', gate: 'settings' },
-  { href: `${OFFICE_HUB_BASE_PATH}/help`, label: 'Guide', icon: BookOpen, color: 'text-amber-600', bg: 'bg-amber-100', group: 'config', gate: 'always' },
+  { id: 'reports', href: `${OFFICE_HUB_BASE_PATH}/reports`, label: 'Reports', icon: BarChart3, tone: 'blue', group: 'insight', gate: 'reports' },
+  { id: 'workload', href: `${OFFICE_HUB_BASE_PATH}/workload`, label: 'Workload', icon: FileText, tone: 'orange', group: 'insight', gate: 'workload' },
+  { id: 'overview', href: `${OFFICE_HUB_BASE_PATH}/overview`, label: 'Management Overview', icon: Gauge, tone: 'rose', group: 'insight', gate: 'overview' },
+  { id: 'search', href: `${OFFICE_HUB_BASE_PATH}/search`, label: 'Search', icon: Search, tone: 'slate', group: 'insight', gate: 'always' },
+
+  { id: 'templates', href: `${OFFICE_HUB_BASE_PATH}/templates`, label: 'Templates', icon: LayoutTemplate, tone: 'indigo', group: 'config', gate: 'templates' },
+  { id: 'import', href: `${OFFICE_HUB_BASE_PATH}/import`, label: 'Import Employees', icon: Upload, tone: 'emerald', group: 'config', gate: 'import' },
+  { id: 'settings', href: `${OFFICE_HUB_BASE_PATH}/settings`, label: 'Settings', icon: Settings, tone: 'slate', group: 'config', gate: 'settings' },
+  { id: 'help', href: `${OFFICE_HUB_BASE_PATH}/help`, label: 'Guide', icon: BookOpen, tone: 'amber', group: 'config', gate: 'always' },
 ];
 
-const GROUP_LABELS: Record<string, string> = {
+const GROUP_LABELS: Record<Group, string> = {
   work: 'My Work',
   registers: 'Registers',
   insight: 'Insight',
@@ -126,49 +100,50 @@ export default function OfficeHubLayoutShell({ children }: { children: React.Rea
 function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const { capabilities, isLoading } = useOfficeHub();
-  const iconsOnly = useSidebarIconsOnly();
 
-  // Before the access check, so a print route never renders module chrome at all.
-  if (pathname.includes('/print')) return <>{children}</>;
+  const gates = useMemo<Record<Gate, boolean>>(
+    () => ({
+      always: true,
+      dashboard: capabilities.canViewDashboard,
+      calendar: capabilities.canViewCalendar,
+      meetings: capabilities.canViewMeetings,
+      tasks: capabilities.canViewTasks,
+      teams: capabilities.canViewTeams,
+      decisions: capabilities.canViewDecisions,
+      actionItems: capabilities.canViewActionItems,
+      employees: capabilities.canViewEmployees,
+      reports: capabilities.canViewReports,
+      workload: capabilities.canViewWorkload,
+      overview: capabilities.canViewManagementOverview,
+      templates: capabilities.canViewTemplates,
+      settings: capabilities.canViewSettings,
+      import: capabilities.canImportEmployees,
+    }),
+    [capabilities],
+  );
 
-  const gates: Record<Gate, boolean> = {
-    always: true,
-    dashboard: capabilities.canViewDashboard,
-    calendar: capabilities.canViewCalendar,
-    meetings: capabilities.canViewMeetings,
-    tasks: capabilities.canViewTasks,
-    teams: capabilities.canViewTeams,
-    decisions: capabilities.canViewDecisions,
-    actionItems: capabilities.canViewActionItems,
-    employees: capabilities.canViewEmployees,
-    reports: capabilities.canViewReports,
-    workload: capabilities.canViewWorkload,
-    overview: capabilities.canViewManagementOverview,
-    templates: capabilities.canViewTemplates,
-    settings: capabilities.canViewSettings,
-    import: capabilities.canImportEmployees,
-  };
-
-  const available = SECTIONS.filter((section) => gates[section.gate]);
-
-  // Longest match first, so `/office-hub/meetings` does not also light up the dashboard link.
-  const current = [...available]
-    .sort((a, b) => b.href.length - a.href.length)
-    .find((section) =>
-      section.exact ? pathname === section.href : pathname === section.href || pathname.startsWith(`${section.href}/`),
-    );
+  const groups = useMemo<ModuleNavGroup[]>(
+    () =>
+      (Object.keys(GROUP_LABELS) as Group[]).map((group) => ({
+        id: group,
+        label: GROUP_LABELS[group],
+        // Detail routes match by prefix; the dashboard, first, is exact-match only.
+        items: SECTIONS.filter((section) => section.group === group).map((section) => ({ ...section, visible: gates[section.gate] })),
+      })),
+    [gates],
+  );
 
   // The phone's bottom bar: the dashboard, the two working registers either side of scheduling a
   // meeting (or, for someone who may only raise tasks, a new task), and "More" opening the bar's
   // pop-up of every page. Each register tab only if its sidebar entry is visible; the create tab
   // on the same capability its page checks.
-  const isAvailable = (href: string) => available.some((section) => section.href === href);
+  const isAvailable = (href: string) => SECTIONS.some((section) => section.href === href && gates[section.gate]);
   const createTab: ModuleNavTab | null = capabilities.canCreateMeeting
     ? { href: `${OFFICE_HUB_BASE_PATH}/meetings/new`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Schedule a meeting' }
     : capabilities.canCreateTask
       ? { href: `${OFFICE_HUB_BASE_PATH}/tasks/new`, label: 'New', icon: Plus, emphasized: true, ariaLabel: 'New task' }
       : null;
-  const bottomTabs: ModuleNavTab[] = [
+  const mobileTabs: ModuleNavTab[] = [
     ...(isAvailable(OFFICE_HUB_BASE_PATH) ? [{ href: OFFICE_HUB_BASE_PATH, label: 'Home', icon: Gauge, exact: true }] : []),
     ...(isAvailable(`${OFFICE_HUB_BASE_PATH}/meetings`)
       ? [{ href: `${OFFICE_HUB_BASE_PATH}/meetings`, label: 'Meetings', icon: ClipboardList }]
@@ -177,151 +152,30 @@ function OfficeHubLayoutShellInner({ children }: { children: React.ReactNode }) 
     ...(isAvailable(`${OFFICE_HUB_BASE_PATH}/tasks`) ? [{ href: `${OFFICE_HUB_BASE_PATH}/tasks`, label: 'Tasks', icon: ListTodo }] : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode.
-  const navigation = (compact: boolean) => {
-    let lastGroup = '';
-    return available.map((section, index) => {
-      const active = current?.href === section.href;
-      const Icon = section.icon;
-      const showGroup = section.group !== lastGroup;
-      lastGroup = section.group;
-      return (
-        <div key={section.href}>
-          {showGroup &&
-            (compact ? (
-              // No room for a heading: a hairline keeps the grouping, the name stays for screen readers.
-              <>
-                {index > 0 && <div className={SIDEBAR_ICONS_DIVIDER} aria-hidden />}
-                <p className="sr-only">{GROUP_LABELS[section.group]}</p>
-              </>
-            ) : (
-              <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
-                {GROUP_LABELS[section.group]}
-              </p>
-            ))}
-          <SidebarNavTooltip label={section.label} enabled={compact}>
-            <Link
-              href={section.href}
-              aria-current={active ? 'page' : undefined}
-              title={compact ? section.label : undefined}
-              className={cn(
-                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1',
-                active
-                  ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-[0_8px_24px_-8px_rgba(79,70,229,0.5)]'
-                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-                compact && 'justify-center',
-              )}
-            >
-              <span
-                className={cn(
-                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-all duration-200',
-                  active ? 'bg-white/20 ring-white/30' : cn('ring-black/[0.03] group-hover:scale-105', section.bg),
-                )}
-              >
-                <Icon className={cn('h-4 w-4 transition-transform', active ? 'scale-110 text-white' : section.color)} />
-              </span>
-              <span className={compact ? 'sr-only' : 'truncate'}>{section.label}</span>
-            </Link>
-          </SidebarNavTooltip>
-        </div>
-      );
-    });
-  };
-
-  if (isLoading) {
-    return (
-      <div className="w-full px-3 py-4 sm:px-6 lg:px-8">
-        <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'}`}>
-          <Skeleton className="hidden h-[28rem] w-full rounded-xl lg:block" />
-          <div className="space-y-3">
-            <Skeleton className="h-9 w-64" />
-            <Skeleton className="h-28 w-full rounded-xl" />
-            <Skeleton className="h-64 w-full rounded-xl" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!capabilities.canViewModule) {
-    return (
-      <div className="w-full p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to access Office Hub.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center gap-2 py-8">
-            <ShieldAlert className="h-14 w-14 text-destructive" />
-            <p className="text-sm text-muted-foreground">Contact your administrator to request access.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div className="relative w-full px-3 py-2 sm:px-6 sm:py-4 lg:px-8 xl:px-12 2xl:px-20">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-50/60 via-white to-indigo-50/60" />
-
-      <ModuleMobileHeader
-        icon={CalendarDays}
-        title="Office Hub"
-        subtitle={current?.label || 'Meetings & Tasks'}
-        hideFrom="lg"
-        actions={<OfficeHubCommandPalette />}
-      />
-
-      <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
-        <TooltipProvider delayDuration={150}>
-          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
-            <Card className="overflow-hidden">
-              <div
-                className={cn('border-b border-white/50 bg-gradient-to-r from-sky-500/10 to-indigo-500/5 px-4 py-3', iconsOnly && 'px-2')}
-                title={iconsOnly ? 'Office Hub' : undefined}
-              >
-                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 shadow-sm">
-                    <CalendarDays className="h-4 w-4 text-white" />
-                  </div>
-                  <div className={iconsOnly ? 'sr-only' : undefined}>
-                    <p className="text-sm font-semibold tracking-tight text-slate-800">Office Hub</p>
-                    <p className="text-[11px] text-muted-foreground">Meet · Decide · Assign</p>
-                  </div>
-                </div>
-              </div>
-              {/*
-                In icons mode the palette's search / "+" pair is stacked and the search button's
-                caption is kept for screen readers only — the component itself is shared with the
-                phone header, so the rail reshapes it from here rather than growing it a prop.
-              */}
-              <div
-                className={cn(
-                  'border-b border-white/50 px-2 py-2',
-                  iconsOnly && '[&>div]:flex-col [&_button>span]:sr-only [&_kbd]:hidden',
-                )}
-              >
-                <OfficeHubCommandPalette />
-              </div>
-              <CardContent className="max-h-[calc(100vh-var(--app-header-offset,4rem)-10rem)] overflow-y-auto p-2">
-                <nav aria-label="Office Hub sections">{navigation(iconsOnly)}</nav>
-              </CardContent>
-            </Card>
-          </aside>
-        </TooltipProvider>
-
-        <main className="min-w-0 w-full overflow-x-hidden">
-          {/*
-            One boundary per module rather than per page: a render failure inside a register should
-            leave the nav usable so the user can go somewhere else, which a boundary at the page
-            level cannot do (§2's error-boundary requirement).
-          */}
-          <OfficeHubErrorBoundary>{children}</OfficeHubErrorBoundary>
-        </main>
-      </div>
-
-      <ModuleBottomNav tabs={bottomTabs} pages={available} groupLabels={GROUP_LABELS} moduleName="Office Hub" />
-    </div>
+    <ModuleShell
+      title="Office Hub"
+      subtitle="Meet · Decide · Assign"
+      icon={CalendarDays}
+      groups={groups}
+      mobileTabs={mobileTabs}
+      headerActions={<OfficeHubCommandPalette />}
+      gate={
+        pathname.includes('/print')
+          ? undefined
+          : {
+              loading: isLoading,
+              allowed: capabilities.canViewModule,
+              deniedMessage: 'You do not have permission to access Office Hub. Contact your administrator to request access.',
+            }
+      }
+    >
+      {/*
+        One boundary per module rather than per page: a render failure inside a register should
+        leave the nav usable so the user can go somewhere else, which a boundary at the page
+        level cannot do (§2's error-boundary requirement).
+      */}
+      <OfficeHubErrorBoundary>{children}</OfficeHubErrorBoundary>
+    </ModuleShell>
   );
 }

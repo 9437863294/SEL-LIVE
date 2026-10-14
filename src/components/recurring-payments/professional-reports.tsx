@@ -23,6 +23,7 @@ import {
   ReportSummaryTable,
 } from './report-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 
 const DEFAULT_FILTERS = { project: 'all', department: 'all' };
 
@@ -166,6 +167,8 @@ export default function RecurringPaymentReports() {
 
   return (
     <div className="space-y-5 print:p-0">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title="Recurring Payment Analytics" />
       <PageHeader
         title="Recurring Payment Analytics"
         description="Cash-flow, category, vendor, trend and overdue analysis"

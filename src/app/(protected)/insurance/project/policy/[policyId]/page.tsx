@@ -13,10 +13,11 @@ import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firesto
 import type { ProjectInsurancePolicy, InsuredAsset, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 
 export default function AssetPoliciesPage() {
   const params = useParams();
@@ -104,7 +105,13 @@ export default function AssetPoliciesPage() {
 
   return (
     <div className="w-full p-4">
-      <div className="no-print">
+      {/* On paper the company letterhead replaces the screen header. */}
+      <CompanyLetterhead
+        title="Insurance Policy Report"
+        subtitle={[assetName, assetSite].filter(Boolean).join(' / ') || undefined}
+        className="mb-4 hidden print:block"
+      />
+      <div className="no-print print:hidden">
         <PageHeader
           title="Insurance Policy Report"
           backHref="/insurance/project"
@@ -154,11 +161,7 @@ export default function AssetPoliciesPage() {
                   </TableRow>
                 ))
               ) : (
-                 <TableRow>
-                    <TableCell colSpan={10} className="text-center h-24">
-                        No insurance policies found for this asset.
-                    </TableCell>
-                 </TableRow>
+                 <TableEmpty colSpan={10}>No insurance policies found for this asset.</TableEmpty>
               )}
             </TableBody>
           </Table>

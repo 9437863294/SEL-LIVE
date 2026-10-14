@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { mailApi, type SharedMailboxRow } from '@/lib/mail-hub/client';
@@ -218,7 +218,7 @@ function MailboxEditor({ mailbox, onChanged }: { mailbox: SharedMailboxRow; onCh
                     </TableCell>
                   </TableRow>
                 ))}
-                {members.value?.members.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No members yet.</TableCell></TableRow>}
+                {members.value?.members.length === 0 && <TableEmpty colSpan={5}>No members yet.</TableEmpty>}
               </TableBody>
             </Table>
           </div>
@@ -372,7 +372,7 @@ function AuditTrail() {
               <TableCell><Badge variant="outline">{event.action}</Badge></TableCell>
             </TableRow>
           ))}
-          {value?.events.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">No events.</TableCell></TableRow>}
+          {value?.events.length === 0 && <TableEmpty colSpan={4}>No events.</TableEmpty>}
         </TableBody>
       </Table>
     </TableCard>

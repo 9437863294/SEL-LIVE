@@ -122,7 +122,7 @@ function LinkDialog({ open, onOpenChange, threadId, onLinked }: { open: boolean;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Link to an ERP record</DialogTitle>
           <DialogDescription>Only records in modules you can open are listed.</DialogDescription>
@@ -299,7 +299,7 @@ function FollowUpDialog({ open, onOpenChange, detail, members, onCreated }: { op
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Follow up on this email</DialogTitle>
           <DialogDescription>You will be reminded before it is due.</DialogDescription>

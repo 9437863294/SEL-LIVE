@@ -1,207 +1,90 @@
-
 'use client';
 
-import Link from 'next/link';
+import { useMemo } from 'react';
 import {
-  Activity, Briefcase, ChevronLeft, ChevronRight, Clock, Construction, Hash,
+  Activity, Briefcase, Clock, Construction, Hash,
   LogIn, MailCheck, MapPinned, MonitorSmartphone, Palette, Settings2,
-  ShieldCheck, User as UserIcon, Users, type LucideIcon,
+  ShieldCheck, User as UserIcon, Users,
 } from 'lucide-react';
-import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
-import { cn } from '@/lib/utils';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/components/shared/module-shell';
+import { useCompanyProfile } from '@/hooks/use-company-profile';
 import { canOpenAccessManagement } from '@/lib/access-control';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { usePathname } from 'next/navigation';
-
-type NavItem = {
-  href: string;
-  icon: LucideIcon;
-  label: string;
-  permission: boolean;
-  iconBg: string;
-  iconColor: string;
-  activeGradient: string;
-};
-
-type NavGroup = { label: string; items: NavItem[] };
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = useSidebarDefault(false);
   const { can } = useAuthorization();
-  const pathname = usePathname();
+  const { profile } = useCompanyProfile();
 
-  const navGroups: NavGroup[] = [
+  const groups = useMemo<ModuleNavGroup[]>(() => [
     {
+      id: 'personal',
       label: 'Personal',
       items: [
-        { href: '/settings/profile', icon: UserIcon, label: 'Profile', permission: can('View', 'Settings.Profile'), iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-500 to-purple-600' },
+        { id: 'profile', href: '/settings/profile', icon: UserIcon, label: 'Profile', visible: can('View', 'Settings.Profile'), tone: 'violet' },
       ],
     },
     {
+      id: 'organisation',
       label: 'Organisation',
       items: [
-        { href: '/settings/department', icon: Briefcase, label: 'Departments', permission: can('View', 'Settings.Manage Department'), iconBg: 'bg-sky-100', iconColor: 'text-sky-600', activeGradient: 'from-sky-500 to-cyan-600' },
-        { href: '/settings/project', icon: Construction, label: 'Projects', permission: can('View', 'Settings.Manage Project'), iconBg: 'bg-amber-100', iconColor: 'text-amber-600', activeGradient: 'from-amber-500 to-orange-500' },
-        { href: '/employee', icon: Users, label: 'Employees', permission: can('View', 'Settings.Employee Management'), iconBg: 'bg-green-100', iconColor: 'text-green-600', activeGradient: 'from-green-500 to-emerald-600' },
+        { id: 'department', href: '/settings/department', icon: Briefcase, label: 'Departments', visible: can('View', 'Settings.Manage Department'), tone: 'sky' },
+        { id: 'project', href: '/settings/project', icon: Construction, label: 'Projects', visible: can('View', 'Settings.Manage Project'), tone: 'amber' },
+        { id: 'employees', href: '/employee', icon: Users, label: 'Employees', visible: can('View', 'Settings.Employee Management'), tone: 'green' },
       ],
     },
     {
+      id: 'access',
       label: 'Access',
       items: [
         // One entry, because there is now one screen: Access Management absorbed the separate Users
         // and Roles screens. Still reachable by anyone who could open either of those, which is what
         // `canOpenAccessManagement`'s fallback encodes.
-        { href: '/settings/access-management', icon: ShieldCheck, label: 'Access', permission: canOpenAccessManagement(can), iconBg: 'bg-red-100', iconColor: 'text-red-600', activeGradient: 'from-red-500 to-rose-600' },
-        { href: '/settings/session-management', icon: MonitorSmartphone, label: 'Sessions', permission: true, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600' },
-        { href: '/settings/location-tracking', icon: MapPinned, label: 'Location', permission: can('View', 'Settings.Location Tracking'), iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeGradient: 'from-emerald-500 to-teal-600' },
-        { href: '/settings/audit-logs', icon: Activity, label: 'Audit Logs', permission: can('View', 'Settings.Audit Logs') || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management'), iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-500 to-purple-600' },
+        { id: 'access-management', href: '/settings/access-management', icon: ShieldCheck, label: 'Access', visible: canOpenAccessManagement(can), tone: 'red' },
+        { id: 'session-management', href: '/settings/session-management', icon: MonitorSmartphone, label: 'Sessions', visible: true, tone: 'indigo' },
+        { id: 'location-tracking', href: '/settings/location-tracking', icon: MapPinned, label: 'Location', visible: can('View', 'Settings.Location Tracking'), tone: 'emerald' },
+        { id: 'audit-logs', href: '/settings/audit-logs', icon: Activity, label: 'Audit Logs', visible: can('View', 'Settings.Audit Logs') || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management'), tone: 'violet' },
       ],
     },
     {
+      id: 'config',
       label: 'Config',
       items: [
-        { href: '/settings/serial-no-configuration', icon: Hash, label: 'Serial Nos.', permission: can('View', 'Settings.Serial No. Config'), iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-600 to-indigo-600' },
-        { href: '/settings/working-hours', icon: Clock, label: 'Working Hrs', permission: can('View', 'Settings.Working Hrs'), iconBg: 'bg-teal-100', iconColor: 'text-teal-600', activeGradient: 'from-teal-500 to-cyan-600' },
+        { id: 'serial-no-configuration', href: '/settings/serial-no-configuration', icon: Hash, label: 'Serial Nos.', visible: can('View', 'Settings.Serial No. Config'), tone: 'violet' },
+        { id: 'working-hours', href: '/settings/working-hours', icon: Clock, label: 'Working Hrs', visible: can('View', 'Settings.Working Hrs'), tone: 'teal' },
       ],
     },
     {
+      id: 'system',
       label: 'System',
       items: [
-        { href: '/settings/appearance', icon: Palette, label: 'Appearance', permission: true /* personal: every user sets their own appearance */, iconBg: 'bg-pink-100', iconColor: 'text-pink-600', activeGradient: 'from-pink-500 to-rose-500' },
-        { href: '/settings/email-authorization', icon: MailCheck, label: 'Email Auth', permission: can('View', 'Settings.Email Authorization'), iconBg: 'bg-cyan-100', iconColor: 'text-cyan-600', activeGradient: 'from-cyan-500 to-sky-600' },
-        { href: '/settings/login-expiry', icon: LogIn, label: 'Login Expiry', permission: can('View', 'Settings.Login Expiry'), iconBg: 'bg-orange-100', iconColor: 'text-orange-600', activeGradient: 'from-orange-500 to-amber-500' },
+        { id: 'appearance', href: '/settings/appearance', icon: Palette, label: 'Appearance', visible: true /* personal: every user sets their own appearance */, tone: 'pink' },
+        { id: 'email-authorization', href: '/settings/email-authorization', icon: MailCheck, label: 'Email Auth', visible: can('View', 'Settings.Email Authorization'), tone: 'cyan' },
+        { id: 'login-expiry', href: '/settings/login-expiry', icon: LogIn, label: 'Login Expiry', visible: can('View', 'Settings.Login Expiry'), tone: 'orange' },
       ],
     },
-  ];
-
-  const isPrintPage = pathname?.includes('/print');
-  if (isPrintPage) return <>{children}</>;
-
-  function active(href: string) {
-    return pathname === href || (pathname?.startsWith(href + '/') ?? false);
-  }
+  ], [can]);
 
   // The phone's bottom bar leads with the pages people come to Settings for, each only when its
   // rail entry is shown; every other permitted page follows them, and "More" opens the bar's pop-up
-  // of them all, under the rail's group headings (each page's `group` is its heading).
-  const permitted = (href: string) => navGroups.some(group => group.items.some(item => item.href === href && item.permission));
-  const permittedPages = navGroups.flatMap(group =>
-    group.items.filter(item => item.permission).map(item => ({ ...item, group: group.label })),
-  );
-  const bottomTabs: ModuleNavTab[] = [
-    ...(permitted('/settings/profile') ? [{ href: '/settings/profile', label: 'Profile', icon: UserIcon }] : []),
-    ...(permitted('/settings/access-management')
-      ? [{ href: '/settings/access-management', label: 'Access', icon: ShieldCheck, ariaLabel: 'Access management' }]
-      : []),
-    ...(permitted('/settings/session-management') ? [{ href: '/settings/session-management', label: 'Sessions', icon: MonitorSmartphone }] : []),
-    ...(permitted('/settings/appearance') ? [{ href: '/settings/appearance', label: 'Theme', icon: Palette, ariaLabel: 'Appearance' }] : []),
-  ];
+  // of them all, under the rail's group headings.
+  const mobileTabs = useMemo<ModuleNavTab[]>(() => {
+    const permitted = (href: string) => groups.some(group => group.items.some(item => item.href === href && item.visible !== false));
+    return [
+      ...(permitted('/settings/profile') ? [{ href: '/settings/profile', label: 'Profile', icon: UserIcon }] : []),
+      ...(permitted('/settings/access-management')
+        ? [{ href: '/settings/access-management', label: 'Access', icon: ShieldCheck, ariaLabel: 'Access management' }]
+        : []),
+      ...(permitted('/settings/session-management') ? [{ href: '/settings/session-management', label: 'Sessions', icon: MonitorSmartphone }] : []),
+      ...(permitted('/settings/appearance') ? [{ href: '/settings/appearance', label: 'Theme', icon: Palette, ariaLabel: 'Appearance' }] : []),
+    ];
+  }, [groups]);
 
   return (
-    <div className="flex w-full h-full">
-      {/* Hugs the header while it is on screen and reaches the top once a non-sticky one scrolls away. */}
-      <aside className={cn(
-        'fixed left-0 top-[var(--app-header-offset,4rem)] h-[calc(100vh-var(--app-header-offset,4rem))] z-40 hidden lg:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
-        isExpanded ? 'w-56' : 'w-14',
-      )}>
-        {/* Header */}
-        <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>
-          <div className="rounded-lg bg-primary/10 p-1.5 shrink-0">
-            <Settings2 className="h-4 w-4 text-primary" />
-          </div>
-          {isExpanded && <span className="text-sm font-semibold text-foreground/80 truncate">Settings</span>}
-        </div>
-
-        <TooltipProvider delayDuration={0}>
-          <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
-            {navGroups.map(group => {
-              const visible = group.items.filter(i => i.permission);
-              if (!visible.length) return null;
-              return (
-                <div key={group.label}>
-                  {isExpanded && (
-                    <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">{group.label}</p>
-                  )}
-                  {!isExpanded && group.label !== 'Personal' && (
-                    <div className="mb-1 mx-1 h-px bg-border/40" />
-                  )}
-                  <nav className="flex flex-col gap-0.5">
-                    {visible.map(item => {
-                      const isActive = active(item.href);
-                      return (
-                        <Tooltip key={item.href}>
-                          <TooltipTrigger asChild>
-                            <Link href={item.href}>
-                              <div className={cn(
-                                'relative flex cursor-pointer items-center rounded-lg transition-all duration-200 group',
-                                isExpanded ? 'px-2 py-1.5 gap-2.5' : 'p-1.5 justify-center',
-                                isActive
-                                  ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient)
-                                  : 'hover:bg-muted/40',
-                              )}>
-                                <div className={cn(
-                                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                                  isActive ? 'bg-white/25' : cn(item.iconBg, 'group-hover:scale-105'),
-                                )}>
-                                  <item.icon className={cn('h-3.5 w-3.5 transition-transform', isActive ? 'text-white scale-110' : item.iconColor)} />
-                                </div>
-                                {isExpanded && (
-                                  <span className={cn('text-sm truncate', isActive ? 'font-semibold' : 'font-medium text-foreground/80')}>
-                                    {item.label}
-                                  </span>
-                                )}
-                              </div>
-                            </Link>
-                          </TooltipTrigger>
-                          {!isExpanded && <TooltipContent side="right" className="text-xs font-medium">{item.label}</TooltipContent>}
-                        </Tooltip>
-                      );
-                    })}
-                  </nav>
-                </div>
-              );
-            })}
-          </div>
-        </TooltipProvider>
-
-        <div className="shrink-0 border-t border-border/40 p-2">
-          <button
-            className={cn('w-full flex items-center rounded-lg px-2 py-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-all duration-200 text-sm gap-2', !isExpanded && 'justify-center')}
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? <><ChevronLeft className="h-4 w-4 shrink-0" /><span>Collapse</span></> : <ChevronRight className="h-4 w-4" />}
-          </button>
-        </div>
-      </aside>
-
-      {/*
-        `min-w-0` is what makes every settings screen fit a phone. A flex item's minimum width is
-        its content's intrinsic width unless told otherwise, so any wide descendant — the Access
-        Control Center's ten-tab strip, a register's scroll container — used to size this column
-        to ~900px and the whole page scrolled sideways, scroll areas or not. The HR module shell
-        (`hr-content min-w-0`) and the recurring-payments content frame fix the same thing.
-      */}
-      <div
-        className={cn(
-          'flex min-h-screen min-w-0 max-w-full flex-1 flex-col transition-all duration-300',
-          isExpanded ? 'lg:ml-56' : 'lg:ml-14',
-        )}
-      >
-        {/* The module's card below lg; navigation is the bottom bar and its "More" pop-up. `main`
-            has no padding of its own (each page brings it), so the card carries the pages' inset. */}
-        <ModuleMobileHeader icon={Settings2} title="Settings" hideFrom="lg" className="px-4 pt-3 sm:px-5" />
-
-        <main className="min-w-0 flex-grow overflow-x-clip">{children}</main>
-        <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
-          <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-        </footer>
-
-        {/* In the content column, not beside it: its spacer must stack under the footer, not become a flex column. */}
-        <ModuleBottomNav tabs={bottomTabs} pages={permittedPages} moduleName="Settings" />
-      </div>
-    </div>
+    <ModuleShell title="Settings" icon={Settings2} groups={groups} mobileTabs={mobileTabs}>
+      {children}
+      <footer className="mt-6 flex items-center border-t border-border/40 px-2 py-3 text-xs text-muted-foreground">
+        <span>Copyright © 2025 {profile.shortName}. All Rights Reserved.</span>
+      </footer>
+    </ModuleShell>
   );
 }

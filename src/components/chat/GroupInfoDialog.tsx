@@ -71,7 +71,7 @@ export function GroupInfoDialog({
   if (mode === 'rename') {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent size="default" className="max-w-md">
+        <DialogContent size="md">
           <DialogHeader><DialogTitle>Rename group</DialogTitle><DialogDescription>Choose a name everyone will recognise.</DialogDescription></DialogHeader>
           <div className="space-y-2 py-4"><Label htmlFor="rename-group">Group name</Label><Input id="rename-group" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} /></div>
           <DialogFooter>
@@ -86,7 +86,7 @@ export function GroupInfoDialog({
   if (mode === 'add') {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent size="default" className="h-[min(620px,90vh)] max-w-lg p-0">
+        <DialogContent size="md" className="h-[min(620px,90vh)] p-0">
           <DialogHeader className="border-b px-5 py-4 pr-12"><DialogTitle>Add members</DialogTitle><DialogDescription>Select colleagues to add to this group.</DialogDescription></DialogHeader>
           <div className="flex min-h-0 flex-1 flex-col px-5 py-4">
             <SearchInput value={search} onChange={setSearch} placeholder="Search people" />
@@ -105,7 +105,7 @@ export function GroupInfoDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); if (!nextOpen) reset(); }}>
-      <DialogContent size="default" className="h-[min(700px,92vh)] max-w-lg p-0">
+      <DialogContent size="md" className="h-[min(700px,92vh)] p-0">
         <DialogHeader className="border-b px-5 py-4 pr-12"><DialogTitle>Group info</DialogTitle><DialogDescription>Members and conversation settings.</DialogDescription></DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="flex flex-col items-center border-b px-5 py-6 text-center">

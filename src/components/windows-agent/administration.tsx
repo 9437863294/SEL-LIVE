@@ -67,6 +67,7 @@ import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { PageHeader } from '@/components/shared/page-header';
+import { useCompanyProfile } from '@/hooks/use-company-profile';
 
 /* ════════════════════════════════════════════════════════════════════════════════════════════
  * Policies (§35)
@@ -1167,6 +1168,7 @@ export function AgentVersionsPage() {
 }
 
 function PublishVersionDialog({ onClose, onPublished }: { onClose: () => void; onPublished: () => void }) {
+  const { profile } = useCompanyProfile();
   const { actor } = useWindowsAgent();
   const { run, pending } = useWindowsAgentAction();
 
@@ -1203,7 +1205,7 @@ function PublishVersionDialog({ onClose, onPublished }: { onClose: () => void; o
                 id="wa-subject"
                 value={signatureSubject}
                 onChange={(event) => setSignatureSubject(event.target.value)}
-                placeholder="Siddhartha Engineering Limited"
+                placeholder={profile.legalName}
               />
             </div>
           </div>

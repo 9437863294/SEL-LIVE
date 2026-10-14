@@ -64,7 +64,7 @@ export default function WorkOrderItemSelectorDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Select Work Order Items</DialogTitle>
           <DialogDescription>Select items to add to the bill. Already added items are not shown.</DialogDescription>

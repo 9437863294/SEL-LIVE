@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
@@ -326,11 +326,7 @@ export default function TransactionSummaryPage() {
             </TableHeader>
             <TableBody>
               {summaryRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={1 + months.length * 3 + 3} className="py-12 text-center text-muted-foreground">
-                    No accounts found.
-                  </TableCell>
-                </TableRow>
+                <TableEmpty colSpan={1 + months.length * 3 + 3}>No accounts found.</TableEmpty>
               ) : (
                 summaryRows.map((row) => (
                   <TableRow key={row.account.id}>

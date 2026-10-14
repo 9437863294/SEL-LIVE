@@ -353,7 +353,7 @@ export default function BankAccountsPage() {
       </div>
 
       <Dialog open={!!editing} onOpenChange={(open) => { if (!open && !isSaving) setEditing(null); }}>
-        <DialogContent className="hr-mobile-dialog gap-5 sm:max-w-2xl">
+        <DialogContent size="lg" className="hr-mobile-dialog gap-5">
           <DialogHeader className="hr-dialog-header pr-8">
             <DialogTitle>{isNew ? 'Add bank account' : 'Edit bank account'}</DialogTitle>
             <DialogDescription>

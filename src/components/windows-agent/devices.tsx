@@ -933,7 +933,7 @@ export function DeviceDetail({ deviceId }: { deviceId: string }) {
       ) : null}
 
       <Dialog open={confirm !== null} onOpenChange={(open) => !open && setConfirm(null)}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>{confirm?.title}</DialogTitle>
             <DialogDescription>{confirm?.body}</DialogDescription>

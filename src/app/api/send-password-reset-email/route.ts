@@ -1,3 +1,4 @@
+import { getCompanyProfile } from '@/lib/company-profile-server';
 import { createPasswordResetEmail } from '@/lib/email-templates/password-reset';
 import { getFirebaseAdminAuth } from '@/lib/firebase-admin';
 import { sendEmail } from '@/lib/mail';
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
       resetUrl,
       email: normalized,
       displayName: user.displayName,
+      company: await getCompanyProfile(),
     });
 
     const delivery = await sendEmail({

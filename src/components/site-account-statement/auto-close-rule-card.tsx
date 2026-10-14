@@ -511,7 +511,7 @@ export function AutoCloseRuleCard({
 
       {/* ── Confirmation, naming the months either way ── */}
       <Dialog open={confirmOpen} onOpenChange={open => { if (!open && !saving) setConfirmOpen(false); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>Save the automatic rule · {scopeProject ? scopeName : 'all projects'}</DialogTitle>
             <DialogDescription>

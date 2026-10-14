@@ -580,7 +580,7 @@ export default function EmiSummaryPage() {
       </div>
 
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="md">
             <DialogHeader>
                 <DialogTitle>{selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}</DialogTitle>
                 <DialogDescription>

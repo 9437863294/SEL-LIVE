@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableLoading, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,6 @@ import { countPolicyReferences, PERSONAL_POLICIES } from '@/lib/insurance-servic
 import { AccessDenied, DateField } from '@/components/insurance/insurance-ui';
 import { Textarea } from '@/components/ui/textarea';
 import type { PolicyHolder } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
@@ -191,9 +190,7 @@ export default function ManagePolicyHoldersPage() {
             </TableHeader>
             <TableBody>
               {isLoading || authLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
-                ))
+                <TableLoading colSpan={6} rows={3} />
               ) : holders.length > 0 ? (
                 holders.map(holder => (
                   <TableRow key={holder.id}>
@@ -223,7 +220,7 @@ export default function ManagePolicyHoldersPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={6} className="text-center h-24">No policy holders found.</TableCell></TableRow>
+                <TableEmpty colSpan={6}>No policy holders found.</TableEmpty>
               )}
             </TableBody>
           </Table>

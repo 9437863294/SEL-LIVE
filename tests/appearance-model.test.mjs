@@ -89,6 +89,38 @@ test('preferences keep only known fields and values', () => {
   assert.deepEqual(prefs, { mode: 'dark', accent: 'teal', textSize: 'large', layout: { breadcrumbs: true, pinnedModules: ['HR & Recruitment'] } });
 });
 
+test('dialog preferences keep only listed sizes and real booleans', () => {
+  assert.deepEqual(
+    sanitizePreferences({ dialogSize: 'lg', dialogControls: false, dialogOpenMaximised: true, dialogTextSize: 'large' }),
+    { dialogSize: 'lg', dialogControls: false, dialogOpenMaximised: true, dialogTextSize: 'large' },
+  );
+  assert.deepEqual(sanitizePreferences({ dialogSize: 'auto' }), { dialogSize: 'auto' });
+  assert.deepEqual(
+    sanitizePreferences({ dialogSize: 'full', dialogControls: 'no', dialogOpenMaximised: 1, dialogTextSize: 'huge' }),
+    {},
+  );
+});
+
+test('dialog preferences default to the company size, controls on, not maximised, page-sized text', () => {
+  const plain = resolveAppearance(DEFAULT_CONFIG, {});
+  assert.equal(plain.dialogSize, null);
+  assert.equal(plain.dialogControls, true);
+  assert.equal(plain.dialogOpenMaximised, false);
+  assert.equal(plain.dialogTextSize, 'default');
+  const plainAttrs = appearanceAttributes(plain);
+  // No user size: the attribute is absent, so the company's data-dialog-size applies.
+  assert.equal('user-dialog-size' in plainAttrs, false);
+  assert.equal(plainAttrs['dialog-controls'], 'on');
+  assert.equal(plainAttrs['dialog-maximised'], 'off');
+  const chosen = appearanceAttributes(
+    resolveAppearance(DEFAULT_CONFIG, { dialogSize: 'sm', dialogControls: false, dialogOpenMaximised: true, dialogTextSize: 'small' }),
+  );
+  assert.equal(chosen['user-dialog-size'], 'sm');
+  assert.equal(chosen['dialog-controls'], 'off');
+  assert.equal(chosen['dialog-maximised'], 'on');
+  assert.equal(chosen['dialog-text'], 'small');
+});
+
 test('text fields are plain text: no tags, no control characters, capped', () => {
   assert.equal(cleanText('  <b>SEL</b>\u0007 Live  ', 20), 'bSEL/b Live');
   assert.equal(cleanText('x'.repeat(100), 10), 'x'.repeat(10));
@@ -262,6 +294,16 @@ test('signed out, the company appearance applies — never the last user’s', (
   const store = { [userCacheKey('u1')]: cache({ mode: 'dark' }), [COMPANY_CACHE_KEY]: cache({ mode: 'system' }) };
   assert.equal(runScript(store, { systemDark: false }).dark, false);
   assert.equal(runScript(store, { systemDark: true }).dark, true);
+});
+
+test('cached dialog choices reach the first frame; unknown values do not', () => {
+  const result = runScript({
+    [APPEARANCE_USER_KEY]: 'u1',
+    [userCacheKey('u1')]: cache({ attrs: { 'user-dialog-size': 'md', 'dialog-text': 'large', 'dialog-controls': 'maybe' } }),
+  });
+  assert.equal(result.attrs['data-user-dialog-size'], 'md');
+  assert.equal(result.attrs['data-dialog-text'], 'large');
+  assert.equal(result.attrs['data-dialog-controls'], undefined);
 });
 
 test('tampered cache values are ignored', () => {

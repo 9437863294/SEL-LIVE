@@ -283,7 +283,7 @@ export function MailView({
       </div>
 
       <Dialog open={help} onOpenChange={setHelp}>
-        <DialogContent className="max-w-sm">
+        <DialogContent size="sm">
           <DialogHeader><DialogTitle>Keyboard shortcuts</DialogTitle></DialogHeader>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
             {SHORTCUTS.map(([keys, label]) => (

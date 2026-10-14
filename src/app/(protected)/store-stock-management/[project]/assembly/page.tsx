@@ -6,11 +6,10 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, PlusCircle, ChevronDown, ChevronRight, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { BoqItem, Project, FabricationBomItem } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { BomDialog } from '@/components/store-stock-management/BomDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -228,11 +227,7 @@ export default function AssemblyPage() {
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
-                    Array.from({ length: 10 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell colSpan={8}><Skeleton className="h-6 w-full" /></TableCell>
-                      </TableRow>
-                    ))
+                    <TableLoading colSpan={8} rows={10} />
                   ) : sortedAndFilteredBoqItems.length > 0 ? (
                     sortedAndFilteredBoqItems.map(item => {
                         const rateKey = findBasicPriceKey(item);
@@ -301,9 +296,7 @@ export default function AssemblyPage() {
                         )
                     })
                   ) : (
-                     <TableRow>
-                        <TableCell colSpan={8} className="text-center h-24">No BOQ Items found for this project.</TableCell>
-                     </TableRow>
+                     <TableEmpty colSpan={8}>No BOQ Items found for this project.</TableEmpty>
                   )}
                 </TableBody>
               </Table>

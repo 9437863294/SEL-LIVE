@@ -1,9 +1,13 @@
 import 'server-only';
 
+import { DEFAULT_COMPANY_PROFILE, companyEmailSignature, type CompanyProfile } from '@/lib/company-profile';
+
 interface PasswordResetTemplateOptions {
   resetUrl: string;
   email: string;
   displayName?: string | null;
+  /** The company profile (`getCompanyProfile()`); the defaults when omitted. */
+  company?: CompanyProfile;
 }
 
 function escapeHtml(value: string) {
@@ -19,7 +23,15 @@ export function createPasswordResetEmail({
   resetUrl,
   email,
   displayName,
+  company = DEFAULT_COMPANY_PROFILE,
 }: PasswordResetTemplateOptions) {
+  const safeCompany = escapeHtml(company.legalName);
+  const platform = `${company.shortName} Platform`;
+  const safePlatform = escapeHtml(platform);
+  // The profile's logo (it falls back to the published app logo), else the long-standing one.
+  const logoSrc = company.logoUrl && /^https:\/\//i.test(company.logoUrl)
+    ? escapeHtml(company.logoUrl)
+    : 'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&amp;token=39b0f804-0610-4f3a-b26e-8ce334f94788';
   // Use raw URL in href — DO NOT escapeHtml the '&' separators.
   // &amp; in href breaks enterprise email security gateways (Safe Links, Barracuda, etc.)
   // that URL-encode the literal href text; the browser then receives &amp; as part of
@@ -30,11 +42,11 @@ export function createPasswordResetEmail({
   const safeName = displayName?.trim() ? escapeHtml(displayName.trim()) : '';
   const greeting = safeName ? `Hello ${safeName},` : 'Hello,';
 
-  const subject = 'Reset your SEL Platform password';
+  const subject = `Reset your ${platform} password`;
   const text = [
     displayName?.trim() ? `Hello ${displayName.trim()},` : 'Hello,',
     '',
-    'We received a request to reset the password for your SEL Platform account.',
+    `We received a request to reset the password for your ${platform} account.`,
     `Account: ${email}`,
     '',
     `Reset your password: ${resetUrl}`,
@@ -42,7 +54,7 @@ export function createPasswordResetEmail({
     'This secure link expires automatically and can only be used once.',
     'If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.',
     '',
-    'Siddhartha Engineering Limited',
+    companyEmailSignature(company),
   ].join('\n');
 
   const html = `<!DOCTYPE html>
@@ -51,11 +63,11 @@ export function createPasswordResetEmail({
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light only">
-  <title>${subject}</title>
+  <title>${escapeHtml(subject)}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-    Use this secure link to choose a new password for your SEL Platform account.
+    Use this secure link to choose a new password for your ${safePlatform} account.
   </div>
 
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef2f7;padding:40px 16px;">
@@ -69,13 +81,13 @@ export function createPasswordResetEmail({
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom:18px;">
-                    <img src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&amp;token=39b0f804-0610-4f3a-b26e-8ce334f94788" alt="Siddhartha Engineering Limited" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
+                    <img src="${logoSrc}" alt="${safeCompany}" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
                   </td>
                 </tr>
                 <tr>
                   <td align="center">
-                    <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Siddhartha Engineering Limited</p>
-                    <p style="margin:6px 0 0;font-size:12px;color:#64748b;letter-spacing:2px;text-transform:uppercase;">SEL PLATFORM</p>
+                    <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">${safeCompany}</p>
+                    <p style="margin:6px 0 0;font-size:12px;color:#64748b;letter-spacing:2px;text-transform:uppercase;">${safePlatform}</p>
                   </td>
                 </tr>
               </table>
@@ -95,7 +107,7 @@ export function createPasswordResetEmail({
             <td style="background-color:#ffffff;padding:40px 44px;">
               <p style="margin:0 0 10px;font-size:18px;font-weight:700;color:#0f172a;">${greeting}</p>
               <p style="margin:0 0 32px;font-size:15px;color:#475569;line-height:1.75;">
-                We received a request to reset the password for your <strong style="color:#0f172a;">SEL Platform</strong> account.
+                We received a request to reset the password for your <strong style="color:#0f172a;">${safePlatform}</strong> account.
                 Use the secure link below to choose a new password.
               </p>
 
@@ -173,7 +185,7 @@ export function createPasswordResetEmail({
                   <td style="padding:8px 0;vertical-align:top;">
                     <table cellpadding="0" cellspacing="0" border="0"><tr>
                       <td style="vertical-align:top;padding-right:12px;"><table cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#10b981;border-radius:50%;width:24px;height:24px;text-align:center;vertical-align:middle;"><span style="font-size:11px;font-weight:700;color:#fff;">3</span></td></tr></table></td>
-                      <td style="vertical-align:top;padding-top:3px;"><p style="margin:0;font-size:14px;color:#475569;line-height:1.6;">Return to SEL Platform and sign in with your new password</p></td>
+                      <td style="vertical-align:top;padding-top:3px;"><p style="margin:0;font-size:14px;color:#475569;line-height:1.6;">Return to ${safePlatform} and sign in with your new password</p></td>
                     </tr></table>
                   </td>
                 </tr>
@@ -198,7 +210,7 @@ export function createPasswordResetEmail({
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom:18px;border-bottom:1px solid #1e293b;">
-                    <p style="margin:0;font-size:15px;font-weight:700;color:#f8fafc;">Siddhartha Engineering Limited</p>
+                    <p style="margin:0;font-size:15px;font-weight:700;color:#f8fafc;">${safeCompany}</p>
                     <p style="margin:5px 0 0;font-size:12px;color:#475569;letter-spacing:0.3px;">Engineering Excellence &bull; Digital Innovation</p>
                   </td>
                 </tr>
@@ -209,8 +221,8 @@ export function createPasswordResetEmail({
                       &nbsp;&nbsp;&#127760;&nbsp;<a href="https://seltech.store" style="color:#64748b;text-decoration:none;">seltech.store</a>
                     </p>
                     <p style="margin:14px 0 0;font-size:11px;color:#334155;line-height:1.6;">
-                      This is an automated email sent by SEL Platform. Please do not reply directly to this message.<br>
-                      &copy; ${new Date().getFullYear()} Siddhartha Engineering Limited. All rights reserved.
+                      This is an automated email sent by ${safePlatform}. Please do not reply directly to this message.<br>
+                      &copy; ${new Date().getFullYear()} ${safeCompany}. All rights reserved.
                     </p>
                   </td>
                 </tr>

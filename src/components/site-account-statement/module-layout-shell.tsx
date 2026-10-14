@@ -1,8 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   ArrowLeftRight,
@@ -11,11 +10,9 @@ import {
   CalendarDays,
   FileText,
   LayoutDashboard,
-  Loader2,
   PieChart,
   Receipt,
   Settings,
-  ShieldAlert,
   ShieldCheck,
   Target,
   TrendingDown,
@@ -29,12 +26,7 @@ import { db } from '@/lib/firebase';
 import { SAS_COLLECTIONS } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ModuleBottomNav, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 
 const MODULE = 'Site Account Statement';
 
@@ -54,31 +46,30 @@ const sections: {
   label: string;
   resource: string;
   icon: LucideIcon;
-  color: string;
-  bg: string;
+  tone: ModuleNavTone;
   group: string;
   accessMode: AccessMode;
 }[] = [
-  { href: '/site-account-statement',                    label: 'Dashboard',          resource: 'Dashboard',        icon: LayoutDashboard, color: 'text-emerald-600', bg: 'bg-emerald-50',  group: 'core',         accessMode: 'module'     },
-  { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',         icon: TrendingUp,      color: 'text-blue-600',    bg: 'bg-blue-50',     group: 'transactions', accessMode: 'member+rbac' },
-  { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',         icon: TrendingDown,    color: 'text-rose-600',    bg: 'bg-rose-50',     group: 'transactions', accessMode: 'member+rbac' },
-  { href: '/site-account-statement/budget',             label: 'Site Fund Budget',   resource: 'Budget',           icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'transactions', accessMode: 'rbac'       },
-  { href: '/site-account-statement/tender-forecast',    label: 'Tender Forecast',    resource: 'Tender Forecast',  icon: BarChart3,       color: 'text-teal-700',    bg: 'bg-teal-50',     group: 'transactions', accessMode: 'rbac'       },
-  { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',          icon: FileText,        color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',          icon: Receipt,         color: 'text-orange-600',  bg: 'bg-orange-50',   group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/statement', label: 'Account Statement',  resource: 'Reports',          icon: BookOpen,        color: 'text-violet-600',  bg: 'bg-violet-50',   group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/summary',   label: 'Project Summary',    resource: 'Reports',          icon: BarChart3,       color: 'text-indigo-600',  bg: 'bg-indigo-50',   group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/category',  label: 'Category Analysis',  resource: 'Reports',          icon: PieChart,        color: 'text-purple-600',  bg: 'bg-purple-50',   group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/cashflow',  label: 'Cash Flow',          resource: 'Reports',          icon: Activity,        color: 'text-sky-600',     bg: 'bg-sky-50',      group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/person',    label: 'Person Expenses',    resource: 'Reports',          icon: Users,           color: 'text-pink-600',    bg: 'bg-pink-50',     group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',          icon: ShieldCheck,     color: 'text-green-600',   bg: 'bg-green-50',    group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,  color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50',  group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,         color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'reports',      accessMode: 'member+rbac' },
-  { href: '/site-account-statement/settings',          label: 'Settings',           resource: 'Project Settings', icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       accessMode: 'rbac'       },
+  { href: '/site-account-statement',                    label: 'Dashboard',          resource: 'Dashboard',        icon: LayoutDashboard, tone: 'emerald', group: 'core',         accessMode: 'module'     },
+  { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',         icon: TrendingUp,      tone: 'blue',    group: 'transactions', accessMode: 'member+rbac' },
+  { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',         icon: TrendingDown,    tone: 'rose',    group: 'transactions', accessMode: 'member+rbac' },
+  { href: '/site-account-statement/budget',             label: 'Site Fund Budget',   resource: 'Budget',           icon: Target,          tone: 'emerald', group: 'transactions', accessMode: 'rbac'       },
+  { href: '/site-account-statement/tender-forecast',    label: 'Tender Forecast',    resource: 'Tender Forecast',  icon: BarChart3,       tone: 'teal',    group: 'transactions', accessMode: 'rbac'       },
+  { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',          icon: FileText,        tone: 'teal',    group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',          icon: Receipt,         tone: 'orange',  group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/statement', label: 'Account Statement',  resource: 'Reports',          icon: BookOpen,        tone: 'violet',  group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/summary',   label: 'Project Summary',    resource: 'Reports',          icon: BarChart3,       tone: 'indigo',  group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/category',  label: 'Category Analysis',  resource: 'Reports',          icon: PieChart,        tone: 'purple',  group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/cashflow',  label: 'Cash Flow',          resource: 'Reports',          icon: Activity,        tone: 'sky',     group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/person',    label: 'Person Expenses',    resource: 'Reports',          icon: Users,           tone: 'pink',    group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',          icon: ShieldCheck,     tone: 'green',   group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,  tone: 'cyan',    group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight, tone: 'fuchsia', group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,         tone: 'emerald', group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/settings',          label: 'Settings',           resource: 'Project Settings', icon: Settings,        tone: 'slate',   group: 'master',       accessMode: 'rbac'       },
 ];
 
-/** Section headings for the phone's "More" pop-up, keyed by each entry's `group`. */
+/** Section headings, keyed by each entry's `group`. */
 const GROUP_LABELS: Record<string, string> = {
   core: 'Overview',
   transactions: 'Transactions',
@@ -86,12 +77,21 @@ const GROUP_LABELS: Record<string, string> = {
   master: 'Settings',
 };
 
+const SETTINGS_HREF = '/site-account-statement/settings';
+
+/** The Settings entry also stays lit on the pages its hub's cards open. */
+const isSettingsPath = (path: string) =>
+  path === SETTINGS_HREF ||
+  path.startsWith(`${SETTINGS_HREF}/`) ||
+  path.startsWith('/site-account-statement/expense-categories') ||
+  path.startsWith('/site-account-statement/budget-alerts') ||
+  path.startsWith('/site-account-statement/tender-budget');
+
 export default function SiteAccountStatementShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const safePathname = pathname ?? '';
   const { can } = useAuthorization();
   const { user } = useAuth();
-  const iconsOnly = useSidebarIconsOnly();
 
   // Separate state: is the user actually assigned to a project (any role)?
   // We always check this — previously the check was skipped for RBAC users,
@@ -128,64 +128,68 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
 
   const canViewModule = hasRbacAccess || isProjectMember;
 
-  // Determine which sections the current user can access.
-  function canAccessSection(item: typeof sections[0]): boolean {
-    // Settings: requires explicit Settings-family RBAC
-    if (item.href === '/site-account-statement/settings') {
-      return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget', 'Field Control', 'Date Control'].some(r =>
-        can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
-      );
-    }
-
-    // Site Fund Budget: role management is granular (Total / FY / Monthly / Category
-    // Budget), so the nav link shows up if the role has ANY of those, not just the
-    // coarse "Budget" resource.
-    if (item.href === '/site-account-statement/budget') {
-      return ['Budget', 'Total Budget', 'FY Budget', 'Monthly Budget', 'Category Budget'].some(r =>
-        can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
-      );
-    }
-
-    switch (item.accessMode) {
-      case 'module':
-        return canViewModule;
-      case 'member+rbac':
-        return (
-          isProjectMember ||
-          can('View', `${MODULE}.${item.resource}`) ||
-          can('Add',  `${MODULE}.${item.resource}`) ||
-          can('Edit', `${MODULE}.${item.resource}`)
+  const availableSections = useMemo(() => {
+    if (!membershipChecked) return [];
+    // Determine which sections the current user can access.
+    const canAccessSection = (item: typeof sections[0]): boolean => {
+      // Settings: requires explicit Settings-family RBAC
+      if (item.href === SETTINGS_HREF) {
+        return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget', 'Field Control', 'Date Control'].some(r =>
+          can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
         );
-      case 'rbac':
-        return (
-          can('View', `${MODULE}.${item.resource}`) ||
-          can('Add',  `${MODULE}.${item.resource}`) ||
-          can('Edit', `${MODULE}.${item.resource}`)
-        );
-      default:
-        return false;
-    }
-  }
+      }
 
-  const availableSections = membershipChecked ? sections.filter(canAccessSection) : [];
+      // Site Fund Budget: role management is granular (Total / FY / Monthly / Category
+      // Budget), so the nav link shows up if the role has ANY of those, not just the
+      // coarse "Budget" resource.
+      if (item.href === '/site-account-statement/budget') {
+        return ['Budget', 'Total Budget', 'FY Budget', 'Monthly Budget', 'Category Budget'].some(r =>
+          can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
+        );
+      }
+
+      switch (item.accessMode) {
+        case 'module':
+          return canViewModule;
+        case 'member+rbac':
+          return (
+            isProjectMember ||
+            can('View', `${MODULE}.${item.resource}`) ||
+            can('Add',  `${MODULE}.${item.resource}`) ||
+            can('Edit', `${MODULE}.${item.resource}`)
+          );
+        case 'rbac':
+          return (
+            can('View', `${MODULE}.${item.resource}`) ||
+            can('Add',  `${MODULE}.${item.resource}`) ||
+            can('Edit', `${MODULE}.${item.resource}`)
+          );
+        default:
+          return false;
+      }
+    };
+    return sections.filter(canAccessSection);
+  }, [can, canViewModule, isProjectMember, membershipChecked]);
 
   // Check whether the CURRENT page is in the user's allowed set.
-  function isPathInSections(path: string, sectionList: typeof sections): boolean {
-    return sectionList.some(s => {
-      const isSettings = s.href === '/site-account-statement/settings';
-      return (
-        path === s.href ||
-        (s.href !== '/site-account-statement' && path.startsWith(s.href + '/')) ||
-        (isSettings && (
-          path.startsWith('/site-account-statement/expense-categories') ||
-          path.startsWith('/site-account-statement/budget-alerts') ||
-          path.startsWith('/site-account-statement/tender-budget')
-        ))
-      );
-    });
-  }
+  const isCurrentPageAccessible =
+    !membershipChecked ||
+    availableSections.some(s =>
+      s.href === SETTINGS_HREF
+        ? isSettingsPath(safePathname)
+        : safePathname === s.href || (s.href !== '/site-account-statement' && safePathname.startsWith(s.href + '/'))
+    );
 
-  const isCurrentPageAccessible = !membershipChecked || isPathInSections(safePathname, availableSections);
+  const groups = useMemo<ModuleNavGroup[]>(() => {
+    const out: ModuleNavGroup[] = [];
+    for (const { group, accessMode: _accessMode, resource: _resource, ...item } of availableSections) {
+      const navItem = { ...item, id: item.href, ...(item.href === SETTINGS_HREF ? { match: isSettingsPath } : {}) };
+      const last = out[out.length - 1];
+      if (last && last.id === group) last.items.push(navItem);
+      else out.push({ id: group, label: GROUP_LABELS[group], items: [navItem] });
+    }
+    return out;
+  }, [availableSections]);
 
   // The phone's bottom bar: the two ledgers entered from site and the statement they add up to, with
   // "More" opening the pop-up of every page. Each tab only if its sidebar entry is visible too. Expenses
@@ -204,136 +208,16 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       : []),
   ];
 
-  // `compact` is the desktop sidebar in icons mode.
-  const navigationLinks = (compact = false) => {
-    let lastGroup = '';
-    return availableSections.map(item => {
-      const isSettingsEntry = item.href === '/site-account-statement/settings';
-      const active =
-        safePathname === item.href ||
-        (item.href !== '/site-account-statement' && safePathname.startsWith(item.href + '/')) ||
-        (isSettingsEntry && (
-          safePathname.startsWith('/site-account-statement/expense-categories') ||
-          safePathname.startsWith('/site-account-statement/budget-alerts') ||
-          safePathname.startsWith('/site-account-statement/tender-budget')
-        ));
-      const Icon = item.icon;
-      const showDivider = item.group !== lastGroup && lastGroup !== '';
-      lastGroup = item.group;
-
-      return (
-        <div key={item.href}>
-          {showDivider && <div className="my-1 h-px bg-white/40" />}
-          <SidebarNavTooltip label={item.label} enabled={compact}>
-            <Link
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              title={compact ? item.label : undefined}
-              className={cn(
-                'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 lg:py-2 text-sm font-medium transition-all duration-200',
-                active
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.5)]'
-                  : 'text-slate-600 hover:bg-white/70 hover:text-slate-900',
-                compact && 'justify-center'
-              )}
-            >
-              <span className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg)
-              )}>
-                <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'text-white scale-110' : item.color)} />
-              </span>
-              <span className={compact ? 'sr-only' : 'truncate'}>{item.label}</span>
-            </Link>
-          </SidebarNavTooltip>
-        </div>
-      );
-    });
-  };
-
-  // Show full-screen loading while we wait for the membership check
-  if (!membershipChecked) {
-    return (
-      <div className="flex w-full items-center justify-center py-24">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  // Full module access denied
-  if (!canViewModule) {
-    return (
-      <div className="w-full p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to access Site Account Statement.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center py-8">
-            <ShieldAlert className="h-14 w-14 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Page-level access denied content (nav still visible so user can navigate to allowed pages)
-  const pageAccessDenied = (
-    <Card>
-      <CardContent className="py-16 text-center space-y-3">
-        <ShieldAlert className="h-12 w-12 text-destructive mx-auto" />
-        <div>
-          <p className="font-semibold text-slate-800">Access Denied</p>
-          <p className="text-sm text-muted-foreground mt-1">You don&apos;t have permission to view this page.</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Contact your administrator to request access.</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   return (
-    <div className="relative w-full px-3 py-4 sm:px-6 lg:px-8">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl">
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40" />
-        <div className="absolute left-[8%] top-[8%] h-56 w-56 rounded-full bg-emerald-300/20 blur-3xl" />
-        <div className="absolute right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl" />
-      </div>
-
-      {/* Mobile header */}
-      <ModuleMobileHeader icon={Wallet} title="Site Account Statement" subtitle="Fund Tracker" hideFrom="lg" />
-
-      {/* Desktop grid */}
-      <div className={`grid grid-cols-1 gap-4 ${iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[240px_minmax(0,1fr)]'} lg:items-start`}>
-        <TooltipProvider delayDuration={150}>
-          <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:block">
-            <Card className="overflow-hidden bg-white/80 backdrop-blur-sm border border-white/60 shadow-sm">
-              <div
-                className={cn('border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3', iconsOnly && 'px-2')}
-                title={iconsOnly ? 'Site Account Statement' : undefined}
-              >
-                <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-                    <Wallet className="h-4 w-4 text-white" />
-                  </div>
-                  <div className={iconsOnly ? 'sr-only' : undefined}>
-                    <p className="text-sm font-semibold tracking-tight text-slate-800">Site Account Statement</p>
-                    <p className="text-[11px] text-muted-foreground">Fund Tracker</p>
-                  </div>
-                </div>
-              </div>
-              <CardContent className="p-2 overflow-y-auto max-h-[calc(100vh-var(--app-header-offset,4rem)-8rem)]">
-                {navigationLinks(iconsOnly)}
-              </CardContent>
-            </Card>
-          </aside>
-        </TooltipProvider>
-
-        <main className="min-w-0">
-          {isCurrentPageAccessible ? children : pageAccessDenied}
-        </main>
-      </div>
-
-      <ModuleBottomNav tabs={bottomTabs} pages={availableSections} groupLabels={GROUP_LABELS} moduleName="Site Account Statement" />
-    </div>
+    <ModuleShell
+      title={MODULE}
+      subtitle="Fund Tracker"
+      icon={Wallet}
+      groups={groups}
+      mobileTabs={bottomTabs}
+      gate={{ loading: !membershipChecked, allowed: canViewModule, pageAllowed: isCurrentPageAccessible }}
+    >
+      {children}
+    </ModuleShell>
   );
 }

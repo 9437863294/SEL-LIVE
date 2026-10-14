@@ -313,7 +313,7 @@ export default function ManageSitesPage() {
       </TableCard>
 
       <Dialog open={isSiteDialogOpen} onOpenChange={handleDialogChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>{dialogMode === 'add' ? 'Add Project Site' : 'Edit Project Site'}</DialogTitle>
             <DialogDescription>{dialogMode === 'add' ? 'Create a site under the selected project.' : 'Update the site name or location.'}</DialogDescription>

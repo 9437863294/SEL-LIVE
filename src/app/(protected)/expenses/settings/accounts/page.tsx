@@ -405,7 +405,7 @@ export default function ManageAccountsPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader><DialogTitle>{dialogTitle}</DialogTitle></DialogHeader>
           <div className="py-4 space-y-4">
             {dialogMode === 'editSubHead' && (

@@ -56,7 +56,7 @@ export function ForwardMessageDialog({
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent size="default" className="h-[min(620px,90vh)] max-w-lg p-0">
+      <DialogContent size="md" className="h-[min(620px,90vh)] p-0">
         <DialogHeader className="border-b px-5 py-4 pr-12">
           <DialogTitle>Forward message</DialogTitle>
           <DialogDescription>Select one or more conversations.</DialogDescription>

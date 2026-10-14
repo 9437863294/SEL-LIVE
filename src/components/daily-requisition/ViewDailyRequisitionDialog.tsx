@@ -9,6 +9,7 @@ import { Download, Eye, Loader2, Lock, Paperclip, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -389,9 +390,7 @@ export default function ViewDailyRequisitionDialog({
         </DialogHeader>
 
         <div className="hr-dialog-body space-y-4 px-5 py-4 sm:min-h-0 sm:flex-1 sm:overflow-y-auto sm:px-6">
-          <div className="mb-2 hidden text-center print:block">
-            <h2 className="text-lg font-bold">Daily Requisition - {entry.receptionNo}</h2>
-          </div>
+          <CompanyLetterhead compact title={`Daily Requisition - ${entry.receptionNo}`} className="mb-2 hidden print:block" />
 
           {/* Who is paid, for what, and how much — at a glance */}
           <div className="flex flex-col gap-3 rounded-lg border bg-slate-50/70 p-4 sm:flex-row sm:items-start sm:justify-between">

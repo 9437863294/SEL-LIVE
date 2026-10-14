@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/mail';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
+import { getCompanyProfile } from '@/lib/company-profile-server';
+
+/** The logo this email always carried, for a company profile with none of its own. */
+const FALLBACK_LOGO_URL = 'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788';
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -217,6 +221,12 @@ export async function POST(req: NextRequest) {
       ? `${testTag}${label} Exceeded — ${esc(projectName)} (${esc(monthLabel)})`
       : `${testTag}${label} ${threshold}% Alert — ${esc(projectName)} (${esc(monthLabel)})`;
 
+    // The company's name and logo from Settings › Company Profile.
+    const company = await getCompanyProfile();
+    const companyName = esc(company.legalName);
+    const companyShort = esc(company.shortName || company.legalName);
+    const logoUrl = esc(company.logoUrl || FALLBACK_LOGO_URL);
+
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -236,13 +246,13 @@ export async function POST(req: NextRequest) {
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom:18px;">
-                    <img src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&amp;token=39b0f804-0610-4f3a-b26e-8ce334f94788" alt="Siddhartha Engineering Limited" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
+                    <img src="${logoUrl}" alt="${companyName}" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
                   </td>
                 </tr>
                 <tr>
                   <td align="center">
-                    <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Siddhartha Engineering Limited</p>
-                    <p style="margin:6px 0 0;font-size:12px;color:#64748b;letter-spacing:2px;text-transform:uppercase;">SEL PLATFORM</p>
+                    <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">${companyName}</p>
+                    <p style="margin:6px 0 0;font-size:12px;color:#64748b;letter-spacing:2px;text-transform:uppercase;">${companyShort} PLATFORM</p>
                   </td>
                 </tr>
               </table>
@@ -356,11 +366,11 @@ ${testMode ? `
           <!-- FOOTER -->
           <tr>
             <td style="background:#0f172a;border-radius:0 0 20px 20px;padding:24px 44px;text-align:center;">
-              <p style="margin:0;font-size:15px;font-weight:700;color:#f8fafc;">Siddhartha Engineering Limited</p>
+              <p style="margin:0;font-size:15px;font-weight:700;color:#f8fafc;">${companyName}</p>
               <p style="margin:6px 0 14px;font-size:12px;color:#475569;letter-spacing:0.3px;">Engineering Excellence &bull; Digital Innovation</p>
               <p style="margin:0;font-size:11px;color:#334155;line-height:1.6;">
-                ${testMode ? 'Test message from Site Account Statement' : 'Automated alert from Site Account Statement'} &bull; SEL Platform<br>
-                &copy; ${new Date().getFullYear()} Siddhartha Engineering Limited. All rights reserved.
+                ${testMode ? 'Test message from Site Account Statement' : 'Automated alert from Site Account Statement'} &bull; ${companyShort} Platform<br>
+                &copy; ${new Date().getFullYear()} ${companyName}. All rights reserved.
               </p>
             </td>
           </tr>

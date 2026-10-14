@@ -19,9 +19,11 @@ import { format } from 'date-fns';
 import { Loader2, Printer } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { CompanyLetterhead, SignatureBlock } from '@/components/shared/company-letterhead';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useUiText } from '@/hooks/use-company-profile';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 
 const inr = new Intl.NumberFormat('en-IN', {
@@ -97,13 +99,10 @@ function Checklist({
   printedBy: string;
   printedAt: string;
 }) {
+  const t = useUiText();
   return (
     <div className="bg-white p-8 font-sans text-black print:p-0">
-      <div className="mb-4 text-center">
-        <h2 className="text-xl font-bold">SIDDHARTHA ENGINEERING LIMITED</h2>
-        <p className="text-sm font-medium">Nayapalli, Bhubaneswar</p>
-      </div>
-      <h3 className="mb-4 text-center text-lg font-semibold underline">Check List for Payment</h3>
+      <CompanyLetterhead title="Check List for Payment" className="mb-4" />
 
       <div className="mb-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2 print:grid-cols-2">
         <Field label="Reception No:">{entry.receptionNo}</Field>
@@ -137,14 +136,17 @@ function Checklist({
         <p className="min-h-[50px] border-l-2 border-gray-200 pl-4">{entry.description}</p>
       </div>
 
-      <div className="mt-24 grid grid-cols-2 gap-x-8 gap-y-16 text-sm sm:gap-x-24 print:gap-x-24">
-        <div className="border-t border-black pt-1">Prepared by</div>
-        <div className="border-t border-black pt-1">Authorised by</div>
-        <div className="border-t border-black pt-1">Checked by</div>
-        <div className="border-t border-black pt-1">Approved by</div>
-        <div className="border-t border-black pt-1">Verified by</div>
-        <div className="border-t border-black pt-1">A/c Dept</div>
-      </div>
+      <SignatureBlock
+        className="mt-24"
+        labels={[
+          t('preparedBy', 'Prepared by'),
+          'Authorised by',
+          t('checkedBy', 'Checked by'),
+          t('approvedBy', 'Approved by'),
+          'Verified by',
+          'A/c Dept',
+        ]}
+      />
 
       <div className="mt-24 flex flex-wrap justify-between gap-2 text-xs text-gray-500">
         <div>
@@ -163,6 +165,7 @@ function ChecklistPrint() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
+  const t = useUiText();
 
   // Keyed on the joined string, not a fresh array per render — an array in the effect's
   // dependencies re-ran the fetch after every render.
@@ -250,11 +253,11 @@ function ChecklistPrint() {
       <PrintStyles />
       <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-slate-600">
-          {isLoading ? 'Loading…' : entries.length > 1 ? `${entries.length} checklists` : 'Payment checklist'}
+          {isLoading ? t('loading', 'Loading…') : entries.length > 1 ? `${entries.length} checklists` : 'Payment checklist'}
         </p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={close}>
-            Close
+            {t('close', 'Close')}
           </Button>
           <Button onClick={() => window.print()} disabled={isLoading || !entries.length}>
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}

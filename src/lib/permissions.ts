@@ -1062,5 +1062,9 @@ export const permissionModules = {
     // is apart from "Edit" because a refresh is a full read of the database, while the schedule
     // is only a setting; "View" shows when it last ran and whether it worked.
     "Reporting Database": ["View", "Edit", "Run"],
+    // The company's identity, letterhead, document design and UI text (Settings › Company Profile,
+    // src/lib/company-profile.ts). Everyone reads the profile — every letterhead needs it — so these
+    // only gate the settings screen: "View" opens it read-only, "Edit" saves.
+    "Company Profile": ["View", "Edit"],
   },
 };

@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
@@ -173,7 +173,7 @@ export default function AllProjectPoliciesPage() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="h-32 text-center text-muted-foreground">No policies match your filters.</TableCell></TableRow>
+                <TableEmpty colSpan={10} className="h-32">No policies match your filters.</TableEmpty>
               ) : filtered.map((policy) => {
                 const expanded = expandedRows.has(policy.id);
                 const isExpiredOrExpiring = policy._state === 'expired' || policy._state === 'expiring';

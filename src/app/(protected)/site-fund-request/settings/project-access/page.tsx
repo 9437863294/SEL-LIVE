@@ -430,7 +430,7 @@ export default function SFRProjectAccessPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               {editingRow ? 'Edit Project Access' : 'Add Project Access'}

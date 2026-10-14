@@ -10,7 +10,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import type { Project } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -111,14 +111,14 @@ export default function StockStatusPage() {
         <TabsContent value="projects" className="mt-4">
           <TableCard title="BOQ-based project stock" description="Enabled projects appear in the legacy project selector with BOQ, BOM, conversions, project receipts, and project issues."><Table><TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Site code</TableHead><TableHead>Location</TableHead><TableHead>Project status</TableHead><TableHead className="text-right">BOQ stock enabled</TableHead></TableRow></TableHeader><TableBody>
             {loading ? <LoadingRows /> : filteredProjects.map((project) => <TableRow key={project.id}><TableCell className="font-medium">{project.projectName || '—'}</TableCell><TableCell className="whitespace-nowrap">{project.siteCode || '—'}</TableCell><TableCell>{project.location || project.projectSite || '—'}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={project.status || 'Unknown'} /></TableCell><TableCell className="text-right"><ScopeSwitch loading={savingKey === `Project:${project.id}`} checked={Boolean(project.stockManagementRequired)} disabled={!canEditProjects || project.status !== 'Active'} onChange={(checked) => toggle('Project', project.id, checked)} /></TableCell></TableRow>)}
-            {!loading && !filteredProjects.length && <TableRow><TableCell colSpan={5} className="h-28 text-center text-muted-foreground">No projects match this search.</TableCell></TableRow>}
+            {!loading && !filteredProjects.length && <TableEmpty colSpan={5}>No projects match this search.</TableEmpty>}
           </TableBody></Table></TableCard>
         </TabsContent>
 
         <TabsContent value="properties" className="mt-4">
           <TableCard title="Property item inventory" description="Enabling a property creates or activates its default Main Store for Item Master transactions." actions={<Button asChild variant="outline"><Link href="/insurance/settings/assets">Manage Property Master</Link></Button>}><Table><TableHeader><TableRow><TableHead>Property</TableHead><TableHead>Location</TableHead><TableHead>Description</TableHead><TableHead>Property status</TableHead><TableHead className="text-right">Item inventory enabled</TableHead></TableRow></TableHeader><TableBody>
             {loading ? <LoadingRows /> : filteredProperties.map((property) => <TableRow key={property.id}><TableCell className="font-medium">{property.name}</TableCell><TableCell>{property.location || '—'}</TableCell><TableCell className="max-w-md truncate">{property.description || '—'}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={property.status || 'Unknown'} /></TableCell><TableCell className="text-right"><ScopeSwitch loading={savingKey === `Property:${property.id}`} checked={Boolean(property.inventoryManagementRequired)} disabled={!canEditProperties || property.status !== 'Active'} onChange={(checked) => toggle('Property', property.id, checked)} /></TableCell></TableRow>)}
-            {!loading && !filteredProperties.length && <TableRow><TableCell colSpan={5} className="h-28 text-center text-muted-foreground">No Property Master records found. Add a Property asset first.</TableCell></TableRow>}
+            {!loading && !filteredProperties.length && <TableEmpty colSpan={5}>No Property Master records found. Add a Property asset first.</TableEmpty>}
           </TableBody></Table></TableCard>
         </TabsContent>
       </Tabs>

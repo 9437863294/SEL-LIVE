@@ -25,7 +25,13 @@ import {
   type ThemeMode,
   type UserAppearancePreferences,
 } from '@/lib/appearance/model';
-import { appearanceAttributes, buildAppearanceCss, resolveAppearance, type EffectiveAppearance } from '@/lib/appearance/resolve';
+import {
+  APPEARANCE_ATTRIBUTE_NAMES,
+  appearanceAttributes,
+  buildAppearanceCss,
+  resolveAppearance,
+  type EffectiveAppearance,
+} from '@/lib/appearance/resolve';
 import {
   APPEARANCE_USER_KEY,
   CACHE_VERSION,
@@ -320,7 +326,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement;
     root.classList.toggle('dark', resolvedMode === 'dark');
     root.style.colorScheme = resolvedMode;
-    for (const [name, value] of Object.entries(appearanceAttributes(effective))) root.setAttribute(`data-${name}`, value);
+    const attrs = appearanceAttributes(effective);
+    // A name the user no longer sets (their own dialog size) is removed, so the company's applies.
+    for (const name of APPEARANCE_ATTRIBUTE_NAMES) {
+      const value = attrs[name];
+      if (value) root.setAttribute(`data-${name}`, value);
+      else root.removeAttribute(`data-${name}`);
+    }
     let style = document.getElementById('sel-appearance') as HTMLStyleElement | null;
     if (!style) {
       style = document.createElement('style');
@@ -395,6 +407,18 @@ export function useTheme() {
   const { effective, resolvedMode, updatePreferences } = useAppearance();
   const setMode = useCallback((mode: ThemeMode) => updatePreferences({ mode }), [updatePreferences]);
   return { mode: effective.mode, resolvedMode, setMode };
+}
+
+/**
+ * The signed-in user's dialog choices, for ui/dialog.tsx. Safe outside <ThemeProvider> (built-in
+ * defaults), so a dialog rendered in isolation never throws.
+ */
+export function useDialogPreferences(): { controls: boolean; openMaximised: boolean } {
+  const context = useContext(AppearanceContext);
+  return {
+    controls: context?.effective.dialogControls ?? true,
+    openMaximised: context?.effective.dialogOpenMaximised ?? false,
+  };
 }
 
 /** Reduced motion from either the user's own setting or the device's. */

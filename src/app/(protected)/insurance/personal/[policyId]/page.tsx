@@ -28,7 +28,7 @@ import { PERSONAL_POLICIES } from '@/lib/insurance-service';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -348,7 +348,7 @@ export default function PolicyDetailsPage() {
             </TableHeader>
             <TableBody>
               {rows.length === 0 && unmatched.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">No schedule or payments yet.</TableCell></TableRow>
+                <TableEmpty colSpan={8}>No schedule or payments yet.</TableEmpty>
               ) : (
                 <>
                   {rows.map((row) => (

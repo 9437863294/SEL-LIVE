@@ -1,5 +1,9 @@
 // src/app/layout.tsx
 import './globals.css';
+// The table/dialog design settings (company profile), keyed off data-* attributes on <html>.
+import '@/styles/ui-design.css';
+// The module sidebar (src/components/shared/module-shell.tsx), keyed off data-sidebar-* on <html>.
+import '@/styles/module-shell.css';
 // After globals.css: its dark-mode remaps must come later than Tailwind's utilities to win.
 import './dark-compat.css';
 import type { ReactNode } from 'react';

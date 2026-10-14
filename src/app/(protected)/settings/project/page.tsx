@@ -35,6 +35,7 @@ import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useUiText } from '@/hooks/use-company-profile';
 
 const initialNewProjectState = {
   projectName: '',
@@ -49,6 +50,7 @@ const initialNewProjectState = {
 export default function ManageProjectPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const t = useUiText();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -239,7 +241,7 @@ export default function ManageProjectPage() {
               Add Project
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-3xl" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogContent size="lg" onPointerDownOutside={(e) => e.preventDefault()}>
             <DialogHeader>
               <DialogTitle>Add New Project</DialogTitle>
               <DialogDescription>
@@ -294,7 +296,7 @@ export default function ManageProjectPage() {
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
+                <Button variant="outline" onClick={resetAddDialog}>{t('cancel')}</Button>
               </DialogClose>
               <Button onClick={handleAddProject}>Add Project</Button>
             </DialogFooter>
@@ -330,7 +332,7 @@ export default function ManageProjectPage() {
                   cell: (proj) => (
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>{t('delete')}</Button>
                     </div>
                   ),
                 },
@@ -341,7 +343,7 @@ export default function ManageProjectPage() {
       </TableCard>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>Edit Project</DialogTitle>
             <DialogDescription>
@@ -397,7 +399,7 @@ export default function ManageProjectPage() {
           )}
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline">{t('cancel')}</Button>
             </DialogClose>
             <Button onClick={handleUpdateProject}>Update Project</Button>
           </DialogFooter>

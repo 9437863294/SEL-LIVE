@@ -17,7 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -133,11 +133,11 @@ export default function ItemMasterPage() {
       >
         <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Item</TableHead><TableHead>Category</TableHead><TableHead>Unit</TableHead><TableHead>Pack list</TableHead><TableHead className="text-right">Reorder</TableHead><TableHead className="text-right">Cost rate</TableHead><TableHead>Tracking</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>
           {filtered.map((item) => <TableRow key={item.id}><TableCell className="whitespace-nowrap font-mono">{item.itemCode}</TableCell><TableCell><div className="font-medium">{item.itemName}</div><div className="max-w-sm truncate text-xs text-muted-foreground">{item.description || item.brand || '—'}</div></TableCell><TableCell>{item.category || '—'}</TableCell><TableCell>{item.unit}</TableCell><TableCell>{item.packList?.length ? <Badge variant="neutral"><PackagePlus className="mr-1 h-3 w-3" />{item.packList.length} sub-item{item.packList.length === 1 ? '' : 's'}</Badge> : <span className="text-muted-foreground">Standard item</span>}</TableCell><TableCell className="text-right tabular-nums">{item.reorderLevel}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">₹{Number(item.costRate || 0).toLocaleString('en-IN')}</TableCell><TableCell className="space-x-1">{item.serialTracking && <Badge variant="outline">Serial</Badge>}{item.batchTracking && <Badge variant="outline">Batch</Badge>}{item.expiryTracking && <Badge variant="outline">Expiry</Badge>}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={item.active ? 'Active' : 'Inactive'} /></TableCell><TableCell><Button variant="ghost" size="icon" onClick={() => edit(item)} aria-label={`Edit ${item.itemName}`}><Pencil className="h-4 w-4" /></Button></TableCell></TableRow>)}
-          {!filtered.length && <TableRow><TableCell colSpan={10} className="h-28 text-center text-muted-foreground">No Item Master records found.</TableCell></TableRow>}
+          {!filtered.length && <TableEmpty colSpan={10}>No Item Master records found.</TableEmpty>}
         </TableBody></Table>
       </TableCard>
 
-      <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto"><DialogHeader><DialogTitle>{form.id ? 'Edit inventory item' : 'Create inventory item'}</DialogTitle></DialogHeader>
+      <Dialog open={open} onOpenChange={setOpen}><DialogContent size="xl" className="overflow-y-auto"><DialogHeader><DialogTitle>{form.id ? 'Edit inventory item' : 'Create inventory item'}</DialogTitle></DialogHeader>
         <div className="grid gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Item code *"><Input value={form.itemCode} disabled={Boolean(form.id)} onChange={(event) => setForm({ ...form, itemCode: event.target.value })} /></Field>
           <Field label="Item name *" className="lg:col-span-2"><Input value={form.itemName} onChange={(event) => setForm({ ...form, itemName: event.target.value })} /></Field>

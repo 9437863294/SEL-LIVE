@@ -8,7 +8,7 @@ import { Plus, Edit, Trash2, ShieldAlert, ChevronDown, ChevronRight } from 'luci
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, deleteDoc, query, where, collectionGroup } from 'firebase/firestore';
@@ -269,9 +269,7 @@ export default function ManageSubcontractorsPage() {
                 </TableHeader>
                 <TableBody>
                     {isLoading ? (
-                        Array.from({ length: 3 }).map((_, i) => (
-                            <TableRow key={i}><TableCell colSpan={8}><Skeleton className="h-8" /></TableCell></TableRow>
-                        ))
+                        <TableLoading colSpan={8} rows={3} />
                     ) : subcontractors.length > 0 ? (
                         subcontractors.map(sub => {
                             const primaryContact = getPrimaryContact(sub);
@@ -393,11 +391,9 @@ export default function ManageSubcontractorsPage() {
                             )
                         })
                     ) : (
-                        <TableRow>
-                            <TableCell colSpan={8} className="text-center h-24">
+                        <TableEmpty colSpan={8}>
                                 No subcontractors found for this project.
-                            </TableCell>
-                        </TableRow>
+                            </TableEmpty>
                     )}
                 </TableBody>
             </Table>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/mail';
+import { getCompanyProfile } from '@/lib/company-profile-server';
 
 // TEMPORARY — test route to verify budget alert email pipeline.
 // Delete this file after confirming emails work.
@@ -15,6 +16,7 @@ export async function GET() {
     const threshold = 80;
     const isOver  = threshold >= 100;
     const statusColor = '#FF8C00';
+    const companyName = (await getCompanyProfile()).legalName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
@@ -41,7 +43,7 @@ export async function GET() {
       </div>
     </div>
     <div style="padding:14px 32px;background:#f8f8f8;border-top:1px solid #e0e0e0;text-align:center;font-size:11px;color:#888;">
-      Automated alert from Site Account Statement · Siddhartha Engineering Limited
+      Automated alert from Site Account Statement · ${companyName}
     </div>
   </div>
 </body></html>`;

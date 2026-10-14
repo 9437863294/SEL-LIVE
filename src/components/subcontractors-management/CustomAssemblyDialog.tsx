@@ -208,7 +208,7 @@ export function CustomAssemblyDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       {/* make dialog a bit wider */}
-      <DialogContent className="sm:max-w-5xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Create Custom Assembly Item</DialogTitle>
           <DialogDescription>

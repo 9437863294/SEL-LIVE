@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, ShieldAlert, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableLoading, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -176,9 +176,7 @@ export default function ManagePolicyCategoriesPage() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                Array.from({ length: 3 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={3}><Skeleton className="h-8" /></TableCell></TableRow>
-                ))
+                <TableLoading colSpan={3} rows={3} />
               ) : categories.length > 0 ? (
                 categories.map(category => (
                   <TableRow key={category.id}>
@@ -207,7 +205,7 @@ export default function ManagePolicyCategoriesPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={3} className="text-center h-24">No policy categories found.</TableCell></TableRow>
+                <TableEmpty colSpan={3}>No policy categories found.</TableEmpty>
               )}
             </TableBody>
           </Table>

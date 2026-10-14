@@ -45,7 +45,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { SearchInput } from '@/components/shared/filter-bar';
@@ -266,9 +266,7 @@ export default function ManageLoanPage() {
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={14} className="h-32 text-center text-muted-foreground">No loans found.</TableCell>
-                </TableRow>
+                <TableEmpty colSpan={14}>No loans found.</TableEmpty>
               ) : filtered.map((loan) => {
                 return (
                   <TableRow
@@ -335,7 +333,7 @@ export default function ManageLoanPage() {
       {/* Pre-closure dialog */}
       {loanToClose && (
         <Dialog open={preClosureOpen} onOpenChange={setPreClosureOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent size="md">
             <DialogHeader>
               <DialogTitle>Pre-closure — {loanToClose.accountNo}</DialogTitle>
               <DialogDescription>Enter final amounts to initiate pre-closure of this loan.</DialogDescription>

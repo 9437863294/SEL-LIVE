@@ -342,7 +342,7 @@ function QuickExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent size="md" className="overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Expense — {project.projectName}</DialogTitle>
         </DialogHeader>

@@ -401,7 +401,7 @@ export default function ProjectSettingsPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-lg overflow-y-auto max-h-[90vh]">
+        <DialogContent size="md" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Project Settings' : 'Add Project'}</DialogTitle>
           </DialogHeader>

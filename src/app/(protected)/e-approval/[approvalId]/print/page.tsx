@@ -35,6 +35,7 @@ import {
   type PrintOrientation,
 } from '@/lib/e-approval-print-fit';
 import { EApprovalRichText } from '@/components/e-approval/rich-text-editor';
+import { CompanyFooterLine, CompanyLetterhead } from '@/components/shared/company-letterhead';
 import {
   formatEApprovalAmount,
   formatEApprovalDate,
@@ -554,19 +555,16 @@ export default function EApprovalNotePage() {
         ref={printRef}
         className="ea-approval-note mx-auto max-w-3xl rounded-lg border bg-white p-6 text-slate-900 shadow-sm"
       >
-        <div className="border-b-2 border-slate-800 pb-3 text-center">
-          <h1 className="text-lg font-bold uppercase tracking-wide">Sidhartha Engineering Limited</h1>
-          <p className="mt-0.5 text-sm font-semibold uppercase tracking-widest text-slate-600">
-            {request.status === 'Approved' ? 'Approval Note' : 'E-Approval'}
-          </p>
-          {/* Marked on the paper, not just on the screen. A confidential note-sheet that prints
-              looking like any other is how one ends up read off a shared printer tray. */}
-          {request.confidential && (
+        <CompanyLetterhead title={request.status === 'Approved' ? 'Approval Note' : 'E-Approval'} />
+        {/* Marked on the paper, not just on the screen. A confidential note-sheet that prints
+            looking like any other is how one ends up read off a shared printer tray. */}
+        {request.confidential && (
+          <div className="text-center">
             <p className="mt-1.5 inline-block border-2 border-slate-800 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.2em]">
               Confidential
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
         <table className="mt-4 w-full text-sm">
           <tbody>
@@ -784,6 +782,7 @@ export default function EApprovalNotePage() {
             </p>
           </div>
         </div>
+        <CompanyFooterLine className="mt-3" />
       </div>
     </div>
   );

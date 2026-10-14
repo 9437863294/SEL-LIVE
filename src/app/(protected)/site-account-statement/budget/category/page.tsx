@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
@@ -34,10 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { cn } from '@/lib/utils';
 import {
   ChevronLeft, ChevronRight, Download, Edit2, Loader2, Plus,
@@ -395,11 +392,7 @@ export default function CategoryBudgetPage() {
                 </TableHeader>
                 <TableBody>
                   {categoryRows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={canEdit ? 7 : 6} className="py-10 text-center text-muted-foreground">
-                        No categories found for this project in the selected period.
-                      </TableCell>
-                    </TableRow>
+                    <TableEmpty colSpan={canEdit ? 7 : 6}>No categories found for this project in the selected period.</TableEmpty>
                   ) : categoryRows.map(cat => {
                     const prevBudget = getBudget(cat, prevM);
                     const currBudget = getBudget(cat, currentMonth);
@@ -497,7 +490,7 @@ export default function CategoryBudgetPage() {
 
       {/* Set / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-sm overflow-y-auto max-h-[90vh]">
+        <DialogContent size="sm" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Target className="h-4 w-4 text-emerald-600" />
@@ -550,26 +543,15 @@ export default function CategoryBudgetPage() {
       </Dialog>
 
       {/* Delete confirm */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove Budget?</AlertDialogTitle>
-          </AlertDialogHeader>
-          <p className="text-sm text-muted-foreground px-6 pb-2">
-            This will remove the {monthLabel(currentMonth)} budget for &ldquo;{deleteTarget?.categoryName}&rdquo;.
-            Past expense data is not affected.
-          </p>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
-              onClick={() => deleteTarget && void handleDelete(deleteTarget)}
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={open => !open && setDeleteTarget(null)}
+        title="Remove Budget?"
+        description={`This will remove the ${monthLabel(currentMonth)} budget for \u201c${deleteTarget?.categoryName ?? ''}\u201d. Past expense data is not affected.`}
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => (deleteTarget ? handleDelete(deleteTarget) : undefined)}
+      />
     </div>
   );
 }

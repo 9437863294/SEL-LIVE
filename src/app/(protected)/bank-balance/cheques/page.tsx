@@ -763,7 +763,7 @@ export default function ChequeRegisterPage() {
 
       {/* Clear */}
       <Dialog open={!!clearing} onOpenChange={(open) => { if (!open && !busy) setClearing(null); }}>
-        <DialogContent className="hr-mobile-dialog gap-4 sm:max-w-md">
+        <DialogContent size="md" className="hr-mobile-dialog gap-4">
           <DialogHeader className="hr-dialog-header pr-8">
             <DialogTitle>Mark {clearing?.voucherNo} cleared</DialogTitle>
             <DialogDescription>
@@ -797,7 +797,7 @@ export default function ChequeRegisterPage() {
 
       {/* Cancel / bounce */}
       <Dialog open={!!closing} onOpenChange={(open) => { if (!open && !busy) setClosing(null); }}>
-        <DialogContent className="hr-mobile-dialog gap-4 sm:max-w-md">
+        <DialogContent size="md" className="hr-mobile-dialog gap-4">
           <DialogHeader className="hr-dialog-header pr-8">
             <DialogTitle>{closing?.action === 'Cancelled' ? 'Cancel' : 'Record bounce of'} {closing?.voucher.voucherNo}?</DialogTitle>
             <DialogDescription>{closing ? closingNote(closing) : ''}</DialogDescription>

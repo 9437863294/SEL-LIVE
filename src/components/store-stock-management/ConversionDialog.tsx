@@ -124,7 +124,7 @@ export function ConversionDialog({ isOpen, onOpenChange, item, projectId, onSave
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Unit Conversions for: {getItemDescription(item)}</DialogTitle>
           <DialogDescription>

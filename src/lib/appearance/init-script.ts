@@ -12,6 +12,7 @@
 import {
   CONTRASTS,
   DENSITIES,
+  DIALOG_SIZES,
   FONTS,
   MOTIONS,
   NAV_STYLES,
@@ -47,6 +48,10 @@ export const CACHEABLE_ATTRIBUTES: Record<string, readonly string[]> = {
   contrast: CONTRASTS,
   'table-density': DENSITIES,
   'nav-style': NAV_STYLES,
+  'user-dialog-size': DIALOG_SIZES,
+  'dialog-controls': ['on', 'off'],
+  'dialog-maximised': ['on', 'off'],
+  'dialog-text': TEXT_SIZES,
 };
 
 export function resolveThemeMode(mode: ThemeMode, systemPrefersDark: boolean): ResolvedThemeMode {

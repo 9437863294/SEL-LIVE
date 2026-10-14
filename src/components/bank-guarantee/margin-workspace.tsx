@@ -395,7 +395,7 @@ export default function BGMarginWorkspace() {
             </Table>
       </TableCard>
       <Dialog open={open} onOpenChange={(value) => !saving && setOpen(value)}>
-        <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
+        <DialogContent size="xl" className="max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Reserve BG FD Margin</DialogTitle>
             <DialogDescription>

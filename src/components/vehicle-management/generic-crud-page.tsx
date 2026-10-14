@@ -1331,7 +1331,7 @@ export default function GenericCrudPage({
           setDialogOpen(true);
         }}
       >
-        <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
+        <DialogContent size="xl" className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
 
           {/* ── Sticky header ─────────────────────────────────── */}
           <div className={cn('vm-dialog-header shrink-0 px-4 py-4 pr-12 sm:px-6 sm:py-5', VM_DIALOG_HEADER)}>

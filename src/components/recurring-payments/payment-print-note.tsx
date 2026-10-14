@@ -8,6 +8,8 @@ import {
   type PaymentObligation,
   type PaymentTransaction,
 } from "@/lib/recurring-payments";
+import { CompanyFooterLine, CompanyLetterhead } from "@/components/shared/company-letterhead";
+import { useUiText } from "@/hooks/use-company-profile";
 
 /**
  * The printable payment note.
@@ -68,6 +70,7 @@ export default function PaymentPrintNote({
   approverNames: string[];
   transactions: PaymentTransaction[];
 }) {
+  const t = useUiText();
   const gross = Number(payment.billAmount || payment.expectedAmount || 0);
   const net = Number(payment.netPayableAmount || gross);
   const paid = Number(payment.settledAmount || payment.paidAmount || 0);
@@ -94,24 +97,15 @@ export default function PaymentPrintNote({
   return (
     // Hidden on screen; `@media print` reveals it and hides the application chrome.
     <section className="hidden bg-white text-black print:block">
-      <header className="mb-4 border-b-2 border-black pb-3">
-        <div className="flex items-start justify-between gap-6">
-          <div>
-            <h1 className="text-[17pt] font-bold leading-tight">{organizationName}</h1>
-            <p className="mt-0.5 text-[11pt] font-semibold uppercase tracking-wide">
-              Payment Note
-            </p>
-          </div>
-          <div className="text-right text-[9.5pt] leading-snug">
-            <p>
-              <span className="text-neutral-500">Printed </span>
-              {new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
-            </p>
-            <p className="text-neutral-500">Recurring Payments</p>
-          </div>
-        </div>
-        <p className="mt-2 text-[12pt] font-semibold">{payment.title}</p>
-      </header>
+      <CompanyLetterhead
+        className="mb-4"
+        title="Payment Note"
+        subtitle={payment.title}
+        meta={[
+          { label: "Printed", value: new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) },
+          { label: "Module", value: "Recurring Payments" },
+        ]}
+      />
 
       <div className="mb-4 grid grid-cols-3 gap-x-6 gap-y-3">
         {identity.map((item) => (
@@ -224,7 +218,7 @@ export default function PaymentPrintNote({
       {/* Three columns of ruled space, so the note works as the physical sign-off sheet it
           replaces rather than needing one stapled to it. */}
       <div className="mt-10 grid grid-cols-3 gap-8 break-inside-avoid">
-        {["Prepared by", "Verified by", "Authorised by"].map((role) => (
+        {[t("preparedBy"), t("checkedBy", "Verified by"), t("authorisedSignatory", "Authorised by")].map((role) => (
           <div key={role}>
             <div className="h-10 border-b border-black" />
             <p className="mt-1 text-[9.5pt] font-medium">{role}</p>
@@ -237,6 +231,7 @@ export default function PaymentPrintNote({
         System-generated from {organizationName} · Recurring Payments · reference {payment.id}. This
         note reflects the record at the time of printing.
       </p>
+      <CompanyFooterLine className="mt-2" />
     </section>
   );
 }

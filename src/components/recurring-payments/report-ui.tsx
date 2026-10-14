@@ -12,6 +12,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableFooter,
   TableHead,
   TableHeader,
@@ -253,11 +254,7 @@ export function ReportSummaryTable({
             );
           })}
           {!ranked.length && (
-            <TableRow>
-              <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
-                {emptyLabel}
-              </TableCell>
-            </TableRow>
+            <TableEmpty colSpan={4}>{emptyLabel}</TableEmpty>
           )}
         </TableBody>
         {(ranked.length > 1 || hasOthers) && (

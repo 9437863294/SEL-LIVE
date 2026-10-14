@@ -62,6 +62,8 @@ const createExpenseRequestFlow = ai.defineFlow(
       // Send Email Notification via SMTP
       try {
         const { sendEmail } = await import('@/lib/mail');
+        const { getCompanyProfile } = await import('@/lib/company-profile-server');
+        const company = await getCompanyProfile();
         await sendEmail({
           to: 'admin@selindia.net', // Fallback or dynamic recipient
           subject: `New Expense Request: ${newRequestNo}`,
@@ -94,7 +96,7 @@ const createExpenseRequestFlow = ai.defineFlow(
                 </div>
               </div>
               <div style="background-color: #f8fafc; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8;">
-                &copy; ${new Date().getFullYear()} Siddhartha Engineering Limited. All rights reserved.
+                &copy; ${new Date().getFullYear()} ${company.legalName}. All rights reserved.
               </div>
             </div>
           `,

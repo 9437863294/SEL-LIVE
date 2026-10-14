@@ -29,6 +29,8 @@ import {
   type CertificationState,
 } from '@/lib/bill-tracking/types';
 import { exportWorkbook } from '@/lib/report-excel';
+import { DEFAULT_COMPANY_PROFILE, type CompanyProfile } from '@/lib/company-profile';
+import { useCompanyProfile, useUiText } from '@/hooks/use-company-profile';
 import { openPrintWindow } from '@/lib/open-print-window';
 import { cn } from '@/lib/utils';
 
@@ -317,11 +319,12 @@ export function TabCount({ value }: { value: number }) {
 
 /* ── states ──────────────────────────────────────────────────────────────── */
 
-export function BtLoading({ label = 'Loading…', className }: { label?: string; className?: string }) {
+export function BtLoading({ label, className }: { label?: string; className?: string }) {
+  const t = useUiText();
   return (
     <div className={cn('flex min-h-[30vh] items-center justify-center gap-2 text-sm text-muted-foreground', className)} role="status">
       <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-      {label}
+      {label ?? t('loading')}
     </div>
   );
 }
@@ -353,10 +356,11 @@ export function BtEmpty({ title, description, icon: Icon = Inbox, action }: { ti
 }
 
 export function BtAccessDenied({ what = 'this page' }: { what?: string }) {
+  const t = useUiText();
   return (
     <div className="rounded-xl border border-slate-200 bg-white py-16 text-center shadow-sm">
       <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
-      <p className="mt-3 font-semibold text-slate-800">Access denied</p>
+      <p className="mt-3 font-semibold text-slate-800">{t('accessDenied', 'Access denied')}</p>
       <p className="mt-1 text-sm text-muted-foreground">You do not have permission to view {what}. Ask your administrator for the Bill Tracking permission.</p>
     </div>
   );
@@ -453,12 +457,12 @@ export async function downloadExcel<T>(spec: ExportSpec<T>) {
   ]);
 }
 
-/** SEL-branded A4 print: title, filters, as-on date, generated on/by, page numbers, totals. */
-export function printReport<T>(spec: ExportSpec<T>): boolean {
+/** Company-branded A4 print: title, filters, as-on date, generated on/by, page numbers, totals. */
+export function printReport<T>(spec: ExportSpec<T>, company: CompanyProfile = DEFAULT_COMPANY_PROFILE): boolean {
   const fmt = (column: ExportColumn<T>, value: unknown) => (column.money && typeof value === 'number' ? formatINR(value) : value === null || value === undefined ? '' : String(value));
   return openPrintWindow({
     title: spec.title,
-    subtitle: 'SEL LIVE · Bill Tracking & Collection Management',
+    subtitle: `${company.legalName} · Bill Tracking & Collection Management`,
     meta: spec.meta,
     columns: spec.columns.map((column) => ({ key: column.key, label: column.label, align: column.align ?? (column.money ? 'right' : 'left') })),
     rows: spec.rows.map((row) => Object.fromEntries(spec.columns.map((column) => [column.key, fmt(column, column.value(row))]))),
@@ -469,18 +473,20 @@ export function printReport<T>(spec: ExportSpec<T>): boolean {
 }
 
 export function ExportMenu<T>({ spec, extra, disabled, loadAll }: { spec: () => ExportSpec<T> | Promise<ExportSpec<T>>; extra?: { label: string; onSelect: () => void }[]; disabled?: boolean; loadAll?: boolean }) {
+  const { profile } = useCompanyProfile();
+  const t = useUiText();
   const run = async (kind: 'excel' | 'csv' | 'print') => {
     const resolved = await spec();
     if (kind === 'excel') await downloadExcel(resolved);
     else if (kind === 'csv') downloadCsv(resolved);
-    else if (!printReport(resolved)) window.alert('Allow pop-ups for this site to print the report.');
+    else if (!printReport(resolved, profile)) window.alert('Allow pop-ups for this site to print the report.');
   };
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled} className="h-9 gap-1.5">
           <Download className="h-4 w-4" />
-          Export
+          {t('export')}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

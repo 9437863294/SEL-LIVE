@@ -582,7 +582,7 @@ export default function BudgetAlertsPage() {
 
       {/* ── Configure Dialog ────────────────────────────────────────────────────── */}
       <Dialog open={dialog.open} onOpenChange={open => !open && closeDialog()}>
-        <DialogContent className="max-w-[95vw] sm:max-w-xl overflow-y-auto max-h-[90vh]">
+        <DialogContent size="lg" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               {dialog.isModuleWide

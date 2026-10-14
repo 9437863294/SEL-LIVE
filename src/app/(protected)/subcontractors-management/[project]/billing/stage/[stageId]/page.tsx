@@ -7,7 +7,7 @@ import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal, Eye, Edit } from 'luc
 import { Button } from '@/components/ui/button';
 import { TableCard } from '@/components/shared/table-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -32,7 +32,6 @@ import type {
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { Skeleton } from '@/components/ui/skeleton';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { StatusBadge } from '@/components/shared/status-badge';
 import {
@@ -268,9 +267,7 @@ export default function BillStagePage() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={6}><Skeleton className="h-8" /></TableCell></TableRow>
-              ))
+              <TableLoading colSpan={6} rows={3} />
             ) : data.length > 0 ? (
               data.map((task) => {
                 const currentStep = workflow?.find((s) => s.id === task.currentStepId);
@@ -315,7 +312,7 @@ export default function BillStagePage() {
                 );
               })
             ) : (
-              <TableRow><TableCell colSpan={6} className="text-center h-24">No {type} tasks.</TableCell></TableRow>
+              <TableEmpty colSpan={6}>No {type} tasks.</TableEmpty>
             )}
           </TableBody>
         </Table>

@@ -515,7 +515,7 @@ export function ExpenseDetailsDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg" className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader className="text-left">
           <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
             <Receipt className="h-4 w-4 shrink-0 text-primary" />

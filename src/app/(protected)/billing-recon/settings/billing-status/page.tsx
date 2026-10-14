@@ -5,7 +5,7 @@ import { Loader2, Save, Edit, Trash2, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { TableCard } from '@/components/shared/table-card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -259,11 +259,7 @@ export default function BillingStatusPage() {
                     </TableRow>
                   ))
                 ) : projects.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center">
-                      No projects found.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={4}>No projects found.</TableEmpty>
                 ) : (
                   projects.map((project) => (
                     <TableRow key={project.id}>
@@ -306,7 +302,7 @@ export default function BillingStatusPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent size="lg">
           <DialogHeader>
             <DialogTitle>
               {dialogMode === 'enable' ? 'Enter Work Order Details' : 'Edit Work Order Details'}

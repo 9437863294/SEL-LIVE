@@ -42,6 +42,7 @@ import {
   ReportSummaryTable,
 } from "./report-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { CompanyLetterhead } from "@/components/shared/company-letterhead";
 
 /**
  * How money actually moved: aggregates every recorded payment transaction (across all payment
@@ -207,6 +208,8 @@ export default function PaymentModeReport() {
 
   return (
     <div className="space-y-5">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title="Payment Mode & Bank Reconciliation" />
       <PageHeader
         title="Payment Mode & Bank Reconciliation"
         description="How recorded payments actually moved — by mode, bank account and who recorded them"

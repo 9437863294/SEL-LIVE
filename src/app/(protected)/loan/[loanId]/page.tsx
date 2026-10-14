@@ -790,7 +790,7 @@ export default function LoanDetailsPage() {
       </div>
 
       <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
-        <DialogContent className="sm:max-w-md text-left">
+        <DialogContent size="md" className="text-left">
           <DialogHeader>
             <DialogTitle>
               {selectedEmi?.status === 'Paid' ? 'Edit' : 'Confirm'} Payment for EMI #{selectedEmi?.emiNo}

@@ -289,7 +289,7 @@ export default function VendorsPage() {
                 <Plus className="mr-2 h-4 w-4" /> New Vendor
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+            <DialogContent size="lg" className="max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editingVendor ? "Edit Vendor" : "Create Vendor"}</DialogTitle>
                 <DialogDescription>Vendor details are shared globally across all projects.</DialogDescription>

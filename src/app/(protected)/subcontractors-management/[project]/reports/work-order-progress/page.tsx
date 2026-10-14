@@ -5,12 +5,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, collectionGroup } from 'firebase/firestore';
 import type { WorkOrder, Bill, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { PmContent } from '@/components/project-management/pm-shell';
@@ -138,11 +137,7 @@ export default function WorkOrderProgressReport() {
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell colSpan={6}><Skeleton className="h-6 w-full" /></TableCell>
-                                    </TableRow>
-                                ))
+                                <TableLoading colSpan={6} rows={5} />
                             ) : enrichedWorkOrders.length > 0 ? (
                                 enrichedWorkOrders.map(wo => (
                                     <TableRow key={wo.id} onClick={() => router.push(`/subcontractors-management/${projectSlug}/work-order/${wo.id}`)} className="cursor-pointer">
@@ -160,11 +155,9 @@ export default function WorkOrderProgressReport() {
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow>
-                                    <TableCell colSpan={6} className="text-center h-24">
+                                <TableEmpty colSpan={6}>
                                         No work orders found.
-                                    </TableCell>
-                                </TableRow>
+                                    </TableEmpty>
                             )}
                         </TableBody>
                     </Table>

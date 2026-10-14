@@ -150,7 +150,7 @@ export function ProjectRenewalDialog({ isOpen, onOpenChange, policy, onSuccess }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !isSaving && onOpenChange(open)}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent size="md" className="overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Renew Project Policy</DialogTitle>
           <DialogDescription>

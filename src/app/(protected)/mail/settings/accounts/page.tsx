@@ -330,7 +330,7 @@ function ImapDialog({ state, onClose, onConnected }: { state: { kind: 'personal'
   const preset = presets.find((entry) => entry.id === presetId);
   return (
     <Dialog open={Boolean(state)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{state?.accountId ? 'Reconnect' : state?.kind === 'shared' ? 'Connect a shared company mailbox' : 'Connect your company mailbox'}</DialogTitle>
           <DialogDescription>The ERP signs in to both the incoming and outgoing server to check the password before saving it, encrypted.</DialogDescription>
@@ -366,7 +366,7 @@ function SharedOAuthDialog({ provider, onClose }: { provider: 'gmail' | 'microso
   const [address, setAddress] = useState('');
   return (
     <Dialog open={Boolean(provider)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>Connect a shared {provider === 'gmail' ? 'Google' : 'Microsoft 365'} mailbox</DialogTitle>
           <DialogDescription>

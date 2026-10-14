@@ -10,6 +10,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -893,7 +894,7 @@ export default function AllRequisitionsTab() {
                 <DialogTrigger asChild>
                     <Button disabled={!canCreate}>New Request</Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-4xl">
+                <DialogContent size="xl">
                     <DialogHeader>
                         <DialogTitle>New Site Fund Requisition</DialogTitle>
                         <DialogDescription>
@@ -909,7 +910,7 @@ export default function AllRequisitionsTab() {
                         <Shuffle className="mr-2 h-4 w-4" /> Sequence
                     </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent size="md">
                     <DialogHeader>
                         <DialogTitle>Edit Column Sequence</DialogTitle>
                         <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
@@ -1043,11 +1044,7 @@ export default function AllRequisitionsTab() {
                       )
                   })
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                      No requisitions found.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={visibleHeaders.length + 1}>No requisitions found.</TableEmpty>
                 )}
               </TableBody>
             </Table>
@@ -1064,7 +1061,7 @@ export default function AllRequisitionsTab() {
         />
       )}
       <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent size="xl">
             <DialogHeader>
                 <DialogTitle>Edit Site Fund Requisition</DialogTitle>
                 <DialogDescription>

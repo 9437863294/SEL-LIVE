@@ -198,7 +198,7 @@ export function EntryDialog({
   const account = accounts.find((a) => a.id === accountId);
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !saving) onClose(); }}>
-      <DialogContent className="hr-mobile-dialog gap-5 sm:max-w-lg">
+      <DialogContent size="md" className="hr-mobile-dialog gap-5">
         <DialogHeader className="hr-dialog-header pr-8">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{account ? `${account.bankName} · ${account.accountNumber}` : 'Choose the Cash Credit account.'}</DialogDescription>

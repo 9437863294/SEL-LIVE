@@ -2030,7 +2030,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Add / Edit Budget Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-md overflow-y-auto max-h-[90vh]">
+        <DialogContent size="md" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingBudget ? 'Edit Budget' : 'Set Budget'}
@@ -2162,7 +2162,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Bulk Category Budget Dialog ── */}
       <Dialog open={bulkDialogOpen} onOpenChange={open => { if (!open && !bulkSaving) setBulkDialogOpen(false); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-md flex flex-col overflow-y-auto max-h-[90vh]">
+        <DialogContent size="md" className="flex flex-col overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-teal-600" />
@@ -2248,7 +2248,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Category Budget Dialog (single edit) ── */}
       <Dialog open={catDialogOpen} onOpenChange={open => { if (!open && !catSaving) setCatDialogOpen(false); }}>
-        <DialogContent className="max-w-[95vw] sm:max-w-sm overflow-y-auto max-h-[90vh]">
+        <DialogContent size="sm" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-teal-600" />

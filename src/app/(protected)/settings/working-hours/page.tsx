@@ -14,7 +14,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import type { Holiday, WorkingHours } from '@/lib/types';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
@@ -296,7 +296,7 @@ export default function WorkingHoursPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={3} className="h-24 text-center"><Skeleton className="h-10 w-full" /></TableCell></TableRow>
+                  <TableLoading colSpan={3} rows={1} />
                 ) : holidays.length > 0 ? (
                   holidays.map(holiday => (
                     <TableRow key={holiday.id}>
@@ -310,9 +310,7 @@ export default function WorkingHoursPage() {
                     </TableRow>
                   ))
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center h-24">No holidays added yet.</TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={3}>No holidays added yet.</TableEmpty>
                 )}
               </TableBody>
             </Table>

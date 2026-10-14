@@ -33,7 +33,7 @@ interface CommandDialogProps extends DialogProps {
 const CommandDialog = ({ children, title = "Command menu", ...props }: CommandDialogProps) => {
   return (
     <Dialog {...props}>
-      <DialogContent className="overflow-hidden p-0 shadow-lg">
+      <DialogContent className="overflow-hidden p-0 shadow-lg" windowControls={false}>
         {/*
           Radix requires a DialogTitle inside every DialogContent, so the palette keeps one
           screen-reader-only — a visible heading would sit above the search input.

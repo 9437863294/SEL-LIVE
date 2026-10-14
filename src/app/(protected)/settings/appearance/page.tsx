@@ -1,6 +1,6 @@
 'use client';
 
-import { Monitor, Moon, Palette, RotateCcw, Rows3, Sparkles, Type } from 'lucide-react';
+import { AppWindow, Monitor, Moon, Palette, RotateCcw, Rows3, Sparkles, Type } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,17 +14,32 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AppearanceGallery } from '@/components/appearance/AppearanceGallery';
-import { ChoiceGroup, SettingsSection, type Choice } from '@/components/appearance/controls';
+import { ChoiceGroup, SettingsSection, SwitchRow, type Choice } from '@/components/appearance/controls';
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
 import { ThemeModeControl } from '@/components/theme/ThemeModeControl';
+import { useCompanyDesign } from '@/hooks/use-company-profile';
 import {
   ACCENTS,
   FONT_META,
   type AccentId,
   type DashboardView,
   type Density,
+  type DialogSizePreference,
   type FontId,
   type MotionPreference,
   type RadiusStyle,
@@ -53,8 +68,50 @@ const bars = (gap: string) => (
   </span>
 );
 
+const dialogSizeOptions: Choice<DialogSizePreference>[] = [
+  { value: 'auto', label: 'As designed', description: 'Each dialog keeps its own width.' },
+  { value: 'sm', label: 'Narrow', description: 'About 24rem.' },
+  { value: 'md', label: 'Medium', description: 'About 32rem.' },
+  { value: 'lg', label: 'Wide', description: 'About 42rem.' },
+  { value: 'xl', label: 'Extra wide', description: 'About 64rem.' },
+];
+
+/** A real dialog with the user's dialog choices applied, to try maximise and minimise on. */
+function SampleDialog() {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" className="gap-1.5">
+          <AppWindow className="h-4 w-4" aria-hidden="true" /> Open a sample dialog
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Sample dialog</DialogTitle>
+          <DialogDescription>Your width, text size and window buttons apply here as they do everywhere.</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="sample-dialog-note">A note</Label>
+            <Input id="sample-dialog-note" placeholder="Type something, minimise, then restore" />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Minimise docks this dialog at the bottom right and keeps what you typed; the page behind stays usable until you restore it.
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button">Done</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function MyAppearancePage() {
   const editor = usePreferenceEditor();
+  const companyDialogSize = useCompanyDesign().dialogs.defaultSize;
   const { effective, defaults, company, resolvedMode, ready, preferences, set, clear, inherited, resetPreferences } = editor;
 
   if (!ready) {
@@ -169,6 +226,55 @@ export default function MyAppearancePage() {
             onReset={() => clear('font')}
             columns={2}
           />
+        </SettingsSection>
+
+        <SettingsSection
+          title="Dialogs"
+          icon={AppWindow}
+          description="How pop-up windows open for you. Until you choose, your company's dialog layout applies."
+        >
+          <ChoiceGroup<DialogSizePreference>
+            label="Default dialog width"
+            description="For dialogs without a fixed width of their own. Phones always use the full screen."
+            value={preferences.dialogSize ?? companyDialogSize}
+            options={dialogSizeOptions}
+            onChange={(value) => set('dialogSize', value)}
+            companyDefault={companyDialogSize}
+            inherited={inherited('dialogSize')}
+            onReset={() => clear('dialogSize')}
+          />
+          <ChoiceGroup<TextSize>
+            label="Text in dialogs"
+            description="Scales the text inside dialogs only, on top of your text size."
+            value={effective.dialogTextSize}
+            options={[
+              { value: 'small', label: 'Smaller' },
+              { value: 'default', label: 'Same as the page' },
+              { value: 'large', label: 'Larger' },
+            ]}
+            onChange={(value) => set('dialogTextSize', value)}
+            companyDefault="default"
+            inherited={inherited('dialogTextSize')}
+            onReset={() => clear('dialogTextSize')}
+          />
+          <SwitchRow
+            label="Maximise and minimise buttons"
+            description="Shown beside the close button on tablets and computers. Minimise keeps a dialog's contents while you use the page."
+            checked={effective.dialogControls}
+            onCheckedChange={(value) => set('dialogControls', value)}
+            inherited={inherited('dialogControls')}
+            onReset={() => clear('dialogControls')}
+          />
+          <SwitchRow
+            label="Open dialogs maximised"
+            description="Every dialog opens filling the window; the button beside it restores the normal size."
+            checked={effective.dialogControls && effective.dialogOpenMaximised}
+            onCheckedChange={(value) => set('dialogOpenMaximised', value)}
+            inherited={inherited('dialogOpenMaximised')}
+            onReset={() => clear('dialogOpenMaximised')}
+            disabled={!effective.dialogControls}
+          />
+          <SampleDialog />
         </SettingsSection>
 
         <SettingsSection title="Tables and dashboard" icon={Rows3}>

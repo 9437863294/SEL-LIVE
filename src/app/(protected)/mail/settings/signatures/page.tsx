@@ -69,7 +69,7 @@ export default function MailSignaturesPage() {
       </ul>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+        <DialogContent size="lg" className="max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing?.id ? 'Edit signature' : 'New signature'}</DialogTitle>
             <DialogDescription>Remote images in signatures are shown to your recipients by their own mail client.</DialogDescription>

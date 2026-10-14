@@ -10,6 +10,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -1780,7 +1781,7 @@ export default function AllRequestsTab() {
                   <Shuffle className="mr-2 h-4 w-4" /> Sequence
                 </Button>
               </DialogTrigger>
-              <DialogContent className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
+              <DialogContent size="md" className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
                 <DialogHeader>
                   <DialogTitle>Edit Column Sequence</DialogTitle>
                   <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
@@ -2014,11 +2015,7 @@ export default function AllRequestsTab() {
                     )
                   })
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={visibleHeaders.length + 1} className="h-24 text-center">
-                      No fund requests found.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={visibleHeaders.length + 1}>No fund requests found.</TableEmpty>
                 )}
               </TableBody>
             </Table>
@@ -2035,7 +2032,7 @@ export default function AllRequestsTab() {
         />
       )}
       <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
-        <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
+        <DialogContent size="xl" className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
           <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
           <div className="p-6">
             <DialogHeader>

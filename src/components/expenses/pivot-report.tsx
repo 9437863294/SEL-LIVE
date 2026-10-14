@@ -19,7 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TableCard } from '@/components/shared/table-card';
 import {
   DropdownMenu,
@@ -387,11 +387,7 @@ export function PivotReport({ expenses, isLoading }: { expenses: ReportExpense[]
                     {pivotData.rows.length > 0 ? (
                       renderRows(pivotData.rows)
                     ) : (
-                      <TableRow>
-                        <TableCell colSpan={(pivotData.columns.length || 1) + 2} className="h-24 text-center text-muted-foreground">
-                          Select at least one field for rows.
-                        </TableCell>
-                      </TableRow>
+                      <TableEmpty colSpan={(pivotData.columns.length || 1) + 2}>Select at least one field for rows.</TableEmpty>
                     )}
                   </TableBody>
                   {/* Grand Total Row */}

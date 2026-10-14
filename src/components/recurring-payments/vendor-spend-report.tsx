@@ -35,6 +35,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -47,6 +48,7 @@ import {
   ReportMetricTile,
 } from "./report-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { CompanyLetterhead } from "@/components/shared/company-letterhead";
 
 /**
  * Vendor is a first-class entity in this module (its own register, its own masked banking
@@ -243,6 +245,8 @@ export default function VendorSpendReport() {
 
   return (
     <div className="space-y-5">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title="Vendor Spend & Ageing" />
       <PageHeader
         title="Vendor Spend & Ageing"
         description="Total billed, paid and outstanding value per vendor, with overdue ageing"
@@ -364,11 +368,7 @@ export default function VendorSpendReport() {
               </TableRow>
             ))}
             {!rows.length && (
-              <TableRow>
-                <TableCell colSpan={9} className="h-28 text-center text-muted-foreground">
-                  No vendor activity matches the report filters.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={9}>No vendor activity matches the report filters.</TableEmpty>
             )}
           </TableBody>
         </Table>

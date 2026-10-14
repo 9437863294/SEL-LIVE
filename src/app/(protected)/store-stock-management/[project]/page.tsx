@@ -35,7 +35,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { cn } from '@/lib/utils';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
@@ -210,7 +210,7 @@ export default function ProjectDashboardPage() {
                     <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{currency.format(movement.totalAmount)}</TableCell>
                   </TableRow>
                 ))}
-                {!recentMovements.length && <TableRow><TableCell colSpan={5} className="h-32 text-center text-muted-foreground">No project stock movements have been recorded yet.</TableCell></TableRow>}
+                {!recentMovements.length && <TableEmpty colSpan={5}>No project stock movements have been recorded yet.</TableEmpty>}
               </TableBody>
             </Table>
         </TableCard>
@@ -251,7 +251,7 @@ export default function ProjectDashboardPage() {
             <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Received</TableHead><TableHead className="text-right">Issued</TableHead><TableHead className="text-right">Current</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Stock value</TableHead></TableRow></TableHeader>
             <TableBody>
               {currentStockRows.map((row) => <TableRow key={row.itemId}><TableCell><p className="max-w-xl truncate font-medium">{row.itemName}</p><p className="text-xs text-muted-foreground">{row.unit}</p></TableCell><TableCell className="text-right tabular-nums">{formatQuantity(row.receivedQuantity)}</TableCell><TableCell className="text-right tabular-nums">{formatQuantity(row.issuedQuantity)}</TableCell><TableCell className="text-right font-medium tabular-nums">{formatQuantity(row.currentQuantity)}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={row.health} tone={row.health === 'Low remaining' ? 'warning' : undefined} /></TableCell><TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{currency.format(row.currentValue)}</TableCell></TableRow>)}
-              {!currentStockRows.length && <TableRow><TableCell colSpan={6} className="h-32 text-center text-muted-foreground">No available stock. Post a stock-in transaction to establish the project balance.</TableCell></TableRow>}
+              {!currentStockRows.length && <TableEmpty colSpan={6}>No available stock. Post a stock-in transaction to establish the project balance.</TableEmpty>}
             </TableBody>
           </Table>
       </TableCard>

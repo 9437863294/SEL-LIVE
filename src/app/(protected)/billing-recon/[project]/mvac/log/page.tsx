@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -450,11 +450,7 @@ export default function MvacLogPage() {
                     );
                   })
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={skeletonCols} className="text-center h-24">
-                      No MVAC entries found.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={skeletonCols}>No MVAC entries found.</TableEmpty>
                 )}
               </TableBody>
             </Table>

@@ -52,6 +52,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableEmpty,
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -1362,7 +1363,7 @@ export default function ImportBoqPage() {
                   </TableCell>
                 </TableRow>
               )) : (
-                <TableRow><TableCell colSpan={12} className="text-center">No rows match this filter.</TableCell></TableRow>
+                <TableEmpty colSpan={12}>No rows match this filter.</TableEmpty>
               )}
             </TableBody>
           </Table>

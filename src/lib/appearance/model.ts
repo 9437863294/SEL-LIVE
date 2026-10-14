@@ -26,6 +26,13 @@ export type TextSize = (typeof TEXT_SIZES)[number];
 export const FONTS = ['inter', 'roboto', 'atkinson', 'system'] as const;
 export type FontId = (typeof FONTS)[number];
 
+/**
+ * A user's own default dialog width. `auto` keeps each dialog's designed width whatever the company
+ * chose; absent follows the company (Settings › Company Profile › Layout).
+ */
+export const DIALOG_SIZES = ['auto', 'sm', 'md', 'lg', 'xl'] as const;
+export type DialogSizePreference = (typeof DIALOG_SIZES)[number];
+
 export const RADII = ['soft', 'standard', 'sharp'] as const;
 export type RadiusStyle = (typeof RADII)[number];
 
@@ -171,6 +178,14 @@ export interface UserAppearancePreferences {
   dashboardView?: DashboardView;
   navStyle?: NavStyle;
   layout?: LayoutPreferences;
+  /** Overrides the company's default dialog width for this user. */
+  dialogSize?: DialogSizePreference;
+  /** Maximise and minimise buttons on dialogs; absent means shown. */
+  dialogControls?: boolean;
+  /** Dialogs open maximised; absent means they do not. */
+  dialogOpenMaximised?: boolean;
+  /** Scales the text inside dialogs only. */
+  dialogTextSize?: TextSize;
 }
 
 export interface CompanyDefaults {
@@ -378,6 +393,10 @@ export function sanitizePreferences(input: unknown, knownModules?: readonly stri
     tableDensity: pick(DENSITIES, raw.tableDensity),
     dashboardView: pick(DASHBOARD_VIEWS, raw.dashboardView),
     navStyle: pick(NAV_STYLES, raw.navStyle),
+    dialogSize: pick(DIALOG_SIZES, raw.dialogSize),
+    dialogControls: bool(raw.dialogControls),
+    dialogOpenMaximised: bool(raw.dialogOpenMaximised),
+    dialogTextSize: pick(TEXT_SIZES, raw.dialogTextSize),
   });
   if (Object.keys(layout).length) prefs.layout = layout;
   return prefs;

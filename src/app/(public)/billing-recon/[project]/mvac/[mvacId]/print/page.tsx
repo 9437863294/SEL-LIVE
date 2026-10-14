@@ -11,6 +11,7 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 
 /* ---------- Helpers ---------- */
 
@@ -297,28 +298,8 @@ export default function PrintMvacPage() {
       <PrintableMvacStyles />
       <div className="bg-white">
         <div id="printable-mvac-sheet">
-          {/* Header */}
-          <div className="text-center">
-            <p className="text-lg font-extrabold">
-              SIDDHARTHA ENGINEERING LIMITED
-            </p>
-            <p className="text-[7pt] font-semibold">
-              ELECTRICAL ENGINEERS, CONTRACTORS (EHV) &amp; CONSULTANTS
-            </p>
-            <p className="text-[7pt]">
-              PLOT NO.1015, NAYAPALLI, N.H.5, BHUBANESWAR - 751012 (ODISHA)
-            </p>
-            <p className="text-[7pt]">
-              Phone: 0674-2561911-914, 3291287, Fax: 0674-2561915
-            </p>
-            <p className="text-[7pt]">
-              E-mail: sel.techhead@gmail.com
-            </p>
-          </div>
-
-          <p className="text-center font-bold text-sm border-y-2 border-black py-1 my-2">
-            MATERIAL VERIFICATION AND ACCEPTANCE CERTIFICATE
-          </p>
+          {/* Header: the company letterhead (Settings › Company Profile) */}
+          <CompanyLetterhead compact title="MATERIAL VERIFICATION AND ACCEPTANCE CERTIFICATE" className="mb-2" />
 
           {/* Work Details */}
           <div className="text-[9pt] space-y-1 mb-2 border border-black p-2">

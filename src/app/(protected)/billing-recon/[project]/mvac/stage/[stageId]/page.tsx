@@ -497,7 +497,7 @@ export default function StagePage() {
 
       {/* Complete dialog with custom date */}
       <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
-        <DialogContent className="sm:max-w-sm w-full">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>Confirm Completion</DialogTitle>
             <DialogDescription>

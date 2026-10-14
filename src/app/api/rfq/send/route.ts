@@ -1,4 +1,6 @@
 import { sendEmail } from '@/lib/mail';
+import { companyEmailSignature, companyLetterheadHtml, type CompanyProfile } from '@/lib/company-profile';
+import { getCompanyProfile } from '@/lib/company-profile-server';
 
 interface RfqEmailItem {
   description: string;
@@ -29,7 +31,8 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: 'Missing required fields' }, { status: 400 });
     }
 
-    const html = buildRfqEmail({ rfqNumber, rfqDate, dueDate, projectName, remarks, items });
+    const profile = await getCompanyProfile();
+    const html = buildRfqEmail({ profile, rfqNumber, rfqDate, dueDate, projectName, remarks, items });
 
     const results = await Promise.all(
       vendors.map(async (vendor) => {
@@ -58,6 +61,7 @@ export async function POST(req: Request) {
 }
 
 function buildRfqEmail({
+  profile,
   rfqNumber,
   rfqDate,
   dueDate,
@@ -65,6 +69,7 @@ function buildRfqEmail({
   remarks,
   items,
 }: {
+  profile: CompanyProfile;
   rfqNumber: string;
   rfqDate?: string;
   dueDate?: string;
@@ -93,9 +98,8 @@ function buildRfqEmail({
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
           <tr>
-            <td style="background:linear-gradient(160deg,#0f172a 0%,#1a2744 60%,#0f172a 100%);border-radius:20px 20px 0 0;padding:32px 40px;text-align:center;">
-              <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;">Siddhartha Engineering Limited</p>
-              <p style="margin:6px 0 0;font-size:12px;color:#94a3b8;letter-spacing:2px;text-transform:uppercase;">Request for Quotation</p>
+            <td style="background:#ffffff;border-radius:20px 20px 0 0;padding:32px 40px 8px;">
+              ${companyLetterheadHtml(profile, { title: 'Request for Quotation' })}
             </td>
           </tr>
           <tr>
@@ -122,7 +126,8 @@ function buildRfqEmail({
           </tr>
           <tr>
             <td style="background:#0f172a;border-radius:0 0 20px 20px;padding:24px 40px;text-align:center;">
-              <p style="margin:0;font-size:11px;color:#64748b;">This is an automated request sent from the SEL Platform Vendor Management module.</p>
+              <p style="margin:0 0 10px;font-size:11px;color:#94a3b8;line-height:1.6;">${escHtml(companyEmailSignature(profile)).replace(/\n/g, '<br>')}</p>
+              <p style="margin:0;font-size:11px;color:#64748b;">This is an automated request sent from the ${escHtml(profile.shortName || profile.legalName)} Platform Vendor Management module.</p>
             </td>
           </tr>
         </table>

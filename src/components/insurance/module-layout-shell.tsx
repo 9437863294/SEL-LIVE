@@ -1,228 +1,138 @@
-
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
-import {
-  BarChart3, CalendarClock, ChevronLeft, ChevronRight, ClipboardCheck,
-  Files, HardHat, History as HistoryIcon, LayoutDashboard, Settings2,
-  ShieldCheck, ShieldHalf, Users, type LucideIcon,
-} from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import { usePathname } from 'next/navigation';
+import {
+  ArrowLeftRight, BarChart3, CalendarClock, ClipboardCheck,
+  Files, HardHat, History as HistoryIcon, LayoutDashboard, Settings2,
+  ShieldCheck, ShieldHalf, Users,
+} from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
+import { useCompanyProfile } from '@/hooks/use-company-profile';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/components/shared/module-shell';
 
-type NavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  iconBg: string;
-  iconColor: string;
-  activeGradient: string;
-  subItems?: SubNavItem[];
-  subActivePatterns?: string[];
-};
+/**
+ * Personal and project insurance are separate books. `/insurance` asks which one to open, and from
+ * then on the sidebar carries only that book's pages, the pages both share (tasks, reports,
+ * settings) and a way across to the other book.
+ */
+type Book = 'personal' | 'project';
 
-type SubNavItem = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  iconBg: string;
-  iconColor: string;
-  activeGradient: string;
-};
+/** Premium Due, Maturity Due and the holder master sit outside /insurance/personal but belong to it. */
+const PERSONAL_PATTERNS = ['/insurance/dashboard/personal', '/insurance/personal', '/insurance/premium-due', '/insurance/maturity-due', '/insurance/policy-holders'];
+const PROJECT_PATTERNS = ['/insurance/dashboard/project', '/insurance/project', '/insurance/settings/assets'];
+const PROJECT_LISTS = ['/insurance/project/premium-due', '/insurance/project/all-policies', '/insurance/project/history'];
+
+/** The personal register and the pages a policy opens from it (detail, edit, new), not its history. */
+const isPersonalPolicyPage = (p: string) => p.startsWith('/insurance/personal') && !p.startsWith('/insurance/personal/history');
+/** The asset register and the pages an asset opens from it, not the renewal, policy or history lists. */
+const isProjectAssetPage = (p: string) => p.startsWith('/insurance/project') && !PROJECT_LISTS.some(x => p.startsWith(x));
+
+/** The book a path belongs to, or null for the pages both books share. */
+function bookOf(path: string): Book | null {
+  if (PERSONAL_PATTERNS.some(p => path.startsWith(p))) return 'personal';
+  if (PROJECT_PATTERNS.some(p => path.startsWith(p))) return 'project';
+  return null;
+}
 
 export default function InsuranceLayoutShell({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = useSidebarDefault(false);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? '';
   const { can } = useAuthorization();
+  const { profile } = useCompanyProfile();
 
-  const mainNavItems: NavItem[] = [
-    // Each book has its own dashboard; neither adds the other's figures in.
-    {
-      href: '/insurance/dashboard/personal', label: 'Personal Dashboard', icon: LayoutDashboard,
-      iconBg: 'bg-blue-100', iconColor: 'text-blue-600', activeGradient: 'from-blue-500 to-indigo-600',
-    },
-    {
-      href: '/insurance/dashboard/project', label: 'Project Dashboard', icon: LayoutDashboard,
-      iconBg: 'bg-teal-100', iconColor: 'text-teal-600', activeGradient: 'from-teal-500 to-emerald-600',
-    },
-    {
-      href: '/insurance/personal', label: 'Personal Insurance', icon: Users,
-      iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-500 to-purple-600',
-      subActivePatterns: ['/insurance/personal', '/insurance/premium-due', '/insurance/maturity-due'],
-      subItems: can('View', 'Insurance.Personal Insurance') ? [
-        { href: '/insurance/premium-due', label: 'Premium Due', icon: CalendarClock, iconBg: 'bg-amber-100', iconColor: 'text-amber-600', activeGradient: 'from-amber-500 to-orange-500' },
-        { href: '/insurance/maturity-due', label: 'Maturity Due', icon: ShieldCheck, iconBg: 'bg-rose-100', iconColor: 'text-rose-600', activeGradient: 'from-rose-500 to-red-600' },
-        { href: '/insurance/personal/history', label: 'History', icon: HistoryIcon, iconBg: 'bg-slate-100', iconColor: 'text-slate-600', activeGradient: 'from-slate-500 to-slate-700' },
-      ] : [],
-    },
-    {
-      href: '/insurance/project', label: 'Project Insurance', icon: HardHat,
-      iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeGradient: 'from-emerald-500 to-teal-600',
-      subActivePatterns: ['/insurance/project'],
-      subItems: can('View', 'Insurance.Project Insurance') ? [
-        { href: '/insurance/project/premium-due', label: 'Premium Due', icon: CalendarClock, iconBg: 'bg-amber-100', iconColor: 'text-amber-600', activeGradient: 'from-amber-500 to-orange-500' },
-        { href: '/insurance/project/all-policies', label: 'All Policies', icon: Files, iconBg: 'bg-teal-100', iconColor: 'text-teal-600', activeGradient: 'from-teal-500 to-cyan-600' },
-        { href: '/insurance/project/history', label: 'History', icon: HistoryIcon, iconBg: 'bg-slate-100', iconColor: 'text-slate-600', activeGradient: 'from-slate-500 to-slate-700' },
-      ] : [],
-    },
-    {
-      href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck,
-      iconBg: 'bg-cyan-100', iconColor: 'text-cyan-600', activeGradient: 'from-cyan-500 to-sky-600',
-    },
-    {
-      href: '/insurance/reports', label: 'Reports', icon: BarChart3,
-      iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600',
-    },
-  ].filter(item => {
-    if (item.href === '/insurance/dashboard/personal') return can('View Module', 'Insurance') && can('View', 'Insurance.Personal Insurance');
-    if (item.href === '/insurance/dashboard/project') return can('View Module', 'Insurance') && can('View', 'Insurance.Project Insurance');
-    if (item.href === '/insurance/personal') return can('View', 'Insurance.Personal Insurance');
-    if (item.href === '/insurance/project') return can('View', 'Insurance.Project Insurance');
-    if (item.href === '/insurance/my-tasks') return can('View', 'Insurance.My Tasks');
-    if (item.href === '/insurance/reports') return can('View', 'Insurance.Reports');
-    return true;
-  });
+  const canModule = can('View Module', 'Insurance');
+  const canPersonal = can('View', 'Insurance.Personal Insurance');
+  const canProject = can('View', 'Insurance.Project Insurance');
+  const canMyTasks = can('View', 'Insurance.My Tasks');
+  const canReports = can('View', 'Insurance.Reports');
+  const canSettings = can('View', 'Insurance.Settings');
 
-  const settingsItem: NavItem = {
-    href: '/insurance/settings', label: 'Settings', icon: Settings2,
-    iconBg: 'bg-slate-100', iconColor: 'text-slate-600', activeGradient: 'from-slate-500 to-slate-700',
-  };
+  // A shared page (My Tasks, Reports, Settings) keeps the sidebar of the book it was opened from.
+  // Derived state updated while rendering, the way React documents it — no effect, no flash.
+  const fallback: Book = canPersonal || !canProject ? 'personal' : 'project';
+  const [lastBook, setLastBook] = React.useState<Book | null>(null);
+  const pathBook = bookOf(pathname);
+  if (pathBook && pathBook !== lastBook) setLastBook(pathBook);
+  const book: Book = pathBook ?? lastBook ?? fallback;
+  const isPersonal = book === 'personal';
 
-  // On a phone the rail gives way to the bottom bar: the dashboard, both policy registers and the
-  // task inbox as tabs, and "More" opening a sheet of the rail's remaining pages. The rail's own
-  // permission filtering decides both.
-  const isVisible = (href: string) => mainNavItems.some(item => item.href === href);
-  const personalItem = mainNavItems.find(item => item.href === '/insurance/personal');
-  // "Home" opens the first dashboard the viewer has and lights up on either; the other sits in More.
-  const dashboards = mainNavItems.filter(item => item.href.startsWith('/insurance/dashboard/'));
-  const bottomTabs: ModuleNavTab[] = [
-    ...(dashboards.length
-      ? [{ href: dashboards[0].href, label: 'Home', icon: LayoutDashboard, match: (path: string) => path.startsWith('/insurance/dashboard/') }]
-      : []),
-    ...(personalItem
-      ? [{
-          href: personalItem.href, label: 'Personal', icon: Users, ariaLabel: 'Personal insurance',
-          // Premium Due and Maturity Due sit outside /insurance/personal but belong to it, as in the rail.
-          match: (path: string) => (personalItem.subActivePatterns ?? [personalItem.href]).some(p => path.startsWith(p)),
-        }]
-      : []),
-    ...(isVisible('/insurance/project') ? [{ href: '/insurance/project', label: 'Project', icon: HardHat, ariaLabel: 'Project insurance' }] : []),
-    ...(isVisible('/insurance/my-tasks') ? [{ href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck }] : []),
-  ];
-  const bottomMoreLinks: ModuleMoreLink[] = [
-    ...dashboards.map(item => ({ href: item.href, label: item.label, icon: item.icon, group: 'Dashboards' })),
-    ...mainNavItems.flatMap(item => (item.subItems ?? []).map(sub => ({ href: sub.href, label: sub.label, icon: sub.icon, group: item.label }))),
-    ...mainNavItems
-      .filter(item => item.href === '/insurance/reports')
-      .map(item => ({ href: item.href, label: item.label, icon: item.icon, group: 'Reports & Settings' })),
-    ...(can('View', 'Insurance.Settings')
-      ? [{ href: settingsItem.href, label: settingsItem.label, icon: settingsItem.icon, group: 'Reports & Settings' }]
-      : []),
-  ];
+  const groups = React.useMemo<ModuleNavGroup[]>(() => {
+    const shared: ModuleNavGroup = {
+      id: 'shared',
+      label: 'General',
+      items: [
+        { id: 'my-tasks', href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck, tone: 'cyan', visible: canMyTasks },
+        { id: 'reports', href: '/insurance/reports', label: 'Reports', icon: BarChart3, tone: 'indigo', visible: canReports },
+        { id: 'settings', href: '/insurance/settings', label: 'Settings', icon: Settings2, tone: 'slate', visible: canSettings },
+      ],
+    };
+    const switcher: ModuleNavGroup = {
+      id: 'switch',
+      label: 'Switch',
+      items: [
+        isPersonal
+          ? { id: 'to-project', href: '/insurance/dashboard/project', label: 'Project Insurance', icon: HardHat, tone: 'emerald', visible: canModule && canProject }
+          : { id: 'to-personal', href: '/insurance/dashboard/personal', label: 'Personal Insurance', icon: Users, tone: 'violet', visible: canModule && canPersonal },
+        { id: 'chooser', href: '/insurance', label: 'All Sections', icon: ArrowLeftRight, tone: 'slate', match: 'exact', visible: canModule && canPersonal && canProject },
+      ],
+    };
+    const own: ModuleNavGroup = isPersonal
+      ? {
+          id: 'personal',
+          label: 'Personal Insurance',
+          items: [
+            { id: 'personal-dashboard', href: '/insurance/dashboard/personal', label: 'Dashboard', icon: LayoutDashboard, tone: 'blue', visible: canModule && canPersonal },
+            { id: 'personal-policies', href: '/insurance/personal', label: 'Policies', icon: Users, tone: 'violet', visible: canPersonal, match: isPersonalPolicyPage },
+            { id: 'personal-premium-due', href: '/insurance/premium-due', label: 'Premium Due', icon: CalendarClock, tone: 'amber', visible: canPersonal },
+            { id: 'personal-maturity-due', href: '/insurance/maturity-due', label: 'Maturity Due', icon: ShieldCheck, tone: 'rose', visible: canPersonal },
+            { id: 'personal-history', href: '/insurance/personal/history', label: 'History', icon: HistoryIcon, tone: 'slate', visible: canPersonal },
+          ],
+        }
+      : {
+          id: 'project',
+          label: 'Project Insurance',
+          items: [
+            { id: 'project-dashboard', href: '/insurance/dashboard/project', label: 'Dashboard', icon: LayoutDashboard, tone: 'teal', visible: canModule && canProject },
+            {
+              id: 'project-assets', href: '/insurance/project', label: 'Insured Assets', icon: HardHat, tone: 'emerald', visible: canProject,
+              match: isProjectAssetPage,
+            },
+            { id: 'project-premium-due', href: '/insurance/project/premium-due', label: 'Renewals Due', icon: CalendarClock, tone: 'amber', visible: canProject },
+            { id: 'project-all-policies', href: '/insurance/project/all-policies', label: 'All Policies', icon: Files, tone: 'teal', visible: canProject },
+            { id: 'project-history', href: '/insurance/project/history', label: 'History', icon: HistoryIcon, tone: 'slate', visible: canProject },
+          ],
+        };
+    return [own, shared, switcher];
+  }, [isPersonal, canModule, canPersonal, canProject, canMyTasks, canReports, canSettings]);
 
-  const isPrintPage = pathname?.includes('/print');
-  if (isPrintPage) return <>{children}</>;
-
-  function isItemActive(item: NavItem) {
-    const patterns = item.subActivePatterns ?? [item.href];
-    return patterns.some(p => pathname?.startsWith(p));
-  }
-
-  function isSubActive(href: string) { return pathname?.startsWith(href) ?? false; }
-
-  function NavLink({ item, size = 'md' }: { item: NavItem | SubNavItem; size?: 'md' | 'sm' }) {
-    const isActive = 'subActivePatterns' in item ? isItemActive(item as NavItem) : isSubActive(item.href);
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link href={item.href}>
-            <div className={cn(
-              'relative flex cursor-pointer items-center rounded-lg transition-all duration-200 group',
-              isExpanded ? cn('gap-2.5', size === 'sm' ? 'px-2 py-1' : 'px-2 py-1.5') : 'p-1.5 justify-center',
-              isActive
-                ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient)
-                : 'hover:bg-muted/40',
-            )}>
-              <div className={cn(
-                'flex shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                size === 'sm' ? 'h-6 w-6' : 'h-7 w-7',
-                isActive ? 'bg-white/25' : cn(item.iconBg, 'group-hover:scale-105'),
-              )}>
-                <item.icon className={cn('transition-transform', size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5', isActive ? 'text-white scale-110' : item.iconColor)} />
-              </div>
-              {isExpanded && (
-                <span className={cn('truncate', size === 'sm' ? 'text-xs' : 'text-sm', isActive ? 'font-semibold' : 'font-medium text-foreground/80')}>
-                  {item.label}
-                </span>
-              )}
-            </div>
-          </Link>
-        </TooltipTrigger>
-        {!isExpanded && <TooltipContent side="right" className="text-xs font-medium">{item.label}</TooltipContent>}
-      </Tooltip>
-    );
-  }
+  // On a phone the rail gives way to the bottom bar: this book's dashboard, register and due list,
+  // then the task inbox; "More" holds the rest, including the switch to the other book.
+  const bottomTabs: ModuleNavTab[] = isPersonal
+    ? [
+        ...(canModule && canPersonal ? [{ href: '/insurance/dashboard/personal', label: 'Home', icon: LayoutDashboard }] : []),
+        ...(canPersonal ? [{ href: '/insurance/personal', label: 'Policies', icon: Users, match: isPersonalPolicyPage }] : []),
+        ...(canPersonal ? [{ href: '/insurance/premium-due', label: 'Due', icon: CalendarClock, ariaLabel: 'Premium due' }] : []),
+        ...(canMyTasks ? [{ href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck }] : []),
+      ]
+    : [
+        ...(canModule && canProject ? [{ href: '/insurance/dashboard/project', label: 'Home', icon: LayoutDashboard }] : []),
+        ...(canProject ? [{ href: '/insurance/project', label: 'Assets', icon: HardHat, ariaLabel: 'Insured assets', match: isProjectAssetPage }] : []),
+        ...(canProject ? [{ href: '/insurance/project/premium-due', label: 'Renewals', icon: CalendarClock, ariaLabel: 'Renewals due' }] : []),
+        ...(canMyTasks ? [{ href: '/insurance/my-tasks', label: 'My Tasks', icon: ClipboardCheck }] : []),
+      ];
 
   return (
-    <div className="flex w-full h-full">
-      <aside className={cn(
-        'fixed left-0 top-[var(--app-header-offset,4rem)] h-[calc(100vh-var(--app-header-offset,4rem))] z-40 hidden md:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
-        isExpanded ? 'w-56' : 'w-14',
-      )}>
-        {/* Header */}
-        <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>
-          <div className="rounded-lg bg-blue-100 p-1.5 shrink-0">
-            <ShieldHalf className="h-4 w-4 text-blue-600" />
-          </div>
-          {isExpanded && <span className="text-sm font-semibold text-foreground/80 truncate">Insurance</span>}
-        </div>
-
-        <TooltipProvider delayDuration={0}>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {mainNavItems.map(item => {
-              const showSubs = item.subItems?.length && (item.subActivePatterns ?? [item.href]).some(p => pathname?.startsWith(p));
-              return (
-                <React.Fragment key={item.href}>
-                  <NavLink item={item} />
-                  {showSubs && (
-                    <div className={cn('mt-0.5 mb-0.5 space-y-0.5', isExpanded ? 'pl-4 border-l ml-5 border-border/40' : '')}>
-                      {item.subItems!.map(sub => <NavLink key={sub.href} item={sub} size="sm" />)}
-                    </div>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </div>
-
-          <div className="shrink-0 border-t border-border/40 p-2 space-y-0.5">
-            {can('View', 'Insurance.Settings') && <NavLink item={settingsItem} />}
-            <button
-              className={cn('w-full flex items-center rounded-lg px-2 py-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-all duration-200 text-sm gap-2', !isExpanded && 'justify-center')}
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? <><ChevronLeft className="h-4 w-4 shrink-0" /><span>Collapse</span></> : <ChevronRight className="h-4 w-4" />}
-            </button>
-          </div>
-        </TooltipProvider>
-      </aside>
-
-      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'md:ml-56' : 'md:ml-14')}>
-        <main className="flex-grow p-4 sm:p-6">
-          {/* Below md, where the rail gives way to the bottom bar, the module's card heads the page. */}
-          <ModuleMobileHeader icon={ShieldHalf} title="Insurance" hideFrom="md" />
-          {children}
-        </main>
-        <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
-          <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-        </footer>
-        <ModuleBottomNav tabs={bottomTabs} moreLinks={bottomMoreLinks} moduleName="Insurance" hideAbove="md" />
-      </div>
-    </div>
+    <ModuleShell
+      title="Insurance"
+      subtitle={isPersonal ? 'Personal Insurance' : 'Project Insurance'}
+      icon={isPersonal ? ShieldHalf : HardHat}
+      groups={groups}
+      mobileTabs={bottomTabs}
+      // The chooser stands alone: no book is open yet, so there is no sidebar to show.
+      bare={pathname === '/insurance' || undefined}
+      footer={<p className="text-xs text-muted-foreground">Copyright © {new Date().getFullYear()} {profile.shortName}. All Rights Reserved.</p>}
+    >
+      {children}
+    </ModuleShell>
   );
 }

@@ -1,12 +1,9 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import {
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Construction,
   FilePen,
   LayoutGrid,
@@ -16,269 +13,82 @@ import {
   Settings2,
   SlidersHorizontal,
   Warehouse,
-  type LucideIcon,
 } from 'lucide-react';
-import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
-import { cn } from '@/lib/utils';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/components/shared/module-shell';
 
-type SettingsNavigationItem = {
-  href: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  iconClassName: string;
-  iconBackground: string;
-  activeGradient: string;
-  exact?: boolean;
-};
-
-const configurationItems: SettingsNavigationItem[] = [
+// Not permission-filtered: each page gates itself.
+const groups: ModuleNavGroup[] = [
   {
-    href: '/store-stock-management/settings',
-    label: 'Settings Overview',
-    description: 'Configuration centre',
-    icon: LayoutGrid,
-    iconClassName: 'text-indigo-700',
-    iconBackground: 'bg-indigo-100',
-    activeGradient: 'from-indigo-600 to-violet-600',
-    exact: true,
+    id: 'configuration',
+    label: 'Configuration',
+    items: [
+      { id: 'overview', href: '/store-stock-management/settings', label: 'Settings Overview', icon: LayoutGrid, tone: 'indigo' },
+      { id: 'stock-status', href: '/store-stock-management/settings/stock-status', label: 'Stock Scope', icon: SlidersHorizontal, tone: 'emerald' },
+      { id: 'projects', href: '/store-stock-management/settings/projects', label: 'Projects', icon: Construction, tone: 'amber' },
+      { id: 'sites', href: '/store-stock-management/settings/sites', label: 'Project Sites', icon: MapPin, tone: 'rose' },
+      { id: 'units', href: '/store-stock-management/settings/units', label: 'Units of Measure', icon: Ruler, tone: 'sky' },
+      { id: 'grn-entry', href: '/store-stock-management/settings/grn-entry', label: 'GRN Entry', icon: FilePen, tone: 'violet' },
+    ],
   },
   {
-    href: '/store-stock-management/settings/stock-status',
-    label: 'Stock Scope',
-    description: 'Enable projects and properties',
-    icon: SlidersHorizontal,
-    iconClassName: 'text-emerald-700',
-    iconBackground: 'bg-emerald-100',
-    activeGradient: 'from-emerald-600 to-teal-600',
-  },
-  {
-    href: '/store-stock-management/settings/projects',
-    label: 'Projects',
-    description: 'Project master records',
-    icon: Construction,
-    iconClassName: 'text-amber-700',
-    iconBackground: 'bg-amber-100',
-    activeGradient: 'from-amber-500 to-orange-600',
-  },
-  {
-    href: '/store-stock-management/settings/sites',
-    label: 'Project Sites',
-    description: 'Sites grouped by project',
-    icon: MapPin,
-    iconClassName: 'text-rose-700',
-    iconBackground: 'bg-rose-100',
-    activeGradient: 'from-rose-600 to-pink-600',
-  },
-  {
-    href: '/store-stock-management/settings/units',
-    label: 'Units of Measure',
-    description: 'Stock measurement units',
-    icon: Ruler,
-    iconClassName: 'text-sky-700',
-    iconBackground: 'bg-sky-100',
-    activeGradient: 'from-sky-600 to-blue-600',
-  },
-  {
-    href: '/store-stock-management/settings/grn-entry',
-    label: 'GRN Entry',
-    description: 'Required receipt fields',
-    icon: FilePen,
-    iconClassName: 'text-violet-700',
-    iconBackground: 'bg-violet-100',
-    activeGradient: 'from-violet-600 to-purple-600',
-  },
-];
-
-const inventoryMasterItems: SettingsNavigationItem[] = [
-  {
-    href: '/store-stock-management/inventory/items',
-    label: 'Item Master',
-    description: 'Inventory item catalogue',
-    icon: ListTree,
-    iconClassName: 'text-cyan-700',
-    iconBackground: 'bg-cyan-100',
-    activeGradient: 'from-cyan-600 to-blue-600',
-  },
-  {
-    href: '/store-stock-management/inventory/locations',
-    label: 'Inventory Locations',
-    description: 'Stores and warehouses',
-    icon: Warehouse,
-    iconClassName: 'text-teal-700',
-    iconBackground: 'bg-teal-100',
-    activeGradient: 'from-teal-600 to-emerald-600',
+    id: 'masters',
+    label: 'Inventory masters',
+    items: [
+      { id: 'items', href: '/store-stock-management/inventory/items', label: 'Item Master', icon: ListTree, tone: 'cyan' },
+      { id: 'locations', href: '/store-stock-management/inventory/locations', label: 'Inventory Locations', icon: Warehouse, tone: 'teal' },
+    ],
   },
 ];
 
 // The phone's bottom bar leads with the overview and the three masters set up most often; the rest
 // of the menu — units, GRN fields and the inventory masters — follows them, and "More" opens the
-// bar's pop-up of every page, under the sidebar's two headings. Not permission-filtered, like the
-// sidebar above. Overview wears the shell's icon rather than its sidebar one, which is the same
-// grid "More" uses.
-const bottomTabs: ModuleNavTab[] = [
+// bar's pop-up of every page, under the sidebar's two headings. Overview wears the shell's icon
+// rather than its sidebar one, which is the same grid "More" uses.
+const mobileTabs: ModuleNavTab[] = [
   { href: '/store-stock-management/settings', label: 'Overview', icon: Settings2, exact: true, ariaLabel: 'Settings overview' },
   { href: '/store-stock-management/settings/stock-status', label: 'Scope', icon: SlidersHorizontal, ariaLabel: 'Stock scope' },
   { href: '/store-stock-management/settings/projects', label: 'Projects', icon: Construction },
   { href: '/store-stock-management/settings/sites', label: 'Sites', icon: MapPin, ariaLabel: 'Project sites' },
 ];
-const bottomPages: ModuleMoreLink[] = [
-  ...configurationItems.map((item) => ({ ...item, group: 'configuration' })),
-  ...inventoryMasterItems.map((item) => ({ ...item, group: 'masters' })),
-];
-const bottomGroupLabels = { configuration: 'Configuration', masters: 'Inventory masters' };
 
-const STORAGE_KEY = 'stock-settings-sidebar-expanded';
-
-function isItemActive(pathname: string, item: SettingsNavigationItem) {
-  return item.exact ? pathname === item.href : pathname.startsWith(item.href);
-}
-
-/** A row above the pop-up's page tiles, for a destination outside this module. */
-function MoreSheetLink({ href, label }: { href: string; label: string }) {
+/** The way back to inventory, which is not a settings page: the sidebar's foot and the top of the phone's pop-up. */
+function BackLink({ sheet = false }: { sheet?: boolean }) {
+  if (sheet) {
+    return (
+      <Link
+        href="/store-stock-management/inventory"
+        className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background shadow-sm">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        </span>
+        Back to inventory
+      </Link>
+    );
+  }
   return (
     <Link
-      href={href}
-      className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      href="/store-stock-management/inventory"
+      className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background shadow-sm">
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-      </span>
-      {label}
+      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>Back to inventory</span>
     </Link>
   );
 }
 
 export function SettingsModuleShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname() || '';
-  const [isExpanded, setIsExpanded] = useSidebarDefault(true);
-
-  // A remembered toggle outranks the account-wide sidebar default, as in `InventoryModuleShell`.
-  useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved !== null) setIsExpanded(saved === 'true');
-  }, [setIsExpanded]);
-
-  const toggleExpanded = () => {
-    setIsExpanded((current) => {
-      const next = !current;
-      window.localStorage.setItem(STORAGE_KEY, String(next));
-      return next;
-    });
-  };
-
-  const desktopLink = (item: SettingsNavigationItem) => {
-    const active = isItemActive(pathname, item);
-    const Icon = item.icon;
-    const link = (
-      <Link
-        href={item.href}
-        aria-current={active ? 'page' : undefined}
-        className={cn(
-          'group flex min-h-11 items-center rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-          isExpanded ? 'gap-3 px-2.5 py-2' : 'justify-center p-2',
-          active
-            ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient)
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950',
-        )}
-      >
-        <span className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105',
-          active ? 'bg-white/20' : item.iconBackground,
-        )}>
-          <Icon className={cn('h-4 w-4', active ? 'text-white' : item.iconClassName)} />
-        </span>
-        {isExpanded && (
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold">{item.label}</span>
-            <span className={cn('block truncate text-[11px]', active ? 'text-white/75' : 'text-muted-foreground')}>{item.description}</span>
-          </span>
-        )}
-      </Link>
-    );
-
-    if (isExpanded) return <div key={item.href}>{link}</div>;
-    return (
-      <Tooltip key={item.href}>
-        <TooltipTrigger asChild>{link}</TooltipTrigger>
-        <TooltipContent side="right">
-          <p className="font-medium">{item.label}</p>
-          <p className="text-xs opacity-80">{item.description}</p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
-
   return (
-    <div className="min-h-[calc(100vh-4rem)] w-full bg-gradient-to-br from-slate-50/80 via-background to-indigo-50/40">
-      <TooltipProvider delayDuration={100}>
-        <aside className={cn(
-          'fixed bottom-0 left-0 top-[var(--app-header-offset,4rem)] z-40 hidden flex-col border-r border-slate-200/80 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 md:flex',
-          isExpanded ? 'w-64' : 'w-[4.5rem]',
-        )}>
-          <div className={cn('flex h-[4.5rem] shrink-0 items-center border-b border-slate-200/70', isExpanded ? 'gap-3 px-4' : 'justify-center px-2')}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-700 shadow-sm">
-              <Settings2 className="h-5 w-5 text-white" />
-            </div>
-            {isExpanded && (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">Stock Settings</p>
-                <p className="truncate text-[11px] text-muted-foreground">Configuration &amp; masters</p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-2 py-3">
-            {isExpanded && <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Configuration</p>}
-            <nav className="space-y-1" aria-label="Stock settings navigation">{configurationItems.map(desktopLink)}</nav>
-            <div className="my-3 border-t border-slate-200/70" />
-            {isExpanded && <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Inventory masters</p>}
-            <nav className="space-y-1" aria-label="Inventory masters navigation">{inventoryMasterItems.map(desktopLink)}</nav>
-          </div>
-
-          <div className="shrink-0 space-y-1 border-t border-slate-200/70 p-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href="/store-stock-management/inventory" className={cn('flex h-10 items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground', isExpanded ? 'gap-3 px-3' : 'justify-center px-2')}>
-                  <ArrowLeft className="h-4 w-4 shrink-0" />
-                  {isExpanded && <span>Back to inventory</span>}
-                </Link>
-              </TooltipTrigger>
-              {!isExpanded && <TooltipContent side="right">Back to inventory</TooltipContent>}
-            </Tooltip>
-            <button
-              type="button"
-              onClick={toggleExpanded}
-              aria-label={isExpanded ? 'Collapse settings sidebar' : 'Expand settings sidebar'}
-              className={cn('flex h-10 w-full items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground', isExpanded ? 'gap-3 px-3' : 'justify-center px-2')}
-            >
-              {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              {isExpanded && <span>Collapse sidebar</span>}
-            </button>
-          </div>
-        </aside>
-      </TooltipProvider>
-
-      <div className={cn('min-w-0 transition-[margin] duration-300', isExpanded ? 'md:ml-64' : 'md:ml-[4.5rem]')}>
-        <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
-          {/* Phones: the module's name only. Its pages are on the bottom bar, all of them under "More". */}
-          <ModuleMobileHeader icon={Settings2} title="Stock Settings" subtitle="Configuration & masters" hideFrom="md" />
-          {children}
-        </main>
-      </div>
-
-      <ModuleBottomNav
-        tabs={bottomTabs}
-        pages={bottomPages}
-        groupLabels={bottomGroupLabels}
-        // The sidebar's way out, which is not a settings page, heads the pop-up.
-        moreContent={<MoreSheetLink href="/store-stock-management/inventory" label="Back to inventory" />}
-        moduleName="Stock Settings"
-        hideAbove="md"
-      />
-    </div>
+    <ModuleShell
+      title="Stock Settings"
+      subtitle="Configuration & masters"
+      icon={Settings2}
+      groups={groups}
+      mobileTabs={mobileTabs}
+      footer={<BackLink />}
+      mobileMoreContent={<BackLink sheet />}
+    >
+      {children}
+    </ModuleShell>
   );
 }

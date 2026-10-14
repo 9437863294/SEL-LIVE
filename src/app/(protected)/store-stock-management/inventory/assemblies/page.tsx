@@ -33,7 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -385,9 +385,9 @@ export default function PackAssemblyPage() {
                     );
                   })}
                   {!requirements.length && (
-                    <TableRow><TableCell colSpan={5} className="h-36 text-center text-muted-foreground">
+                    <TableEmpty colSpan={5}>
                       {packItems.length ? 'Select a pack item to see its component calculation.' : 'No items have a pack list yet. Add one from Item Master.'}
-                    </TableCell></TableRow>
+                    </TableEmpty>
                   )}
                 </TableBody>
               </Table>
@@ -438,7 +438,7 @@ export default function PackAssemblyPage() {
                   </TableRow>
                 );
               })}
-              {!documents.length && <TableRow><TableCell colSpan={8} className="h-28 text-center text-muted-foreground">No pack assembly transactions have been posted yet.</TableCell></TableRow>}
+              {!documents.length && <TableEmpty colSpan={8}>No pack assembly transactions have been posted yet.</TableEmpty>}
             </TableBody>
           </Table>
       </TableCard>

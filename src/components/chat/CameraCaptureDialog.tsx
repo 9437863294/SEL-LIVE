@@ -206,7 +206,7 @@ export function CameraCaptureDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent size="default" className="max-w-lg gap-0 p-0">
+      <DialogContent size="md" className="gap-0 p-0">
         <DialogHeader className="border-b px-5 py-4 pr-12">
           <DialogTitle>Take a photo</DialogTitle>
           <DialogDescription>

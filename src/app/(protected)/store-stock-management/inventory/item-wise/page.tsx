@@ -24,7 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -367,7 +367,7 @@ export default function ItemWiseInventoryPage() {
                   <TableCell className="whitespace-nowrap"><StatusBadge status={label} /></TableCell>
                 </TableRow>;
               })}
-              {!pageRows.length && <TableRow><TableCell colSpan={canViewCost ? 9 : 7} className="h-32 text-center text-muted-foreground">No items match the selected filters.</TableCell></TableRow>}
+              {!pageRows.length && <TableEmpty colSpan={canViewCost ? 9 : 7}>No items match the selected filters.</TableEmpty>}
             </TableBody>
           </Table>
       </TableCard>
@@ -382,7 +382,7 @@ export default function ItemWiseInventoryPage() {
                 const location = locationMap.get(balance.locationId);
                 if (!location) return null;
                 return <TableRow key={balance.id}><TableCell><div className="font-medium">{location.locationName}</div><div className="text-xs text-muted-foreground">{location.locationCode} · {location.type}{location.binOrRack ? ` · ${location.binOrRack}` : ''}</div></TableCell><TableCell>{location.propertyName || location.projectName || 'Organization'}</TableCell><TableCell className="text-right tabular-nums">{formatQuantity(balance.onHandQuantity)}</TableCell><TableCell className="text-right tabular-nums">{formatQuantity(balance.reservedQuantity)}</TableCell><TableCell className="text-right font-medium tabular-nums">{formatQuantity(balance.availableQuantity)}</TableCell>{canViewCost && <><TableCell className="text-right tabular-nums">{formatCurrency(balance.averageCost)}</TableCell><TableCell className="text-right tabular-nums">{formatCurrency(balance.inventoryValue)}</TableCell></>}</TableRow>;
-              })}{selected && !balances.some((balance) => balance.itemId === selected.item.id) && <TableRow><TableCell colSpan={canViewCost ? 7 : 5} className="h-24 text-center text-muted-foreground">This item has no posted balance yet.</TableCell></TableRow>}</TableBody>
+              })}{selected && !balances.some((balance) => balance.itemId === selected.item.id) && <TableEmpty colSpan={canViewCost ? 7 : 5}>This item has no posted balance yet.</TableEmpty>}</TableBody>
             </Table>
           </div>
         </DialogContent>

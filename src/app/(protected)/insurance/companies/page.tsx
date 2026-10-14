@@ -35,7 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { SearchInput } from '@/components/shared/filter-bar';
@@ -182,7 +182,7 @@ export default function ManageInsuranceCompaniesPage() {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No companies found.</TableCell></TableRow>
+              <TableEmpty colSpan={3}>No companies found.</TableEmpty>
             ) : filtered.map((company) => (
               <TableRow key={company.id}>
                 <TableCell className="font-medium">{company.name}</TableCell>
@@ -225,7 +225,7 @@ export default function ManageInsuranceCompaniesPage() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent size="sm">
           <DialogHeader>
             <DialogTitle>{mode === 'add' ? 'Add Insurance Company' : 'Edit Insurance Company'}</DialogTitle>
             <DialogDescription>{mode === 'add' ? 'Add a new insurance provider to the master list.' : 'Update the company details.'}</DialogDescription>

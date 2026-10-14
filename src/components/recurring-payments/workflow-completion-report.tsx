@@ -24,6 +24,7 @@ import { personOptionLabel } from '@/lib/people-directory';
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader, SectionHeader } from "@/components/shared/page-header";
+import { CompanyLetterhead } from "@/components/shared/company-letterhead";
 import { FilterBar } from "@/components/shared/filter-bar";
 import { TableCard } from "@/components/shared/table-card";
 import {
@@ -37,6 +38,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -303,6 +305,8 @@ export default function WorkflowCompletionReport() {
 
   return (
     <div className="space-y-5">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title="Workflow Completion Summary" />
       <PageHeader
         title="Workflow Completion Summary"
         meta={[{
@@ -465,9 +469,7 @@ export default function WorkflowCompletionReport() {
               </TableRow>
             ))}
             {!completions.length && (
-              <TableRow>
-                <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No completed steps match the selected filters.</TableCell>
-              </TableRow>
+              <TableEmpty colSpan={7}>No completed steps match the selected filters.</TableEmpty>
             )}
           </TableBody>
         </Table>

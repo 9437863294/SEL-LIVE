@@ -295,7 +295,7 @@ export function GstTdsVerificationDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Verify Entry: {entry.receptionNo}</DialogTitle>
           <DialogDescription>Enter tax details to complete verification.</DialogDescription>

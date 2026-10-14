@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SignatureBlock } from "@/components/shared/company-letterhead";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PO_COLLECTION, formatCurrency, formatQuantity, toNumber, type PurchaseOrder } from "@/lib/purchase-orders";
@@ -218,11 +219,8 @@ export default function PrintPurchaseOrderPage() {
             </div>
           )}
 
-          <div className="signatures mt-16 flex justify-between px-4 text-[9pt]">
-            <div className="w-1/3 text-center"><p className="mt-8 border-t border-black pt-1">Prepared By</p></div>
-            <div className="w-1/3 text-center"><p className="mt-8 border-t border-black pt-1">Checked By</p></div>
-            <div className="w-1/3 text-center"><p className="mt-8 border-t border-black pt-1">Approved By</p></div>
-          </div>
+          {/* Prepared / Checked / Approved, or the captions set in Settings › Company Profile. */}
+          <SignatureBlock className="signatures mt-16 px-4" />
         </div>
       </div>
     </>

@@ -358,7 +358,7 @@ export default function TenderBudgetSetupPage() {
 
       {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
-        <DialogContent className="max-w-md overflow-y-auto max-h-[90vh]">
+        <DialogContent size="md" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingBudget ? 'Edit Tender Budget' : 'Set Up Tender Budget'}</DialogTitle>
           </DialogHeader>

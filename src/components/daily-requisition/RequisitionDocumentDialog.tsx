@@ -163,7 +163,7 @@ export function RequisitionDocumentDialog({ isOpen, onOpenChange, requisition, o
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Manage Documents for {requisition.receptionNo}</DialogTitle>
           <DialogDescription>

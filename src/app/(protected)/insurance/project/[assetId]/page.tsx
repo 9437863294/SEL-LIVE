@@ -22,7 +22,7 @@ import { PROJECT_POLICIES } from '@/lib/insurance-service';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -210,7 +210,7 @@ export default function AssetPoliciesPage() {
             </TableHeader>
             <TableBody>
               {policies.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="h-24 text-center text-muted-foreground">No insurance policies for this asset yet.</TableCell></TableRow>
+                <TableEmpty colSpan={9}>No insurance policies for this asset yet.</TableEmpty>
               ) : policies.map((policy) => {
                 const isExpanded = expandedRows.has(policy.id);
                 const end = toDate(policy.insured_until);

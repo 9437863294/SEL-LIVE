@@ -1,103 +1,101 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
-import { Landmark } from 'lucide-react';
-import { SIDEBAR_ICONS_DIVIDER, SIDEBAR_ICONS_GRID, SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/use-sidebar-mode';
-import { Card, CardContent } from '@/components/ui/card';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { useMemo, type ReactNode } from 'react';
+import { ArrowDown, ArrowUp, Landmark, LayoutDashboard, Plus } from 'lucide-react';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 import { activeBankBalanceHref, useBankBalanceNav } from './nav';
 
+/** The icon tile colour of each menu entry (formerly its `color`/`bg` chip classes). */
+const TONES: Record<string, ModuleNavTone> = {
+  '/bank-balance': 'violet',
+  '/bank-balance/expenses': 'red',
+  '/bank-balance/receipts': 'green',
+  '/bank-balance/internal-transaction': 'blue',
+  '/bank-balance/cheques': 'indigo',
+  '/bank-balance/daily-log': 'blue',
+  '/bank-balance/reports/bank-position': 'blue',
+  '/bank-balance/reports/account-statement': 'amber',
+  '/bank-balance/reports/dp-utilization': 'rose',
+  '/bank-balance/reports/interest-accrual': 'violet',
+  '/bank-balance/reports/transaction-summary': 'sky',
+  '/bank-balance/settings': 'slate',
+};
+
 /**
- * Bank Balance's desktop sidebar: every page of the module, grouped, including each report and
- * the module settings (previously a gear on the dashboard header).
+ * Bank Balance on the shared module shell: every page of the module, grouped, including each
+ * report and the module settings. The menu itself is `useBankBalanceNav` (also read by the
+ * reports hub), and an entry stays lit for the pages it owns (`activeBankBalanceHref`).
  *
- * Desktop only — phones keep the bottom bar, whose "More" sheet reads the same list. The pages
- * pad themselves (`px-4 sm:px-6 lg:px-8`), so the shell adds none on the content side: below `lg`
- * it renders the page exactly as before, and from `lg` the page's own left padding is the gutter
- * between the sidebar and the content.
- *
- * Access is still each page's call. Without module access, or while it is being resolved, the
- * sidebar is simply not drawn and the page shows its own skeleton or Access Denied card.
+ * Access is still each page's call. Without module access, or while it is being resolved, no
+ * chrome is drawn and the page shows its own skeleton or Access Denied card.
  */
 export default function BankBalanceLayoutShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname() || '';
-  const iconsOnly = useSidebarIconsOnly();
+  const { can } = useAuthorization();
   const { items, isLoading, canViewModule } = useBankBalanceNav();
 
-  // Print pages (e.g. a payment voucher) render on their own, like AppShell and the bottom nav do.
-  if (pathname.includes('/print')) return <>{children}</>;
+  const groups = useMemo<ModuleNavGroup[]>(() => {
+    const list: ModuleNavGroup[] = [];
+    for (const item of items) {
+      let group = list.find((entry) => entry.id === item.group);
+      if (!group) {
+        group = { id: item.group, label: item.group, items: [] };
+        list.push(group);
+      }
+      group.items.push({
+        id: item.href,
+        label: item.label,
+        href: item.href,
+        icon: item.icon,
+        tone: TONES[item.href],
+        match: (path: string) => activeBankBalanceHref(path, items) === item.href,
+      });
+    }
+    return list;
+  }, [items]);
+
+  // The phone's bar: Payments and Receipts either side of the first daily entry the user may
+  // record; "More" lists every other page, then the remaining daily entries.
+  const entries = [
+    { href: '/bank-balance/expenses/new', label: 'New Payment', allowed: can('Add', 'Bank Balance.Expenses') },
+    { href: '/bank-balance/receipts/new', label: 'New Receipt', allowed: can('Add', 'Bank Balance.Receipts') },
+    { href: '/bank-balance/internal-transaction/new', label: 'New Transfer', allowed: can('Add', 'Bank Balance.Internal Transaction') },
+  ].filter((entry) => entry.allowed);
+  const [newEntry, ...otherEntries] = entries;
+  const mobileTabs: ModuleNavTab[] = [
+    { href: '/bank-balance', label: 'Home', icon: LayoutDashboard, exact: true },
+    ...(can('View', 'Bank Balance.Expenses') ? [{ href: '/bank-balance/expenses', label: 'Payments', icon: ArrowDown }] : []),
+    ...(newEntry ? [{ href: newEntry.href, label: 'New', icon: Plus, emphasized: true, ariaLabel: newEntry.label }] : []),
+    ...(can('View', 'Bank Balance.Receipts') ? [{ href: '/bank-balance/receipts', label: 'Receipts', icon: ArrowUp }] : []),
+  ];
+  const mobileMoreContent = otherEntries.length ? (
+    <div className="grid grid-cols-2 gap-2">
+      {otherEntries.map((entry) => (
+        <Link
+          key={entry.href}
+          href={entry.href}
+          className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium hover:bg-muted"
+        >
+          <Plus className="h-4 w-4 shrink-0" aria-hidden />
+          <span className="truncate">{entry.label}</span>
+        </Link>
+      ))}
+    </div>
+  ) : undefined;
+
   if (isLoading || !canViewModule || items.length === 0) return <>{children}</>;
 
-  const activeHref = activeBankBalanceHref(pathname, items);
-
-  const links = items.map((item, index) => {
-    const active = item.href === activeHref;
-    const showGroup = index === 0 || items[index - 1].group !== item.group;
-    const Icon = item.icon;
-
-    return (
-      <div key={item.href}>
-        {showGroup &&
-          (iconsOnly ? (
-            <>
-              {index > 0 && <div className={SIDEBAR_ICONS_DIVIDER} aria-hidden />}
-              <p className="sr-only">{item.group}</p>
-            </>
-          ) : (
-            <p className="px-2.5 pb-1 pt-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
-              {item.group}
-            </p>
-          ))}
-        <SidebarNavTooltip label={item.label} enabled={iconsOnly}>
-          <Link
-            href={item.href}
-            aria-current={active ? 'page' : undefined}
-            title={iconsOnly ? item.label : undefined}
-            className={cn(
-              'group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all',
-              active
-                ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md'
-                : 'text-slate-600 hover:bg-white/80 hover:text-slate-950',
-              iconsOnly && 'justify-center'
-            )}
-          >
-            <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', active ? 'bg-white/20' : item.bg)}>
-              <Icon className={cn('h-3.5 w-3.5', active ? 'text-white' : item.color)} />
-            </span>
-            <span className={iconsOnly ? 'sr-only' : 'truncate'}>{item.label}</span>
-          </Link>
-        </SidebarNavTooltip>
-      </div>
-    );
-  });
-
   return (
-    <div className={cn('w-full lg:grid lg:items-start lg:pl-6', iconsOnly ? SIDEBAR_ICONS_GRID : 'lg:grid-cols-[232px_minmax(0,1fr)]')}>
-      <TooltipProvider delayDuration={150}>
-        <aside className="hidden lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)] lg:mt-4 lg:block">
-          <Card className="flex max-h-[calc(100dvh-var(--app-header-offset,4rem)-2rem)] flex-col overflow-hidden border-white/80 bg-white/90 shadow-sm">
-            <div
-              className={cn('shrink-0 border-b bg-gradient-to-r from-violet-500/10 to-indigo-500/5 px-4 py-3', iconsOnly && 'px-2')}
-              title={iconsOnly ? 'Bank Balance' : undefined}
-            >
-              <div className={cn('flex items-center gap-2.5', iconsOnly && 'justify-center')}>
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-indigo-700">
-                  <Landmark className="h-4 w-4 text-white" />
-                </div>
-                <div className={iconsOnly ? 'sr-only' : undefined}>
-                  <p className="text-sm font-semibold text-slate-800">Bank Balance</p>
-                  <p className="text-[11px] text-muted-foreground">Treasury &amp; Cash Credit</p>
-                </div>
-              </div>
-            </div>
-            <CardContent className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">{links}</CardContent>
-          </Card>
-        </aside>
-      </TooltipProvider>
-      <main className="min-w-0">{children}</main>
-    </div>
+    <ModuleShell
+      title="Bank Balance"
+      subtitle="Treasury & Cash Credit"
+      icon={Landmark}
+      groups={groups}
+      mobileTabs={mobileTabs}
+      mobileMoreContent={mobileMoreContent}
+    >
+      {children}
+    </ModuleShell>
   );
 }

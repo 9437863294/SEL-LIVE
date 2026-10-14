@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
@@ -60,10 +60,10 @@ export default function InventoryLocationsPage() {
     <PageHeader title="Inventory locations" description="Central, property, project, quarantine, and scrap locations with independent balances." actions={<Button onClick={() => edit()}><Plus className="mr-2 h-4 w-4" />New location</Button>} />
     <TableCard title="Location Master" description="Physical or logical locations" count={locations.length} noun="location"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Location</TableHead><TableHead>Type</TableHead><TableHead>Property / project</TableHead><TableHead>Bin / rack</TableHead><TableHead>Status</TableHead><TableHead /></TableRow></TableHeader><TableBody>
       {locations.map((location) => <TableRow key={location.id}><TableCell className="whitespace-nowrap font-mono">{location.locationCode}</TableCell><TableCell><div className="flex items-center gap-2 font-medium"><MapPin className="h-4 w-4 text-muted-foreground" />{location.locationName}</div><div className="text-xs text-muted-foreground">{location.address || '—'}</div></TableCell><TableCell>{location.type}</TableCell><TableCell>{location.projectName || location.propertyName || 'Network-wide'}</TableCell><TableCell>{location.binOrRack || '—'}</TableCell><TableCell className="whitespace-nowrap"><StatusBadge status={location.active ? 'Active' : 'Inactive'} /></TableCell><TableCell><Button size="icon" variant="ghost" onClick={() => edit(location)}><Pencil className="h-4 w-4" /></Button></TableCell></TableRow>)}
-      {!locations.length && <TableRow><TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No inventory locations exist yet.</TableCell></TableRow>}
+      {!locations.length && <TableEmpty colSpan={7}>No inventory locations exist yet.</TableEmpty>}
     </TableBody></Table></TableCard>
 
-    <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{form.id ? 'Edit inventory location' : 'Create inventory location'}</DialogTitle></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2">
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent size="lg"><DialogHeader><DialogTitle>{form.id ? 'Edit inventory location' : 'Create inventory location'}</DialogTitle></DialogHeader><div className="grid gap-4 py-2 sm:grid-cols-2">
       <Field label="Location code *"><Input value={form.locationCode} disabled={Boolean(form.id)} onChange={(event) => setForm({ ...form, locationCode: event.target.value })} /></Field>
       <Field label="Location name *"><Input value={form.locationName} onChange={(event) => setForm({ ...form, locationName: event.target.value })} /></Field>
       <Field label="Location type"><Select value={form.type} onValueChange={(type: InventoryLocationType) => setForm({ ...form, type })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{types.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select></Field>

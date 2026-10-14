@@ -80,7 +80,7 @@ export default function ViewProformaBillDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Proforma/Advance Details: {bill.proformaNo}</DialogTitle>
         </DialogHeader>

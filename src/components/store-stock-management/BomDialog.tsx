@@ -135,7 +135,7 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, projectId, onSaveSuc
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-7xl">
+      <DialogContent size="2xl">
         <DialogHeader>
           <DialogTitle>Bill of Materials for: {getItemDescription(mainItem)}</DialogTitle>
           <DialogDescription>

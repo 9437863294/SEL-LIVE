@@ -19,9 +19,10 @@ import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { BankAccessDenied } from '@/components/bank-balance/page-kit';
+import { CompanyFooterLine, CompanyLetterhead } from '@/components/shared/company-letterhead';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { useAppearance } from '@/components/theme/ThemeProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useUiText } from '@/hooks/use-company-profile';
 import { db } from '@/lib/firebase';
 import { formatDay, formatInr } from '@/lib/bank-balance-ledger';
 import { displayStatus, modeConfig, type BankPaymentVoucher } from '@/lib/bank-payments';
@@ -91,7 +92,7 @@ export default function PaymentVoucherPrintPage() {
   const params = useParams<{ id: string }>();
   const id = String(params?.id ?? '');
   const { user } = useAuth();
-  const { company } = useAppearance();
+  const t = useUiText();
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Expenses');
 
@@ -170,7 +171,6 @@ export default function PaymentVoucherPrintPage() {
   const closed = voucher.status === 'Cancelled' || voucher.status === 'Bounced';
   const lines = voucher.lines || [];
   const total = Number(voucher.total) || lines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0);
-  const companyName = company?.branding?.companyName || 'Siddhartha Engineering Limited';
 
   return (
     <>
@@ -185,21 +185,19 @@ export default function PaymentVoucherPrintPage() {
           </Button>
           <Button size="sm" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" />
-            Print
+            {t('print')}
           </Button>
         </div>
 
         <article className="pv-sheet keep-light mx-auto max-w-[210mm] bg-white p-5 text-[13px] text-slate-900 shadow-sm ring-1 ring-slate-200 sm:p-10 print:max-w-none print:p-0 print:shadow-none print:ring-0">
-          <header className="border-b-2 border-slate-800 pb-3 text-center">
-            <h1 className="text-lg font-bold uppercase tracking-wide">{companyName}</h1>
-            <p className="text-xs text-slate-600">Nayapalli, Bhubaneswar</p>
-            <p className="mt-2 text-base font-semibold uppercase tracking-[0.2em]">Payment Voucher</p>
-            {closed && (
+          <CompanyLetterhead title="Payment Voucher" />
+          {closed && (
+            <div className="text-center">
               <p className="mt-2 inline-block border-2 border-rose-700 px-3 py-0.5 text-xs font-bold uppercase tracking-[0.25em] text-rose-700">
                 {voucher.status}
               </p>
-            )}
-          </header>
+            </div>
+          )}
 
           <dl className="mt-4 grid grid-cols-1 gap-x-8 sm:grid-cols-2 print:grid-cols-2">
             <Field label="Voucher No.">
@@ -302,9 +300,9 @@ export default function PaymentVoucherPrintPage() {
 
           <div className="pv-keep mt-16 grid grid-cols-2 gap-x-6 gap-y-12 sm:grid-cols-4 print:grid-cols-4">
             {[
-              { label: 'Prepared by', name: voucher.createdByName || '' },
-              { label: 'Checked by', name: '' },
-              { label: 'Approved by', name: '' },
+              { label: t('preparedBy'), name: voucher.createdByName || '' },
+              { label: t('checkedBy'), name: '' },
+              { label: t('approvedBy'), name: '' },
               { label: "Receiver's signature", name: '' },
             ].map((box) => (
               <div key={box.label} className="border-t border-slate-800 pt-1">
@@ -314,7 +312,8 @@ export default function PaymentVoucherPrintPage() {
             ))}
           </div>
 
-          <footer className="mt-10 flex flex-wrap justify-between gap-2 border-t pt-2 text-[10px] text-slate-500">
+          <CompanyFooterLine className="mt-10" />
+          <footer className="mt-2 flex flex-wrap justify-between gap-2 border-t pt-2 text-[10px] text-slate-500">
             <span>Printed by {user?.name || '—'} on {format(new Date(), 'dd MMM yyyy, HH:mm')}</span>
             <span>System-generated from the Bank Balance Cheque Register.</span>
           </footer>

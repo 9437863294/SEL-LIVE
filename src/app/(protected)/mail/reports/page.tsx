@@ -23,7 +23,7 @@ import { useLoader } from '@/components/mail-hub/hooks';
 import { EmptyState, ErrorNotice } from '@/components/mail-hub/ui';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { mailApi } from '@/lib/mail-hub/client';
 import { PageHeader } from '@/components/shared/page-header';
@@ -172,7 +172,7 @@ export default function MailReportsPage() {
                       </TableRow>
                     ))}
                     {report.byDepartment.length === 0 && (
-                      <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No data in this period.</TableCell></TableRow>
+                      <TableEmpty colSpan={5}>No data in this period.</TableEmpty>
                     )}
                   </TableBody>
                 </Table>

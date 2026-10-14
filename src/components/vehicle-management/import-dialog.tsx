@@ -360,7 +360,7 @@ export function VehicleImportDialog({
   /* ================================================================== */
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+      <DialogContent size="xl" className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
         {/* ── Header ── */}
         <div className={cn('vm-dialog-header shrink-0 px-6 pb-4 pt-5 pr-12', VM_DIALOG_HEADER)}>
           <DialogTitle className="text-base font-semibold text-slate-900">{title}</DialogTitle>

@@ -10,7 +10,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
@@ -142,13 +142,13 @@ export default function InventoryDashboardPage() {
                   </TableRow>
                 );
               })}
-              {!filteredRows.length && <TableRow><TableCell colSpan={canViewCost ? 8 : 7} className="h-28 text-center text-muted-foreground">No items match this view. Add Item Master records and post opening stock to begin.</TableCell></TableRow>}
+              {!filteredRows.length && <TableEmpty colSpan={canViewCost ? 8 : 7}>No items match this view. Add Item Master records and post opening stock to begin.</TableEmpty>}
             </TableBody>
           </Table>
       </TableCard>
 
       <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent size="lg">
           <DialogHeader><DialogTitle>{selected?.itemName}</DialogTitle><DialogDescription>{selected?.itemCode} · availability across locations you can access</DialogDescription></DialogHeader>
           <Table><TableHeader><TableRow><TableHead>Location</TableHead><TableHead>Type</TableHead><TableHead className="text-right">On hand</TableHead><TableHead className="text-right">Reserved</TableHead><TableHead className="text-right">Available</TableHead></TableRow></TableHeader>
             <TableBody>{selected && balances.filter((balance) => balance.itemId === selected.id).map((balance) => {

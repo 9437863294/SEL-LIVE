@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import {
   Activity, Briefcase, Construction, Clock, Users, Hash,
-  Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound, DatabaseZap,
+  Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound, DatabaseZap, Building2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -198,6 +198,19 @@ const settingsItemsBase: SettingsItemConfig[] = [
       border: 'border-cyan-200/60 dark:border-cyan-800/30 hover:border-cyan-400/60',
     },
   },
+  {
+    icon: Building2,
+    text: 'Company Profile',
+    description: 'Company details, GST registrations, letterhead, layout and the wording every module shares.',
+    href: '/settings/company-profile',
+    permission: 'View',
+    colorScheme: {
+      bg: 'from-slate-500/8 to-slate-600/4',
+      iconBg: 'bg-slate-100 dark:bg-slate-800/40',
+      iconColor: 'text-slate-700 dark:text-slate-300',
+      border: 'border-slate-200/60 dark:border-slate-700/30 hover:border-slate-400/60',
+    },
+  },
 ];
 
 function SettingsCard({
@@ -269,6 +282,7 @@ export default function SettingsPage() {
     '/settings/login-expiry': 'Settings.Login Expiry',
     '/settings/audit-logs': 'Settings.Audit Logs',
     '/settings/reporting-database': 'Settings.Reporting Database',
+    '/settings/company-profile': 'Settings.Company Profile',
     '/store-stock-management/settings': 'Store & Stock Management',
   };
 

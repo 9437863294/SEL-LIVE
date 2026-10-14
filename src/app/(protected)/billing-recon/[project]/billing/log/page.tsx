@@ -6,7 +6,7 @@ import { View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -105,11 +105,7 @@ export default function BillLogPage() {
                     </TableRow>
                   ))
                 ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
-                      No bills found.
-                    </TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={6}>No bills found.</TableEmpty>
                 )}
               </TableBody>
             </Table>

@@ -21,7 +21,8 @@ export const DAILY_STATUS_TONE: Partial<Record<string, StatusTone>> = {
   'Partially Paid': 'warning',
 };
 
-export const dailyPageContainerClass = 'w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8';
+/** The shared module shell pads the content column, so a page adds none of its own. */
+export const dailyPageContainerClass = 'w-full';
 export const dailySurfaceCardClass =
   'overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur';
 export const dailyTabsListClass =

@@ -128,7 +128,7 @@ export function AddPolicyDialog({ isOpen, onOpenChange, onPolicyAdded }: AddPoli
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Add New Insurance Policy</DialogTitle>
           <DialogDescription>Enter the details of the new policy.</DialogDescription>

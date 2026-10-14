@@ -26,6 +26,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableLoading,
+  TableEmpty,
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import {
@@ -437,9 +439,7 @@ export default function BillingSummaryReport() {
                 </TableHeader>
                 <TableBody>
                    {isLoading ? (
-                        Array.from({ length: 3 }).map((_, i) => (
-                            <TableRow key={i}><TableCell colSpan={7}><Skeleton className="h-6" /></TableCell></TableRow>
-                        ))
+                        <TableLoading colSpan={7} rows={3} />
                    ) : workOrderSummary.length > 0 ? (
                        workOrderSummary.map(wo => (
                         <TableRow key={wo.woNo}>
@@ -458,9 +458,7 @@ export default function BillingSummaryReport() {
                         </TableRow>
                        ))
                    ) : (
-                        <TableRow>
-                            <TableCell colSpan={7} className="text-center h-24">No data to display for the selected filters.</TableCell>
-                        </TableRow>
+                        <TableEmpty colSpan={7}>No data to display for the selected filters.</TableEmpty>
                    )}
                 </TableBody>
             </Table>

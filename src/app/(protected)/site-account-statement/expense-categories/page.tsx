@@ -691,7 +691,7 @@ export default function ExpenseCategoriesPage() {
       </TableCard>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-[95vw] sm:max-w-md overflow-y-auto max-h-[90vh]">
+        <DialogContent size="md" className="overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Category' : 'Add Expense Category'}</DialogTitle>
           </DialogHeader>

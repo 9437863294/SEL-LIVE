@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { AccessDenied } from '@/components/insurance/insurance-ui';
@@ -236,7 +236,7 @@ export default function PremiumForecastPage() {
           </TableHeader>
           <TableBody>
             {detail.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">Nothing falls due in this period.</TableCell></TableRow>
+              <TableEmpty colSpan={6}>Nothing falls due in this period.</TableEmpty>
             ) : detail.map((o, i) => (
               <TableRow key={`${o.kind}-${o.policyId}-${o.date.getTime()}-${i}`}>
                 <TableCell className="whitespace-nowrap">

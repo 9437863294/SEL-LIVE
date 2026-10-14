@@ -708,7 +708,7 @@ export default function InternalTransactionPage() {
           if (!open && !isEditSaving) resetEditDialog();
         }}
       >
-        <DialogContent className="hr-mobile-dialog gap-5 sm:max-w-lg">
+        <DialogContent size="md" className="hr-mobile-dialog gap-5">
           <DialogHeader className="hr-dialog-header pr-8">
             <DialogTitle>Edit transfer</DialogTitle>
             <DialogDescription>

@@ -1,15 +1,12 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import {
   ArrowLeft,
   BarChart3,
   Boxes,
   Building2,
-  ChevronLeft,
-  ChevronRight,
   ClipboardCheck,
   Component,
   ListTree,
@@ -19,299 +16,89 @@ import {
   Plus,
   Repeat2,
   Settings,
-  type LucideIcon,
 } from 'lucide-react';
-import { ModuleBottomNav, type ModuleMoreLink, type ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
-import { ModuleMobileHeader } from '@/components/shared/page-header';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
-import { cn } from '@/lib/utils';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/components/shared/module-shell';
 
-type NavigationItem = {
-  href: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  iconClassName: string;
-  iconBackground: string;
-  activeGradient: string;
-  exact?: boolean;
-};
-
-const operations: NavigationItem[] = [
+// Each page gates itself, so the menu is not permission-filtered.
+const groups: ModuleNavGroup[] = [
   {
-    href: '/store-stock-management/inventory',
-    label: 'Dashboard',
-    description: 'Stock overview',
-    icon: Boxes,
-    iconClassName: 'text-blue-700',
-    iconBackground: 'bg-blue-100',
-    activeGradient: 'from-blue-600 to-indigo-600',
-    exact: true,
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      { id: 'dashboard', href: '/store-stock-management/inventory', label: 'Dashboard', icon: Boxes, tone: 'blue' },
+      { id: 'item-wise', href: '/store-stock-management/inventory/item-wise', label: 'Item-wise Inventory', icon: PackageSearch, tone: 'cyan' },
+      { id: 'assemblies', href: '/store-stock-management/inventory/assemblies', label: 'Build / Unbuild', icon: Component, tone: 'fuchsia' },
+      { id: 'movements', href: '/store-stock-management/inventory/movements', label: 'Receipts & Issues', icon: PackagePlus, tone: 'emerald' },
+      { id: 'transfers', href: '/store-stock-management/inventory/transfers', label: 'Transfers', icon: Repeat2, tone: 'violet' },
+      { id: 'counts', href: '/store-stock-management/inventory/counts', label: 'Stock Count', icon: ClipboardCheck, tone: 'amber' },
+      { id: 'ledger', href: '/store-stock-management/inventory/ledger', label: 'Ledger & Reports', icon: BarChart3, tone: 'sky' },
+    ],
   },
   {
-    href: '/store-stock-management/inventory/item-wise',
-    label: 'Item-wise Inventory',
-    description: 'Stock by item and location',
-    icon: PackageSearch,
-    iconClassName: 'text-cyan-700',
-    iconBackground: 'bg-cyan-100',
-    activeGradient: 'from-cyan-600 to-blue-600',
+    id: 'masters',
+    label: 'Master data',
+    items: [
+      { id: 'items', href: '/store-stock-management/inventory/items', label: 'Item Master', icon: ListTree, tone: 'cyan' },
+      { id: 'locations', href: '/store-stock-management/inventory/locations', label: 'Locations', icon: MapPin, tone: 'rose' },
+    ],
   },
   {
-    href: '/store-stock-management/inventory/assemblies',
-    label: 'Build / Unbuild',
-    description: 'Assemble or recover sub-items',
-    icon: Component,
-    iconClassName: 'text-fuchsia-700',
-    iconBackground: 'bg-fuchsia-100',
-    activeGradient: 'from-fuchsia-600 to-purple-600',
-  },
-  {
-    href: '/store-stock-management/inventory/movements',
-    label: 'Receipts & Issues',
-    description: 'Stock in and stock out',
-    icon: PackagePlus,
-    iconClassName: 'text-emerald-700',
-    iconBackground: 'bg-emerald-100',
-    activeGradient: 'from-emerald-600 to-teal-600',
-  },
-  {
-    href: '/store-stock-management/inventory/transfers',
-    label: 'Transfers',
-    description: 'Move stock between stores',
-    icon: Repeat2,
-    iconClassName: 'text-violet-700',
-    iconBackground: 'bg-violet-100',
-    activeGradient: 'from-violet-600 to-purple-600',
-  },
-  {
-    href: '/store-stock-management/inventory/counts',
-    label: 'Stock Count',
-    description: 'Physical verification',
-    icon: ClipboardCheck,
-    iconClassName: 'text-amber-700',
-    iconBackground: 'bg-amber-100',
-    activeGradient: 'from-amber-500 to-orange-600',
-  },
-  {
-    href: '/store-stock-management/inventory/ledger',
-    label: 'Ledger & Reports',
-    description: 'Movement audit trail',
-    icon: BarChart3,
-    iconClassName: 'text-sky-700',
-    iconBackground: 'bg-sky-100',
-    activeGradient: 'from-sky-600 to-blue-600',
+    id: 'configuration',
+    label: 'Configuration',
+    items: [{ id: 'settings', href: '/store-stock-management/settings', label: 'Inventory Settings', icon: Settings, tone: 'slate' }],
   },
 ];
-
-const masters: NavigationItem[] = [
-  {
-    href: '/store-stock-management/inventory/items',
-    label: 'Item Master',
-    description: 'Items and stock controls',
-    icon: ListTree,
-    iconClassName: 'text-cyan-700',
-    iconBackground: 'bg-cyan-100',
-    activeGradient: 'from-cyan-600 to-blue-600',
-  },
-  {
-    href: '/store-stock-management/inventory/locations',
-    label: 'Locations',
-    description: 'Stores, warehouses and bins',
-    icon: MapPin,
-    iconClassName: 'text-rose-700',
-    iconBackground: 'bg-rose-100',
-    activeGradient: 'from-rose-600 to-pink-600',
-  },
-];
-
-const settingsItem: NavigationItem = {
-  href: '/store-stock-management/settings',
-  label: 'Inventory Settings',
-  description: 'Scope and configuration',
-  icon: Settings,
-  iconClassName: 'text-slate-700',
-  iconBackground: 'bg-slate-100',
-  activeGradient: 'from-slate-600 to-slate-800',
-};
 
 // The phone's bottom bar leads with the overview, stock by item, posting a receipt or issue, and
 // transfers; the rest of the menu follows them, and "More" opens the bar's pop-up of every page,
-// under the sidebar's headings. The sidebar above is not permission-filtered (each page gates
-// itself), so neither are these.
-const bottomTabs: ModuleNavTab[] = [
+// under the sidebar's headings. Not permission-filtered, like the sidebar.
+const mobileTabs: ModuleNavTab[] = [
   { href: '/store-stock-management/inventory', label: 'Home', icon: Boxes, exact: true },
   { href: '/store-stock-management/inventory/item-wise', label: 'Stock', icon: PackageSearch, ariaLabel: 'Item-wise inventory' },
   { href: '/store-stock-management/inventory/movements', label: 'New', icon: Plus, emphasized: true, ariaLabel: 'Post a receipt, issue or adjustment' },
   { href: '/store-stock-management/inventory/transfers', label: 'Transfers', icon: Repeat2 },
 ];
-const bottomPages: ModuleMoreLink[] = [
-  ...operations.map((item) => ({ ...item, group: 'operations' })),
-  ...masters.map((item) => ({ ...item, group: 'masters' })),
-  // Pinned to the sidebar's foot rather than listed under a heading, so it gets one of its own.
-  { ...settingsItem, group: 'configuration' },
-];
-const bottomGroupLabels = { operations: 'Operations', masters: 'Master data', configuration: 'Configuration' };
 
-const STORAGE_KEY = 'inventory-sidebar-expanded';
-
-function isItemActive(pathname: string, item: NavigationItem) {
-  return item.exact ? pathname === item.href : pathname.startsWith(item.href);
-}
-
-/** A row above the pop-up's page tiles, for a destination outside this module. */
-function MoreSheetLink({ href, label }: { href: string; label: string }) {
+/** The way out of the module, which is not an inventory page: the sidebar's foot and the top of the phone's pop-up. */
+function BackLink({ sheet = false }: { sheet?: boolean }) {
+  if (sheet) {
+    return (
+      <Link
+        href="/store-stock-management"
+        prefetch={false}
+        className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background shadow-sm">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        </span>
+        Back to stock management
+      </Link>
+    );
+  }
   return (
     <Link
-      href={href}
+      href="/store-stock-management"
       prefetch={false}
-      className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background shadow-sm">
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-      </span>
-      {label}
+      <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>Stock management</span>
     </Link>
   );
 }
 
 export function InventoryModuleShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname() || '';
-  const [isExpanded, setIsExpanded] = useSidebarDefault(true);
-
-  // A toggle remembered from an earlier visit is the user's own choice for this rail, so it
-  // outranks their account-wide sidebar default (restoring through the setter settles it).
-  useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved !== null) setIsExpanded(saved === 'true');
-  }, [setIsExpanded]);
-
-  const toggleExpanded = () => {
-    setIsExpanded((current) => {
-      const next = !current;
-      window.localStorage.setItem(STORAGE_KEY, String(next));
-      return next;
-    });
-  };
-
-  const desktopLink = (item: NavigationItem) => {
-    const active = isItemActive(pathname, item);
-    const Icon = item.icon;
-    const link = (
-      <Link
-        href={item.href}
-        prefetch={false}
-        aria-current={active ? 'page' : undefined}
-        className={cn(
-          'group flex min-h-11 items-center rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
-          isExpanded ? 'gap-3 px-2.5 py-2' : 'justify-center p-2',
-          active
-            ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient)
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950',
-        )}
-      >
-        <span className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-105',
-          active ? 'bg-white/20' : item.iconBackground,
-        )}>
-          <Icon className={cn('h-4 w-4', active ? 'text-white' : item.iconClassName)} />
-        </span>
-        {isExpanded && (
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold">{item.label}</span>
-            <span className={cn('block truncate text-[11px]', active ? 'text-white/75' : 'text-muted-foreground')}>
-              {item.description}
-            </span>
-          </span>
-        )}
-      </Link>
-    );
-
-    if (isExpanded) return <div key={item.href}>{link}</div>;
-    return (
-      <Tooltip key={item.href}>
-        <TooltipTrigger asChild>{link}</TooltipTrigger>
-        <TooltipContent side="right">
-          <p className="font-medium">{item.label}</p>
-          <p className="text-xs opacity-80">{item.description}</p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  };
-
   return (
-    <div className="min-h-[calc(100vh-4rem)] w-full bg-gradient-to-br from-slate-50/80 via-background to-blue-50/40">
-      <TooltipProvider delayDuration={100}>
-        <aside className={cn(
-          'fixed bottom-0 left-0 top-[var(--app-header-offset,4rem)] z-40 hidden flex-col border-r border-slate-200/80 bg-white/95 shadow-sm backdrop-blur transition-[width] duration-300 md:flex',
-          isExpanded ? 'w-64' : 'w-[4.5rem]',
-        )}>
-          <div className={cn('flex h-[4.5rem] shrink-0 items-center border-b border-slate-200/70', isExpanded ? 'gap-3 px-4' : 'justify-center px-2')}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 shadow-sm">
-              <Building2 className="h-5 w-5 text-white" />
-            </div>
-            {isExpanded && (
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">Property Inventory</p>
-                <p className="truncate text-[11px] text-muted-foreground">Store & stock control</p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-2 py-3">
-            {isExpanded && <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Operations</p>}
-            <nav className="space-y-1" aria-label="Inventory operations">{operations.map(desktopLink)}</nav>
-            <div className="my-3 border-t border-slate-200/70" />
-            {isExpanded && <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Master data</p>}
-            <nav className="space-y-1" aria-label="Inventory master data">{masters.map(desktopLink)}</nav>
-          </div>
-
-          <div className="shrink-0 space-y-1 border-t border-slate-200/70 p-2">
-            {desktopLink(settingsItem)}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link
-                  href="/store-stock-management"
-                  prefetch={false}
-                  className={cn('flex h-10 items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground', isExpanded ? 'gap-3 px-3' : 'justify-center px-2')}
-                >
-                  <ArrowLeft className="h-4 w-4 shrink-0" />
-                  {isExpanded && <span>Stock management</span>}
-                </Link>
-              </TooltipTrigger>
-              {!isExpanded && <TooltipContent side="right">Stock management</TooltipContent>}
-            </Tooltip>
-            <button
-              type="button"
-              onClick={toggleExpanded}
-              aria-label={isExpanded ? 'Collapse inventory sidebar' : 'Expand inventory sidebar'}
-              className={cn('flex h-10 w-full items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground', isExpanded ? 'gap-3 px-3' : 'justify-center px-2')}
-            >
-              {isExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              {isExpanded && <span>Collapse sidebar</span>}
-            </button>
-          </div>
-        </aside>
-      </TooltipProvider>
-
-      <div className={cn('min-w-0 transition-[margin] duration-300', isExpanded ? 'md:ml-64' : 'md:ml-[4.5rem]')}>
-        <main className="mx-auto w-full max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8">
-          {/* Phones: the module's name only. Its pages are on the bottom bar, all of them under "More". */}
-          <ModuleMobileHeader icon={Building2} title="Property Inventory" subtitle="Store & stock control" hideFrom="md" />
-          {children}
-        </main>
-      </div>
-
-      <ModuleBottomNav
-        tabs={bottomTabs}
-        pages={bottomPages}
-        groupLabels={bottomGroupLabels}
-        // The sidebar's way out, which is not an inventory page, heads the pop-up.
-        moreContent={<MoreSheetLink href="/store-stock-management" label="Back to stock management" />}
-        moduleName="Property Inventory"
-        hideAbove="md"
-      />
-    </div>
+    <ModuleShell
+      title="Property Inventory"
+      subtitle="Store & stock control"
+      icon={Building2}
+      groups={groups}
+      mobileTabs={mobileTabs}
+      footer={<BackLink />}
+      mobileMoreContent={<BackLink sheet />}
+    >
+      {children}
+    </ModuleShell>
   );
 }

@@ -12,13 +12,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableLoading,
+  TableEmpty,
 } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { InventoryLog, Project } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { differenceInDays } from 'date-fns';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -207,11 +208,7 @@ export default function AgeingReportPage() {
                         </TableHeader>
                         <TableBody>
                             {isLoading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell colSpan={4 + currentBuckets.length * 2}><Skeleton className="h-8 w-full" /></TableCell>
-                                    </TableRow>
-                                ))
+                                <TableLoading colSpan={4 + currentBuckets.length * 2} rows={5} />
                             ) : ageingReportData.length > 0 ? (
                                 ageingReportData.map((item, i) => (
                                     <TableRow key={i}>
@@ -228,9 +225,7 @@ export default function AgeingReportPage() {
                                     </TableRow>
                                 ))
                             ) : (
-                                <TableRow>
-                                    <TableCell colSpan={4 + currentBuckets.length * 2} className="text-center h-24">No inventory data to display.</TableCell>
-                                </TableRow>
+                                <TableEmpty colSpan={4 + currentBuckets.length * 2}>No inventory data to display.</TableEmpty>
                             )}
                         </TableBody>
                     </Table>

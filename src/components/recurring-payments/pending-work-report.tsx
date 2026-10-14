@@ -33,6 +33,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -45,6 +46,7 @@ import {
   ReportMetricTile,
 } from "./report-ui";
 import { PageHeader } from '@/components/shared/page-header';
+import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 
 /**
  * The one question none of this module's other reports answer: "what's stuck right now, at which
@@ -245,6 +247,8 @@ export default function PendingWorkReport() {
 
   return (
     <div className="space-y-5">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title="Pending Work Aging" />
       <PageHeader
         title="Pending Work Aging"
         meta={[{
@@ -356,11 +360,7 @@ export default function PendingWorkReport() {
               </TableRow>
             ))}
             {!filtered.length && (
-              <TableRow>
-                <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">
-                  Nothing is currently pending in the workflow for the selected filters.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={6}>Nothing is currently pending in the workflow for the selected filters.</TableEmpty>
             )}
           </TableBody>
         </Table>

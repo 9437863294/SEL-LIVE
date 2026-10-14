@@ -1,0 +1,207 @@
+/*
+ * Table and dialog design — the one place the company design settings (Settings > Company
+ * Profile > Design) reach every <Table> and <DialogContent>.
+ *
+ * CompanyDesignProvider sets these on <html>; with none set, everything looks exactly like the
+ * standard defaults in ui/table.tsx and ui/dialog.tsx:
+ *   data-table-density  compact | standard | comfortable   (row rhythm — globals.css, --table-*)
+ *   data-table-striped  true | false
+ *   data-table-bordered true | false
+ *   data-table-header   muted | accent | plain
+ *   data-table-sticky   true | false
+ *   data-dialog-size    sm | md | lg | xl                  (only dialogs with no size and no max-w-*)
+ *   data-dialog-footer  end | between | stretch
+ *   --letterhead-accent (CSS variable)
+ *
+ * ThemeProvider sets the user's own dialog choices (My appearance), which win over the company's:
+ *   data-user-dialog-size auto | sm | md | lg | xl         (absent: follow data-dialog-size)
+ *   data-dialog-text      small | default | large
+ *   data-dialog-controls / data-dialog-maximised  on | off (read by ui/dialog.tsx)
+ * and ui/dialog.tsx sets data-dialog-minimised while any dialog is minimised.
+ *
+ * Hooks are the data-slot attributes the shared components render: table-container, table,
+ * table-header, table-body, table-footer, table-row, table-head, table-cell, table-caption,
+ * table-empty, table-loading, table-toolbar; dialog-content (+ data-size), dialog-header,
+ * dialog-body, dialog-footer (+ data-align="custom"), dialog-close.
+ *
+ * Rules a page may want to override sit inside :where(), so they carry no specificity and any
+ * className wins. Colours are theme tokens (hsl(var(--…))), resolved on the element itself, so the
+ * dark theme needs no dark-compat regeneration.
+ */
+
+/* ── Tables ─────────────────────────────────────────────────────────────────────────────── */
+
+/* Header band: the TableHeader paints bg-[var(--table-header-bg)]. Muted = the original band. */
+:where([data-slot='table-header']) {
+  --table-header-bg: hsl(var(--muted) / 0.8);
+}
+:where(html[data-table-header='accent'] [data-slot='table-header']) {
+  --table-header-bg: hsl(var(--primary) / 0.08);
+}
+:where(html[data-table-header='plain'] [data-slot='table-header']) {
+  --table-header-bg: transparent;
+}
+/* Accent: the rule under the header takes the letterhead colour. */
+html[data-table-header='accent'] [data-slot='table-header'] > tr {
+  border-bottom-color: var(--letterhead-accent, hsl(var(--primary)));
+}
+
+/* Striped rows. Highlighted rows (their own bg-*) and hover still win. */
+:where(html[data-table-striped='true'] [data-slot='table-body'] > [data-slot='table-row']:nth-child(even)) {
+  background-color: hsl(var(--muted) / 0.45);
+}
+
+/* Grid lines between columns. */
+:where(
+  html[data-table-bordered='true'] [data-slot='table-head'],
+  html[data-table-bordered='true'] [data-slot='table-cell']
+) {
+  border-right: 1px solid hsl(var(--border));
+}
+:where(
+  html[data-table-bordered='true'] [data-slot='table-head']:last-child,
+  html[data-table-bordered='true'] [data-slot='table-cell']:last-child
+) {
+  border-right-width: 0;
+}
+
+/* Sticky header — per table (<Table stickyHeader>) or company-wide (data-table-sticky), unless a
+   table opts out with stickyHeader={false}. The scroll container is the table's wrapper, so it
+   only pins when that wrapper has a height cap. Only the first header row pins; a page with a
+   two-row header positions its second row itself. The cell needs an opaque fill to cover rows. */
+:where(
+  [data-slot='table-container'][data-sticky-header='true'] > table > thead > tr:first-child > [data-slot='table-head'],
+  html[data-table-sticky='true'] [data-slot='table-container']:not([data-sticky-header='false']) > table > thead > tr:first-child > [data-slot='table-head']
+) {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: hsl(var(--card));
+  background-image: linear-gradient(var(--table-header-bg, transparent), var(--table-header-bg, transparent));
+}
+
+/* ── Dialogs ────────────────────────────────────────────────────────────────────────────── */
+
+/* The company's default width, for dialogs that chose neither a size nor a max-w-* class — unless
+   the user picked their own (data-user-dialog-size, set by ThemeProvider from My appearance;
+   'auto' there means each dialog keeps its designed width, whatever the company chose). */
+@media (min-width: 640px) {
+  html[data-dialog-size='sm']:not([data-user-dialog-size]) [data-slot='dialog-content'][data-size='auto'],
+  html[data-user-dialog-size='sm'] [data-slot='dialog-content'][data-size='auto'] {
+    max-width: 24rem;
+  }
+  html[data-dialog-size='md']:not([data-user-dialog-size]) [data-slot='dialog-content'][data-size='auto'],
+  html[data-user-dialog-size='md'] [data-slot='dialog-content'][data-size='auto'] {
+    max-width: 32rem;
+  }
+  html[data-dialog-size='lg']:not([data-user-dialog-size]) [data-slot='dialog-content'][data-size='auto'],
+  html[data-user-dialog-size='lg'] [data-slot='dialog-content'][data-size='auto'] {
+    max-width: 42rem;
+  }
+  html[data-dialog-size='xl']:not([data-user-dialog-size]) [data-slot='dialog-content'][data-size='auto'],
+  html[data-user-dialog-size='xl'] [data-slot='dialog-content'][data-size='auto'] {
+    max-width: 64rem;
+  }
+}
+
+/* ── Dialog windows: maximise / minimise (ui/dialog.tsx, data-window on the content) ─────── */
+
+/* Maximised: the whole viewport less a small margin; the body scrolls. */
+[data-slot='dialog-content'][data-window='maximised'] {
+  inset: 0.5rem;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  translate: none;
+  transform: none;
+  border-radius: var(--radius);
+  overflow-y: auto;
+}
+
+/* Minimised: the content stays mounted (form state is kept) but is hidden and inert; a bar in the
+   dock stands in for it. The overlay is not rendered, so the page behind scrolls and clicks. */
+[data-slot='dialog-content'][data-window='minimised'] {
+  display: none;
+}
+html[data-dialog-minimised] body {
+  /* Radix sets pointer-events:none inline on <body> for a modal; a minimised one releases it. */
+  pointer-events: auto !important;
+}
+
+.sel-dialog-dock {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: 0.5rem;
+  max-width: calc(100vw - 2rem);
+  pointer-events: none;
+}
+.sel-dialog-dock > * {
+  pointer-events: auto;
+}
+
+/* Window controls sit left of the ×; from sm up only (a phone dialog is already near full-screen). */
+[data-slot='dialog-window-controls'] {
+  display: none;
+}
+@media (min-width: 640px) {
+  [data-slot='dialog-window-controls'] {
+    display: flex;
+  }
+  :where([data-slot='dialog-content'][data-window-controls='on']) :where([data-slot='dialog-header']) {
+    padding-inline-end: 4rem;
+  }
+}
+
+/* The user's dialog text size: scales what is inside a dialog, not its frame, so the frame's
+   viewport caps still hold. Browsers without `zoom` simply keep the default size. */
+html[data-dialog-text='small'] [data-slot='dialog-content'] > :not([data-slot='dialog-close']):not([data-slot='dialog-window-controls']) {
+  zoom: 0.9;
+}
+html[data-dialog-text='large'] [data-slot='dialog-content'] > :not([data-slot='dialog-close']):not([data-slot='dialog-window-controls']) {
+  zoom: 1.125;
+}
+
+/* Stacked footer buttons on a phone get a gap rather than touching. A gap-* class still wins. */
+:where([data-slot='dialog-footer']) {
+  row-gap: 0.5rem;
+}
+
+/* A footer inside the scrolling body pins to its bottom edge. */
+:where([data-slot='dialog-body'] > [data-slot='dialog-footer']) {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  padding-top: 0.75rem;
+  padding-bottom: 0.25rem;
+  background-color: hsl(var(--background));
+}
+
+/* Footer alignment from sm up (a phone always stacks). A footer with its own justify-* keeps it. */
+@media (min-width: 640px) {
+  html[data-dialog-footer='between'] [data-slot='dialog-footer']:not([data-align='custom']) {
+    justify-content: space-between;
+  }
+  html[data-dialog-footer='stretch'] [data-slot='dialog-footer']:not([data-align='custom']) > * {
+    flex: 1 1 0%;
+  }
+}
+
+/* The hr full-screen phone dialog sizes the × by aria-label="Close"; keep that working when
+   the company renames "Close". */
+@media (max-width: 640px) {
+  .hr-mobile-dialog > [data-slot='dialog-close'] {
+    top: 0.375rem;
+    right: 0.375rem;
+    width: 2.75rem;
+    height: 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

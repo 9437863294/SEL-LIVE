@@ -5,7 +5,7 @@ import { Plus, Edit, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -279,9 +279,7 @@ export default function ManageProjectsAndSitesPage() {
                                         </TableRow>
                                     ))
                                 ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={3} className="text-center h-20">No sites for this project.</TableCell>
-                                    </TableRow>
+                                    <TableEmpty colSpan={3}>No sites for this project.</TableEmpty>
                                 )}
                             </TableBody>
                          </Table>
@@ -304,7 +302,7 @@ export default function ManageProjectsAndSitesPage() {
 
        {/* Project Dialog */}
        <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
-          <DialogContent className="sm:max-w-3xl">
+          <DialogContent size="lg">
               <DialogHeader>
                   <DialogTitle>{dialogMode === 'add' ? 'Add New' : 'Edit'} Project</DialogTitle>
               </DialogHeader>
@@ -349,7 +347,7 @@ export default function ManageProjectsAndSitesPage() {
 
         {/* Site Dialog */}
        <Dialog open={isSiteDialogOpen} onOpenChange={setIsSiteDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent size="md">
               <DialogHeader>
                   <DialogTitle>{dialogMode === 'add' ? 'Add New' : 'Edit'} Site</DialogTitle>
               </DialogHeader>

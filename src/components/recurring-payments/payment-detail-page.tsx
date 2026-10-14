@@ -46,7 +46,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -419,9 +419,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
                   </TableRow>
                 ))}
                 {!transactions.length && (
-                  <TableRow>
-                    <TableCell colSpan={canEditTransaction || canUploadReceipt ? 8 : 7} className="h-28 text-center text-muted-foreground">No transactions recorded.</TableCell>
-                  </TableRow>
+                  <TableEmpty colSpan={canEditTransaction || canUploadReceipt ? 8 : 7}>No transactions recorded.</TableEmpty>
                 )}
               </TableBody>
             </Table>
@@ -469,7 +467,7 @@ function EditTransactionDialog({
   const [mode, setMode] = useState<PaymentMode>(transaction.mode);
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent size="lg" className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit transaction</DialogTitle>
           <DialogDescription>
@@ -558,7 +556,7 @@ function UploadReceiptDialog({
 }) {
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="md">
         <DialogHeader>
           <DialogTitle>{transaction.receiptUrl ? 'Replace receipt' : 'Upload receipt'}</DialogTitle>
           <DialogDescription>

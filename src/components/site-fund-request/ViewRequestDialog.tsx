@@ -689,7 +689,7 @@ export default function ViewRequestDialog({
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-4xl">
+        <DialogContent size="xl">
           <DialogHeader>
             <DialogTitle>
               Details for {requisition?.requisitionId}
@@ -1013,7 +1013,7 @@ export default function ViewRequestDialog({
           open={isConfirmExpenseOpen}
           onOpenChange={setIsConfirmExpenseOpen}
         >
-          <DialogContent>
+          <DialogContent size="lg">
             <DialogHeader>
               <DialogTitle>
                 Confirm Expense Creation

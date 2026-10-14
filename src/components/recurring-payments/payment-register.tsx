@@ -892,7 +892,7 @@ function PaymentDetail({
   const outstanding = rowOutstanding(payment);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-5xl">
+      <DialogContent size="xl" className="max-h-[94vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{payment.title}</DialogTitle>
           <DialogDescription>
@@ -1260,7 +1260,7 @@ function TransactionDialog({
   }
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent size="lg">
         <DialogHeader>
           <DialogTitle>Record payment transaction</DialogTitle>
           <DialogDescription>

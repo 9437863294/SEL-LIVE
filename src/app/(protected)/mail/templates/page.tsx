@@ -82,7 +82,7 @@ export default function MailTemplatesPage() {
       </ul>
 
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+        <DialogContent size="lg" className="max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing?.id ? 'Edit template' : 'New template'}</DialogTitle>
             <DialogDescription>Placeholders: {PLACEHOLDERS.join(' ')}</DialogDescription>

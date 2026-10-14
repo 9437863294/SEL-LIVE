@@ -841,7 +841,7 @@ export default function BillLogPage() {
         ) : null)}
 
       <Dialog open={isDeductionDetailsOpen} onOpenChange={setIsDeductionDetailsOpen}>
-        <DialogContent>
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle>
               Deduction Details for Bill {selectedBill?.billNo}

@@ -24,7 +24,7 @@ import {
   collectionGroup,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import type { WorkOrder, Project, Bill, Subcontractor, WorkflowStep, ActionLog } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -288,7 +288,7 @@ export default function CreateRetentionBillPage() {
                         <TableCell className="text-right">{formatCurrency(bill.retentionAmount || 0)}</TableCell>
                     </TableRow>
                   )) : (
-                    <TableRow><TableCell colSpan={4} className="text-center h-24">No bills with retention found for this subcontractor.</TableCell></TableRow>
+                    <TableEmpty colSpan={4}>No bills with retention found for this subcontractor.</TableEmpty>
                   )}
                 </TableBody>
               </Table>

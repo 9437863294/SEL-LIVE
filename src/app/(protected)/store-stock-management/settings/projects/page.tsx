@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmpty } from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -192,9 +192,7 @@ export default function ManageProjectsAndSitesPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center h-24">No projects found.</TableCell>
-                </TableRow>
+                <TableEmpty colSpan={5}>No projects found.</TableEmpty>
               )}
             </TableBody>
           </Table>
@@ -202,7 +200,7 @@ export default function ManageProjectsAndSitesPage() {
 
        {/* Project Dialog */}
        <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
-          <DialogContent className="sm:max-w-3xl">
+          <DialogContent size="lg">
               <DialogHeader>
                   <DialogTitle>{dialogMode === 'add' ? 'Add New' : 'Edit'} Project</DialogTitle>
               </DialogHeader>

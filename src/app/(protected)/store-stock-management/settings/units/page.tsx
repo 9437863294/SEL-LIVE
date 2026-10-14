@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading, TableEmpty } from '@/components/ui/table';
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,6 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
 import type { Site } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -98,9 +97,7 @@ export default function ManageUnitsPage() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}><TableCell colSpan={2}><Skeleton className="h-8" /></TableCell></TableRow>
-                ))
+                <TableLoading colSpan={2} rows={5} />
               ) : units.length > 0 ? (
                 units.map(unit => (
                   <TableRow key={unit.id}>
@@ -125,14 +122,14 @@ export default function ManageUnitsPage() {
                   </TableRow>
                 ))
               ) : (
-                <TableRow><TableCell colSpan={2} className="text-center h-24">No units found.</TableCell></TableRow>
+                <TableEmpty colSpan={2}>No units found.</TableEmpty>
               )}
             </TableBody>
           </Table>
       </TableCard>
       
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent size="md">
             <DialogHeader>
               <DialogTitle>Add New Unit</DialogTitle>
             </DialogHeader>

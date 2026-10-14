@@ -25,6 +25,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -36,6 +37,7 @@ import {
   ReportMetricTile,
 } from "./report-ui";
 import { PageHeader } from "@/components/shared/page-header";
+import { CompanyLetterhead } from "@/components/shared/company-letterhead";
 
 type AutomationLog = {
   id: string;
@@ -211,6 +213,8 @@ export default function AutomationHealthReport() {
 
   return (
     <div className="space-y-5">
+      {/* The company letterhead heads the printed report; the screen keeps the page header. */}
+      <CompanyLetterhead className="mb-4 hidden print:block" title="Automation & Generation Health" />
       <PageHeader
         title="Automation & Generation Health"
         // This report exists to surface problems, so it leads with the count that needs someone
@@ -290,11 +294,7 @@ export default function AutomationHealthReport() {
               </TableRow>
             ))}
             {!recentRuns.length && (
-              <TableRow>
-                <TableCell colSpan={8} className="h-20 text-center text-muted-foreground">
-                  No automation runs recorded yet.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={8}>No automation runs recorded yet.</TableEmpty>
             )}
           </TableBody>
         </Table>
@@ -343,11 +343,7 @@ export default function AutomationHealthReport() {
               </TableRow>
             ))}
             {!stuck.length && (
-              <TableRow>
-                <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
-                  Nothing is stuck — every generated obligation has entered its workflow.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={6}>Nothing is stuck — every generated obligation has entered its workflow.</TableEmpty>
             )}
           </TableBody>
         </Table>
@@ -387,11 +383,7 @@ export default function AutomationHealthReport() {
               </TableRow>
             ))}
             {!inactiveMasters.length && (
-              <TableRow>
-                <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
-                  Every master is active and auto-generating.
-                </TableCell>
-              </TableRow>
+              <TableEmpty colSpan={5}>Every master is active and auto-generating.</TableEmpty>
             )}
           </TableBody>
         </Table>

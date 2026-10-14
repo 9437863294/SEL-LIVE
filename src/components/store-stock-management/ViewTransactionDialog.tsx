@@ -127,7 +127,7 @@ export default function ViewTransactionDialog({ isOpen, onOpenChange, transactio
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent size="xl">
         <DialogHeader>
           <DialogTitle>Transaction Details: {summary?.id}</DialogTitle>
         </DialogHeader>

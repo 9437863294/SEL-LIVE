@@ -1,4 +1,6 @@
 import { sendEmail } from '@/lib/mail';
+import { getCompanyProfile } from '@/lib/company-profile-server';
+import type { CompanyProfile } from '@/lib/company-profile';
 import {
   AccessDeniedError,
   accessErrorResponse,
@@ -18,11 +20,12 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: 'Missing required fields' }, { status: 400 });
     }
 
-    const html = buildWelcomeEmail({ name, email, password, role });
+    const company = await getCompanyProfile();
+    const html = buildWelcomeEmail({ name, email, password, role, company });
 
     const result = await sendEmail({
       to: email,
-      subject: `Welcome to SEL – Your Account is Ready`,
+      subject: `Welcome to ${company.shortName} – Your Account is Ready`,
       html,
     });
 
@@ -43,12 +46,21 @@ function buildWelcomeEmail({
   email,
   password,
   role,
+  company,
 }: {
   name: string;
   email: string;
   password: string;
   role?: string;
+  company: CompanyProfile;
 }): string {
+  const safeCompany = escHtml(company.legalName);
+  const safeShort = escHtml(company.shortName);
+  const safePlatform = `${safeShort} Platform`;
+  // The profile's logo (it falls back to the published app logo), else the long-standing one.
+  const logoSrc = company.logoUrl && /^https:\/\//i.test(company.logoUrl)
+    ? escHtml(company.logoUrl)
+    : 'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&amp;token=39b0f804-0610-4f3a-b26e-8ce334f94788';
   const roleRow = role
     ? `<tr>
         <td style="border-top:1px solid #e2e8f0;padding-top:14px;">
@@ -63,7 +75,7 @@ function buildWelcomeEmail({
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Welcome to SEL</title>
+  <title>Welcome to ${safeShort}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 
@@ -78,13 +90,13 @@ function buildWelcomeEmail({
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom:18px;">
-                    <img src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&amp;token=39b0f804-0610-4f3a-b26e-8ce334f94788" alt="Siddhartha Engineering Limited" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
+                    <img src="${logoSrc}" alt="${safeCompany}" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
                   </td>
                 </tr>
                 <tr>
                   <td align="center">
-                    <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">Siddhartha Engineering Limited</p>
-                    <p style="margin:6px 0 0;font-size:12px;color:#64748b;letter-spacing:2px;text-transform:uppercase;">SEL PLATFORM</p>
+                    <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.3px;">${safeCompany}</p>
+                    <p style="margin:6px 0 0;font-size:12px;color:#64748b;letter-spacing:2px;text-transform:uppercase;">${safePlatform}</p>
                   </td>
                 </tr>
               </table>
@@ -108,7 +120,7 @@ function buildWelcomeEmail({
                 Hello, ${escHtml(name)}!
               </p>
               <p style="margin:0 0 32px;font-size:15px;color:#475569;line-height:1.75;">
-                We&rsquo;re excited to have you as part of the <strong style="color:#0f172a;">SEL Platform</strong> family.
+                We&rsquo;re excited to have you as part of the <strong style="color:#0f172a;">${safePlatform}</strong> family.
                 Your account has been set up by the administrator. Use the credentials below to sign in for the first time.
               </p>
 
@@ -156,7 +168,7 @@ function buildWelcomeEmail({
                         <td style="background:linear-gradient(135deg,#10b981 0%,#0d9488 100%);border-radius:12px;">
                           <a href="https://seltech.store/login"
                             style="display:inline-block;padding:15px 48px;font-size:16px;font-weight:700;color:#ffffff;text-decoration:none;letter-spacing:0.2px;">
-                            Login to SEL Platform &rarr;
+                            Login to ${safePlatform} &rarr;
                           </a>
                         </td>
                       </tr>
@@ -272,7 +284,7 @@ function buildWelcomeEmail({
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom:18px;border-bottom:1px solid #1e293b;">
-                    <p style="margin:0;font-size:15px;font-weight:700;color:#f8fafc;">Siddhartha Engineering Limited</p>
+                    <p style="margin:0;font-size:15px;font-weight:700;color:#f8fafc;">${safeCompany}</p>
                     <p style="margin:5px 0 0;font-size:12px;color:#475569;letter-spacing:0.3px;">Engineering Excellence &bull; Digital Innovation</p>
                   </td>
                 </tr>
@@ -283,8 +295,8 @@ function buildWelcomeEmail({
                       &nbsp;&nbsp;&#127760;&nbsp;<a href="https://seltech.store" style="color:#64748b;text-decoration:none;">seltech.store</a>
                     </p>
                     <p style="margin:14px 0 0;font-size:11px;color:#334155;line-height:1.6;">
-                      This is an automated email sent by SEL Platform. Please do not reply directly to this message.<br>
-                      &copy; ${new Date().getFullYear()} Siddhartha Engineering Limited. All rights reserved.
+                      This is an automated email sent by ${safePlatform}. Please do not reply directly to this message.<br>
+                      &copy; ${new Date().getFullYear()} ${safeCompany}. All rights reserved.
                     </p>
                   </td>
                 </tr>

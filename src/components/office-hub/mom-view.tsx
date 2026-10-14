@@ -16,9 +16,12 @@
 
 import { forwardRef } from 'react';
 import type { MomDocument } from '@/lib/office-hub';
+import { CompanyFooterLine, CompanyLetterhead, PrintedOnLine } from '@/components/shared/company-letterhead';
+import { useUiText } from '@/hooks/use-company-profile';
 
 export const MomView = forwardRef<HTMLDivElement, { document: MomDocument; organizationName?: string }>(
   function MomView({ document: mom, organizationName }, ref) {
+    const t = useUiText();
     return (
       <div
         ref={ref}
@@ -30,17 +33,13 @@ export const MomView = forwardRef<HTMLDivElement, { document: MomDocument; organ
         */
         className="mx-auto max-w-[820px] bg-white p-6 text-slate-900 print:max-w-none print:p-0"
       >
-        <header className="border-b-2 border-slate-800 pb-3 text-center">
-          {organizationName && (
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{organizationName}</p>
-          )}
-          <h1 className="mt-1 text-lg font-bold uppercase tracking-[0.12em]">{mom.title}</h1>
-          {mom.stage !== 'Published' && (
-            <p className="mt-1 text-xs font-semibold uppercase tracking-wider text-amber-700">
-              {mom.stage} — not yet published
-            </p>
-          )}
-        </header>
+        {/* The company letterhead; Office Hub's own "Organization name" setting stays as the subtitle. */}
+        <CompanyLetterhead title={mom.title} subtitle={organizationName || undefined} />
+        {mom.stage !== 'Published' && (
+          <p className="mt-1 text-center text-xs font-semibold uppercase tracking-wider text-amber-700">
+            {mom.stage} — not yet published
+          </p>
+        )}
 
         <section className="mt-4 grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
           <Row label="Meeting" value={mom.meetingTitle} />
@@ -196,14 +195,16 @@ export const MomView = forwardRef<HTMLDivElement, { document: MomDocument; organ
 
         <footer className="mt-8 grid grid-cols-1 gap-8 border-t border-slate-300 pt-4 text-sm sm:grid-cols-2">
           <div>
-            <p className="text-slate-500">Prepared by</p>
+            <p className="text-slate-500">{t('preparedBy', 'Prepared by')}</p>
             <p className="mt-6 border-t border-slate-400 pt-1 font-medium">{mom.preparedBy ?? '—'}</p>
           </div>
           <div>
-            <p className="text-slate-500">Approved by</p>
+            <p className="text-slate-500">{t('approvedBy', 'Approved by')}</p>
             <p className="mt-6 border-t border-slate-400 pt-1 font-medium">{mom.approvedBy ?? '—'}</p>
           </div>
         </footer>
+        <PrintedOnLine className="mt-4" />
+        <CompanyFooterLine className="mt-2" />
       </div>
     );
   },
