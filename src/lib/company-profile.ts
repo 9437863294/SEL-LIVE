@@ -7,10 +7,12 @@
  * read goes through `sanitizeCompanyProfile`, so a missing or half-written document still yields a
  * complete profile and every consumer can use any field without a guard.
  *
- * Pure (no imports but the equally pure statutory rules) so it runs under plain node for tests.
+ * Pure (no imports but the equally pure statutory and action-animation rules) so it runs under plain
+ * node for tests.
  */
 
 import { checkGstin, isValidPan, normaliseTaxId } from './statutory.ts';
+import { DEFAULT_ACTION_ANIMATIONS, sanitizeActionAnimations, type ActionAnimationSettings } from './action-animations.ts';
 
 /** The permission resource: View opens the settings screen, Edit saves it. Reading needs neither. */
 export const COMPANY_PROFILE_RESOURCE = 'Settings.Company Profile';
@@ -103,6 +105,8 @@ export interface CompanyDesign {
     /** Empty means the Prepared / Checked / Approved labels. */
     signatureLabels: string[];
   };
+  /** Animated action buttons: the company default per action kind (users may override theirs). */
+  animations: ActionAnimationSettings;
 }
 
 export const UI_TEXT_KEYS = [
@@ -248,6 +252,7 @@ export const DEFAULT_COMPANY_DESIGN: CompanyDesign = {
   // have no collapse toggle, so collapsing is off.
   sidebar: { style: 'soft', width: 'standard', showIcons: true, showGroupLabels: true, collapsible: false, activeIndicator: 'background' },
   print: { showPrintedOn: false, showPageNumbers: false, signatureLabels: [] },
+  animations: DEFAULT_ACTION_ANIMATIONS,
 };
 
 export const DEFAULT_COMPANY_PROFILE: CompanyProfile = {
@@ -428,6 +433,7 @@ export function sanitizeCompanyDesign(raw: unknown, fallback: CompanyDesign = DE
       showPageNumbers: bool(pr.showPageNumbers, f.print.showPageNumbers),
       signatureLabels,
     },
+    animations: sanitizeActionAnimations(source.animations, f.animations ?? DEFAULT_ACTION_ANIMATIONS),
   };
 }
 

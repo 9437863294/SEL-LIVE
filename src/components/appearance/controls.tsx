@@ -237,6 +237,8 @@ export interface SectionLink {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Links are shown in groups (e.g. "Company"); a new group starts with a divider and its name. */
+  group?: string;
 }
 
 /** The Appearance sections, as links (each section is its own page). */
@@ -244,11 +246,18 @@ export function AppearanceSectionNav({ links }: { links: SectionLink[] }) {
   const pathname = usePathname() ?? '';
   return (
     <nav aria-label="Appearance sections" className="-mx-1 overflow-x-auto px-1 pb-1">
-      <ul className="flex min-w-max gap-1 rounded-xl bg-muted p-1">
-        {links.map(({ href, label, icon: Icon }) => {
+      <ul className="flex min-w-max items-center gap-1 rounded-xl bg-muted p-1">
+        {links.map(({ href, label, icon: Icon, group }, index) => {
           const active = href === '/settings/appearance' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+          const startsGroup = index > 0 && group !== links[index - 1].group && Boolean(group);
           return (
-            <li key={href}>
+            <li key={href} className="flex items-center gap-1">
+              {startsGroup && (
+                <span className="flex items-center gap-1.5 pl-1 pr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span className="h-5 w-px bg-border" aria-hidden="true" />
+                  {group}
+                </span>
+              )}
               <Link
                 href={href}
                 aria-current={active ? 'page' : undefined}

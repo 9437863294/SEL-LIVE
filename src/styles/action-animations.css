@@ -1,0 +1,128 @@
+/*
+ * Animated action buttons — the overlay pieces the engine (src/components/shared/action-animations.tsx)
+ * adds for ripples, ticks, flashes and particles. Every piece sits in a fixed, pointer-events:none
+ * layer appended to <body> over the button, so nothing here can move a layout or catch a click;
+ * the engine removes each layer when its animation ends. Transform/opacity-only keyframes, and only
+ * features Chrome 109 has (no color-mix, no @property).
+ */
+
+.aa-layer {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2147483000;
+  contain: layout style;
+}
+
+.aa-layer.aa-clip {
+  overflow: hidden;
+}
+
+.aa-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--aa-color, currentColor);
+  opacity: 0;
+  transform: scale(0);
+  animation: aa-ripple var(--aa-dur, 400ms) ease-out forwards;
+}
+
+@keyframes aa-ripple {
+  0% { transform: scale(0); opacity: var(--aa-alpha, 0.3); }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+.aa-cover {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aa-check {
+  background: var(--aa-bg, hsl(var(--success)));
+  color: var(--aa-fg, #ffffff);
+  opacity: 0;
+  animation: aa-check var(--aa-dur, 600ms) ease forwards;
+}
+
+.aa-check svg {
+  width: 1.15em;
+  height: 1.15em;
+  max-height: 70%;
+  overflow: visible;
+}
+
+.aa-check path {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: aa-draw calc(var(--aa-dur, 600ms) * 0.45) ease-out forwards;
+  animation-delay: calc(var(--aa-dur, 600ms) * 0.12);
+}
+
+@keyframes aa-check {
+  0% { opacity: 0; transform: scale(0.85); }
+  18% { opacity: 1; transform: scale(1); }
+  78% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@keyframes aa-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.aa-flash {
+  background: hsl(var(--destructive));
+  opacity: 0;
+  animation: aa-flash var(--aa-dur, 450ms) ease-out forwards;
+}
+
+@keyframes aa-flash {
+  0% { opacity: 0; }
+  25% { opacity: var(--aa-alpha, 0.45); }
+  100% { opacity: 0; }
+}
+
+.aa-particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--aa-size, 6px);
+  height: var(--aa-size, 6px);
+  margin-left: calc(var(--aa-size, 6px) / -2);
+  margin-top: calc(var(--aa-size, 6px) / -2);
+  border-radius: 50%;
+  background: var(--aa-color, hsl(var(--primary)));
+  opacity: 0;
+  animation: aa-burst var(--aa-dur, 600ms) cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+.aa-particle.aa-confetti {
+  border-radius: 1px;
+  height: calc(var(--aa-size, 6px) * 0.55);
+  animation-name: aa-confetti;
+}
+
+@keyframes aa-burst {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--aa-dx, 0), var(--aa-dy, 0)) scale(0.3); opacity: 0; }
+}
+
+@keyframes aa-confetti {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translate(var(--aa-dx, 0), var(--aa-dy, 0)) rotate(var(--aa-rot, 180deg)); opacity: 0; }
+}
+
+/* The engine already does nothing under reduced motion; this is the belt to its braces. */
+@media (prefers-reduced-motion: reduce) {
+  .aa-layer { display: none; }
+}
+
+html[data-motion='reduced'] .aa-layer {
+  display: none;
+}

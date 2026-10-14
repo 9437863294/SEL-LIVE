@@ -1,26 +1,35 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Accessibility, Building2, LayoutPanelLeft, Palette, SwatchBook } from 'lucide-react';
+import { Accessibility, Building2, LayoutDashboard, LayoutPanelLeft, Palette, SwatchBook } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { AppearanceSectionNav, SaveStatus, type SectionLink } from '@/components/appearance/controls';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { appearanceAdminRights } from '@/lib/appearance/permissions';
+import { appearanceAdminRights, canOpenAppearanceAdmin } from '@/lib/appearance/permissions';
+import { COMPANY_PROFILE_RESOURCE } from '@/lib/company-profile';
 
 /**
- * Settings → Appearance: three personal sections every user has, and two company sections for
- * the people allowed to manage branding and themes. Hiding a section here is courtesy; the API
- * routes behind the company sections check the same rights and refuse everyone else.
+ * Settings → Appearance — every design setting in one place. Three personal sections every user
+ * has, then the company sections: branding and themes for the people allowed to manage them, and
+ * Company Layout (sidebars, tables, dialogs, text labels — parts of the company profile — and
+ * the company's animations) for `Settings.Company Profile` View/Edit holders and appearance
+ * administrators. Hiding a section here is courtesy; the API routes behind the company sections
+ * check the same rights and refuse everyone else.
  */
 export default function AppearanceLayout({ children }: { children: ReactNode }) {
   const { can } = useAuthorization();
   const rights = appearanceAdminRights(can);
+  const viewCompanyProfile = can('View', COMPANY_PROFILE_RESOURCE) || can('Edit', COMPANY_PROFILE_RESOURCE);
+  const company = 'Company';
   const links: SectionLink[] = [
     { href: '/settings/appearance', label: 'My Appearance', icon: Palette },
     { href: '/settings/appearance/layout-navigation', label: 'Layout and Navigation', icon: LayoutPanelLeft },
     { href: '/settings/appearance/accessibility', label: 'Accessibility', icon: Accessibility },
-    ...(rights.viewBranding ? [{ href: '/settings/appearance/branding', label: 'Company Branding', icon: Building2 }] : []),
-    ...(rights.viewThemes ? [{ href: '/settings/appearance/themes', label: 'Theme Management', icon: SwatchBook }] : []),
+    ...(rights.viewBranding ? [{ href: '/settings/appearance/branding', label: 'Company Branding', icon: Building2, group: company }] : []),
+    ...(rights.viewThemes ? [{ href: '/settings/appearance/themes', label: 'Theme Management', icon: SwatchBook, group: company }] : []),
+    ...(viewCompanyProfile || canOpenAppearanceAdmin(rights)
+      ? [{ href: '/settings/appearance/company-layout', label: 'Layout, Text and Animations', icon: LayoutDashboard, group: company }]
+      : []),
   ];
 
   return (

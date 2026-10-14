@@ -2,6 +2,7 @@
 import './globals.css';
 // The table/dialog design settings (company profile), keyed off data-* attributes on <html>.
 import '@/styles/ui-design.css';
+import '@/styles/action-animations.css';
 // The module sidebar (src/components/shared/module-shell.tsx), keyed off data-sidebar-* on <html>.
 import '@/styles/module-shell.css';
 // After globals.css: its dark-mode remaps must come later than Tailwind's utilities to win.

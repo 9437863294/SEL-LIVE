@@ -10,6 +10,7 @@
  * (`tests/appearance-model.test.mjs`); hence no enums and no constructor parameter properties.
  */
 import { isHex, normalizeHex, type Hex } from './color.ts';
+import { sanitizeUserAnimations, type UserActionAnimations } from '../action-animations.ts';
 
 // ── Option lists ─────────────────────────────────────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ export type FontId = (typeof FONTS)[number];
 
 /**
  * A user's own default dialog width. `auto` keeps each dialog's designed width whatever the company
- * chose; absent follows the company (Settings › Company Profile › Layout).
+ * chose; absent follows the company (Settings › Appearance › Layout, Text and Animations).
  */
 export const DIALOG_SIZES = ['auto', 'sm', 'md', 'lg', 'xl'] as const;
 export type DialogSizePreference = (typeof DIALOG_SIZES)[number];
@@ -186,6 +187,11 @@ export interface UserAppearancePreferences {
   dialogOpenMaximised?: boolean;
   /** Scales the text inside dialogs only. */
   dialogTextSize?: TextSize;
+  /**
+   * Animated action buttons: `company` follows Settings › Company Profile's defaults, `custom` uses
+   * the kinds set here over them, `off` plays nothing. Absent means `company`.
+   */
+  animations?: UserActionAnimations;
 }
 
 export interface CompanyDefaults {
@@ -397,6 +403,7 @@ export function sanitizePreferences(input: unknown, knownModules?: readonly stri
     dialogControls: bool(raw.dialogControls),
     dialogOpenMaximised: bool(raw.dialogOpenMaximised),
     dialogTextSize: pick(TEXT_SIZES, raw.dialogTextSize),
+    animations: sanitizeUserAnimations(raw.animations),
   });
   if (Object.keys(layout).length) prefs.layout = layout;
   return prefs;

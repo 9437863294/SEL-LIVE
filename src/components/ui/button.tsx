@@ -4,6 +4,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import type { ActionKind } from "@/lib/action-animations"
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
@@ -38,10 +39,15 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  /**
+   * Which action this button performs, for the animated action buttons (Settings › Appearance).
+   * Left out, the kind is inferred from the label ("Save", "Delete"…); `false` opts the button out.
+   */
+  action?: ActionKind | false
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, action, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
     return (
       <Comp
@@ -49,6 +55,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         // Lets a layout tell a square icon button from a labelled one (the page header's action
         // row stretches labelled buttons across a phone, never icon ones).
         data-size={size ?? "default"}
+        // Read by the action-animation engine (src/components/shared/action-animations.tsx).
+        data-button-variant={variant ?? "default"}
+        data-action={action === false ? "false" : action}
         ref={ref}
         {...props}
       />

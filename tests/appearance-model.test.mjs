@@ -101,6 +101,19 @@ test('dialog preferences keep only listed sizes and real booleans', () => {
   );
 });
 
+test('button animation preferences keep a valid mode, and kinds only in custom mode', () => {
+  assert.deepEqual(sanitizePreferences({ animations: { mode: 'off' } }), { animations: { mode: 'off' } });
+  assert.deepEqual(sanitizePreferences({ animations: { mode: 'company', kinds: { save: { press: 'bounce' } } } }), { animations: { mode: 'company' } });
+  assert.deepEqual(sanitizePreferences({ animations: { mode: 'wild' } }), {});
+  assert.deepEqual(sanitizePreferences({ animations: 'off' }), {});
+  const custom = sanitizePreferences({ animations: { mode: 'custom', kinds: { delete: { press: 'bounce', complete: 'confetti-lite', durationMs: 99999 }, nope: {} } } });
+  assert.equal(custom.animations.mode, 'custom');
+  assert.deepEqual(Object.keys(custom.animations.kinds), ['delete']);
+  assert.equal(custom.animations.kinds.delete.press, 'bounce');
+  assert.equal(custom.animations.kinds.delete.complete, 'confetti-lite');
+  assert.equal(custom.animations.kinds.delete.durationMs, 1200);
+});
+
 test('dialog preferences default to the company size, controls on, not maximised, page-sized text', () => {
   const plain = resolveAppearance(DEFAULT_CONFIG, {});
   assert.equal(plain.dialogSize, null);

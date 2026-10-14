@@ -28,6 +28,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ActionAnimationSettings } from '@/components/appearance/action-animation-settings';
 import { AppearanceGallery } from '@/components/appearance/AppearanceGallery';
 import { ChoiceGroup, SettingsSection, SwitchRow, type Choice } from '@/components/appearance/controls';
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
@@ -319,6 +320,8 @@ export default function MyAppearancePage() {
             columns={2}
           />
         </SettingsSection>
+
+        <ActionAnimationSettings scope="personal" />
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
           <div>

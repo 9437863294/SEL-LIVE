@@ -123,7 +123,7 @@ const settingsItemsBase: SettingsItemConfig[] = [
   {
     icon: Palette,
     text: 'Appearance',
-    description: "Customize the application's look and feel.",
+    description: 'How the app looks and moves: theme, layout, tables and dialogs, animations and text labels.',
     href: '/settings/appearance',
     permission: 'View',
     colorScheme: {
@@ -201,7 +201,7 @@ const settingsItemsBase: SettingsItemConfig[] = [
   {
     icon: Building2,
     text: 'Company Profile',
-    description: 'Company details, GST registrations, letterhead, layout and the wording every module shares.',
+    description: 'Company details, GST registrations, letterhead and print.',
     href: '/settings/company-profile',
     permission: 'View',
     colorScheme: {

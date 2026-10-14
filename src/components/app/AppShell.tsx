@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import Header from '@/components/app/Header';
 import Breadcrumbs from '@/components/app/Breadcrumbs';
 import { CompanyDesignProvider } from '@/components/shared/company-design-provider';
+import { ActionAnimationProvider } from '@/components/shared/action-animations';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
 
@@ -86,6 +87,7 @@ export default function AppShell({
                 // Once authenticated, render the full application shell with header and footer.
                 <div className="flex flex-col min-h-screen">
                     <CompanyDesignProvider />
+                    <ActionAnimationProvider />
                     {!shouldUseDriverMobileShell && (
                         <>
                             <Header />

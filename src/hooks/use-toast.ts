@@ -144,6 +144,23 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">
 
+/** A newly shown toast, as passed to `onToastAdded` listeners. */
+export type AddedToast = Pick<ToasterToast, "id" | "title" | "description" | "variant">
+
+const addedListeners = new Set<(toast: AddedToast) => void>()
+
+/**
+ * Be told about every new toast (not updates or dismissals). The animated action buttons use it:
+ * a success toast right after a button press plays that button's completion effect, a destructive
+ * one its failure effect. Returns the unsubscribe function.
+ */
+function onToastAdded(listener: (toast: AddedToast) => void): () => void {
+  addedListeners.add(listener)
+  return () => {
+    addedListeners.delete(listener)
+  }
+}
+
 function toast({ ...props }: Toast) {
   const id = genId()
 
@@ -164,6 +181,14 @@ function toast({ ...props }: Toast) {
         if (!open) dismiss()
       },
     },
+  })
+
+  addedListeners.forEach((listener) => {
+    try {
+      listener({ id, title: props.title, description: props.description, variant: props.variant })
+    } catch {
+      // A listener's failure never stops the toast.
+    }
   })
 
   return {
@@ -193,4 +218,4 @@ function useToast() {
   }
 }
 
-export { useToast, toast }
+export { useToast, toast, onToastAdded }
