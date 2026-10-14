@@ -15,7 +15,7 @@ before(async () => {
     'billTrackingBills/b1': { amount: 1 },
     'userPermissions/u1': { p: { 'Settings': ['View'] } },
     'userPermissions/u2': { p: {} },
-    'windowsSessions/s1': { userId: 'u1' },
+    'userLocationSettings/s1': { userId: 'u1' },
     'categories/c1': { name: 'Fuel' },
     'inventoryItems/i1': { name: 'Cement' },
     'projects/p1': { name: 'Tower A' },
@@ -52,12 +52,12 @@ test('a person can read only their own permissions document, and write none', as
 });
 
 test('browser-read-only collections can be read but not written', async () => {
-  await assertSucceeds(signedIn().doc('windowsSessions/s1').get());
-  await assertSucceeds(signedIn().collection('windowsSessions').where('userId', '==', 'u1').get());
+  await assertSucceeds(signedIn().doc('userLocationSettings/s1').get());
+  await assertSucceeds(signedIn().collection('userLocationSettings').where('userId', '==', 'u1').get());
   await assertSucceeds(signedIn().collection('categories').get());
   await assertSucceeds(signedIn().collection('inventoryItems').get());
-  await assertFails(signedIn().doc('windowsSessions/s1').update({ totalMinutes: 999 }));
-  await assertFails(signedIn().doc('windowsSessions/s9').set({ userId: 'u1' }));
+  await assertFails(signedIn().doc('userLocationSettings/s1').update({ totalMinutes: 999 }));
+  await assertFails(signedIn().doc('userLocationSettings/s9').set({ userId: 'u1' }));
   await assertFails(signedIn().doc('categories/c1').delete());
   await assertFails(signedIn().doc('inventoryItems/i2').set({ name: 'x' }));
 });

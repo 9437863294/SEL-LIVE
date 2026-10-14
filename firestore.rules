@@ -79,9 +79,7 @@ service cloud.firestore {
         'inventoryBalances', 'inventoryDocuments', 'inventoryItems', 'inventoryLocations',
         'inventoryStockCounts', 'stockLedger',
         'recurringPaymentAutomationLogs', 'recurringPaymentNotificationQueue',
-        'userLocationSettings',
-        'windowsActivityEvents', 'windowsDailyActivity', 'windowsNotifications',
-        'windowsSessions'
+        'userLocationSettings'
       ];
     }
 
@@ -90,6 +88,8 @@ service cloud.firestore {
       return collection in [
         'windowsAgentPolicies', 'windowsAgentVersions', 'windowsAppCatalog', 'windowsAuditLogs',
         'windowsEnrollmentCodes', 'windowsHeartbeats',
+        'windowsActivityEvents', 'windowsAgentSettings', 'windowsDailyActivity', 'windowsDevices',
+        'windowsNotifications', 'windowsSessions', 'windowsUserAccess',
         'eApprovalAttachments', 'eApprovalComments', 'eApprovalCounters', 'eApprovalDelegations',
         'eApprovalDepartmentRouting', 'eApprovalHistory', 'eApprovalProjectRouting', 'eApprovalRequests',
         'eApprovalRules', 'eApprovalSettings', 'eApprovalSignatures', 'eApprovalSteps',
@@ -184,8 +184,7 @@ service cloud.firestore {
     /* ── Windows Agent administration (src/lib/windows-agent-permissions.ts) ────────────────────
      *
      * The live board, enrolment codes, policies, the application catalogue, published builds and
-     * the audit trail. Sessions, activity and attendance stay on the catch-all for now: employees
-     * read their own by `userId == users-document id`, which needs its own care.
+     * the audit trail. Sessions, activity, devices, access and settings have their own block below.
      */
     function windowsAgentUser() {
       return holdsAnyOf([
@@ -3230,6 +3229,171 @@ service cloud.firestore {
       allow create, update: if settingId == 'fieldControl'
         ? vmHolds(vmPage('Settings'), ['Manage Field Control', 'Edit'])
         : vmHolds(vmPage('Settings'), ['Edit']);
+    }
+
+    /* ── Windows Agent: activity, devices, access, notifications, settings ───────────────────────
+     *
+     * The rest of the module (src/lib/windows-agent-permissions.ts; every browser query is in
+     * src/lib/windows-agent-service.ts). The agent and the work-calls app write through
+     * /api/windows-agent/* on the Admin SDK; nothing here is written by a machine.
+     *
+     * Sessions, daily rollups and activity spans follow `canViewActivityOf`:
+     *   - `View All`: anybody's;
+     *   - your own (`userId` == your `users` id), when `canViewOwnActivity` holds — any Activity
+     *     grant, or the installation's `employeeSelfViewEnabled`, which is on unless switched off;
+     *   - `View Department` and `View Team`: rows filed under one of `userPermissions.departmentIds`
+     *     (the lists query `departmentId in [...]`), or one named person whose `users.departmentId`
+     *     is one of them (the person page queries `userId == X`). A team is drawn from those same
+     *     departments in this installation (`teamUserIds` in the module's provider), and the team
+     *     lists ask by department for that reason — a list of user ids cannot be checked here;
+     *   - `Live Users View`: open sessions only, which is all the live board subscribes to.
+     * Sessions View, Attendance View, Reports View and Dashboard View open pages; what those pages
+     * show is still the activity scope above, so they add nothing at this layer.
+     *
+     * Budget: the permissions document (1), the settings document (1, own rows without a grant) and
+     * the named person's `users` document (1) — 3 of 10.
+     */
+    function waHolds(page, actions) {
+      return hasPermissions() && get(permissionsPath()).data.p.get('Windows Agent.' + page, []).hasAny(actions);
+    }
+
+    /** The caller's `users` id; '' when unknown or deactivated, which then matches no one. */
+    function waMe() {
+      return hasPermissions() && get(permissionsPath()).data.get('active', false) == true
+        ? get(permissionsPath()).data.get('userDocId', '') : '';
+    }
+
+    function waSettingsPath() {
+      return /databases/$(database)/documents/windowsAgentSettings/default;
+    }
+
+    /** `canViewOwnActivity`: a grant, or the installation setting (a missing document means on). */
+    function waSelfView() {
+      return waHolds('Activity', ['View Own', 'View Team', 'View Department', 'View All'])
+        || !exists(waSettingsPath())
+        || get(waSettingsPath()).data.get('employeeSelfViewEnabled', true) != false;
+    }
+
+    function waOwn(userId) {
+      return waMe() != '' && userId == waMe() && waSelfView();
+    }
+
+    function waMyDepartments() {
+      return get(permissionsPath()).data.get('departmentIds', []);
+    }
+
+    function waUserPath(userId) {
+      return /databases/$(database)/documents/users/$(userId);
+    }
+
+    /** A named person in one of the caller's departments, by their `users` record. */
+    function waColleague(userId) {
+      return exists(waUserPath(userId)) && get(waUserPath(userId)).data.get('departmentId', '') in waMyDepartments();
+    }
+
+    /** Sessions and daily rollups, which carry the department they were recorded under. */
+    function waActivityReader(data) {
+      return waHolds('Activity', ['View All'])
+        || waOwn(data.userId)
+        || (waHolds('Activity', ['View Department', 'View Team'])
+          && (data.departmentId in waMyDepartments() || waColleague(data.userId)));
+    }
+
+    match /windowsSessions/{sessionId} {
+      allow read: if (resource.data.status == 'OPEN' && holds('Windows Agent.Live Users', 'View'))
+        || waActivityReader(resource.data);
+    }
+
+    match /windowsDailyActivity/{rollupId} {
+      allow read: if waActivityReader(resource.data);
+    }
+
+    /** One person's spans for one day (`userId ==`, `workDate ==`). They carry no department. */
+    match /windowsActivityEvents/{eventId} {
+      allow read: if waHolds('Activity', ['View All'])
+        || waOwn(resource.data.userId)
+        || (waHolds('Activity', ['View Department', 'View Team']) && waColleague(resource.data.userId));
+    }
+
+    /* Enrolled computers. Created, re-keyed and secured only by the API: each browser action may
+     * change its own fields and the update stamps, so the credential (`deviceSecretHash`,
+     * `secretVersion`), the posture (`securityPosture`, `lastSecurityCheckAt`), the security
+     * policy and the maintenance grant are out of every browser's reach. */
+    function waChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function waStampedBy(field) {
+      return !waChanged().hasAny([field]) || request.resource.data[field] == waMe();
+    }
+
+    function waDeviceUpdate() {
+      return waStampedBy('updatedBy') && (
+        // Approve a pending PC (Edit); block any PC, or unblock a blocked one (Block).
+        (waChanged().hasOnly(['status', 'statusReason', 'statusChangedAt', 'statusChangedBy',
+            'updatedAt', 'updatedBy', 'updatedByName'])
+          && waStampedBy('statusChangedBy')
+          && ((waHolds('Devices', ['Edit']) && resource.data.status == 'PENDING'
+              && request.resource.data.status == 'ACTIVE')
+            || (waHolds('Devices', ['Block']) && (request.resource.data.status == 'BLOCKED'
+              || (resource.data.status == 'BLOCKED' && request.resource.data.status == 'ACTIVE')))))
+        || (waHolds('Devices', ['Force Re-authentication']) && waChanged().hasAny(['forceReauthAt'])
+          && waChanged().hasOnly(['forceReauthAt', 'statusReason', 'updatedAt', 'updatedBy', 'updatedByName']))
+        || (waHolds('Devices', ['Sign Out User']) && waChanged().hasAny(['forceSignOutAt'])
+          && waChanged().hasOnly(['forceSignOutAt', 'statusReason', 'updatedAt', 'updatedBy', 'updatedByName']))
+        || (waHolds('Devices', ['Assign Users']) && request.resource.data.assignedUserIds is list
+          && waChanged().hasOnly(['assignedUserIds', 'updatedAt', 'updatedBy', 'updatedByName']))
+        || (waHolds('Devices', ['Edit'])
+          && waChanged().hasOnly(['updateRing', 'deviceName', 'updatedAt', 'updatedBy', 'updatedByName'])
+          && request.resource.data.get('updateRing', 'BROAD') in ['PILOT', 'EARLY', 'BROAD', 'HELD']
+          && request.resource.data.deviceName is string && request.resource.data.deviceName.size() > 0)
+      );
+    }
+
+    match /windowsDevices/{deviceId} {
+      // The live board joins its open sessions to the machines they are on.
+      allow read: if waHolds('Devices', ['View']) || holds('Windows Agent.Live Users', 'View');
+      allow update: if waDeviceUpdate();
+    }
+
+    /** Which PCs one person may sign in on, keyed by their `users` id. Never their own to edit. */
+    match /windowsUserAccess/{userId} {
+      allow read: if waHolds('Devices', ['View', 'Assign Users']);
+      allow create, update: if waHolds('Devices', ['Assign Users'])
+        && request.resource.data.userId == userId
+        && request.resource.data.allowedDeviceIds is list
+        && request.resource.data.get('updatedBy', '') == waMe();
+      allow delete: if waHolds('Devices', ['Assign Users']);
+    }
+
+    /** Sent through /api/windows-agent/notifications/send; the delivery report reads the counts. */
+    match /windowsNotifications/{notificationId} {
+      allow read: if waHolds('Notifications', ['View', 'Send']);
+    }
+
+    /*
+     * The monitoring statement and the self-view switch. Readable by everybody signed in: a
+     * disclosure only the monitors can read is not one, and the switch decides what the rules above
+     * let employees see. Written by Monitoring Policy Edit, in the fields its page saves.
+     */
+    function waSettingsValid(data) {
+      return data.employeeSelfViewEnabled is bool
+        && (data.monitoringPolicyText == null || data.monitoringPolicyText is string)
+        && data.minimumFullDaySeconds is number
+        && data.minimumFullDaySeconds > 0 && data.minimumFullDaySeconds <= 86400
+        && data.get('updatedBy', '') == waMe();
+    }
+
+    match /windowsAgentSettings/{docId} {
+      allow get: if signedIn();
+      allow create: if docId == 'default' && holds('Windows Agent.Monitoring Policy', 'Edit')
+        && request.resource.data.keys().hasOnly(['employeeSelfViewEnabled', 'monitoringPolicyText',
+          'minimumFullDaySeconds', 'updatedAt', 'updatedBy', 'updatedByName'])
+        && waSettingsValid(request.resource.data);
+      allow update: if holds('Windows Agent.Monitoring Policy', 'Edit')
+        && waChanged().hasOnly(['employeeSelfViewEnabled', 'monitoringPolicyText', 'minimumFullDaySeconds',
+          'updatedAt', 'updatedBy', 'updatedByName'])
+        && waSettingsValid(request.resource.data);
     }
 
     /* ── TRANSITIONAL CATCH-ALL ─────────────────────────────────────────────────────────────────

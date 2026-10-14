@@ -89,8 +89,8 @@ const IN_CLAUSE_LIMIT = 30;
 /**
  * Turn a viewer's scope into `where` clauses for a collection keyed by `userId`/`departmentId`.
  *
- * Returns null when the scope cannot be expressed as a single query — a team of more than thirty
- * people exceeds Firestore's `in` limit. Callers fall back to chunked queries rather than to an
+ * Returns null when the scope cannot be expressed as a single query — a team is its viewer plus
+ * their departments (`teamConstraints`). Callers fall back to several queries rather than to an
  * unfiltered read, because an unfiltered read is precisely the thing the scope exists to prevent.
  */
 export function scopeConstraints(scope: ActivityScope): QueryConstraint[] | null {
@@ -102,9 +102,10 @@ export function scopeConstraints(scope: ActivityScope): QueryConstraint[] | null
       if (scope.departmentIds.length > IN_CLAUSE_LIMIT) return null;
       return [where('departmentId', 'in', scope.departmentIds)];
     case 'TEAM':
-      if (!scope.userIds.length) return [where('userId', '==', scope.selfUserId)];
-      if (scope.userIds.length > IN_CLAUSE_LIMIT) return null;
-      return [where('userId', 'in', scope.userIds)];
+      // The team is drawn from the viewer's departments, so it is asked for by department plus
+      // the viewer themselves (`teamConstraints`) — a list of user ids is a filter the Firestore
+      // rules cannot check, so a `userId in [...]` query is refused for everybody without View All.
+      return scope.departmentIds.length ? null : [where('userId', '==', scope.selfUserId)];
     case 'SELF':
       return [where('userId', '==', scope.userId)];
     default:
@@ -123,6 +124,26 @@ function chunk<T>(items: readonly T[], size = IN_CLAUSE_LIMIT): T[][] {
 
 const readAll = <T,>(snapshot: { docs: { id: string; data: () => unknown }[] }): T[] =>
   snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as object) }) as T);
+
+/**
+ * A team's queries: the viewer's own rows, and their departments' in `in`-sized chunks.
+ *
+ * A row is filed under the department its owner was in on the day, so a newcomer's earlier days
+ * elsewhere are not shown and a leaver's days here are — the same answer `View Department` gives.
+ */
+function teamConstraints(scope: Extract<ActivityScope, { kind: 'TEAM' }>): QueryConstraint[][] {
+  return [
+    [where('userId', '==', scope.selfUserId)],
+    ...chunk(scope.departmentIds).map((ids) => [where('departmentId', 'in', ids)]),
+  ];
+}
+
+/** Several queries' rows as one list: each document once, newest work day first. */
+function mergeRows<T extends { id: string; workDate: string }>(groups: T[][]): T[] {
+  const byId = new Map<string, T>();
+  for (const row of groups.flat()) if (!byId.has(row.id)) byId.set(row.id, row);
+  return [...byId.values()].sort((left, right) => right.workDate.localeCompare(left.workDate));
+}
 
 /* ------------------------------------------------------------------------------------------------
  * Devices (§34)
@@ -473,14 +494,14 @@ export async function fetchSessions(options: SessionQuery): Promise<WindowsSessi
   const scoped = scopeConstraints(options.scope);
   if (scoped) return runSessionQuery([...scoped, ...base], options.max);
 
-  // A scope too wide for one `in` clause: run it in chunks rather than dropping the filter.
+  // A team: several queries rather than one unfiltered read.
   if (options.scope.kind === 'TEAM') {
     const groups = await Promise.all(
-      chunk(options.scope.userIds).map((ids) =>
-        runSessionQuery([where('userId', 'in', ids), ...base], options.max),
+      teamConstraints(options.scope).map((constraints) =>
+        runSessionQuery([...constraints, ...base], options.max),
       ),
     );
-    return groups.flat();
+    return mergeRows(groups);
   }
   return [];
 }
@@ -527,9 +548,9 @@ export async function fetchDailyActivity(options: {
 
   if (options.scope.kind === 'TEAM') {
     const groups = await Promise.all(
-      chunk(options.scope.userIds).map((ids) => run([where('userId', 'in', ids), ...base])),
+      teamConstraints(options.scope).map((constraints) => run([...constraints, ...base])),
     );
-    return groups.flat();
+    return mergeRows(groups);
   }
   return [];
 }

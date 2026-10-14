@@ -331,7 +331,12 @@ export function canExportReports(viewer: WindowsAgentViewer): boolean {
 export type ActivityScope =
   | { kind: 'NONE' }
   | { kind: 'SELF'; userId: string }
-  | { kind: 'TEAM'; userIds: string[]; selfUserId: string }
+  /**
+   * `departmentIds` is what the team is drawn from (see `teamUserIds` in the module's provider),
+   * and what the list queries filter on: the Firestore rules can check a document's
+   * `departmentId` against `userPermissions.departmentIds`, but not membership of a user-id list.
+   */
+  | { kind: 'TEAM'; userIds: string[]; departmentIds: string[]; selfUserId: string }
   | { kind: 'DEPARTMENT'; departmentIds: string[]; selfUserId: string }
   | { kind: 'ALL' };
 
@@ -358,6 +363,7 @@ export function resolveActivityScope(viewer: WindowsAgentViewer): ActivityScope 
       // A manager is part of their own team's picture; leaving themselves out of their own report
       // is the kind of gap that gets noticed once and then distrusted forever.
       userIds: Array.from(new Set([...viewer.teamUserIds, viewer.userId])),
+      departmentIds: [...viewer.departmentIds],
       selfUserId: viewer.userId,
     };
   }
