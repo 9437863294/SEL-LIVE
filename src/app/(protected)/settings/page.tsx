@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import {
   Activity, Briefcase, Construction, Clock, Users, Hash,
-  Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound,
+  Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound, DatabaseZap,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -185,6 +185,19 @@ const settingsItemsBase: SettingsItemConfig[] = [
       border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
     },
   },
+  {
+    icon: DatabaseZap,
+    text: 'Reporting Database',
+    description: 'Schedule the MongoDB copy of the app’s data used by reporting tools.',
+    href: '/settings/reporting-database',
+    permission: 'View',
+    colorScheme: {
+      bg: 'from-cyan-500/8 to-cyan-600/4',
+      iconBg: 'bg-cyan-100 dark:bg-cyan-900/40',
+      iconColor: 'text-cyan-600 dark:text-cyan-400',
+      border: 'border-cyan-200/60 dark:border-cyan-800/30 hover:border-cyan-400/60',
+    },
+  },
 ];
 
 function SettingsCard({
@@ -255,6 +268,7 @@ export default function SettingsPage() {
     '/settings/email-authorization': 'Settings.Email Authorization',
     '/settings/login-expiry': 'Settings.Login Expiry',
     '/settings/audit-logs': 'Settings.Audit Logs',
+    '/settings/reporting-database': 'Settings.Reporting Database',
     '/store-stock-management/settings': 'Store & Stock Management',
   };
 

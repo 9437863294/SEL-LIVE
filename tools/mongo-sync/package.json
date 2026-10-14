@@ -1,0 +1,13 @@
+{
+  "name": "mongo-sync",
+  "private": true,
+  "description": "One-way copy of the (default) Firestore database into the MongoDB-compatible `newdatabase`, for reporting with MongoDB tools. Kept out of the app's package.json so the driver never touches the app's dependency tree.",
+  "type": "module",
+  "scripts": {
+    "sync": "node sync.mjs",
+    "dry-run": "node sync.mjs --dry-run"
+  },
+  "dependencies": {
+    "mongodb": "^6.10.0"
+  }
+}

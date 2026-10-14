@@ -1,0 +1,80 @@
+# Ticks the reporting copy every 15 minutes, so the MongoDB copy of the app's data (`newdatabase`)
+# is refreshed on the schedule set in Settings › Reporting Database, and "Refresh now" carries on
+# until it is finished.
+#
+# Why this exists: the app deploys to Firebase App Hosting, which has no scheduler of its own (and
+# never reads `vercel.json`). Same arrangement as recurring-payments-automation.yml.
+#
+# The route decides for itself whether a refresh is due (`reportingCopyDue` against the saved
+# schedule and any pending "Refresh now"), so this workflow does not need to know the schedule. A
+# full copy (~100k documents, ~150 collections) does not fit in one request, so a run is resumable:
+# each tick claims the run, copies for about four minutes, saves its cursor and returns; the next
+# tick continues from there. A tick with nothing to do returns `"action": "idle"` in under a second.
+#
+# Required repository secret (Settings → Secrets and variables → Actions):
+#   CRON_SECRET   sent as `Authorization: Bearer …`. Set the same value in BOTH places — this
+#                 secret and the App Hosting backend's environment. Unlike the older cron routes this
+#                 one fails closed: with no CRON_SECRET on the server it answers 503 and copies
+#                 nothing, and with a different one it answers 401.
+#
+# Optional repository variable:
+#   APP_BASE_URL  defaults to https://seltech.store
+#
+# GitHub's scheduler runs only from the default branch and is best-effort: a tick can be late or,
+# rarely, skipped. A late tick still finds the refresh due, and a skipped one only delays the next
+# slice. GitHub also disables scheduled workflows in repositories with no activity for 60 days.
+
+name: Reporting copy refresh (scheduled)
+
+on:
+  schedule:
+    # Every 15 minutes (UTC), offset from the other ticks. The refresh time itself is set in the app.
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+# One slice at a time. The run's lease makes an overlap harmless (the second tick answers "busy"),
+# but there is no reason to race, and a slice cut off mid-page only costs a retry.
+concurrency:
+  group: reporting-copy
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    name: Continue or start the reporting copy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Tick the reporting copy endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://seltech.store' }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Set the CRON_SECRET repository secret — the endpoint refuses ticks without it."
+            exit 1
+          fi
+          # The route works for up to ~4 minutes (maxDuration 300s); no --retry, the next tick retries.
+          args=(--silent --show-error --fail-with-body --max-time 330 --header "Authorization: Bearer ${CRON_SECRET}")
+
+          echo "Ticking ${BASE_URL}/api/reporting-copy/tick"
+          body="$(curl "${args[@]}" "${BASE_URL}/api/reporting-copy/tick")"
+          status=$?
+          echo "${body}" | jq . || echo "${body}"
+
+          if [ "${status}" -ne 0 ]; then
+            echo "::error::Could not reach the reporting copy endpoint (curl exit ${status})."
+            exit 1
+          fi
+          if [ "$(jq -r '.ok' <<<"${body}")" != "true" ]; then
+            echo "::error::The reporting copy reported a failure — see the body above."
+            exit 1
+          fi
+
+          jq -r '
+            "**\(.action)** — \(.reason)"
+            + (if .lastRun then " · run \(.lastRun.status): \(.lastRun.documents) documents, \(.lastRun.collections) collections, \(.lastRun.removed) removed" else "" end)
+            + (if .progress and .progress.target then " · at \(.progress.target)" else "" end)
+          ' <<<"${body}" >> "${GITHUB_STEP_SUMMARY}"

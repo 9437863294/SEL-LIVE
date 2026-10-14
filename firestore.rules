@@ -65,6 +65,8 @@ service cloud.firestore {
         'news', 'team',
         'officeHubAttendanceLog', 'officeHubGoogleConnections',
         'recurringPaymentAutomationRuns',
+        // The reporting copy's schedule and run state; only its API routes read or write them.
+        'reportingCopy',
         'userAppearance', 'userPermissions',
         'windowsApplicationUsage', 'windowsDeviceAssignments', 'windowsNotificationReceipts',
         'workCalls', 'workContacts'

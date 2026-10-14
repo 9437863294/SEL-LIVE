@@ -23,6 +23,8 @@ before(async () => {
     'projects/p1/indents/i1': { status: 'Pending' },
     'projects/p1/bills/b1': { amount: 10 },
     'userLogs/x1': { userId: 'u1' },
+    'reportingCopy/config': { enabled: true },
+    'reportingCopy/state': { lastRun: null },
   });
 });
 after(async () => env?.cleanup());
@@ -36,6 +38,15 @@ test('server-only collections refuse a signed-in browser, read and write', async
   }
   await assertFails(signedIn().collection('employeeSensitive').get());
   await assertFails(signedIn().collection('mailHubThreads').limit(1).get());
+});
+
+test("the reporting copy's schedule and run state are server-only", async () => {
+  for (const path of ['reportingCopy/config', 'reportingCopy/state']) {
+    await assertFails(signedIn().doc(path).get());
+    await assertFails(signedIn().doc(path).set({ enabled: true }));
+  }
+  await assertFails(signedIn().collection('reportingCopy').get());
+  await assertFails(as(env, null).doc('reportingCopy/config').get());
 });
 
 test("a closed collection's subcollections are closed with it", async () => {

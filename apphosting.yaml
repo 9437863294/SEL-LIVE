@@ -125,3 +125,22 @@ env:
   # Redirect URIs to register: https://seltech.store/api/mail-hub/oauth/gmail/callback and
   # https://seltech.store/api/mail-hub/oauth/microsoft/callback. Mail Hub offers only the
   # providers whose variables are present, so the app deploys and runs without any of them.
+
+  # ── Reporting copy → newdatabase (Settings › Reporting Database) ──
+  #
+  # The MongoDB connection string the scheduled refresh writes with (user `sync-writer`). A secret,
+  # never a value: it carries the password. Commented out until the secret exists, for the reason
+  # given under Office Hub above — a `secret:` reference that does not resolve fails the whole
+  # deployment. Create it and grant the backend access first:
+  #
+  #   firebase apphosting:secrets:set NEWDATABASE_MONGODB_URI
+  #   firebase apphosting:secrets:grantaccess NEWDATABASE_MONGODB_URI --backend <backend-id>
+  #
+  # (`secrets:set` offers to grant access itself.) Then uncomment these four lines and deploy.
+  # Without it the app runs normally; the settings screen says the copy is not configured and a
+  # due refresh is recorded as failed instead of running.
+  #
+  # - variable: NEWDATABASE_MONGODB_URI
+  #   secret: NEWDATABASE_MONGODB_URI
+  #   availability:
+  #     - RUNTIME

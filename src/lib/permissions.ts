@@ -1058,5 +1058,9 @@ export const permissionModules = {
     "Session Management": ["View", "Edit", "Delete"],
     "Location Tracking": ["View", "Edit"],
     "Audit Logs": ["View"],
+    // The MongoDB reporting copy (Settings › Reporting Database, src/lib/reporting-copy.ts). "Run"
+    // is apart from "Edit" because a refresh is a full read of the database, while the schedule
+    // is only a setting; "View" shows when it last ran and whether it worked.
+    "Reporting Database": ["View", "Edit", "Run"],
   },
 };
