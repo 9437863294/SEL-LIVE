@@ -5,15 +5,24 @@ import {
   requireAccess,
 } from '@/lib/access-control-server';
 import {
+  dueSyncUnits,
   isSyncDue,
   normalizeSyncSettings,
   shouldForceFullResync,
+  syncUnitEnabled,
+  syncUnitLastSuccessAt,
+  syncUnitSpec,
+  SYNC_UNIT_KEYS,
   type GreytHRSyncSettings,
+  type ReviewAction,
+  type SyncUnitKey,
 } from '@/lib/greythr';
 import { isGreytHRConfigured, testGreytHRConnection } from '@/lib/greythr-client';
 import { readSnapshotMeta } from '@/lib/greythr-roster-store';
 import {
+  applyReviewDecision,
   countMirrorEmployees,
+  listSyncReviews,
   listSyncRuns,
   readSyncSettings,
   runGreytHRSync,
@@ -65,7 +74,7 @@ export async function GET(request: Request) {
     try {
       const context = await authenticateAccess(request);
       requireAccess(context, 'Settings.Employee Management', 'View');
-      const [settings, runs, mirror, rosterMeta] = await Promise.all([
+      const [settings, runs, mirror, rosterMeta, reviews] = await Promise.all([
         readSyncSettings(),
         listSyncRuns(20),
         /**
@@ -92,6 +101,7 @@ export async function GET(request: Request) {
          * this costs the report path a single get rather than a collection scan.
          */
         readSnapshotMeta(),
+        listSyncReviews(200),
       ]);
       const due = isSyncDue(settings.schedule, settings.lastSuccessfulRunAt);
       const mirrorRefresh = shouldForceFullResync(settings);
@@ -101,6 +111,20 @@ export async function GET(request: Request) {
         settings,
         runs,
         nextRun: due,
+        /** Decisions already taken, so a flagged row can show as dealt with rather than nag. */
+        reviews,
+        /**
+         * The same question per module, which is what the schedule screen shows against each card.
+         *
+         * `nextRun` above is kept: it still answers it for the employees module, whose schedule is
+         * the one the deprecated `settings.schedule` alias carries.
+         */
+        unitStatus: dueSyncUnits(settings).map((verdict) => ({
+          ...verdict,
+          lastSuccessfulRunAt: syncUnitLastSuccessAt(settings, verdict.key),
+          lastRunAt: settings.unitRuns?.[verdict.key]?.lastRunAt ?? null,
+          enabled: syncUnitEnabled(settings, verdict.key),
+        })),
         mirrorRefresh,
         mirror,
         currentRoster: { count: rosterMeta.count, fetchedAt: rosterMeta.fetchedAt },
@@ -132,17 +156,36 @@ export async function GET(request: Request) {
    */
   try {
     const settings = await readSyncSettings();
-    const due = isSyncDue(settings.schedule, settings.lastSuccessfulRunAt);
 
-    if (!due.due) {
-      return NextResponse.json({ ok: true, skipped: true, reason: due.reason });
+    /**
+     * Asked per module, because each one now carries its own schedule.
+     *
+     * The verdicts for the modules that are *not* due are returned as well. A scheduler that
+     * explains why it did nothing is far easier to trust than one that simply reports "skipped",
+     * and this is the only place that answer is visible.
+     */
+    const verdicts = dueSyncUnits(settings);
+    const dueUnits = verdicts.filter((verdict) => verdict.due).map((verdict) => verdict.key);
+    const byUnit = Object.fromEntries(
+      verdicts.map((verdict) => [verdict.key, verdict.reason]),
+    );
+
+    if (!dueUnits.length) {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: 'No unit is due.',
+        units: byUnit,
+      });
     }
 
-    const run = await runGreytHRSync({ trigger: 'cron' });
+    const run = await runGreytHRSync({ trigger: 'cron', units: dueUnits });
     return NextResponse.json({
       ok: run.ok,
       runId: run.id,
-      reason: due.reason,
+      reason: dueUnits.map((key) => `${syncUnitSpec(key).label}: ${byUnit[key]}`).join(' '),
+      unitsRun: run.unitsRun ?? [],
+      units: byUnit,
       employeesFetched: run.employeesFetched,
       employeesCreated: run.employeesCreated,
       employeesUpdated: run.employeesUpdated,
@@ -161,10 +204,19 @@ export async function GET(request: Request) {
 }
 
 interface PostBody {
-  action?: 'run' | 'preview' | 'save-settings' | 'test-connection';
+  action?: 'run' | 'preview' | 'save-settings' | 'test-connection' | 'review';
   fullResync?: boolean;
+  /** Which units to run. Omitted means all of them — the whole-run button. */
+  units?: SyncUnitKey[];
   settings?: Partial<GreytHRSyncSettings>;
+  /** For `action: 'review'` — the flagged employee and what to do about them. */
+  employeeId?: string;
+  reviewAction?: ReviewAction;
+  reason?: string;
+  runId?: string;
 }
+
+const REVIEW_ACTIONS: ReviewAction[] = ['enable', 'disable', 'dismiss'];
 
 export async function POST(request: Request) {
   try {
@@ -175,6 +227,40 @@ export async function POST(request: Request) {
     if (action === 'test-connection') {
       requireAccess(context, 'Settings.Employee Management', 'View');
       return NextResponse.json(await testGreytHRConnection());
+    }
+
+    if (action === 'review') {
+      /**
+       * Gated on Edit rather than on an access-management permission.
+       *
+       * This is the same power the exit policy exercises — "a greytHR separation closes a login"
+       * — and that policy is set under Edit on this very screen. Requiring something stronger
+       * here would mean the person who configured the rule could not apply it to the one row the
+       * rule deliberately refused to decide.
+       */
+      requireAccess(context, 'Settings.Employee Management', 'Edit');
+
+      const employeeId = String(body.employeeId ?? '').trim();
+      if (!employeeId) {
+        return NextResponse.json({ ok: false, error: 'No employee was named.' }, { status: 400 });
+      }
+      if (!body.reviewAction || !REVIEW_ACTIONS.includes(body.reviewAction)) {
+        return NextResponse.json(
+          { ok: false, error: `Unknown review action. Expected one of: ${REVIEW_ACTIONS.join(', ')}.` },
+          { status: 400 },
+        );
+      }
+
+      const result = await applyReviewDecision({
+        employeeId,
+        action: body.reviewAction,
+        reason: body.reason ?? null,
+        runId: body.runId ?? null,
+        actor: { userId: context.userId, userName: context.userName },
+      });
+      // 200 even for a refusal: the guards are an answer, not a transport failure, and the
+      // screen shows the message either way.
+      return NextResponse.json(result);
     }
 
     if (action === 'save-settings') {
@@ -204,6 +290,11 @@ export async function POST(request: Request) {
       triggeredBy: context.userId,
       triggeredByName: context.userName,
       fullResync: body.fullResync === true,
+      // Filtered against the known keys rather than passed through: this arrives from a request
+      // body, and an unrecognised key would otherwise silently narrow the run to nothing.
+      units: Array.isArray(body.units)
+        ? body.units.filter((key): key is SyncUnitKey => SYNC_UNIT_KEYS.includes(key))
+        : undefined,
       // A preview computes everything and writes nothing, so an administrator can see the first
       // run's findings before letting it touch a single account.
       dryRun: action === 'preview',

@@ -9,6 +9,7 @@
  * support problem, so every account it touched or would touch is listed with the reason.
  */
 
+import { formatDistanceToNow } from 'date-fns';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -24,10 +25,10 @@ import {
   History,
   KeyRound,
   Loader2,
-  Lock,
   PlugZap,
   RefreshCw,
   ShieldAlert,
+  Undo2,
   UserCheck,
   Users,
   UserX,
@@ -53,26 +54,30 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
-  EMPLOYEE_DETAIL_GROUPS,
   EXIT_ACCESS_POLICIES,
-  SYNC_FREQUENCIES,
   describeSchedule,
   type ExitAccessPolicy,
   type GreytHRSyncRun,
   type GreytHRSyncSettings,
   type SyncEmployeeOutcome,
+  observedTickGapMinutes,
+  syncUnitSpec,
   type SyncFrequency,
+  type ReviewAction,
+  type SyncReviewRecord,
+  type SyncUnitKey,
 } from '@/lib/greythr';
 import {
   fetchSyncReport,
   runSyncNow,
   saveSyncSettings,
+  applyReviewDecision,
   testConnection,
   type SyncReport,
 } from '@/lib/greythr-sync-client';
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
-
-const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+import { SyncSchedulePanel } from '@/components/employee/sync-schedule-panel';
 
 export function GreytHRSyncWorkspace() {
   const { toast } = useToast();
@@ -87,6 +92,15 @@ export function GreytHRSyncWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'run' | 'preview' | 'full' | 'test' | 'save' | null>(null);
   const [draft, setDraft] = useState<GreytHRSyncSettings | null>(null);
+  /**
+   * Which module is mid-refresh, separate from `busy` above.
+   *
+   * Separate because the spinner belongs on the one card that was pressed, while `busy` governs
+   * the whole-run buttons in the header. One shared value would spin every card at once.
+   */
+  const [busyUnit, setBusyUnit] = useState<SyncUnitKey | null>(null);
+  /** The flagged row currently being acted on, so only its buttons spin. */
+  const [reviewBusy, setReviewBusy] = useState<string | null>(null);
   const [previewRun, setPreviewRun] = useState<GreytHRSyncRun | null>(null);
   const [connection, setConnection] = useState<{ ok: boolean; message: string; totalEmployees?: number } | null>(null);
 
@@ -117,6 +131,18 @@ export function GreytHRSyncWorkspace() {
   const dirty = useMemo(
     () => !!draft && !!report && JSON.stringify(draft) !== JSON.stringify(report.settings),
     [draft, report],
+  );
+
+  /**
+   * How often scheduled runs actually arrive, measured rather than assumed.
+   *
+   * What calls this endpoint is deployment configuration the application cannot read, so the run
+   * history is the only evidence available — and it is the right evidence, because it reports
+   * what happened rather than what was configured.
+   */
+  const observedGapMinutes = useMemo(
+    () => observedTickGapMinutes(report?.runs ?? []),
+    [report?.runs],
   );
 
   /** The run shown in the summary: a preview when one is on screen, otherwise the last real run. */
@@ -170,6 +196,81 @@ export function GreytHRSyncWorkspace() {
       });
     } finally {
       setBusy(null);
+    }
+  };
+
+  /**
+   * Refresh one module now.
+   *
+   * Reports what the run says rather than the employee counters, which are zero by definition for
+   * a module that does not touch employee records — "0 added, 0 updated" after a successful swipe
+   * refresh reads as a failure.
+   */
+  const handleRunUnit = async (key: SyncUnitKey) => {
+    const label = syncUnitSpec(key).label;
+    setBusyUnit(key);
+    setPreviewRun(null);
+    try {
+      const result = await runSyncNow({ units: [key] });
+      if (!result.ok) throw new Error(result.run.error || `${label} could not be refreshed.`);
+      await load();
+      toast({
+        title: `${label} refreshed`,
+        description:
+          result.run.warnings?.[0] ??
+          (key === 'employees'
+            ? `${result.run.employeesCreated} added, ${result.run.employeesUpdated} updated, ` +
+              `${result.run.flaggedForReview} flagged.`
+            : 'Up to date as of just now.'),
+      });
+      window.dispatchEvent(new CustomEvent('greytHRSyncSuccess'));
+    } catch (err) {
+      toast({
+        title: `${label} failed`,
+        description: err instanceof Error ? err.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
+    } finally {
+      setBusyUnit(null);
+    }
+  };
+
+  /**
+   * Apply one administrator decision to one flagged row.
+   *
+   * A refusal — the last-administrator guard, or an employee with no login — comes back as
+   * `ok: false` with a sentence rather than as a thrown error, because "you can't, and here is
+   * why" is an answer worth reading. It is shown as a warning, not a failure.
+   */
+  const handleReview = async (employeeId: string, action: ReviewAction, reason?: string) => {
+    setReviewBusy(employeeId);
+    try {
+      const result = await applyReviewDecision({
+        employeeId,
+        action,
+        reason: reason?.trim() || undefined,
+        runId: shownRun?.id,
+      });
+      await load();
+      toast({
+        title: result.ok
+          ? action === 'dismiss'
+            ? 'Marked as reviewed'
+            : action === 'enable'
+              ? 'Login restored'
+              : 'Login disabled'
+          : 'Not applied',
+        description: result.message,
+        variant: result.ok ? undefined : 'destructive',
+      });
+    } catch (err) {
+      toast({
+        title: 'Could not record that',
+        description: err instanceof Error ? err.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReviewBusy(null);
     }
   };
 
@@ -641,7 +742,14 @@ export function GreytHRSyncWorkspace() {
 
           {/* ── Review ── */}
           <TabsContent value="review" className="mt-3">
-            <OutcomeList run={shownRun} isPreview={!!previewRun} />
+            <OutcomeList
+              run={shownRun}
+              isPreview={!!previewRun}
+              reviews={report?.reviews}
+              canEdit={canEdit}
+              busyEmployeeId={reviewBusy}
+              onAction={(employeeId, action, reason) => void handleReview(employeeId, action, reason)}
+            />
           </TabsContent>
 
           {/* ── Schedule & policy ── */}
@@ -671,95 +779,27 @@ export function GreytHRSyncWorkspace() {
                         </>
                       ) : (
                         <>
-                          The scheduler ticks hourly and runs the sync when your chosen frequency is due,
-                          so changing this takes effect immediately — no redeploy.
+                          Each section refreshes on its own schedule and any single item can override it.
+                          The scheduler ticks hourly and runs whatever is due, so a change here applies
+                          immediately — no redeploy.
                         </>
                       )}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3 px-4 pb-4">
-                    <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800">Run automatically</p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {describeSchedule(draft.schedule)}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={draft.schedule.enabled}
-                        disabled={!canEdit}
-                        onCheckedChange={(enabled) =>
-                          setDraft({ ...draft, schedule: { ...draft.schedule, enabled } })
-                        }
-                      />
-                    </label>
-
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Frequency</Label>
-                        <Select
-                          value={draft.schedule.frequency}
-                          disabled={!canEdit}
-                          onValueChange={(value) =>
-                            setDraft({
-                              ...draft,
-                              schedule: { ...draft.schedule, frequency: value as SyncFrequency },
-                            })
-                          }
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {SYNC_FREQUENCIES.map((frequency) => (
-                              <SelectItem key={frequency} value={frequency}>{frequency}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Hour of day</Label>
-                        <Select
-                          value={String(draft.schedule.hourOfDay)}
-                          disabled={!canEdit || !['Daily', 'Weekly'].includes(draft.schedule.frequency)}
-                          onValueChange={(value) =>
-                            setDraft({
-                              ...draft,
-                              schedule: { ...draft.schedule, hourOfDay: Number(value) },
-                            })
-                          }
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent className="max-h-64">
-                            {Array.from({ length: 24 }).map((_, hour) => (
-                              <SelectItem key={hour} value={String(hour)}>
-                                {String(hour).padStart(2, '0')}:00
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Day of week</Label>
-                        <Select
-                          value={String(draft.schedule.dayOfWeek)}
-                          disabled={!canEdit || draft.schedule.frequency !== 'Weekly'}
-                          onValueChange={(value) =>
-                            setDraft({
-                              ...draft,
-                              schedule: { ...draft.schedule, dayOfWeek: Number(value) },
-                            })
-                          }
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {DAY_NAMES.map((day, index) => (
-                              <SelectItem key={day} value={String(index)}>{day}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
+                    <SyncSchedulePanel
+                      draft={draft}
+                      onChange={setDraft}
+                      status={report?.unitStatus}
+                      canEdit={canEdit}
+                      canSync={canSync}
+                      onRunUnit={(key) => void handleRunUnit(key)}
+                      busyUnit={busyUnit}
+                      /* Nothing calling the endpoint means "next due" would promise a tick that
+                         never comes, so the cards drop that line. */
+                      schedulerLive={!schedulerNeverFired}
+                      observedGapMinutes={observedGapMinutes}
+                    />
                   </CardContent>
                 </Card>
 
@@ -835,56 +875,16 @@ export function GreytHRSyncWorkspace() {
                       </p>
                     </div>
 
-                    {/* Which detail groups to fetch. Sensitive ones are visually separated and
-                        default off, because holding somebody's Aadhaar number is a decision. */}
-                    <div className="space-y-2 rounded-xl border border-white/70 bg-white/60 p-2.5">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Which details to fetch
-                      </p>
-                      {EMPLOYEE_DETAIL_GROUPS.map((spec) => {
-                        const sensitive = spec.destination === 'sensitive';
-                        return (
-                          <label
-                            key={spec.group}
-                            className={cn(
-                              'flex items-start justify-between gap-3 rounded-xl border p-2.5',
-                              sensitive ? 'border-amber-200 bg-amber-50/50' : 'border-white bg-white/80',
-                            )}
-                          >
-                            <div className="min-w-0">
-                              {/* A `<div>`, not a `<p>`: `Badge` renders a `<div>`, and a div inside a
-                                  p is invalid HTML — React hydrates it, the browser restructures it,
-                                  and Next reports a hydration error. The flex classes were already
-                                  doing a block container's job. */}
-                              <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
-                                {spec.label}
-                                {sensitive && (
-                                  <Badge variant="warning" className="gap-1">
-                                    <Lock className="h-3 w-3" />
-                                    Restricted
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="mt-0.5 text-[11px] text-muted-foreground">{spec.description}</p>
-                              <p className="mt-0.5 text-[11px] text-slate-400">Includes: {spec.contains}</p>
-                            </div>
-                            <Switch
-                              checked={draft.detailGroups[spec.group]}
-                              disabled={!canEdit}
-                              onCheckedChange={(value) =>
-                                setDraft({
-                                  ...draft,
-                                  detailGroups: { ...draft.detailGroups, [spec.group]: value },
-                                })
-                              }
-                            />
-                          </label>
-                        );
-                      })}
+                    {/*
+                      The per-group switches used to live here. They moved to Automatic refresh,
+                      where each group now also carries a schedule — two switches for one flag on
+                      one screen would be a control whose two halves can disagree.
+                    */}
+                    <div className="rounded-xl border border-white/70 bg-white/60 p-2.5">
                       <p className="text-[11px] text-muted-foreground">
-                        Restricted groups are stored separately and need the{' '}
-                        <span className="font-medium">Employee › Personal Data · View</span> permission
-                        to read — no role holds it until you grant it.
+                        Which details to fetch, and how often, is set under{' '}
+                        <span className="font-medium">Automatic refresh</span> — each group has its own
+                        switch and schedule there.
                       </p>
                     </div>
 
@@ -1007,7 +1007,21 @@ const formatWhen = (iso: string): string => {
  * The review list
  * ---------------------------------------------------------------------------------------------- */
 
-function OutcomeList({ run, isPreview }: { run: GreytHRSyncRun | null; isPreview: boolean }) {
+function OutcomeList({
+  run,
+  isPreview,
+  reviews,
+  canEdit,
+  busyEmployeeId,
+  onAction,
+}: {
+  run: GreytHRSyncRun | null;
+  isPreview: boolean;
+  reviews: SyncReviewRecord[] | undefined;
+  canEdit: boolean;
+  busyEmployeeId: string | null;
+  onAction: (employeeId: string, action: ReviewAction, reason?: string) => void;
+}) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<'flagged' | 'changed' | 'all'>('flagged');
 
@@ -1017,6 +1031,22 @@ function OutcomeList({ run, isPreview }: { run: GreytHRSyncRun | null; isPreview
     if (filter === 'changed') return rows.filter((row) => row.changes.length > 0);
     return rows;
   }, [run, filter]);
+
+  /**
+   * Decisions taken *after* this run, by employee.
+   *
+   * Compared against the run rather than simply "has a review ever been recorded": a person can be
+   * flagged, dealt with, and flagged again months later for a different reason, and an old decision
+   * must not silence the new flag.
+   */
+  const resolved = useMemo(() => {
+    const map = new Map<string, SyncReviewRecord>();
+    if (!run) return map;
+    for (const review of reviews ?? []) {
+      if (review.ok && review.reviewedAt > run.startedAt) map.set(review.employeeId, review);
+    }
+    return map;
+  }, [reviews, run]);
 
   if (!run) {
     return (
@@ -1065,34 +1095,84 @@ function OutcomeList({ run, isPreview }: { run: GreytHRSyncRun | null; isPreview
         />
       ) : (
         <Card className="overflow-hidden border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
-          <ScrollArea className="h-[28rem]">
-            <div className="divide-y divide-slate-100">
-              {outcomes.map((outcome) => (
-                <OutcomeRow
-                  key={outcome.employeeId}
-                  outcome={outcome}
-                  open={expanded === outcome.employeeId}
-                  onToggle={() => setExpanded(expanded === outcome.employeeId ? null : outcome.employeeId)}
-                />
-              ))}
-            </div>
-          </ScrollArea>
+          {/*
+            A native overflow container, not `ScrollArea`.
+
+            The wrapper used here before swallowed the horizontal scrollbar, and this table is wider
+            than a laptop at the Decide column. `min-w-0` on the flex parent is what lets it shrink
+            far enough to scroll rather than pushing the card out of the page.
+          */}
+          <div className="max-h-[32rem] min-w-0 overflow-auto">
+            <table className="w-full min-w-[60rem] border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm">
+                <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="w-8 px-2 py-2" />
+                  <th scope="col" className="px-2 py-2 font-semibold">Employee</th>
+                  <th scope="col" className="px-2 py-2 font-semibold">State</th>
+                  <th scope="col" className="px-2 py-2 font-semibold">Outcome</th>
+                  <th scope="col" className="px-2 py-2 font-semibold">Why</th>
+                  <th scope="col" className="px-2 py-2 text-right font-semibold">Changes</th>
+                  <th scope="col" className="px-2 py-2 text-right font-semibold">Decide</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {outcomes.map((outcome) => (
+                  <OutcomeRow
+                    key={outcome.employeeId}
+                    outcome={outcome}
+                    open={expanded === outcome.employeeId}
+                    onToggle={() => setExpanded(expanded === outcome.employeeId ? null : outcome.employeeId)}
+                    review={resolved.get(outcome.employeeId)}
+                    // Nothing was written, so there is nothing to act on yet.
+                    canAct={canEdit && !isPreview}
+                    busy={busyEmployeeId === outcome.employeeId}
+                    onAction={(action, reason) => onAction(outcome.employeeId, action, reason)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
     </div>
   );
 }
 
+/**
+ * One flagged employee, on one line.
+ *
+ * This was a stacked card that ran to four lines before it was even expanded, and a list of them
+ * could not be scanned — the question "who needs attention and why" is a comparison across rows,
+ * which is what a table is for. Everything needed to decide is now on the line: who, their state,
+ * what the sync did, why, and the buttons.
+ *
+ * The expander stays for the two things that genuinely do not fit — the field-level diff and a
+ * free-text note recorded with the decision.
+ */
 function OutcomeRow({
   outcome,
   open,
   onToggle,
+  review,
+  canAct,
+  busy,
+  onAction,
 }: {
   outcome: SyncEmployeeOutcome;
   open: boolean;
   onToggle: () => void;
+  /** A decision already taken on this row since the run, if there is one. */
+  review: SyncReviewRecord | undefined;
+  canAct: boolean;
+  busy: boolean;
+  onAction: (action: ReviewAction, reason?: string) => void;
 }) {
-  const actionBadge =
+  const [note, setNote] = useState('');
+  const suggested = outcome.suggestedAction ?? null;
+  // Only a flag asks for a decision; a row reporting what the sync already did does not.
+  const needsDecision = outcome.flagged && !review;
+
+  const outcomeBadge =
     outcome.accessAction === 'deactivate'
       ? { label: 'Login disabled', tone: 'danger' as const, icon: UserX }
       : outcome.accessAction === 'reactivate'
@@ -1102,79 +1182,193 @@ function OutcomeRow({
           : null;
 
   return (
-    <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-slate-50/70">
-        <ChevronDown className={cn('mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition-transform', open && 'rotate-180')} />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="truncate text-sm font-medium text-slate-800">{outcome.name || outcome.employeeNo || outcome.employeeId}</span>
-            <StatusBadge status={outcome.employmentState} tone={employmentStateTone(outcome.employmentState)}>
-              {outcome.employmentState}
-            </StatusBadge>
-            {actionBadge && (
-              <StatusBadge tone={actionBadge.tone}>
-                <actionBadge.icon className="h-3 w-3" aria-hidden="true" />
-                {actionBadge.label}
+    <>
+      <tr className={cn('align-top hover:bg-slate-50/70', open && 'bg-slate-50/50')}>
+        <td className="px-2 py-2">
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={open ? 'Hide details' : 'Show details'}
+            aria-expanded={open}
+            className="rounded p-0.5 text-slate-400 hover:text-slate-700"
+          >
+            <ChevronDown className={cn('h-4 w-4 transition-transform', open && 'rotate-180')} />
+          </button>
+        </td>
+
+        <td className="max-w-[15rem] px-2 py-2">
+          <p className="truncate font-medium text-slate-800">
+            {outcome.name || outcome.employeeNo || outcome.employeeId}
+          </p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {[outcome.employeeNo, outcome.email].filter(Boolean).join(' · ')}
+          </p>
+        </td>
+
+        <td className="whitespace-nowrap px-2 py-2">
+          <StatusBadge status={outcome.employmentState} tone={employmentStateTone(outcome.employmentState)}>
+            {outcome.employmentState}
+          </StatusBadge>
+        </td>
+
+        <td className="whitespace-nowrap px-2 py-2">
+          <div className="flex flex-wrap items-center gap-1">
+            {review ? (
+              <StatusBadge tone="success">
+                <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                {review.action === 'dismiss'
+                  ? 'Reviewed'
+                  : review.action === 'enable'
+                    ? 'Login restored'
+                    : 'Login disabled'}
               </StatusBadge>
-            )}
-            {outcome.changes.length > 0 && (
-              <Badge variant="neutral">
-                {outcome.changes.length} field{outcome.changes.length === 1 ? '' : 's'} changed
-              </Badge>
+            ) : (
+              outcomeBadge && (
+                <StatusBadge tone={outcomeBadge.tone}>
+                  <outcomeBadge.icon className="h-3 w-3" aria-hidden="true" />
+                  {outcomeBadge.label}
+                </StatusBadge>
+              )
             )}
             {!outcome.userId && (
               <Badge variant="outline" className="gap-1">
                 <CircleSlash className="h-3 w-3" />
-                No platform login
+                No login
               </Badge>
             )}
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {[outcome.employeeNo, outcome.email].filter(Boolean).join(' · ')}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-600">{outcome.accessReason}</p>
-        </div>
-      </button>
+        </td>
+
+        {/* Truncated with the full sentence on hover: the reason is often two lines of prose, and a
+            table that wraps one cell to three lines stops being scannable. */}
+        <td className="max-w-[24rem] px-2 py-2 text-slate-600">
+          <p className="truncate" title={outcome.accessReason}>{outcome.accessReason}</p>
+        </td>
+
+        <td className="whitespace-nowrap px-2 py-2 text-right text-muted-foreground">
+          {outcome.changes.length || '—'}
+        </td>
+
+        <td className="whitespace-nowrap px-2 py-2 text-right">
+          {needsDecision && canAct ? (
+            <div className="flex items-center justify-end gap-1">
+              {/*
+                Which buttons appear comes from `suggestedAction` rather than from reading
+                `accessReason`: a button that shows or hides on the wording of a sentence is one
+                that will eventually be wrong. Where the model offers no suggestion — an employee
+                absent from greytHR, which might be an exit or might be the API user's scope
+                narrowing — both appear and neither is emphasised.
+              */}
+              {suggested !== 'disable' && (
+                <Button
+                  size="sm"
+                  variant={suggested === 'enable' ? 'default' : 'outline'}
+                  className="h-7 px-2 text-[11px]"
+                  disabled={busy || !outcome.userId}
+                  onClick={() => onAction('enable', note)}
+                >
+                  {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
+                  <span className="ml-1">Enable</span>
+                </Button>
+              )}
+              {suggested !== 'enable' && (
+                <Button
+                  size="sm"
+                  variant={suggested === 'disable' ? 'destructive' : 'outline'}
+                  className="h-7 px-2 text-[11px]"
+                  disabled={busy || !outcome.userId}
+                  onClick={() => onAction('disable', note)}
+                >
+                  {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserX className="h-3 w-3" />}
+                  <span className="ml-1">Disable</span>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px]"
+                disabled={busy}
+                onClick={() => onAction('dismiss', note)}
+              >
+                <Undo2 className="h-3 w-3" />
+                <span className="ml-1">Reviewed</span>
+              </Button>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </td>
+      </tr>
 
       {open && (
-        <div className="grid gap-3 bg-slate-50/60 px-3 py-3 sm:grid-cols-2">
-          <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Employment state
-            </p>
-            <p className="text-xs text-slate-700">{outcome.employmentStateReason}</p>
-            {outcome.userId && (
-              <Link
-                href={`/settings/access-management/users/${outcome.userId}`}
-                className="mt-2 inline-block text-xs text-indigo-600 underline"
-              >
-                Open access profile
-              </Link>
-            )}
-          </div>
-          <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Field changes ({outcome.changes.length})
-            </p>
-            {outcome.changes.length === 0 ? (
-              <p className="text-xs text-muted-foreground">None</p>
-            ) : (
-              <div className="space-y-0.5">
-                {outcome.changes.map((change) => (
-                  <p key={change.field} className="truncate text-xs">
-                    <span className="font-medium text-slate-700">{change.field}</span>
-                    <span className="text-muted-foreground">
-                      {' '}
-                      {formatValue(change.from)} → {formatValue(change.to)}
-                    </span>
-                  </p>
-                ))}
+        <tr className="bg-slate-50/60">
+          <td />
+          <td colSpan={6} className="px-2 pb-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Employment state
+                </p>
+                <p className="text-xs text-slate-700">{outcome.employmentStateReason}</p>
+                {outcome.userId && (
+                  <Link
+                    href={`/settings/access-management/users/${outcome.userId}`}
+                    className="mt-2 inline-block text-xs text-indigo-600 underline"
+                  >
+                    Open access profile
+                  </Link>
+                )}
               </div>
+              <div>
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Field changes ({outcome.changes.length})
+                </p>
+                {outcome.changes.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">None</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {outcome.changes.map((change) => (
+                      <p key={change.field} className="truncate text-xs">
+                        <span className="font-medium text-slate-700">{change.field}</span>
+                        <span className="text-muted-foreground">
+                          {' '}
+                          {formatValue(change.from)} → {formatValue(change.to)}
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {needsDecision && canAct && (
+              <Input
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                disabled={busy}
+                placeholder="Why (optional) — recorded on the account and in the audit trail"
+                className="mt-3 h-8 text-xs"
+              />
             )}
-          </div>
-        </div>
+
+            {!outcome.userId && outcome.flagged && (
+              <p className="mt-2 text-[11px] text-amber-700">
+                No platform login is linked to this employee, so there is nothing to enable or
+                disable — only to mark as reviewed.
+              </p>
+            )}
+
+            {review && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {review.message} — {review.reviewedByName || review.reviewedBy},{' '}
+                {formatDistanceToNow(new Date(review.reviewedAt), { addSuffix: true })}
+                {review.reason ? ` · ${review.reason}` : ''}
+              </p>
+            )}
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1187,6 +1381,17 @@ const formatValue = (value: unknown): string => {
  * Run history
  * ---------------------------------------------------------------------------------------------- */
 
+/**
+ * The run history, one run per line.
+ *
+ * It was a stack of cards, each four lines tall with its counters as badges, so a dozen runs filled
+ * the screen and the one question the history answers — "is this healthy, and when did that change"
+ * — needed scrolling and arithmetic. Counters belong in columns: a zero under `Added` reads as a
+ * zero at a glance, where a badge saying "0 added" has to be read.
+ *
+ * Now that the schedule actually fires, this list is mostly cron runs that all look alike, which is
+ * exactly the case a table serves and a card list does not.
+ */
 function RunHistory({ runs }: { runs: GreytHRSyncRun[] }) {
   if (!runs.length) {
     return (
@@ -1198,41 +1403,89 @@ function RunHistory({ runs }: { runs: GreytHRSyncRun[] }) {
     );
   }
 
+  /** A count cell: zero is muted so a non-zero one is what the eye lands on. */
+  const count = (value: number, tone?: string) => (
+    <td className={cn('whitespace-nowrap px-2 py-2 text-right tabular-nums', value ? tone : 'text-slate-300')}>
+      {value}
+    </td>
+  );
+
   return (
-    <div className="space-y-2.5">
-      {runs.map((run) => (
-        <Card key={run.id} className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
-          <CardContent className="space-y-2 p-3.5">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0">
-                {/* A `<div>`, not a `<p>` — see the detail-group row above: these badges are divs. */}
-                <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800">
-                  {formatWhen(run.startedAt)}
+    <Card className="overflow-hidden border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+      {/* Native overflow, not `ScrollArea` — that wrapper swallows the horizontal scrollbar. */}
+      <div className="max-h-[32rem] min-w-0 overflow-auto">
+        <table className="w-full min-w-[52rem] border-collapse text-left text-xs">
+          <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm">
+            <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <th scope="col" className="px-2 py-2 font-semibold">When</th>
+              <th scope="col" className="px-2 py-2 font-semibold">Trigger</th>
+              <th scope="col" className="px-2 py-2 font-semibold">Result</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Took</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Fetched</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Added</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Updated</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Disabled</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Restored</th>
+              <th scope="col" className="px-2 py-2 text-right font-semibold">Flagged</th>
+              <th scope="col" className="px-2 py-2 font-semibold">Scope</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {runs.map((run) => (
+              <tr key={run.id} className="hover:bg-slate-50/70">
+                <td className="whitespace-nowrap px-2 py-2">
+                  <span className="font-medium text-slate-800">{formatWhen(run.startedAt)}</span>
+                  {run.triggeredByName && (
+                    <span className="block text-[11px] text-muted-foreground">by {run.triggeredByName}</span>
+                  )}
+                </td>
+
+                <td className="whitespace-nowrap px-2 py-2">
                   <Badge variant="outline" className="capitalize">{run.trigger}</Badge>
-                  {run.fullResync && <Badge variant="outline">Full refresh</Badge>}
+                </td>
+
+                <td className="whitespace-nowrap px-2 py-2">
                   <StatusBadge status={run.ok ? 'Succeeded' : 'Failed'} tone={run.ok ? 'success' : 'danger'} />
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {run.triggeredByName ? `by ${run.triggeredByName} · ` : ''}
+                  {run.error && (
+                    // Truncated with the whole message on hover: an error is usually a sentence or
+                    // two, and letting one row grow to three lines undoes the point of the table.
+                    <span className="ml-1 inline-block max-w-[16rem] truncate align-middle text-destructive" title={run.error}>
+                      {run.error}
+                    </span>
+                  )}
+                </td>
+
+                <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-muted-foreground">
                   {Math.round(run.tookMs / 1000)}s
-                  {run.modifiedSince ? ` · since ${run.modifiedSince}` : ''}
-                </p>
-              </div>
-            </div>
+                </td>
 
-            <div className="flex flex-wrap gap-1.5">
-              <Badge variant="outline">{run.employeesFetched} fetched</Badge>
-              <Badge variant="neutral">{run.employeesCreated} added</Badge>
-              <Badge variant="neutral">{run.employeesUpdated} updated</Badge>
-              {run.usersDeactivated > 0 && <Badge variant="danger">{run.usersDeactivated} logins disabled</Badge>}
-              {run.usersReactivated > 0 && <Badge variant="success">{run.usersReactivated} logins restored</Badge>}
-              {run.flaggedForReview > 0 && <Badge variant="warning">{run.flaggedForReview} flagged</Badge>}
-            </div>
+                {count(run.employeesFetched, 'text-slate-700')}
+                {count(run.employeesCreated, 'text-slate-700')}
+                {count(run.employeesUpdated, 'text-slate-700')}
+                {count(run.usersDeactivated, 'font-medium text-rose-700')}
+                {count(run.usersReactivated, 'font-medium text-emerald-700')}
+                {count(run.flaggedForReview, 'font-medium text-amber-700')}
 
-            {run.error && <p className="text-xs text-destructive">{run.error}</p>}
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+                <td className="whitespace-nowrap px-2 py-2 text-[11px] text-muted-foreground">
+                  {run.fullResync ? (
+                    <Badge variant="outline">Full refresh</Badge>
+                  ) : run.modifiedSince ? (
+                    `since ${run.modifiedSince}`
+                  ) : (
+                    '—'
+                  )}
+                  {/* Only once the run actually carries it — every run before this change does not. */}
+                  {run.unitsRun?.length ? (
+                    <span className="block truncate" title={run.unitsRun.join(', ')}>
+                      {run.unitsRun.length} unit{run.unitsRun.length === 1 ? '' : 's'}
+                    </span>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

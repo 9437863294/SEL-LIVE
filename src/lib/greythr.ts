@@ -2020,12 +2020,27 @@ export interface AccessDecisionInput {
   wouldStrandAdministration?: boolean;
 }
 
+/** What an administrator can do to a flagged row by hand. */
+export type ReviewAction = 'enable' | 'disable' | 'dismiss';
+
 export interface AccessDecision {
   /** What the sync should do to the user account. */
   action: 'none' | 'deactivate' | 'reactivate';
   /** Whether an administrator should be shown this row even when `action` is `none`. */
   flagForReview: boolean;
   reason: string;
+  /**
+   * The action this flag implies, for the Review screen to offer as a button.
+   *
+   * In the model rather than the screen because the alternative is matching on `reason`, and a
+   * button that appears or disappears depending on the wording of a sentence is a button that
+   * will one day be wrong. `null` means the flag is informational, or that the right answer
+   * genuinely cannot be inferred — an employee absent from greytHR might have left or might have
+   * fallen outside the API user's scope, and those want opposite responses.
+   *
+   * Only ever a suggestion: the route re-derives its own guards before acting on it.
+   */
+  suggested?: Exclude<ReviewAction, 'dismiss'> | null;
 }
 
 /**
@@ -2055,6 +2070,9 @@ export function resolveAccessDecision(input: AccessDecisionInput): AccessDecisio
       reason:
         'Active in greytHR but disabled on the platform. This account was disabled by an administrator, ' +
         'not by the sync, so it is left alone.',
+      // The sync will not touch an administrator's own decision, but a person who is back at work
+      // and cannot sign in is the case this flag exists to surface — so offer the restore.
+      suggested: 'enable',
     };
   }
 
@@ -2069,6 +2087,10 @@ export function resolveAccessDecision(input: AccessDecisionInput): AccessDecisio
       action: 'none',
       flagForReview: true,
       reason: 'No longer present in greytHR. Review manually — an absent record is not proof of an exit.',
+      // Deliberately no suggestion. A record can vanish because the person left or because the API
+      // user's scope narrowed, and those want opposite responses — offering one button here would
+      // be guessing on the administrator's behalf.
+      suggested: null,
     };
   }
 
@@ -2081,6 +2103,8 @@ export function resolveAccessDecision(input: AccessDecisionInput): AccessDecisio
       action: 'none',
       flagForReview: true,
       reason: `${state} in greytHR. Policy is review-only, so platform access is unchanged — disable it here when ready.`,
+      // "Here" used to mean Access Management, because this screen had no button. It does now.
+      suggested: 'disable',
     };
   }
 
@@ -2091,6 +2115,10 @@ export function resolveAccessDecision(input: AccessDecisionInput): AccessDecisio
       reason:
         `${state} in greytHR, but this is the last user who can administer access. ` +
         'Grant another administrator first, then disable this account by hand.',
+      // Suggested, not permitted: the route re-checks `wouldStrandAdministration` at the moment it
+      // acts and refuses. Offering the button and explaining the refusal beats hiding it, because
+      // the administrator still has to understand why this row will not clear.
+      suggested: 'disable',
     };
   }
 
@@ -2115,10 +2143,26 @@ export function shouldDeactivateOnResignation(
  * Schedule
  * ---------------------------------------------------------------------------------------------- */
 
-export type SyncFrequency = 'Manual' | 'Hourly' | 'Every 6 hours' | 'Every 12 hours' | 'Daily' | 'Weekly';
+export type SyncFrequency =
+  | 'Manual'
+  | 'Every 5 minutes'
+  | 'Every 15 minutes'
+  | 'Every 30 minutes'
+  | 'Hourly'
+  | 'Every 6 hours'
+  | 'Every 12 hours'
+  | 'Daily'
+  | 'Weekly';
 
 export const SYNC_FREQUENCIES: SyncFrequency[] = [
   'Manual',
+  // Sub-hourly options are only as good as the thing calling the endpoint. The shipped workflow
+  // ticks every five minutes, which is also the floor GitHub schedules allow; a tenant driving
+  // this from Cloud Scheduler can go finer, and one still on an hourly cron effectively cannot
+  // go below Hourly whatever is chosen here. `tickCadenceWarning` is what tells the screen so.
+  'Every 5 minutes',
+  'Every 15 minutes',
+  'Every 30 minutes',
   'Hourly',
   'Every 6 hours',
   'Every 12 hours',
@@ -2144,6 +2188,9 @@ export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
 
 /** Minimum gap between runs, per frequency. `Manual` never becomes due on its own. */
 const FREQUENCY_INTERVAL_MS: Record<Exclude<SyncFrequency, 'Manual'>, number> = {
+  'Every 5 minutes': 5 * 60 * 1000,
+  'Every 15 minutes': 15 * 60 * 1000,
+  'Every 30 minutes': 30 * 60 * 1000,
   Hourly: 60 * 60 * 1000,
   'Every 6 hours': 6 * 60 * 60 * 1000,
   'Every 12 hours': 12 * 60 * 60 * 1000,
@@ -2176,11 +2223,27 @@ export function isSyncDue(
   if (lastMs === null) return { due: true, reason: 'No successful run recorded yet.' };
 
   const interval = FREQUENCY_INTERVAL_MS[schedule.frequency];
-  const TOLERANCE_MS = 60_000;
+  /**
+   * A tick arriving fractionally early must not skip a window.
+   *
+   * One minute of slack was right when the shortest interval was an hour. On a five-minute
+   * schedule it is a fifth of the period, so a caller running a little fast would let runs creep
+   * to every ten minutes. A twentieth of the interval keeps the original intent — absorb jitter,
+   * not a whole window — at every frequency, and is still capped at a minute for the long ones.
+   */
+  const TOLERANCE_MS = Math.min(60_000, Math.round(interval / 20));
   const elapsed = now.getTime() - lastMs;
   if (elapsed + TOLERANCE_MS < interval) {
-    const hours = Math.max(0, Math.round((interval - elapsed) / 3_600_000));
-    return { due: false, reason: `Last run was ${Math.round(elapsed / 3_600_000)}h ago; next due in about ${hours}h.` };
+    // Rounded to hours above an hour and to minutes below it. "Next due in about 0h" was what
+    // every sub-hourly schedule would otherwise report.
+    const describeGap = (ms: number): string =>
+      ms >= 3_600_000
+        ? `${Math.round(ms / 3_600_000)}h`
+        : `${Math.max(1, Math.round(ms / 60_000))} min`;
+    return {
+      due: false,
+      reason: `Last run was ${describeGap(elapsed)} ago; next due in about ${describeGap(interval - elapsed)}.`,
+    };
   }
 
   // Daily and weekly additionally hold until their configured hour, so a nightly sync does not drift
@@ -2205,6 +2268,12 @@ export function describeSchedule(schedule: SyncSchedule): string {
   switch (schedule.frequency) {
     case 'Manual':
       return 'Automatic sync is enabled but the frequency is manual — nothing will run on its own.';
+    case 'Every 5 minutes':
+      return 'Runs every 5 minutes.';
+    case 'Every 15 minutes':
+      return 'Runs every 15 minutes.';
+    case 'Every 30 minutes':
+      return 'Runs every 30 minutes.';
     case 'Hourly':
       return 'Runs every hour.';
     case 'Every 6 hours':
@@ -2215,6 +2284,363 @@ export function describeSchedule(schedule: SyncSchedule): string {
       return `Runs once a day, on or after ${at}.`;
     case 'Weekly':
       return `Runs once a week, on ${days[schedule.dayOfWeek] ?? 'Monday'} on or after ${at}.`;
+  }
+}
+/* ------------------------------------------------------------------------------------------------
+ * Sync sections and units
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Everything the sync can refresh, on a schedule per section with a per-unit override.
+ *
+ * ── Why a section layer ─────────────────────────────────────────────────────────────────────────
+ *
+ * There are fifteen things here that can be refreshed independently, and fifteen separate schedule
+ * forms would be a worse screen than the single schedule this replaced. They are not fifteen
+ * unrelated things, either: the five standard detail groups are all cheap per-employee field
+ * fetches that belong together, and the five restricted ones are all personal data that an
+ * organisation will want on one cadence for one reason. So the schedule lives on the section, and a
+ * unit that genuinely differs — the daily muster, which is the heaviest fetch here by an order of
+ * magnitude — overrides it.
+ *
+ * ── Why a section plan has no on/off ────────────────────────────────────────────────────────────
+ *
+ * `RefreshPlan` carries frequency and timing but no `enabled`, and that is deliberate. Whether a
+ * unit is on is a question about *holding the data* — for a restricted group it is the decision to
+ * store somebody's Aadhaar number — and that belongs to the unit, never to a timing control that
+ * happens to sit above it. A section that should not refresh on its own gets the `Manual`
+ * frequency, which already means exactly that.
+ */
+export interface RefreshPlan {
+  frequency: SyncFrequency;
+  /** Hour of day, 0–23, for Daily and Weekly. Local to the server. */
+  hourOfDay: number;
+  /** 0 = Sunday. For Weekly. */
+  dayOfWeek: number;
+}
+
+export type SyncSectionKey = 'core' | 'registers' | 'standard' | 'restricted';
+
+export interface SyncSectionSpec {
+  key: SyncSectionKey;
+  label: string;
+  blurb: string;
+  defaults: RefreshPlan;
+}
+
+export const SYNC_SECTIONS: SyncSectionSpec[] = [
+  {
+    key: 'core',
+    label: 'Core records',
+    blurb: 'The roster and the value lists every other screen refers to.',
+    defaults: { frequency: 'Daily', hourOfDay: 2, dayOfWeek: 1 },
+  },
+  {
+    key: 'registers',
+    label: 'Registers',
+    blurb: 'Leave, attendance and the daily muster.',
+    defaults: { frequency: 'Daily', hourOfDay: 3, dayOfWeek: 1 },
+  },
+  {
+    key: 'standard',
+    label: 'Standard detail',
+    blurb: 'Per-employee fields written onto the employee record.',
+    defaults: { frequency: 'Weekly', hourOfDay: 4, dayOfWeek: 1 },
+  },
+  {
+    key: 'restricted',
+    label: 'Restricted detail',
+    blurb: 'Personal data, stored separately behind its own permission.',
+    defaults: { frequency: 'Weekly', hourOfDay: 5, dayOfWeek: 1 },
+  },
+];
+
+export const syncSectionSpec = (key: SyncSectionKey): SyncSectionSpec =>
+  SYNC_SECTIONS.find((spec) => spec.key === key)!;
+
+/**
+ * A schedulable unit.
+ *
+ * The two roster-side units plus every detail group, which is why the key space is exactly
+ * `'employees' | 'categories' | EmployeeDetailGroup`: leave, attendance and swipes are *already*
+ * detail groups, so they appear once rather than twice.
+ */
+export type SyncUnitKey = 'employees' | 'categories' | EmployeeDetailGroup;
+
+export interface SyncUnitSpec {
+  key: SyncUnitKey;
+  section: SyncSectionKey;
+  label: string;
+  /** One line. What it refreshes, not how the sync works. */
+  blurb: string;
+  /** Where the result is read, when it has a screen of its own. */
+  href: string | null;
+  /** How heavy the fetch is — the fact that should inform an override. */
+  cost: 'Light' | 'Moderate' | 'Heavy';
+  /**
+   * The detail group that decides whether this unit holds data at all, where one does.
+   *
+   * Every unit but `employees` and `categories` is backed by a group. On/off is that group's flag:
+   * a schedule enabled against a group switched off would be a control that silently does nothing,
+   * so there is one switch and `normalizeSyncSettings` enforces it.
+   */
+  detailGroup: EmployeeDetailGroup | null;
+  /**
+   * Whether this unit can be refreshed without fetching the roster.
+   *
+   * False for `employees` by definition, and for `categories`, whose masters come out of the same
+   * reference payload. Every detail group is true: each has its own bulk endpoint and merges into
+   * records that already exist.
+   */
+  standalone: boolean;
+}
+
+/** Built from the detail-group specs, so a new group cannot be added without a home here. */
+const DETAIL_UNIT_SECTION: Record<EmployeeDetailGroup, SyncSectionKey> = {
+  profile: 'standard',
+  personal: 'standard',
+  reporting: 'standard',
+  qualifications: 'standard',
+  assets: 'standard',
+  addresses: 'restricted',
+  statutory: 'restricted',
+  identities: 'restricted',
+  bank: 'restricted',
+  travel: 'restricted',
+  leave: 'registers',
+  attendance: 'registers',
+  swipes: 'registers',
+};
+
+const DETAIL_UNIT_EXTRA: Partial<Record<EmployeeDetailGroup, { href: string; cost: SyncUnitSpec['cost']; blurb: string }>> = {
+  leave: {
+    href: '/employee/leave',
+    cost: 'Moderate',
+    blurb: 'Every employee’s balance by leave type, for the current leave year.',
+  },
+  attendance: {
+    href: '/employee/attendance',
+    cost: 'Moderate',
+    blurb: 'Aggregate hours, late arrivals and absences for the current month.',
+  },
+  swipes: {
+    href: '/employee/swipes',
+    cost: 'Heavy',
+    blurb: 'The day-by-day muster for the current month — first in, last out, hours.',
+  },
+};
+
+export const SYNC_UNITS: SyncUnitSpec[] = [
+  {
+    key: 'employees',
+    section: 'core',
+    label: 'Employee records',
+    blurb: 'The roster, joiners and exits, category assignments and position history.',
+    href: '/employee/manage',
+    cost: 'Moderate',
+    detailGroup: null,
+    standalone: false,
+  },
+  {
+    key: 'categories',
+    section: 'core',
+    label: 'Category masters',
+    blurb: 'Department, designation, grade, location and project value lists.',
+    href: '/employee/category',
+    cost: 'Light',
+    detailGroup: null,
+    standalone: false,
+  },
+  ...EMPLOYEE_DETAIL_GROUPS.map((spec): SyncUnitSpec => ({
+    key: spec.group,
+    section: DETAIL_UNIT_SECTION[spec.group],
+    label: spec.label,
+    // The detail-group description is two or three sentences of policy, which is right where it is
+    // written but too long for a schedule row. The registers get a written line; the rest use the
+    // group's own short `contains` list, which is already a summary.
+    blurb: DETAIL_UNIT_EXTRA[spec.group]?.blurb ?? spec.contains,
+    href: DETAIL_UNIT_EXTRA[spec.group]?.href ?? null,
+    cost: DETAIL_UNIT_EXTRA[spec.group]?.cost ?? 'Light',
+    detailGroup: spec.group,
+    standalone: true,
+  })),
+];
+
+export const SYNC_UNIT_KEYS: SyncUnitKey[] = SYNC_UNITS.map((spec) => spec.key);
+
+export const syncUnitSpec = (key: SyncUnitKey): SyncUnitSpec =>
+  SYNC_UNITS.find((spec) => spec.key === key)!;
+
+export const syncUnitsInSection = (section: SyncSectionKey): SyncUnitSpec[] =>
+  SYNC_UNITS.filter((spec) => spec.section === section);
+
+export const DEFAULT_SYNC_SECTIONS: Record<SyncSectionKey, RefreshPlan> = Object.fromEntries(
+  SYNC_SECTIONS.map((spec) => [spec.key, spec.defaults]),
+) as Record<SyncSectionKey, RefreshPlan>;
+
+/**
+ * The one unit whose default differs enough from its section to ship as an override.
+ *
+ * Swipes is one record per employee per day — roughly thirty times the row count of its two section
+ * mates put together — and it is off by default for that reason. If somebody switches it on, a
+ * nightly cadence is a far better starting point than the section's.
+ */
+export const DEFAULT_UNIT_PLANS: Partial<Record<SyncUnitKey, RefreshPlan>> = {
+  swipes: { frequency: 'Every 12 hours', hourOfDay: 5, dayOfWeek: 1 },
+};
+
+/** Per-unit run pointers, so each unit's due-check measures from its own last success. */
+export interface SyncUnitRunState {
+  lastRunAt?: string | null;
+  lastSuccessfulRunAt?: string | null;
+  lastRunId?: string | null;
+}
+
+/** The plan a unit actually refreshes on: its own override, or its section's. */
+export function effectiveRefreshPlan(settings: GreytHRSyncSettings, key: SyncUnitKey): RefreshPlan {
+  return settings.unitPlans?.[key] ?? settings.sections[syncUnitSpec(key).section];
+}
+
+/** Whether this unit refreshes on a plan of its own rather than following its section. */
+export const hasOwnRefreshPlan = (settings: GreytHRSyncSettings, key: SyncUnitKey): boolean =>
+  settings.unitPlans?.[key] !== undefined;
+
+/**
+ * Is this unit switched on?
+ *
+ * For a unit backed by a detail group, that group is the answer — see `SyncUnitSpec.detailGroup`.
+ */
+export function syncUnitEnabled(settings: GreytHRSyncSettings, key: SyncUnitKey): boolean {
+  const spec = syncUnitSpec(key);
+  if (spec.detailGroup) return settings.detailGroups[spec.detailGroup] === true;
+  return settings.unitEnabled?.[key] !== false;
+}
+
+/**
+ * When this unit last completed successfully.
+ *
+ * `employees` falls back to the integration-wide `lastSuccessfulRunAt`, which predates per-unit
+ * state and holds the right answer for every run on record. Without the fallback the first tick
+ * after this change would read the roster as never-synced and force a full resync of ~1,300
+ * employees.
+ */
+export function syncUnitLastSuccessAt(
+  settings: GreytHRSyncSettings,
+  key: SyncUnitKey,
+): string | null {
+  const own = settings.unitRuns?.[key]?.lastSuccessfulRunAt ?? null;
+  if (own) return own;
+  return key === 'employees' ? settings.lastSuccessfulRunAt ?? null : null;
+}
+
+export interface SyncUnitDue {
+  key: SyncUnitKey;
+  due: boolean;
+  reason: string;
+}
+
+/**
+ * Which units a tick should run, and why each other one is being left alone.
+ *
+ * A row per unit rather than only the due ones: the settings screen shows "next due in about 6h"
+ * against each, and a scheduler that explains its own decisions is far easier to trust than one
+ * that silently does nothing.
+ */
+export function dueSyncUnits(settings: GreytHRSyncSettings, now: Date = new Date()): SyncUnitDue[] {
+  return SYNC_UNITS.map((spec) => {
+    if (!syncUnitEnabled(settings, spec.key)) {
+      return { key: spec.key, due: false, reason: `${spec.label} is switched off.` };
+    }
+    const plan = effectiveRefreshPlan(settings, spec.key);
+    const verdict = isSyncDue(
+      { ...plan, enabled: true },
+      syncUnitLastSuccessAt(settings, spec.key),
+      now,
+    );
+    return { key: spec.key, due: verdict.due, reason: verdict.reason };
+  });
+}
+
+/** Frequencies the hourly tick cannot honour, in minutes. */
+const SUB_HOURLY_MINUTES: Partial<Record<SyncFrequency, number>> = {
+  'Every 5 minutes': 5,
+  'Every 15 minutes': 15,
+  'Every 30 minutes': 30,
+};
+
+/**
+ * Whether this frequency asks for more than the thing calling the endpoint actually delivers.
+ *
+ * The route only runs when something calls it, so a five-minute schedule behind an hourly caller
+ * produces hourly runs. Rather than hide the option or silently under-deliver, the screen says
+ * so — and it is measured from the run history rather than assumed, because what drives this
+ * endpoint is deployment configuration that the application cannot read.
+ *
+ * `observedGapMinutes` is the median gap between recent scheduled runs; null when there are too
+ * few to judge, in which case no claim is made.
+ */
+export function tickCadenceWarning(
+  frequency: SyncFrequency,
+  observedGapMinutes: number | null,
+): string | null {
+  const wanted = SUB_HOURLY_MINUTES[frequency];
+  if (!wanted || observedGapMinutes === null) return null;
+  // A fifth of slack, so ordinary jitter in a scheduler is not reported as a shortfall.
+  if (observedGapMinutes <= wanted * 1.2) return null;
+  return (
+    `Scheduled runs are arriving about every ${Math.round(observedGapMinutes)} minutes, so this ` +
+    `will run roughly that often rather than every ${wanted}. The caller sets the floor.`
+  );
+}
+
+/**
+ * The median gap between recent scheduled runs, in minutes.
+ *
+ * Median rather than mean: a single manual run or a long outage would drag an average far from
+ * the cadence the question is about. Only `cron` runs count — a burst of manual runs says nothing
+ * about how often anything is calling the endpoint.
+ */
+export function observedTickGapMinutes(
+  runs: Array<{ trigger: string; startedAt: string }>,
+): number | null {
+  const times = runs
+    .filter((run) => run.trigger === 'cron')
+    .map((run) => new Date(run.startedAt).getTime())
+    .filter((value) => !Number.isNaN(value))
+    .sort((a, b) => b - a);
+  if (times.length < 3) return null;
+  const gaps: number[] = [];
+  for (let index = 1; index < times.length; index += 1) {
+    gaps.push((times[index - 1] - times[index]) / 60_000);
+  }
+  gaps.sort((a, b) => a - b);
+  const middle = Math.floor(gaps.length / 2);
+  return gaps.length % 2 ? gaps[middle] : (gaps[middle - 1] + gaps[middle]) / 2;
+}
+
+/** Human description of a plan, for the settings screen. */
+export function describeRefreshPlan(plan: RefreshPlan): string {
+  const at = `${String(plan.hourOfDay).padStart(2, '0')}:00`;
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  switch (plan.frequency) {
+    case 'Manual':
+      return 'Only when you run it';
+    case 'Every 5 minutes':
+      return 'Every 5 minutes';
+    case 'Every 15 minutes':
+      return 'Every 15 minutes';
+    case 'Every 30 minutes':
+      return 'Every 30 minutes';
+    case 'Hourly':
+      return 'Every hour';
+    case 'Every 6 hours':
+      return 'Every 6 hours';
+    case 'Every 12 hours':
+      return 'Every 12 hours';
+    case 'Daily':
+      return `Daily, on or after ${at}`;
+    case 'Weekly':
+      return `${days[plan.dayOfWeek] ?? 'Monday'}s, on or after ${at}`;
   }
 }
 
@@ -2353,7 +2779,38 @@ export const DEFAULT_MAPPING_POLICY: GreytHRMappingPolicy = {
 };
 
 export interface GreytHRSyncSettings {
+  /**
+   * @deprecated The integration-wide schedule, kept as an alias of `modules.employees`.
+   *
+   * Every module now carries its own schedule. This field stays so a settings document written
+   * before that — and any reader still consulting it — keeps describing the roster refresh
+   * rather than nothing at all. `normalizeSyncSettings` keeps the two identical.
+   */
   schedule: SyncSchedule;
+  /** One refresh plan per section. Every unit follows its section unless it overrides. */
+  sections: Record<SyncSectionKey, RefreshPlan>;
+  /**
+   * Per-unit overrides. A key present here means "this unit does not follow its section".
+   *
+   * Absence is the signal, so removing an entry is how a unit goes back to following — which is
+   * also why `normalizeSyncSettings` seeds the shipped defaults only when the whole map is
+   * missing. Seeding per key would resurrect an override the moment somebody cleared it.
+   */
+  unitPlans?: Partial<Record<SyncUnitKey, RefreshPlan>>;
+  /**
+   * On/off for the two units with no detail group behind them.
+   *
+   * Every other unit is switched by its group — see `SyncUnitSpec.detailGroup`.
+   */
+  unitEnabled?: Partial<Record<SyncUnitKey, boolean>>;
+  /**
+   * Per-unit run pointers.
+   *
+   * Partial because a unit that has never run has no entry, which `syncUnitLastSuccessAt` reads
+   * as "never" — for every unit but `employees`, which falls back to the integration-wide
+   * watermark so this change does not force a full resync on its first tick.
+   */
+  unitRuns?: Partial<Record<SyncUnitKey, SyncUnitRunState>>;
   exitPolicy: ExitAccessPolicy;
   mapping: GreytHRMappingPolicy;
   /**
@@ -2389,6 +2846,10 @@ export interface GreytHRSyncSettings {
 
 export const DEFAULT_SYNC_SETTINGS: GreytHRSyncSettings = {
   schedule: DEFAULT_SYNC_SCHEDULE,
+  sections: DEFAULT_SYNC_SECTIONS,
+  unitPlans: DEFAULT_UNIT_PLANS,
+  unitEnabled: {},
+  unitRuns: {},
   exitPolicy: 'Flag for review',
   mapping: DEFAULT_MAPPING_POLICY,
   detailGroups: DEFAULT_DETAIL_GROUPS,
@@ -3238,20 +3699,85 @@ export const isSalaryRow = (data: Record<string, unknown> | null | undefined): b
 export function normalizeSyncSettings(
   raw: Partial<GreytHRSyncSettings> | null | undefined,
 ): GreytHRSyncSettings {
-  const schedule: Partial<SyncSchedule> = raw?.schedule ?? {};
-  const frequency = SYNC_FREQUENCIES.includes(schedule.frequency as SyncFrequency)
-    ? (schedule.frequency as SyncFrequency)
-    : DEFAULT_SYNC_SCHEDULE.frequency;
-  const hour = Number(schedule.hourOfDay);
-  const day = Number(schedule.dayOfWeek);
+  /** One plan, validated field by field against a fallback of the caller's choosing. */
+  const readPlan = (
+    stored: Partial<RefreshPlan> | null | undefined,
+    fallback: RefreshPlan,
+  ): RefreshPlan => {
+    const hour = Number(stored?.hourOfDay);
+    const day = Number(stored?.dayOfWeek);
+    return {
+      frequency: SYNC_FREQUENCIES.includes(stored?.frequency as SyncFrequency)
+        ? (stored!.frequency as SyncFrequency)
+        : fallback.frequency,
+      hourOfDay: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : fallback.hourOfDay,
+      dayOfWeek: Number.isInteger(day) && day >= 0 && day <= 6 ? day : fallback.dayOfWeek,
+    };
+  };
+
+  /**
+   * The stored single schedule, which becomes the Core records section.
+   *
+   * It is the one timing choice an administrator has actually made, so it is carried over rather
+   * than replaced by a default. `enabled` keeps its old meaning — absent reads as off — because
+   * that field predates this function and an installation that never switched automatic sync on
+   * must not acquire it here.
+   */
+  const legacyPlan = readPlan(raw?.schedule, DEFAULT_SYNC_SECTIONS.core);
+  const legacyEnabled = raw?.schedule?.enabled === true;
+
+  // Read per group against each one's own default, so a settings document written before a group
+  // existed picks up that group's default rather than silently enabling a sensitive fetch.
+  const detailGroups = Object.fromEntries(
+    EMPLOYEE_DETAIL_GROUPS.map((spec) => {
+      const stored = raw?.detailGroups?.[spec.group];
+      return [spec.group, typeof stored === 'boolean' ? stored : spec.defaultEnabled];
+    }),
+  ) as Record<EmployeeDetailGroup, boolean>;
+
+  const sections = Object.fromEntries(
+    SYNC_SECTIONS.map((spec) => [
+      spec.key,
+      readPlan(raw?.sections?.[spec.key], spec.key === 'core' ? legacyPlan : spec.defaults),
+    ]),
+  ) as Record<SyncSectionKey, RefreshPlan>;
+
+  /**
+   * Overrides, seeded only when the map has never been written.
+   *
+   * Per-key seeding would make "follow the section again" impossible: clearing an override would
+   * put the shipped default straight back on the next read.
+   */
+  const storedPlans = raw?.unitPlans;
+  const unitPlans: Partial<Record<SyncUnitKey, RefreshPlan>> = {};
+  for (const spec of SYNC_UNITS) {
+    const stored = storedPlans === undefined ? DEFAULT_UNIT_PLANS[spec.key] : storedPlans[spec.key];
+    if (stored) unitPlans[spec.key] = readPlan(stored, sections[spec.section]);
+  }
+
+  // Only the two units with no group behind them. The legacy "run automatically" flag governed
+  // the whole integration, so it carries to both rather than to one of them.
+  const unitEnabled: Partial<Record<SyncUnitKey, boolean>> = {
+    employees: typeof raw?.unitEnabled?.employees === 'boolean' ? raw.unitEnabled.employees : legacyEnabled,
+    categories: typeof raw?.unitEnabled?.categories === 'boolean' ? raw.unitEnabled.categories : legacyEnabled,
+  };
 
   return {
-    schedule: {
-      enabled: schedule.enabled === true,
-      frequency,
-      hourOfDay: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_SYNC_SCHEDULE.hourOfDay,
-      dayOfWeek: Number.isInteger(day) && day >= 0 && day <= 6 ? day : DEFAULT_SYNC_SCHEDULE.dayOfWeek,
-    },
+    // The deprecated alias describes Core records, which is what the single schedule meant.
+    schedule: { ...sections.core, enabled: unitEnabled.employees === true },
+    sections,
+    unitPlans,
+    unitEnabled,
+    unitRuns: Object.fromEntries(
+      SYNC_UNIT_KEYS.flatMap((key) => {
+        const stored = raw?.unitRuns?.[key];
+        return stored ? [[key, {
+          lastRunAt: stored.lastRunAt ?? null,
+          lastSuccessfulRunAt: stored.lastSuccessfulRunAt ?? null,
+          lastRunId: stored.lastRunId ?? null,
+        }]] : [];
+      }),
+    ) as Partial<Record<SyncUnitKey, SyncUnitRunState>>,
     exitPolicy: EXIT_ACCESS_POLICIES.includes(raw?.exitPolicy as ExitAccessPolicy)
       ? (raw!.exitPolicy as ExitAccessPolicy)
       : 'Flag for review',
@@ -3265,14 +3791,7 @@ export function normalizeSyncSettings(
       // adopts the default rather than silently disabling the linking every exit policy depends on.
       autoLinkUsers: raw?.mapping?.autoLinkUsers !== false,
     },
-    // Read per group against each one's own default, so a settings document written before a group
-    // existed picks up that group's default rather than silently enabling a sensitive fetch.
-    detailGroups: Object.fromEntries(
-      EMPLOYEE_DETAIL_GROUPS.map((spec) => {
-        const stored = raw?.detailGroups?.[spec.group];
-        return [spec.group, typeof stored === 'boolean' ? stored : spec.defaultEnabled];
-      }),
-    ) as Record<EmployeeDetailGroup, boolean>,
+    detailGroups,
     lastSuccessfulRunAt: raw?.lastSuccessfulRunAt ?? null,
     // Absent on every installation that predates this field, which is correct: none of them has a
     // baseline this code can vouch for, so the next run rebuilds one.
@@ -3303,6 +3822,31 @@ export interface SyncEmployeeOutcome {
   accessAction: AccessDecision['action'];
   accessReason: string;
   flagged: boolean;
+  /** What the Review screen should offer for this row. See `AccessDecision.suggested`. */
+  suggestedAction?: Exclude<ReviewAction, 'dismiss'> | null;
+}
+
+/**
+ * One administrator decision on a flagged row.
+ *
+ * Keyed by employee id rather than appended, because the question it answers is "has this row
+ * been dealt with" — one current answer per employee, not a history of hesitations. The audit
+ * trail of who changed an account lives on the account.
+ */
+export interface SyncReviewRecord {
+  employeeId: string;
+  employeeNo?: string | null;
+  name?: string | null;
+  action: ReviewAction;
+  /** False for a refusal — the last administrator guard, or no linked login. */
+  ok: boolean;
+  message: string;
+  reason?: string | null;
+  userId?: string | null;
+  runId?: string | null;
+  reviewedAt: string;
+  reviewedBy: string;
+  reviewedByName?: string | null;
 }
 
 export interface GreytHRSyncRun {
@@ -3339,6 +3883,8 @@ export interface GreytHRSyncRun {
   sensitiveRecordsWritten?: number;
   /** Which detail groups this run actually fetched, for the report. */
   detailGroupsRun?: string[];
+  /** Which units this run covered, by label. */
+  unitsRun?: string[];
   tookMs: number;
   /** Only the rows worth showing — changed or flagged. A full 1,300-row dump is not a report. */
   outcomes: SyncEmployeeOutcome[];

@@ -25,6 +25,9 @@ import type {
   GreytHRSyncSettings,
   LinkableEmployee,
   SyncedEmployee,
+  SyncUnitKey,
+  ReviewAction,
+  SyncReviewRecord,
 } from './greythr';
 import type { BulkLinkPlan, LinkAuditEntry, LinkReport } from './greythr-linking';
 
@@ -35,6 +38,27 @@ export interface SyncReport {
   settings: GreytHRSyncSettings;
   runs: GreytHRSyncRun[];
   nextRun: { due: boolean; reason: string };
+  /**
+   * Decisions already taken on flagged rows, newest first.
+   *
+   * Optional so a browser holding this page open across the deploy that added it does not crash
+   * on a report from the older route.
+   */
+  reviews?: SyncReviewRecord[];
+  /**
+   * The same question per module — one row per module, due or not.
+   *
+   * Optional so a browser holding this page open across the deploy that added it does not crash
+   * on a report from the older route.
+   */
+  unitStatus?: Array<{
+    key: SyncUnitKey;
+    due: boolean;
+    reason: string;
+    enabled: boolean;
+    lastRunAt: string | null;
+    lastSuccessfulRunAt: string | null;
+  }>;
   /** Whether the stored roster needs one full rebuild before incremental sync is trustworthy. */
   mirrorRefresh: { force: boolean; reason: string | null };
   /**
@@ -102,13 +126,41 @@ export const saveSyncSettings = (
  * what the first run would do to 1,300 employee records before it does it.
  */
 export const runSyncNow = (
-  options: { fullResync?: boolean; preview?: boolean } = {},
+  options: { fullResync?: boolean; preview?: boolean; units?: SyncUnitKey[] } = {},
 ): Promise<{ ok: boolean; run: GreytHRSyncRun }> =>
   authorizedFetch('/api/greythr/sync', {
     method: 'POST',
     body: JSON.stringify({
       action: options.preview ? 'preview' : 'run',
       fullResync: options.fullResync === true,
+      // Omitted rather than sent empty: the route reads "no modules" as "all of them", which is
+      // what the whole-run button means.
+      ...(options.units?.length ? { units: options.units } : {}),
+    }),
+  });
+
+/**
+ * Act on one flagged row: restore a login, disable one, or record that it was looked at.
+ *
+ * Resolves rather than throws on a refusal — "this is the last administrator" is an answer the
+ * screen should show, not an error it should swallow into a red toast with no detail.
+ */
+export const applyReviewDecision = (input: {
+  employeeId: string;
+  action: ReviewAction;
+  reason?: string;
+  runId?: string;
+}): Promise<{ ok: boolean; action: ReviewAction; userId: string | null; message: string }> =>
+  authorizedFetch('/api/greythr/sync', {
+    method: 'POST',
+    // Named field by field rather than spread: `input.action` is the review decision while the
+    // route's own `action` selects the branch, and a spread lets one silently overwrite the other.
+    body: JSON.stringify({
+      action: 'review',
+      employeeId: input.employeeId,
+      reviewAction: input.action,
+      reason: input.reason,
+      runId: input.runId,
     }),
   });
 

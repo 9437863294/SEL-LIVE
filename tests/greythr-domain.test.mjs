@@ -65,6 +65,7 @@ import {
   employmentTypeLabels,
   hasExited,
   indexUsersByEmail,
+  dueSyncUnits,
   isSyncDue,
   isWorkingState,
   overlayLiveRosterState,
@@ -74,6 +75,19 @@ import {
   modifiedSinceFor,
   normalizeCategories,
   normalizeSyncSettings,
+  observedTickGapMinutes,
+  tickCadenceWarning,
+  describeRefreshPlan,
+  effectiveRefreshPlan,
+  hasOwnRefreshPlan,
+  syncUnitEnabled,
+  syncUnitLastSuccessAt,
+  syncUnitSpec,
+  syncUnitsInSection,
+  SYNC_FREQUENCIES,
+  SYNC_SECTIONS,
+  SYNC_UNIT_KEYS,
+  SYNC_UNITS,
   pruneEmpty,
   resolveAccessDecision,
   reviseStoredEmploymentState,
@@ -2579,4 +2593,349 @@ test('buildDocumentTree does not flag the same name filed under two categories',
     tree.categories.every((category) => category.files.every((file) => !file.duplicateName)),
     'the flag is per category, not per tree',
   );
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Sections, units and overrides
+ * ---------------------------------------------------------------------------------------------- */
+
+test('every unit belongs to exactly one declared section', () => {
+  const sections = new Set(SYNC_SECTIONS.map((spec) => spec.key));
+  for (const spec of SYNC_UNITS) {
+    assert.ok(sections.has(spec.section), `${spec.key} is in unknown section ${spec.section}`);
+  }
+  // And every section has something in it, or the screen renders an empty card.
+  for (const section of SYNC_SECTIONS) {
+    assert.ok(syncUnitsInSection(section.key).length > 0, `${section.key} is empty`);
+  }
+});
+
+test('the unit set is exactly the detail groups plus the two core units', () => {
+  // The guard against a detail group being added with no home: it would silently never refresh.
+  const expected = ['employees', 'categories', ...EMPLOYEE_DETAIL_GROUPS.map((spec) => spec.group)];
+  assert.deepEqual([...SYNC_UNIT_KEYS].sort(), expected.sort());
+});
+
+test('only the two core units lack a detail group', () => {
+  for (const spec of SYNC_UNITS) {
+    if (spec.key === 'employees' || spec.key === 'categories') {
+      assert.equal(spec.detailGroup, null, `${spec.key} should have no group`);
+    } else {
+      assert.equal(spec.detailGroup, spec.key, `${spec.key} should be backed by its own group`);
+    }
+  }
+});
+
+test('the stored single schedule migrates onto the Core records section', () => {
+  // The one timing choice an administrator actually made. Replacing it with a default would
+  // silently reschedule a sync that was running.
+  const settings = normalizeSyncSettings({
+    schedule: { enabled: true, frequency: 'Every 6 hours', hourOfDay: 2, dayOfWeek: 1 },
+  });
+  assert.equal(settings.sections.core.frequency, 'Every 6 hours');
+  assert.equal(syncUnitEnabled(settings, 'employees'), true);
+  // And the deprecated alias keeps describing the same thing rather than drifting.
+  assert.equal(settings.schedule.frequency, 'Every 6 hours');
+  assert.equal(settings.schedule.enabled, true);
+});
+
+test('a never-configured install does not acquire automatic sync', () => {
+  const settings = normalizeSyncSettings({});
+  assert.equal(syncUnitEnabled(settings, 'employees'), false);
+  assert.equal(syncUnitEnabled(settings, 'categories'), false);
+});
+
+test('a unit with no override follows its section', () => {
+  const settings = normalizeSyncSettings({
+    sections: { standard: { frequency: 'Hourly', hourOfDay: 1, dayOfWeek: 2 } },
+  });
+  assert.equal(hasOwnRefreshPlan(settings, 'qualifications'), false);
+  assert.equal(effectiveRefreshPlan(settings, 'qualifications').frequency, 'Hourly');
+});
+
+test('an override wins over its section, and only for that unit', () => {
+  const settings = normalizeSyncSettings({
+    sections: { standard: { frequency: 'Weekly', hourOfDay: 4, dayOfWeek: 1 } },
+    unitPlans: { qualifications: { frequency: 'Daily', hourOfDay: 6, dayOfWeek: 1 } },
+  });
+  assert.equal(effectiveRefreshPlan(settings, 'qualifications').frequency, 'Daily');
+  assert.equal(effectiveRefreshPlan(settings, 'profile').frequency, 'Weekly');
+  assert.equal(hasOwnRefreshPlan(settings, 'qualifications'), true);
+  assert.equal(hasOwnRefreshPlan(settings, 'profile'), false);
+});
+
+test('clearing an override makes the unit follow again, and it stays cleared', () => {
+  // The regression this guards: seeding shipped defaults per key rather than only when the map
+  // has never been written would put the override straight back on the next read.
+  const once = normalizeSyncSettings({ detailGroups: { swipes: true }, unitPlans: {} });
+  assert.equal(hasOwnRefreshPlan(once, 'swipes'), false);
+  const twice = normalizeSyncSettings(once);
+  assert.equal(hasOwnRefreshPlan(twice, 'swipes'), false);
+});
+
+test('the shipped swipes override applies only to an install that has never saved one', () => {
+  const fresh = normalizeSyncSettings({ detailGroups: { swipes: true } });
+  assert.equal(hasOwnRefreshPlan(fresh, 'swipes'), true);
+  assert.equal(effectiveRefreshPlan(fresh, 'swipes').frequency, 'Every 12 hours');
+});
+
+test('a detail-backed unit is switched by its group', () => {
+  const on = normalizeSyncSettings({ detailGroups: { identities: true } });
+  const off = normalizeSyncSettings({ detailGroups: { identities: false } });
+  assert.equal(syncUnitEnabled(on, 'identities'), true);
+  assert.equal(syncUnitEnabled(off, 'identities'), false);
+});
+
+test('restricted groups stay off unless asked for', () => {
+  // Holding somebody’s Aadhaar number must never be a side effect of a schedule change.
+  const settings = normalizeSyncSettings({});
+  for (const spec of syncUnitsInSection('restricted')) {
+    assert.equal(syncUnitEnabled(settings, spec.key), false, `${spec.key} defaulted on`);
+  }
+});
+
+test('only the employees unit falls back to the integration-wide watermark', () => {
+  // Without the fallback the first tick after this change would read the roster as never-synced
+  // and force a full resync of the whole workforce.
+  const settings = normalizeSyncSettings({ lastSuccessfulRunAt: '2026-09-23T12:38:56.526Z' });
+  assert.equal(syncUnitLastSuccessAt(settings, 'employees'), '2026-09-23T12:38:56.526Z');
+  assert.equal(syncUnitLastSuccessAt(settings, 'leave'), null);
+});
+
+test('a unit’s own pointer wins over the fallback', () => {
+  const settings = normalizeSyncSettings({
+    lastSuccessfulRunAt: '2026-09-23T12:38:56.526Z',
+    unitRuns: { employees: { lastSuccessfulRunAt: '2026-09-24T06:00:00.000Z' } },
+  });
+  assert.equal(syncUnitLastSuccessAt(settings, 'employees'), '2026-09-24T06:00:00.000Z');
+});
+
+test('dueSyncUnits answers for every unit, due or not', () => {
+  const settings = normalizeSyncSettings({});
+  const verdicts = dueSyncUnits(settings, at('2026-09-24T06:00:00'));
+  assert.equal(verdicts.length, SYNC_UNIT_KEYS.length);
+  for (const verdict of verdicts) {
+    assert.ok(verdict.reason.length > 0, `${verdict.key} gave no reason`);
+  }
+});
+
+test('units become due independently of each other', () => {
+  // The whole point: an hourly unit is due while a weekly one is not, from the same tick.
+  const settings = normalizeSyncSettings({
+    detailGroups: { swipes: true, qualifications: true },
+    unitPlans: {
+      swipes: { frequency: 'Hourly', hourOfDay: 2, dayOfWeek: 1 },
+      qualifications: { frequency: 'Daily', hourOfDay: 2, dayOfWeek: 1 },
+    },
+    unitRuns: {
+      swipes: { lastSuccessfulRunAt: '2026-09-24T04:00:00.000Z' },
+      qualifications: { lastSuccessfulRunAt: '2026-09-24T05:00:00.000Z' },
+    },
+  });
+  const due = Object.fromEntries(
+    dueSyncUnits(settings, at('2026-09-24T06:00:00.000Z')).map((v) => [v.key, v.due]),
+  );
+  assert.equal(due.swipes, true, 'two hours since the last hourly run');
+  assert.equal(due.qualifications, false, 'one hour into a daily interval');
+});
+
+test('changing a section re-times every unit that follows it', () => {
+  const base = {
+    detailGroups: { profile: true, personal: true, qualifications: true },
+    unitPlans: { qualifications: { frequency: 'Weekly', hourOfDay: 4, dayOfWeek: 1 } },
+    unitRuns: {
+      profile: { lastSuccessfulRunAt: '2026-09-24T05:00:00.000Z' },
+      personal: { lastSuccessfulRunAt: '2026-09-24T05:00:00.000Z' },
+      qualifications: { lastSuccessfulRunAt: '2026-09-24T05:00:00.000Z' },
+    },
+  };
+  const hourly = normalizeSyncSettings({
+    ...base,
+    sections: { standard: { frequency: 'Hourly', hourOfDay: 4, dayOfWeek: 1 } },
+  });
+  const due = Object.fromEntries(
+    dueSyncUnits(hourly, at('2026-09-24T06:30:00.000Z')).map((v) => [v.key, v.due]),
+  );
+  assert.equal(due.profile, true, 'followed the section onto hourly');
+  assert.equal(due.personal, true, 'followed the section onto hourly');
+  assert.equal(due.qualifications, false, 'its override kept it weekly');
+});
+
+test('a switched-off unit is never due, whatever its plan says', () => {
+  const settings = normalizeSyncSettings({
+    detailGroups: { swipes: false },
+    unitPlans: { swipes: { frequency: 'Hourly', hourOfDay: 2, dayOfWeek: 1 } },
+  });
+  const swipes = dueSyncUnits(settings, at('2026-09-24T06:00:00')).find((v) => v.key === 'swipes');
+  assert.equal(swipes.due, false);
+  assert.match(swipes.reason, /switched off/);
+});
+
+test('a Manual section never comes due, which is how a section is switched off', () => {
+  const settings = normalizeSyncSettings({
+    detailGroups: { profile: true },
+    sections: { standard: { frequency: 'Manual', hourOfDay: 4, dayOfWeek: 1 } },
+  });
+  const profile = dueSyncUnits(settings, at('2026-09-24T06:00:00')).find((v) => v.key === 'profile');
+  assert.equal(profile.due, false);
+});
+
+test('describeRefreshPlan covers every frequency', () => {
+  for (const frequency of SYNC_FREQUENCIES) {
+    const text = describeRefreshPlan({ frequency, hourOfDay: 3, dayOfWeek: 1 });
+    assert.equal(typeof text, 'string');
+    assert.ok(text.length > 0, `${frequency} described as empty`);
+  }
+});
+
+
+/* ------------------------------------------------------------------------------------------------
+ * What a flagged row offers to do about itself
+ * ---------------------------------------------------------------------------------------------- */
+
+test('a working employee whose login an administrator disabled offers to restore it', () => {
+  const decision = resolveAccessDecision({
+    state: 'Active',
+    policy: 'Flag for review',
+    currentUserStatus: 'Inactive',
+    deactivatedBySync: false,
+  });
+  assert.equal(decision.action, 'none', 'the sync still leaves it alone');
+  assert.equal(decision.flagForReview, true);
+  assert.equal(decision.suggested, 'enable');
+});
+
+test('an exit left alone by a review-only policy offers to disable the login', () => {
+  const decision = resolveAccessDecision({
+    state: 'Relieved',
+    policy: 'Flag for review',
+    currentUserStatus: 'Active',
+  });
+  assert.equal(decision.action, 'none');
+  assert.equal(decision.suggested, 'disable');
+});
+
+test('the last administrator still offers the action, because the route explains the refusal', () => {
+  // Hiding the button would leave the row unexplained and unclearable; the guard lives in the
+  // route, which re-checks at the moment it would write.
+  const decision = resolveAccessDecision({
+    state: 'Relieved',
+    policy: 'On last working day',
+    currentUserStatus: 'Active',
+    wouldStrandAdministration: true,
+  });
+  assert.equal(decision.action, 'none');
+  assert.equal(decision.suggested, 'disable');
+  assert.match(decision.reason, /last user who can administer/);
+});
+
+test('an employee absent from greytHR suggests nothing, deliberately', () => {
+  // It might be an exit, or the API user’s scope narrowing. Those want opposite responses, so
+  // offering one button would be guessing on the administrator’s behalf.
+  const decision = resolveAccessDecision({
+    state: 'Unknown',
+    policy: 'Flag for review',
+    currentUserStatus: 'Active',
+  });
+  assert.equal(decision.flagForReview, true);
+  assert.equal(decision.suggested, null);
+});
+
+test('a row the sync already acted on suggests nothing', () => {
+  const deactivated = resolveAccessDecision({
+    state: 'Relieved',
+    policy: 'On last working day',
+    currentUserStatus: 'Active',
+  });
+  assert.equal(deactivated.action, 'deactivate');
+  assert.equal(deactivated.suggested ?? null, null);
+
+  const reactivated = resolveAccessDecision({
+    state: 'Active',
+    policy: 'Flag for review',
+    currentUserStatus: 'Inactive',
+    deactivatedBySync: true,
+  });
+  assert.equal(reactivated.action, 'reactivate');
+  assert.equal(reactivated.suggested ?? null, null);
+});
+
+test('an unflagged row never carries a suggestion', () => {
+  // The screen only shows buttons on flagged rows, but the invariant belongs in the model too.
+  const working = resolveAccessDecision({ state: 'Active', policy: 'Flag for review', currentUserStatus: 'Active' });
+  assert.equal(working.flagForReview, false);
+  assert.equal(working.suggested ?? null, null);
+});
+
+
+/* ------------------------------------------------------------------------------------------------
+ * Sub-hourly frequencies
+ * ---------------------------------------------------------------------------------------------- */
+
+test('a five-minute schedule comes due after five minutes, not an hour', () => {
+  const schedule = { enabled: true, frequency: 'Every 5 minutes', hourOfDay: 2, dayOfWeek: 1 };
+  assert.equal(isSyncDue(schedule, '2026-10-15T06:00:00Z', at('2026-10-15T06:03:00Z')).due, false);
+  assert.equal(isSyncDue(schedule, '2026-10-15T06:00:00Z', at('2026-10-15T06:05:00Z')).due, true);
+});
+
+test('the tolerance scales with the interval instead of eating a short window', () => {
+  // A flat minute of slack is a fifth of a five-minute period, which would let a slightly fast
+  // caller stretch runs to every ten minutes.
+  const schedule = { enabled: true, frequency: 'Every 5 minutes', hourOfDay: 2, dayOfWeek: 1 };
+  assert.equal(isSyncDue(schedule, '2026-10-15T06:00:00Z', at('2026-10-15T06:04:00Z')).due, false);
+  // …while an hour-long schedule keeps the original full minute of grace.
+  const hourly = { enabled: true, frequency: 'Hourly', hourOfDay: 2, dayOfWeek: 1 };
+  assert.equal(isSyncDue(hourly, '2026-10-15T06:00:00Z', at('2026-10-15T06:59:05Z')).due, true);
+});
+
+test('a sub-hourly reason is stated in minutes, not as 0h', () => {
+  const schedule = { enabled: true, frequency: 'Every 30 minutes', hourOfDay: 2, dayOfWeek: 1 };
+  const result = isSyncDue(schedule, '2026-10-15T06:00:00Z', at('2026-10-15T06:10:00Z'));
+  assert.equal(result.due, false);
+  assert.match(result.reason, /min/);
+  assert.doesNotMatch(result.reason, /0h/);
+});
+
+test('every frequency has an interval, so none can silently never fire', () => {
+  const now = at('2026-10-15T12:00:00Z');
+  for (const frequency of SYNC_FREQUENCIES) {
+    if (frequency === 'Manual') continue;
+    // Hour 0 and the weekday of `now`, so the Daily and Weekly gates are satisfied and the only
+    // thing under test is whether the interval exists.
+    const schedule = { enabled: true, frequency, hourOfDay: 0, dayOfWeek: now.getDay() };
+    // A year later, every frequency must be due; a missing interval would read as NaN and never be.
+    assert.equal(isSyncDue(schedule, '2025-01-01T00:00:00Z', now).due, true, frequency);
+  }
+});
+
+test('the observed tick gap is the median of scheduled runs only', () => {
+  const runs = [
+    { trigger: 'cron', startedAt: '2026-10-15T06:20:00Z' },
+    { trigger: 'manual', startedAt: '2026-10-15T06:17:00Z' },
+    { trigger: 'cron', startedAt: '2026-10-15T06:15:00Z' },
+    { trigger: 'cron', startedAt: '2026-10-15T06:10:00Z' },
+    { trigger: 'cron', startedAt: '2026-10-15T06:05:00Z' },
+  ];
+  assert.equal(observedTickGapMinutes(runs), 5);
+});
+
+test('too few scheduled runs means no claim about cadence', () => {
+  assert.equal(observedTickGapMinutes([{ trigger: 'cron', startedAt: '2026-10-15T06:00:00Z' }]), null);
+  assert.equal(observedTickGapMinutes([{ trigger: 'manual', startedAt: '2026-10-15T06:00:00Z' }]), null);
+});
+
+test('a five-minute schedule behind an hourly caller is reported, not hidden', () => {
+  const warning = tickCadenceWarning('Every 5 minutes', 60);
+  assert.ok(warning);
+  assert.match(warning, /60 minutes/);
+});
+
+test('no warning when the caller keeps up, or for an hourly schedule', () => {
+  assert.equal(tickCadenceWarning('Every 5 minutes', 5), null);
+  // A little jitter is not a shortfall.
+  assert.equal(tickCadenceWarning('Every 5 minutes', 6), null);
+  assert.equal(tickCadenceWarning('Hourly', 60), null);
+  assert.equal(tickCadenceWarning('Daily', 60), null);
+  // And nothing is claimed when the history is too thin to measure.
+  assert.equal(tickCadenceWarning('Every 5 minutes', null), null);
 });

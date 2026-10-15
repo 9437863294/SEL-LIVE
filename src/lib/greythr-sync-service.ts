@@ -65,11 +65,17 @@ import {
   shouldForceFullResync,
   shouldDeactivateOnResignation,
   summarizeRun,
+  SYNC_UNIT_KEYS,
+  syncUnitSpec,
   swipeDocId,
   swipeMonthKey,
   swipeMonthRange,
   todayIso,
+  EMPLOYEE_DETAIL_GROUPS,
   type EmployeeDetailGroup,
+  type ReviewAction,
+  type SyncUnitKey,
+  type SyncReviewRecord,
   type EmploymentState,
   type EmployeeOperationalDetail,
   type EmployeeSensitiveDetail,
@@ -172,6 +178,8 @@ export const GREYTHR_COLLECTIONS = {
   swipes: 'employeeSwipes',
   /** One document per run. */
   runs: 'greythrSyncRuns',
+  /** One current decision per flagged employee — see `SyncReviewRecord`. */
+  reviews: 'greythrSyncReviews',
   users: 'users',
   roles: 'roles',
   grants: 'accessGrants',
@@ -259,6 +267,15 @@ export interface RunSyncOptions {
   /** Ignore `modifiedSince` and refetch everything. */
   fullResync?: boolean;
   /**
+   * Which units to run. Omitted or empty means all of them, which is what a full manual run does.
+   *
+   * A unit named here still has to be switched on: the detail group behind it is the decision to
+   * *hold* that data, and a manual run must not quietly start storing a month of everybody's
+   * movements or somebody's Aadhaar number. A unit's schedule does not block it, because that
+   * only governs whether the scheduler asks — pressing the button is the ask.
+   */
+  units?: SyncUnitKey[];
+  /**
    * Compute and report without writing anything at all. What the settings screen's "Preview" uses,
    * so an administrator can see the first run's findings before trusting them.
    */
@@ -284,6 +301,33 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
   const today = todayIso();
 
   const settings = await readSyncSettings(db);
+
+  /**
+   * The units this run will actually do.
+   *
+   * `detailGroup` is consulted but the refresh plan deliberately is not — see `units` on
+   * `RunSyncOptions`.
+   */
+  const requestedUnits = options.units && options.units.length ? options.units : SYNC_UNIT_KEYS;
+  const willRun = (key: SyncUnitKey): boolean => {
+    if (!requestedUnits.includes(key)) return false;
+    const group = syncUnitSpec(key).detailGroup;
+    return group ? settings.detailGroups[group] === true : true;
+  };
+  const runEmployees = willRun('employees');
+  const runCategories = willRun('categories');
+  /**
+   * The ten per-employee groups this run covers.
+   *
+   * Leave, attendance and swipes are units too, but they are not part of this fetch: each has
+   * its own block further down writing its own collection.
+   */
+  const detailGroupsToFetch = Object.fromEntries(
+    EMPLOYEE_DETAIL_GROUPS.map((spec) => [spec.group, willRun(spec.group)]),
+  ) as Record<EmployeeDetailGroup, boolean>;
+  const runAnyDetail = PER_EMPLOYEE_DETAIL_GROUPS.some((group) => detailGroupsToFetch[group]);
+  /** Needed in `finally` as well, to stamp each unit that ran. */
+  const unitsDone = SYNC_UNIT_KEYS.filter(willRun);
 
   /**
    * A watermark is only trustworthy once a full run has established a baseline.
@@ -326,21 +370,35 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
   try {
     greytHRConfig(); // Fail fast and clearly if credentials are missing.
 
+    /**
+     * Nothing fetched is nothing written.
+     *
+     * A skipped roster yields an empty page, which the reconciliation below treats as "greytHR
+     * returned no changed employees" — the same path an incremental run with no changes takes.
+     * `complete: true` matters: an incomplete page walk is what the roster-snapshot guard refuses
+     * on, and this is an absence rather than a truncation.
+     */
+    const noEmployeePage = { rows: [], pages: 0, complete: true, totalElements: 0 };
+
     const [employeeResult, currentRosterResult, separationResult, categoryResult, workResult, reference] = await Promise.all([
-      fetchEmployees({ state: 'ALL', modifiedSince }),
+      runEmployees ? fetchEmployees({ state: 'ALL', modifiedSince }) : noEmployeePage,
       // `CURRENT` is greytHR's own supported active/resigned boundary. The separation endpoint can
       // retain historical rows for rejoined/reactivated employees, so it must enrich this roster,
       // never replace its answer to "does this person still work here?".
-      fetchEmployees({ state: 'CURRENT' }),
-      fetchSeparations(),
-      fetchEmployeeCategories(),
-      fetchEmployeeWork(),
+      runEmployees ? fetchEmployees({ state: 'CURRENT' }) : noEmployeePage,
+      runEmployees ? fetchSeparations() : { rows: [], pages: 0 },
+      runEmployees ? fetchEmployeeCategories() : { rows: [], pages: 0 },
+      runEmployees ? fetchEmployeeWork() : { rows: [], pages: 0 },
       // Reference data is a nicety — employment-type *labels*. A failure degrades to greytHR's
-      // shipped defaults rather than failing the run.
-      fetchReferenceData().catch((error) => {
-        warnings.push(`Could not load reference lists: ${error instanceof Error ? error.message : 'unknown error'}`);
-        return null;
-      }),
+      // shipped defaults rather than failing the run. It is also the source of the category
+      // masters and of the labels that turn a blood-group code into "O+", so every unit that
+      // writes either needs it.
+      runEmployees || runCategories || runAnyDetail
+        ? fetchReferenceData().catch((error) => {
+            warnings.push(`Could not load reference lists: ${error instanceof Error ? error.message : 'unknown error'}`);
+            return null;
+          })
+        : null,
     ]);
 
     /**
@@ -350,7 +408,11 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      * populated `passport` should not lose a whole run over a 404, and a group that errors is
      * reported as a warning rather than aborting the employees everybody else depends on.
      */
-    const detail = await fetchEnabledDetailGroups(settings.detailGroups, warnings);
+    // Each group on its own schedule, so this is the due set rather than the enabled set. A run
+    // that covers none of them skips the call entirely.
+    const detail = runAnyDetail
+      ? await fetchEnabledDetailGroups(detailGroupsToFetch, warnings)
+      : emptyDetail();
 
     /**
      * Every employee greytHR knows about — both state filters, merged.
@@ -629,6 +691,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           userId: userId ?? null,
           accessAction: decision.action,
           accessReason: decision.reason,
+          suggestedAction: decision.suggested ?? null,
           flagged,
         });
       }
@@ -636,7 +699,9 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
 
     /* ── Employees present locally but absent from a full fetch ── */
 
-    if (run.fullResync) {
+    // `runEmployees`, or a swipes-only run would report every employee on file as one greytHR had
+    // stopped returning — it was never asked.
+    if (run.fullResync && runEmployees) {
       // The merged set, not the ALL result: on a tenant where ALL means "resigned" (see the merge
       // above) comparing against ALL alone would report every current employee as one greytHR had
       // stopped returning — precisely inverted.
@@ -675,7 +740,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
     const attendanceWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
     const swipeWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
 
-    if (settings.detailGroups.leave) {
+    if (willRun('leave')) {
       try {
         const year = currentLeaveYear();
         const { rows } = await fetchLeaveBalances(year);
@@ -712,7 +777,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       }
     }
 
-    if (settings.detailGroups.attendance) {
+    if (willRun('attendance')) {
       try {
         const period = currentAttendancePeriod();
         const { rows } = await fetchAttendanceInsights(period.start, period.end);
@@ -743,7 +808,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      * summary above. Its own try/catch for the same reason as the others — a muster failure must not
      * cost the run the employee records everything else depends on.
      */
-    if (settings.detailGroups.swipes) {
+    if (willRun('swipes')) {
       try {
         const month = swipeMonthKey();
         const range = swipeMonthRange(month);
@@ -776,6 +841,100 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       }
     }
 
+    /* ── Detail groups refreshed without the roster ── */
+
+    /**
+     * What a detail-only run writes.
+     *
+     * When the employees unit runs it writes the whole record — core fields and detail together —
+     * so this path is for the other case: a group came due on its own schedule while the roster
+     * did not. It merges just that group's fields onto records that already exist.
+     *
+     * Merging is safe because `buildOperationalDetail` prunes every absent group, so a block
+     * built from one fetched group carries only that group's keys and cannot blank the others.
+     *
+     * Restricted to employees already in the mirror. A merge-write to a document that does not
+     * exist *creates* it, and a record holding a blood group and no name is not an employee — it
+     * is a row that every screen downstream would have to explain away.
+     */
+    const detailOnlyWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
+    const detailOnlySensitiveWrites: Array<{ id: string; record: EmployeeSensitiveDetail }> = [];
+    if (!runEmployees && runAnyDetail) {
+      const touched = new Set<string>();
+      for (const map of [
+        detail.profile,
+        detail.personal,
+        detail.orgTree,
+        detail.qualifications,
+        detail.assets,
+        detail.addresses,
+        detail.statutory,
+        detail.identities,
+        detail.bank,
+        detail.pf,
+        detail.passport,
+        detail.visa,
+      ]) {
+        for (const id of map.keys()) touched.add(String(id));
+      }
+
+      let unknown = 0;
+      for (const id of touched) {
+        const stored = storedEmployees.get(id);
+        if (!stored) {
+          unknown += 1;
+          continue;
+        }
+
+        const addresses = detail.addresses.get(id);
+        const operational = buildOperationalDetail({
+          profile: detail.profile.get(id),
+          personal: detail.personal.get(id),
+          orgTree: detail.orgTree.get(id),
+          qualifications: detail.qualifications.get(id),
+          assets: detail.assets.get(id),
+          addresses,
+          labels,
+        });
+        // Compared against what is stored, so an unchanged group costs no write at all — which
+        // on 1,300 employees is the difference between a nightly no-op and a nightly rewrite.
+        if (
+          Object.keys(operational).length > 0 &&
+          JSON.stringify(operational) !== JSON.stringify(pickOperational(stored))
+        ) {
+          detailOnlyWrites.push({ id, data: operational as unknown as Record<string, unknown> });
+        }
+
+        if (detail.sensitiveFetched) {
+          const sensitive = buildSensitiveDetail({
+            employeeId: id,
+            employeeNo: String(stored.employeeNo ?? ''),
+            name: String(stored.name ?? ''),
+            addresses,
+            statutory: detail.statutory.get(id),
+            identities: detail.identities.get(id),
+            bank: detail.bank.get(id),
+            pf: detail.pf.get(id),
+            passport: detail.passport.get(id),
+            visa: detail.visa.get(id),
+            labels,
+            syncedAt: startedAt,
+          });
+          if (hasSensitiveDetail(sensitive)) detailOnlySensitiveWrites.push({ id, record: sensitive });
+        }
+      }
+
+      if (unknown > 0) {
+        // Not an error: greytHR answers these endpoints for everybody, including people the
+        // roster has not written here yet. Worth saying once, because a large number means the
+        // mirror is incomplete rather than that the detail fetch went wrong.
+        warnings.push(
+          `${unknown} employee(s) returned detail but are not in the mirror yet; their detail was ` +
+            'skipped. The next Employee records run will add them.',
+        );
+      }
+    }
+
     /* ── Category master lists ── */
 
     /**
@@ -793,7 +952,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      * referenced by historical employee records, and deleting it would turn those into blanks.
      */
     const categoryWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
-    if (reference) {
+    if (reference && runCategories) {
       const maps = buildCategoryIdMaps(reference);
       for (const [categoryName, valuesById] of Object.entries(maps.valueNamesByCategory)) {
         for (const [valueId, valueName] of Object.entries(valuesById)) {
@@ -889,6 +1048,18 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           data: write.data,
           merge: true,
         })),
+        // Merged onto the existing employee record — see the detail-only block above for why
+        // that cannot blank a group this run did not fetch.
+        ...detailOnlyWrites.map((write) => ({
+          ref: db.collection(GREYTHR_COLLECTIONS.employees).doc(write.id),
+          data: write.data,
+          merge: true,
+        })),
+        ...detailOnlySensitiveWrites.map((write) => ({
+          ref: db.collection(GREYTHR_COLLECTIONS.employeeSensitive).doc(write.id),
+          data: write.record as unknown as Record<string, unknown>,
+          merge: true,
+        })),
       ]);
     }
 
@@ -904,7 +1075,11 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      * walk, an implausible collapse in headcount); a refusal is surfaced as a warning because a
      * snapshot that has quietly stopped updating is the failure worth knowing about.
      */
-    if (!options.dryRun) {
+    // Guarded on the module too: this call *deletes* every stored employee the incoming roster
+    // does not mention, so running it with the empty roster of a swipes-only run would be an
+    // attempt to empty the store. Its own guards would refuse that, but relying on a downstream
+    // guard to catch a call that should never be made is not a design.
+    if (!options.dryRun && runEmployees) {
       try {
         const snapshotResult = await replaceCurrentRosterSnapshot(
           {
@@ -1014,6 +1189,9 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
     Object.assign(run, summary);
     run.membershipUpdated = grantWrites.length;
     run.sensitiveRecordsWritten = sensitiveWrites.length;
+    run.unitsRun = unitsDone.map((key) => syncUnitSpec(key).label);
+    run.sensitiveRecordsWritten =
+      (run.sensitiveRecordsWritten ?? 0) + detailOnlySensitiveWrites.length;
     run.detailGroupsRun = Object.entries(settings.detailGroups)
       .filter(([, enabled]) => enabled)
       .map(([group]) => detailGroupSpec(group as EmployeeDetailGroup).label);
@@ -1043,14 +1221,36 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
               lastRunId: run.id,
               // Only a successful run advances the incremental watermark. Advancing it on failure
               // would silently skip everything the failed run should have seen.
-              ...(run.ok ? { lastSuccessfulRunAt: run.startedAt } : {}),
+              //
+              // And only a run that fetched the roster. This watermark drives `modifiedSince` for
+              // the employee fetch, so a swipes-only run advancing it would send the next roster run
+              // incremental from an instant at which no roster was asked for — and an incremental
+              // run returns only what changed since, so the skipped window would never be filled.
+              ...(run.ok && runEmployees ? { lastSuccessfulRunAt: run.startedAt } : {}),
               // And only a successful *full* run records a baseline. This is what lets later runs go
               // incremental at all, so it must mean "every employee greytHR has was written", which
               // is only true of a run that asked for every employee.
-              ...(run.ok && run.fullResync ? { baselineCompletedAt: run.startedAt } : {}),
+              ...(run.ok && runEmployees && run.fullResync ? { baselineCompletedAt: run.startedAt } : {}),
               // A mirror version is evidence about the complete roster, so it advances only under
               // the same successful-full-run condition as the baseline timestamp.
-              ...(run.ok && run.fullResync ? { mirrorVersion: GREYTHR_MIRROR_VERSION } : {}),
+              ...(run.ok && runEmployees && run.fullResync ? { mirrorVersion: GREYTHR_MIRROR_VERSION } : {}),
+              /**
+               * Per-module pointers, so each module's next due-check measures from its own last
+               * success rather than from whenever any module last ran.
+               *
+               * Firestore merges nested maps recursively under `{merge: true}`, so writing the two
+               * modules a tick happened to run leaves the other three's pointers in place.
+               */
+              unitRuns: Object.fromEntries(
+                unitsDone.map((key) => [
+                  key,
+                  {
+                    lastRunAt: run.startedAt,
+                    lastRunId: run.id,
+                    ...(run.ok ? { lastSuccessfulRunAt: run.startedAt } : {}),
+                  },
+                ]),
+              ),
             }),
             { merge: true },
           ),
@@ -1068,6 +1268,18 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
  * ---------------------------------------------------------------------------------------------- */
 
 /** Everything the enabled detail groups returned, indexed by employee id. */
+/**
+ * The groups `fetchEnabledDetailGroups` covers: every detail group except the three that write
+ * collections of their own.
+ *
+ * Derived rather than listed, so a group added to `EMPLOYEE_DETAIL_GROUPS` joins this set
+ * automatically, and a group that grows its own write path leaves it by being named once below.
+ */
+const OWN_COLLECTION_GROUPS: EmployeeDetailGroup[] = ['leave', 'attendance', 'swipes'];
+const PER_EMPLOYEE_DETAIL_GROUPS: EmployeeDetailGroup[] = EMPLOYEE_DETAIL_GROUPS.map(
+  (spec) => spec.group,
+).filter((group) => !OWN_COLLECTION_GROUPS.includes(group));
+
 interface FetchedDetail {
   profile: Map<string, GreytHRProfileRow>;
   personal: Map<string, GreytHRPersonalRow>;
@@ -1458,3 +1670,195 @@ export async function getSyncRun(
 
 export { DEFAULT_SYNC_SETTINGS };
 
+/* ------------------------------------------------------------------------------------------------
+ * Acting on a flagged row
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface ReviewDecisionInput {
+  employeeId: string;
+  action: ReviewAction;
+  /** Why, recorded on the account and in the audit trail. */
+  reason?: string | null;
+  /** The run the flag came from, so a review can be matched to what raised it. */
+  runId?: string | null;
+  actor: { userId: string; userName: string };
+  db?: Firestore;
+}
+
+export interface ReviewDecisionResult {
+  ok: boolean;
+  action: ReviewAction;
+  userId: string | null;
+  /** What to tell the administrator — the refusal, when there is one. */
+  message: string;
+}
+
+/**
+ * Apply an administrator's decision to one flagged employee.
+ *
+ * The Review tab used to be a list of problems with no way to act on any of them: an account
+ * showing "Active in greytHR but disabled on the platform" could only be fixed by leaving the
+ * screen and finding the person in Access Management. These are the same two writes the sync
+ * itself makes, performed deliberately by a person instead of by a policy.
+ *
+ * ── Why the link is re-derived here ─────────────────────────────────────────────────────────────
+ *
+ * The outcome row on screen carries a `userId`, and it would be simpler to accept it. It arrives
+ * from a browser, though, and it addresses *an account to disable* — so it is resolved again from
+ * the employee record by the same matcher the sync uses. A stale page, or a crafted request, then
+ * cannot aim this at somebody else.
+ *
+ * ── The guards ──────────────────────────────────────────────────────────────────────────────────
+ *
+ * Both are re-checked at the moment of writing rather than trusted from the flag: the run that
+ * raised it may be hours old, and the administrator roster can have changed since.
+ */
+export async function applyReviewDecision(input: ReviewDecisionInput): Promise<ReviewDecisionResult> {
+  const db = input.db ?? getFirebaseAdminFirestore();
+  const now = new Date().toISOString();
+  const employeeId = String(input.employeeId);
+
+  const [employeeDoc, userSnapshot] = await Promise.all([
+    db.collection(GREYTHR_COLLECTIONS.employees).doc(employeeId).get(),
+    db.collection(GREYTHR_COLLECTIONS.users).get(),
+  ]);
+
+  const stored = employeeDoc.exists ? (employeeDoc.data() as Partial<SyncedEmployee>) : null;
+
+  const users = userSnapshot.docs.map((doc) => ({
+    id: doc.id,
+    email: (doc.data().email as string | undefined) ?? null,
+    status: (doc.data().status as 'Active' | 'Inactive' | undefined) ?? 'Active',
+    role: (doc.data().role as string | undefined) ?? '',
+    name: (doc.data().name as string | undefined) ?? '',
+    deactivatedBy: (doc.data().deactivatedBy as string | undefined) ?? null,
+    employeeId: (doc.data().employeeId as string | undefined) ?? null,
+  }));
+
+  const { index: usersByEmail } = indexUsersByEmail(users);
+  const { index: usersByEmployeeId } = indexUsersByEmployeeId(users);
+  const userId = stored
+    ? matchUserForEmployee(
+        { ...(stored as SyncedEmployee), employeeId },
+        usersByEmail,
+        usersByEmployeeId,
+      )
+    : null;
+  const user = userId ? users.find((row) => row.id === userId) ?? null : null;
+
+  /** Recorded whatever the outcome, so a refusal is as visible as a change. */
+  const record = async (ok: boolean, message: string) => {
+    await db
+      .collection(GREYTHR_COLLECTIONS.reviews)
+      .doc(employeeId)
+      .set(
+        stripUndefined({
+          employeeId,
+          employeeNo: stored?.employeeNo ?? null,
+          name: stored?.name ?? null,
+          action: input.action,
+          ok,
+          message,
+          reason: input.reason ?? null,
+          userId: userId ?? null,
+          runId: input.runId ?? null,
+          reviewedAt: now,
+          reviewedBy: input.actor.userId,
+          reviewedByName: input.actor.userName,
+        }),
+      );
+    return { ok, action: input.action, userId: userId ?? null, message };
+  };
+
+  if (input.action === 'dismiss') {
+    // No account change at all. The row stops asking, and the record says who decided that.
+    return record(true, 'Marked as reviewed. Nothing was changed.');
+  }
+
+  if (!stored) {
+    return record(false, 'No employee record here for that id, so there is no account to act on.');
+  }
+
+  if (!userId || !user) {
+    return record(
+      false,
+      'This employee has no platform login linked, so there is nothing to enable or disable. ' +
+        'Link them under Employee → User linking first.',
+    );
+  }
+
+  if (input.action === 'enable') {
+    if (user.status === 'Active') return record(true, 'That account was already enabled.');
+    await db
+      .collection(GREYTHR_COLLECTIONS.users)
+      .doc(userId)
+      .set(
+        {
+          status: 'Active',
+          // Cleared rather than left behind: `deactivatedBy` is what tells a later sync whether an
+          // account was disabled by this integration or by a person, and a stale value would make
+          // the next exit look like one the sync had already handled.
+          deactivatedBy: FieldValue.delete(),
+          deactivatedAt: FieldValue.delete(),
+          deactivationReason: FieldValue.delete(),
+          deactivation: FieldValue.delete(),
+          reactivatedBy: input.actor.userId,
+          reactivatedAt: now,
+        },
+        { merge: true },
+      );
+    return record(true, `${user.name || user.email || 'The account'} can sign in again.`);
+  }
+
+  /* ── disable ── */
+
+  if (userId === input.actor.userId) {
+    return record(
+      false,
+      "That is your own account. Ask another administrator if it really needs disabling.",
+    );
+  }
+
+  if (user.status === 'Inactive') return record(true, 'That account was already disabled.');
+
+  const administrators = await loadAdministrators(db, users);
+  if (wouldStrandAdministration(administrators, [userId])) {
+    return record(
+      false,
+      'This is the last user who can administer access. Grant another administrator first, ' +
+        'otherwise nobody could undo this.',
+    );
+  }
+
+  await db
+    .collection(GREYTHR_COLLECTIONS.users)
+    .doc(userId)
+    .set(
+      {
+        status: 'Inactive',
+        // The actor, not `SYNC_ACTOR`: this was a person's decision, and recording it as the sync's
+        // would make a later run treat it as its own and reverse it on a rejoin.
+        deactivatedBy: input.actor.userId,
+        deactivatedAt: now,
+        deactivationReason: input.reason ?? 'Disabled from the greytHR sync review screen.',
+      },
+      { merge: true },
+    );
+
+  return record(true, `${user.name || user.email || 'The account'} can no longer sign in.`);
+}
+
+/** Recent review decisions, so the screen can show a flagged row as already dealt with. */
+export async function listSyncReviews(
+  limit = 200,
+  db: Firestore = getFirebaseAdminFirestore(),
+): Promise<SyncReviewRecord[]> {
+  const snapshot = await db
+    .collection(GREYTHR_COLLECTIONS.reviews)
+    .orderBy('reviewedAt', 'desc')
+    .limit(limit)
+    .get()
+    .catch(() => null);
+  if (!snapshot) return [];
+  return snapshot.docs.map((doc) => doc.data() as SyncReviewRecord);
+}

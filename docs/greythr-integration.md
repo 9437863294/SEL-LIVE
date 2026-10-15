@@ -252,17 +252,74 @@ organization that blocks service-account keys, follow the [keyless Firebase Admi
 
 ---
 
-## 6. Scheduling — why the frequency lives in Firestore
+## 6. Scheduling — sections, units and overrides
 
 Vercel crons are static in `vercel.json`, so an administrator's choice of frequency cannot become a
 cron expression without a redeploy. Instead:
 
 - `vercel.json` registers `/api/greythr/sync` at `5 * * * *` (hourly)
-- every tick calls `isSyncDue(settings.schedule, settings.lastSuccessfulRunAt)`
-- a tick that is not due returns `{skipped: true}` in milliseconds, costing one Firestore read
+- every tick calls `dueSyncUnits(settings)` and runs whichever units come back due
+- a tick with nothing due returns `{skipped: true}` in milliseconds, costing one Firestore read
 
-So changing the frequency at `/employee/sync` takes effect immediately. Frequencies: Manual, Hourly,
-Every 6 hours, Every 12 hours, Daily (with hour), Weekly (with day and hour).
+So changing a schedule at `/employee/sync` takes effect immediately. Frequencies: Manual, every 5 /
+15 / 30 minutes, Hourly, Every 6 hours, Every 12 hours, Daily (with hour), Weekly (with day and
+hour).
+
+**A frequency is only as good as the caller.** The route runs when something calls it, so a
+five-minute schedule behind an hourly cron produces hourly runs. The shipped workflow ticks every
+five minutes — GitHub's floor — and the settings screen compares the frequency against the median
+gap between recent `cron` runs (`observedTickGapMinutes`), warning when the caller cannot keep up.
+Measured rather than assumed, because what drives the endpoint is deployment configuration the
+application cannot read.
+
+### What can be scheduled
+
+Fifteen **units** in four **sections**. The schedule lives on the section; a unit either follows it
+or carries an override.
+
+| Section | Units | Shipped default |
+| --- | --- | --- |
+| Core records | Employee records, Category masters | Daily 02:00 |
+| Registers | Leave balances, Attendance summary, Daily swipes | Daily 03:00 |
+| Standard detail | Profile, Personal, Reporting structure, Qualifications, Company assets | Weekly Mon 04:00 |
+| Restricted detail | Addresses, Statutory, Identity documents, Bank/PF/ESI, Passport & visa | Weekly Mon 05:00 |
+
+Why a section layer at all: these are not fifteen unrelated things. The daily muster is one record
+per employee per day — about thirty times the row count of everything else together — while the
+category masters are a few hundred rows that change when somebody adds a department. One frequency
+for all of them means refreshing the masters far more often than they change, or swipes far less
+often than they do. Fifteen separate forms would be a worse screen than the single schedule this
+replaced, so the cadence is set per section and the one unit that genuinely differs overrides it.
+Swipes ships with that override (`DEFAULT_UNIT_PLANS`).
+
+**A section plan has no on/off.** Whether a unit is on is a question about *holding the data* —
+for a restricted group, the decision to store somebody's Aadhaar number — and that belongs to the
+unit, never to a timing control above it. A section that should not refresh on its own gets the
+`Manual` frequency, which already means exactly that.
+
+**One switch, not two.** Every unit but the two core ones is backed by a detail group. The group
+is the single source of truth for on/off, and `normalizeSyncSettings` forces the stored schedule
+into step with it — otherwise an enabled schedule could sit against a disabled group, which is a
+control that visibly does nothing.
+
+**Absence means "follows".** A key in `unitPlans` *is* the override, so clearing it is how a unit
+goes back to following its section. That is why the shipped defaults are seeded only when the whole
+map has never been written: seeding per key would put an override straight back after it was
+cleared.
+
+### Running one unit without the roster
+
+A detail group that comes due while Employee records does not is written by its own path in
+`runGreytHRSync`: fetch that group, build the operational and sensitive blocks, merge them onto the
+employee records that already exist. Merging is safe because `buildOperationalDetail` prunes every
+absent group, so a block built from one fetched group carries only that group's keys and cannot
+blank the others. It writes only for employees already in the mirror — a merge to a missing
+document would *create* it, and a record holding a blood group and no name is not an employee.
+
+**The watermark is the employees unit's alone.** `lastSuccessfulRunAt` drives `modifiedSince` for
+the roster fetch, so a run that did not fetch the roster must not advance it: the next roster run
+would go incremental from an instant at which nothing was asked for, and the skipped window would
+never be filled. Per-unit pointers live in `unitRuns`.
 
 Daily and weekly additionally hold until their configured hour, so a nightly run does not drift an
 hour later each day as each run's own timestamp pushes the next window out. The interval check has a
