@@ -2,29 +2,48 @@
 /**
  * One-way copy of the (default) Firestore database into `newdatabase` (Firestore with MongoDB
  * compatibility), so the company's data can be queried with MongoDB tools. The app never reads or
- * writes `newdatabase`; this job is its only writer.
+ * writes `newdatabase`; this tool and the app's scheduled refresh are its only writers.
  *
  *   cd tools/mongo-sync && npm install
- *   node sync.mjs --dry-run            # what would be copied; needs no MongoDB login
- *   node sync.mjs                      # copy everything not excluded in config.mjs
- *   node sync.mjs --only users,roles   # copy just these collections
+ *   node sync.mjs --dry-run            # what would be read; needs no MongoDB login
+ *   node sync.mjs                      # refresh everything not excluded in config.mjs
+ *   node sync.mjs --only users,roles   # refresh just these collections
+ *   node sync.mjs --full               # look for subcollections again, check every collection for deletions
  *
  * Needs, in the repo's .env:
  *   - the Firebase Admin service account the app already uses (reads the source), and
  *   - NEWDATABASE_MONGODB_URI: the connection string from the Firebase console
  *     (newdatabase → Connect), with the user name and password of a database user that may write.
  *
- * Each run makes the copy match the source: documents are upserted by id (`_id`), and documents
- * that no longer exist in Firestore are deleted. Subcollections are copied as collections named
- * `<parent>.<sub>`, each document carrying `_parentPath`. Firestore Timestamps become Dates and
- * document references become their path, as strings.
+ * Incremental, like the app's refresh (src/lib/reporting-copy-server.ts), with the same helpers:
+ * every Firestore document is read, but only new and changed ones are written — each copy carries
+ * `_hash`, the fingerprint of its content. Nothing is deleted: documents gone from Firestore are
+ * marked `_deletedInApp: true` with `_deletedNoticedAt` (filter reports with
+ * `{ _deletedInApp: { $ne: true } }`), and restored if they come back. Subcollections are copied as
+ * collections named `<parent>.<sub>`, each document carrying `_parentPath`; their names are reused
+ * from `reportingCopy/state` for a week (shared with the app), unless `--full`. Firestore
+ * Timestamps become Dates and document references become their path, as strings.
  */
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { EXCLUDED_COLLECTIONS, EXCLUDED_FIELDS, SUBCOLLECTION_SAMPLE } from './config.mjs';
 // Shared with the app's scheduled refresh (src/lib/reporting-copy-server.ts), so both write the same shapes.
-import { isDirectChildOf, makeValueConverter } from '../../src/lib/reporting-copy.ts';
+import {
+  ACTIVE_COPY_FILTER,
+  cachedSubcollections,
+  decideDeletionCheck,
+  DELETION_CHECK_BATCH,
+  deletionScanDone,
+  EXISTING_COPY_PROJECTION,
+  isDirectChildOf,
+  makeValueConverter,
+  markDeletedUpdate,
+  planPageWrites,
+  REPORTING_COPY_COLLECTION,
+  subcollectionTarget,
+} from '../../src/lib/reporting-copy.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../..');
@@ -35,6 +54,7 @@ const { getFirestore, FieldPath, Timestamp, GeoPoint, DocumentReference } = from
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+const full = args.includes('--full');
 const only = (() => {
   const at = args.indexOf('--only');
   return at >= 0 ? new Set(String(args[at + 1] ?? '').split(',').map((s) => s.trim()).filter(Boolean)) : null;
@@ -52,6 +72,7 @@ const PAGE = 1000;
 const WRITE_BATCH = 500;
 /** Firestore value → plain BSON-friendly value. */
 const convert = makeValueConverter({ Timestamp, GeoPoint, DocumentReference }, EXCLUDED_FIELDS);
+const sha1 = (text) => createHash('sha1').update(text).digest('hex');
 
 /** Every document of a query, a page at a time, in document-id order. */
 async function* pages(query) {
@@ -76,7 +97,7 @@ async function subcollectionsOf(collection) {
     const found = await Promise.all(refs.slice(i, i + 20).map((ref) => ref.listCollections()));
     for (const subs of found) for (const sub of subs) names.add(sub.id);
   }
-  return [...names];
+  return [...names].sort();
 }
 
 let mongo = null;
@@ -90,30 +111,53 @@ if (!dryRun) {
   target = mongo.db();
 }
 
-/** Write one target collection from a stream of document pages, then drop what was not seen. */
-async function copy(name, docPages, toDoc) {
-  const runId = Date.now();
-  let count = 0;
-  let ops = [];
-  const flush = async () => {
-    if (!ops.length) return;
-    if (!dryRun) await target.collection(name).bulkWrite(ops, { ordered: false });
-    ops = [];
-  };
-  for await (const docs of docPages) {
-    for (const doc of docs) {
-      count++;
-      if (dryRun) continue;
-      const body = { ...toDoc(doc), _syncRun: runId, _syncedAt: new Date() };
-      ops.push({ replaceOne: { filter: { _id: body._id }, replacement: body, upsert: true } });
-      if (ops.length >= WRITE_BATCH) await flush();
+/**
+ * Refresh one target collection from a stream of document pages: write only new and changed
+ * documents, then mark the copies whose documents are gone (never delete them).
+ */
+async function copy(name, docPages, toDoc, refOf) {
+  const counts = { documents: 0, inserted: 0, updated: 0, unchanged: 0, restored: 0, markedDeleted: 0 };
+  for await (const page of docPages) {
+    const docs = page.map(toDoc);
+    counts.documents += docs.length;
+    if (dryRun || !docs.length) continue;
+    const collection = target.collection(name);
+    const existing = await collection.find({ _id: { $in: docs.map((doc) => doc._id) } }, { projection: EXISTING_COPY_PROJECTION }).toArray();
+    const plan = planPageWrites(docs, existing, { hash: sha1, now: new Date() });
+    for (const key of ['inserted', 'updated', 'unchanged', 'restored']) counts[key] += plan.counts[key];
+    for (let i = 0; i < plan.writes.length; i += WRITE_BATCH) {
+      await collection.bulkWrite(plan.writes.slice(i, i + WRITE_BATCH), { ordered: false });
     }
   }
-  await flush();
-  let removed = 0;
-  if (!dryRun) removed = (await target.collection(name).deleteMany({ _syncRun: { $ne: runId } })).deletedCount;
-  return { count, removed };
+  if (dryRun) return counts;
+
+  // Deletions: only when the copy has more live documents than were just read (or with --full).
+  const collection = target.collection(name);
+  const mongoActive = await collection.countDocuments(ACTIVE_COPY_FILTER);
+  const decision = decideDeletionCheck({ mongoActive, firestoreRead: counts.documents, full });
+  if (!decision.scan) return counts;
+  let cursor = null;
+  for (;;) {
+    const filter = cursor ? { ...ACTIVE_COPY_FILTER, _id: { $gt: cursor } } : { ...ACTIVE_COPY_FILTER };
+    const ids = (await collection.find(filter, { projection: { _id: 1 } }).sort({ _id: 1 }).limit(DELETION_CHECK_BATCH).toArray()).map((d) => String(d._id));
+    if (ids.length) {
+      const snaps = await source.getAll(...ids.map(refOf), { fieldMask: [] });
+      const missing = ids.filter((_, i) => !snaps[i].exists);
+      if (missing.length) await collection.updateMany({ _id: { $in: missing } }, markDeletedUpdate(new Date()));
+      counts.markedDeleted += missing.length;
+      cursor = ids[ids.length - 1];
+    }
+    if (deletionScanDone(ids.length, counts.markedDeleted, decision.expectedMissing)) return counts;
+  }
 }
+
+const describe = (c) => dryRun
+  ? `${c.documents} read`
+  : `${c.documents} read · ${c.inserted} new · ${c.updated} changed · ${c.unchanged} unchanged${c.restored ? ` · ${c.restored} restored` : ''}${c.markedDeleted ? ` · ${c.markedDeleted} marked deleted` : ''}`;
+
+// Subcollection names, shared with the app's refresh: reused for a week unless --full.
+const stateRef = source.collection(REPORTING_COPY_COLLECTION).doc('state');
+const subcollectionCache = (await stateRef.get()).get('subcollectionCache') ?? {};
 
 const started = Date.now();
 const excluded = new Set(EXCLUDED_COLLECTIONS);
@@ -125,11 +169,18 @@ for (const collection of await source.listCollections()) {
     continue;
   }
 
-  const root = await copy(collection.id, pages(collection), (doc) => ({ _id: doc.id, ...convert(doc.data()) }));
-  summary.push(`${collection.id}: ${root.count}${root.removed ? ` (removed ${root.removed})` : ''}`);
+  const root = await copy(collection.id, pages(collection), (doc) => ({ _id: doc.id, ...convert(doc.data()) }), (id) => collection.doc(id));
+  summary.push(`${collection.id}: ${describe(root)}`);
 
-  for (const sub of await subcollectionsOf(collection)) {
-    const name = `${collection.id}.${sub}`;
+  let subs = cachedSubcollections(subcollectionCache, collection.id, new Date(), full);
+  if (!subs) {
+    subs = await subcollectionsOf(collection);
+    const entry = { names: subs, discoveredAt: new Date().toISOString() };
+    subcollectionCache[collection.id] = entry;
+    if (!dryRun) await stateRef.set({ subcollectionCache: { [collection.id]: entry } }, { merge: true });
+  }
+  for (const sub of subs) {
+    const name = subcollectionTarget(collection.id, sub);
     // A collection group spans every parent; keep only this collection's children.
     const ownDocs = async function* () {
       for await (const docs of pages(source.collectionGroup(sub))) {
@@ -140,11 +191,11 @@ for (const collection of await source.listCollections()) {
       _id: doc.ref.path,
       _parentPath: doc.ref.parent.parent.path,
       ...convert(doc.data()),
-    }));
-    summary.push(`  ${name}: ${res.count}${res.removed ? ` (removed ${res.removed})` : ''}`);
+    }), (id) => source.doc(id));
+    summary.push(`  ${name}: ${describe(res)}`);
   }
 }
 
-console.log(`${dryRun ? 'DRY RUN, nothing written. ' : ''}Finished in ${Math.round((Date.now() - started) / 1000)}s.`);
+console.log(`${dryRun ? 'DRY RUN, nothing written. ' : ''}${full ? 'Full refresh. ' : ''}Finished in ${Math.round((Date.now() - started) / 1000)}s.`);
 for (const line of summary) console.log(line);
 if (mongo) await mongo.close();

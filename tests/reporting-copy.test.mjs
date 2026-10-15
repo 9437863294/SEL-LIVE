@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
+  addChangeCounts,
   addCollectionCount,
+  cachedSubcollections,
+  canonicalDocumentJson,
+  decideDeletionCheck,
+  decideDocumentWrite,
+  deletionScanDone,
+  documentFingerprint,
+  planPageWrites,
   buildReportingCopyHistoryEntry,
   decideReportingCopyStop,
   endReportingCopyRun,
@@ -214,13 +223,13 @@ test('a run ends as stopped, failed or succeeded', () => {
 });
 
 test('per-collection counts add up, and a history entry caps them', () => {
-  let counts = addCollectionCount(undefined, 'a', { documents: 1000 });
-  counts = addCollectionCount(counts, 'a', { documents: 20 });
-  counts = addCollectionCount(counts, 'a', { removed: 3, complete: true });
-  counts = addCollectionCount(counts, 'a.sub', { documents: 5 });
+  let counts = addCollectionCount(undefined, 'a', { documents: 1000, inserted: 10, unchanged: 990 });
+  counts = addCollectionCount(counts, 'a', { documents: 20, updated: 19, restored: 1 });
+  counts = addCollectionCount(counts, 'a', { markedDeleted: 3, complete: true });
+  counts = addCollectionCount(counts, 'a.sub', { documents: 5, unchanged: 5 });
   assert.deepEqual(counts, [
-    { name: 'a', documents: 1020, removed: 3, complete: true },
-    { name: 'a.sub', documents: 5, removed: 0, complete: false },
+    { name: 'a', documents: 1020, inserted: 10, updated: 19, unchanged: 990, restored: 1, markedDeleted: 3, complete: true },
+    { name: 'a.sub', documents: 5, inserted: 0, updated: 0, unchanged: 5, restored: 0, markedDeleted: 0, complete: false },
   ]);
   const many = Array.from({ length: 230 }, (_, i) => ({ name: `c${i}`, documents: i, removed: 0, complete: true }));
   const entry = buildReportingCopyHistoryEntry({ ...runStub, status: 'succeeded' }, { failures: ['z: gone'], collectionCounts: many });
@@ -239,4 +248,113 @@ test('history keeps the newest 50 runs', () => {
   assert.deepEqual(reportingCopyHistoryOverflow([...ids].reverse().sort(() => 0), 50).sort((a, b) => a - b), [1000, 1001, 1002]);
   assert.deepEqual(reportingCopyHistoryOverflow([1005, 1001, 1003], 50), []);
   assert.deepEqual(reportingCopyHistoryOverflow([3, 1, 2], 2), [1]);
+});
+
+/* ---------------------------------------------------------------- incremental writes */
+
+const sha1 = (text) => createHash('sha1').update(text).digest('hex');
+
+test('the fingerprint ignores key order and bookkeeping, and sees Dates and bytes by value', () => {
+  const a = { _id: 'x', b: 1, a: { z: [1, { q: 2, p: 3 }], y: new Date('2026-10-15T00:00:00Z') }, bytes: Buffer.from('hi') };
+  const b = { bytes: Buffer.from('hi'), a: { y: new Date('2026-10-15T00:00:00.000Z'), z: [1, { p: 3, q: 2 }] }, b: 1, _id: 'x' };
+  assert.equal(documentFingerprint(a, sha1), documentFingerprint(b, sha1));
+  assert.match(documentFingerprint(a, sha1), /^[0-9a-f]{40}$/);
+  // The copy's own fields do not count.
+  const stamped = { ...a, _hash: 'old', _syncRun: 1, _syncedAt: new Date(), _firstCopiedAt: new Date(0), _updatedAt: new Date(), _deletedInApp: true, _deletedNoticedAt: new Date() };
+  assert.equal(documentFingerprint(stamped, sha1), documentFingerprint(a, sha1));
+  // Any content change does.
+  assert.notEqual(documentFingerprint({ ...a, b: 2 }, sha1), documentFingerprint(a, sha1));
+  assert.notEqual(documentFingerprint({ ...a, a: { ...a.a, y: new Date('2026-10-15T00:00:01Z') } }, sha1), documentFingerprint(a, sha1));
+  assert.notEqual(documentFingerprint({ ...a, bytes: Buffer.from('ho') }, sha1), documentFingerprint(a, sha1));
+  // Array order is content; a Date is not the same as its ISO string.
+  assert.notEqual(documentFingerprint({ l: [1, 2] }, sha1), documentFingerprint({ l: [2, 1] }, sha1));
+  assert.notEqual(documentFingerprint({ d: new Date(0) }, sha1), documentFingerprint({ d: new Date(0).toISOString() }, sha1));
+  // Base64 without Buffer, padding included.
+  assert.equal(canonicalDocumentJson({ b: new Uint8Array([104, 105]) }), JSON.stringify({ b: { $binary: Buffer.from('hi').toString('base64') } }));
+  assert.equal(canonicalDocumentJson({ b: Buffer.from('hello!') }), JSON.stringify({ b: { $binary: 'aGVsbG8h' } }));
+  assert.equal(canonicalDocumentJson({ b: Buffer.from('h') }), JSON.stringify({ b: { $binary: 'aA==' } }));
+});
+
+test('a document is inserted, updated, restored or left alone', () => {
+  const hash = 'abc';
+  assert.equal(decideDocumentWrite(hash, undefined), 'insert');
+  assert.equal(decideDocumentWrite(hash, { _id: 'x', _hash: 'abc' }), 'unchanged');
+  assert.equal(decideDocumentWrite(hash, { _id: 'x', _hash: 'old' }), 'update');
+  // A copy from the full copies before 2026-10-15 has no hash: rewritten once.
+  assert.equal(decideDocumentWrite(hash, { _id: 'x' }), 'update');
+  // Marked deleted and back: restored even with the same content.
+  assert.equal(decideDocumentWrite(hash, { _id: 'x', _hash: 'abc', _deletedInApp: true }), 'restore');
+});
+
+test('a page writes only what is new or changed, and keeps the first-copied date', () => {
+  const now = new Date('2026-10-15T10:00:00Z');
+  const first = new Date('2026-10-01T00:00:00Z');
+  const docs = [{ _id: 'new', v: 1 }, { _id: 'same', v: 2 }, { _id: 'changed', v: 3 }, { _id: 'back', v: 4 }, { _id: 'legacy', v: 5 }];
+  const existing = [
+    { _id: 'same', _hash: documentFingerprint({ _id: 'same', v: 2 }, sha1), _firstCopiedAt: first },
+    { _id: 'changed', _hash: documentFingerprint({ _id: 'changed', v: 0 }, sha1), _firstCopiedAt: first },
+    { _id: 'back', _hash: documentFingerprint({ _id: 'back', v: 4 }, sha1), _deletedInApp: true, _firstCopiedAt: first },
+    { _id: 'legacy' },
+  ];
+  const plan = planPageWrites(docs, existing, { hash: sha1, now });
+  assert.deepEqual(plan.counts, { documents: 5, inserted: 1, updated: 2, unchanged: 1, restored: 1 });
+  assert.deepEqual(plan.writes.map((w) => w.replaceOne.filter._id), ['new', 'changed', 'back', 'legacy']);
+  const byId = Object.fromEntries(plan.writes.map((w) => [w.replaceOne.filter._id, w.replaceOne.replacement]));
+  assert.equal(byId.new._firstCopiedAt, now);
+  assert.equal(byId.changed._firstCopiedAt, first);
+  assert.equal(byId.changed._updatedAt, now);
+  assert.equal(byId.changed._hash, documentFingerprint({ _id: 'changed', v: 3 }, sha1));
+  // Replacing clears the deleted mark.
+  assert.equal('_deletedInApp' in byId.back, false);
+  assert.ok(plan.writes.every((w) => w.replaceOne.upsert === true));
+  // Writing a page's output back makes it unchanged next time.
+  const again = planPageWrites(docs, plan.writes.map((w) => w.replaceOne.replacement).concat(existing[0]), { hash: sha1, now });
+  assert.deepEqual(again.counts, { documents: 5, inserted: 0, updated: 0, unchanged: 5, restored: 0 });
+  assert.equal(again.writes.length, 0);
+});
+
+test('deletions are looked for only when the copy has more live documents than were read', () => {
+  assert.deepEqual(decideDeletionCheck({ mongoActive: 500, firestoreRead: 500, full: false }), { scan: false, expectedMissing: 0 });
+  // Fewer in the copy cannot mean a deletion (the copy was just written from what was read).
+  assert.equal(decideDeletionCheck({ mongoActive: 499, firestoreRead: 500, full: false }).scan, false);
+  assert.deepEqual(decideDeletionCheck({ mongoActive: 503, firestoreRead: 500, full: false }), { scan: true, expectedMissing: 3 });
+  // Full refresh: scan to the end, whatever the counts.
+  assert.deepEqual(decideDeletionCheck({ mongoActive: 500, firestoreRead: 500, full: true }), { scan: true, expectedMissing: null });
+  assert.equal(decideDeletionCheck({ mongoActive: 0, firestoreRead: 0, full: true }).scan, false);
+  // The scan stops at a short batch, or once all expected deletions are found.
+  assert.equal(deletionScanDone(300, 1, 3), false);
+  assert.equal(deletionScanDone(300, 3, 3), true);
+  assert.equal(deletionScanDone(120, 0, 3), true);
+  assert.equal(deletionScanDone(300, 50, null), false);
+});
+
+test('subcollection names are reused for a week, and looked up again on a full refresh', () => {
+  const now = new Date('2026-10-15T00:00:00Z');
+  const cache = { projects: { names: ['bills'], discoveredAt: '2026-10-10T00:00:00Z' }, users: { names: [], discoveredAt: '2026-10-01T00:00:00Z' } };
+  assert.deepEqual(cachedSubcollections(cache, 'projects', now, false), ['bills']);
+  assert.equal(cachedSubcollections(cache, 'projects', now, true), null);
+  assert.equal(cachedSubcollections(cache, 'users', now, false), null);
+  assert.equal(cachedSubcollections(cache, 'roles', now, false), null);
+  assert.equal(cachedSubcollections(undefined, 'projects', now, false), null);
+});
+
+test('history carries the change counts; older entries keep only removed', () => {
+  let run = { ...runStub, documents: 0, inserted: 0, updated: 0, unchanged: 0, restored: 0, markedDeleted: 0, collections: 0, removed: undefined, full: true };
+  delete run.removed;
+  run = addChangeCounts(run, { documents: 1000, inserted: 2, updated: 3, unchanged: 994, restored: 1 });
+  run = addChangeCounts(run, { markedDeleted: 4 });
+  const entry = buildReportingCopyHistoryEntry({ ...run, status: 'succeeded' }, null);
+  assert.deepEqual(
+    [entry.documents, entry.inserted, entry.updated, entry.unchanged, entry.restored, entry.markedDeleted, entry.full, 'removed' in entry],
+    [1000, 2, 3, 994, 1, 4, true, false],
+  );
+  // Nothing undefined goes to Firestore.
+  assert.ok(Object.values(entry).every((value) => value !== undefined));
+  // A run from before 2026-10-15: documents and removed only.
+  const legacy = { ...runStub, documents: 210, removed: 7 };
+  delete legacy.full;
+  const old = buildReportingCopyHistoryEntry(legacy, null);
+  assert.deepEqual([old.removed, 'inserted' in old, old.full], [7, false, false]);
+  // A legacy run in flight picks the new counts up as it goes.
+  assert.deepEqual(addChangeCounts({ documents: 5 }, { inserted: 1 }), { documents: 5, inserted: 1 });
 });

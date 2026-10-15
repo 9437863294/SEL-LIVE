@@ -33,6 +33,10 @@ export const TARGET_DATABASE = 'newdatabase';
 /** Documents read from Firestore per query, and written to MongoDB per bulkWrite. */
 export const READ_PAGE = 1000;
 export const WRITE_BATCH = 500;
+/** MongoDB ids checked against Firestore per step of the deletion check. */
+export const DELETION_CHECK_BATCH = 300;
+/** How long a root collection's discovered subcollection names are reused before they are looked up again. */
+export const SUBCOLLECTION_CACHE_DAYS = 7;
 
 /** Server-only Firestore collection holding `config` (what the owner sets) and `state` (what the job did). */
 export const REPORTING_COPY_COLLECTION = 'reportingCopy';
@@ -99,6 +103,189 @@ export function isDirectChildOf(path: string, root: string): boolean {
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Incremental writes: fingerprints, the per-page plan, the deletion check
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Fields the copy adds to every MongoDB document. Left out of the fingerprint, so a document's hash
+ * depends only on what came from Firestore. `_syncRun` is from the full copies before 2026-10-15.
+ */
+export const COPY_BOOKKEEPING_FIELDS: readonly string[] = [
+  '_hash', '_syncRun', '_syncedAt', '_firstCopiedAt', '_updatedAt', '_deletedInApp', '_deletedNoticedAt',
+];
+
+/** Filter for the documents still present in the app — use it in reports too. */
+export const ACTIVE_COPY_FILTER = { _deletedInApp: { $ne: true } } as const;
+
+/** What the per-page lookup reads of each existing MongoDB document. */
+export const EXISTING_COPY_PROJECTION = { _id: 1, _hash: 1, _deletedInApp: 1, _firstCopiedAt: 1 } as const;
+
+const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Base64 without Buffer, so this file stays loadable in the browser bundle. */
+function toBase64(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    out += BASE64[a >> 2] + BASE64[((a & 3) << 4) | (b >> 4)];
+    out += i + 1 < bytes.length ? BASE64[((b & 15) << 2) | (c >> 6)] : '=';
+    out += i + 2 < bytes.length ? BASE64[c & 63] : '=';
+  }
+  return out;
+}
+
+/** A converted value in a form whose JSON is the same whatever order its keys were built in. */
+function canonicalValue(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return { $date: Number.isNaN(value.getTime()) ? 'Invalid Date' : value.toISOString() };
+  if (value instanceof Uint8Array) return { $binary: toBase64(value) };
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (typeof value === 'number' && !Number.isFinite(value)) return { $number: String(value) };
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) out[key] = canonicalValue((value as Record<string, unknown>)[key]);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * The canonical JSON of a converted document: keys sorted at every depth, Dates as ISO strings,
+ * bytes as base64, and the copy's own bookkeeping fields (top level) left out.
+ */
+export function canonicalDocumentJson(doc: Record<string, unknown>): string {
+  const skip = new Set(COPY_BOOKKEEPING_FIELDS);
+  const body: Record<string, unknown> = {};
+  for (const key of Object.keys(doc)) if (!skip.has(key)) body[key] = doc[key];
+  return JSON.stringify(canonicalValue(body));
+}
+
+/**
+ * A converted document's fingerprint, stored on its copy as `_hash`. The hash function is passed in
+ * (sha1 from node:crypto on the server and in the tool) so this file needs no Node modules.
+ */
+export const documentFingerprint = (doc: Record<string, unknown>, hash: (text: string) => string): string =>
+  hash(canonicalDocumentJson(doc));
+
+/** An existing MongoDB copy, as EXISTING_COPY_PROJECTION reads it. */
+export interface ExistingCopy {
+  _id: unknown;
+  _hash?: unknown;
+  _deletedInApp?: unknown;
+  _firstCopiedAt?: unknown;
+}
+
+/**
+ * What to do with one Firestore document. `insert`: not in the copy yet. `restore`: in the copy but
+ * marked deleted in the app, and back. `update`: its fingerprint differs — including copies from the
+ * full copies before 2026-10-15, which have no `_hash` and so are rewritten once. `unchanged`: no write.
+ */
+export type DocumentWriteDecision = 'insert' | 'update' | 'restore' | 'unchanged';
+
+export function decideDocumentWrite(fingerprint: string, existing: ExistingCopy | undefined | null): DocumentWriteDecision {
+  if (!existing) return 'insert';
+  if (existing._deletedInApp === true) return 'restore';
+  if (existing._hash !== fingerprint) return 'update';
+  return 'unchanged';
+}
+
+/** Per-run and per-collection counts. `documents` is documents read from Firestore. */
+export interface ReportingCopyChangeCounts {
+  documents: number;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  restored: number;
+  markedDeleted: number;
+}
+
+export const CHANGE_COUNT_KEYS = ['documents', 'inserted', 'updated', 'unchanged', 'restored', 'markedDeleted'] as const;
+
+export interface PlannedWrite {
+  replaceOne: { filter: { _id: string }; replacement: Record<string, unknown>; upsert: true };
+}
+
+/**
+ * One page's writes. Every write is an upserting replaceOne (safe to repeat if a slice dies after
+ * writing), and replacing drops `_deletedInApp` / `_deletedNoticedAt` from a restored document.
+ * `_firstCopiedAt` is kept from the existing copy; copies from before 2026-10-15 never had one, so
+ * theirs is the first incremental run that rewrote them.
+ */
+export function planPageWrites(
+  docs: ReadonlyArray<Record<string, unknown> & { _id: string }>,
+  existing: readonly ExistingCopy[],
+  options: { hash: (text: string) => string; now: Date },
+): { writes: PlannedWrite[]; counts: Omit<ReportingCopyChangeCounts, 'markedDeleted'> } {
+  const byId = new Map(existing.map((copy) => [String(copy._id), copy]));
+  const counts = { documents: docs.length, inserted: 0, updated: 0, unchanged: 0, restored: 0 };
+  const writes: PlannedWrite[] = [];
+  for (const doc of docs) {
+    const fingerprint = documentFingerprint(doc, options.hash);
+    const copy = byId.get(doc._id);
+    const decision = decideDocumentWrite(fingerprint, copy);
+    if (decision === 'unchanged') {
+      counts.unchanged += 1;
+      continue;
+    }
+    if (decision === 'insert') counts.inserted += 1;
+    else if (decision === 'restore') counts.restored += 1;
+    else counts.updated += 1;
+    const first = copy?._firstCopiedAt;
+    const firstCopiedAt = first instanceof Date || typeof first === 'string' ? first : options.now;
+    const replacement = { ...doc, _hash: fingerprint, _firstCopiedAt: firstCopiedAt, _updatedAt: options.now, _syncedAt: options.now };
+    writes.push({ replaceOne: { filter: { _id: doc._id }, replacement, upsert: true } });
+  }
+  return { writes, counts };
+}
+
+/**
+ * Whether a finished collection needs its deletion check, from counts alone. After the writes every
+ * Firestore document read this run is in the copy and not marked deleted, so the copy can only have
+ * more such documents than were read — and each extra one was deleted in the app. Equal: nothing
+ * was deleted, no scan. More: scan the copy's ids against Firestore until that many are found
+ * (`expectedMissing`). A Full refresh scans every collection to the end (`expectedMissing` null).
+ */
+export function decideDeletionCheck(input: { mongoActive: number; firestoreRead: number; full: boolean }): { scan: boolean; expectedMissing: number | null } {
+  if (input.full) return { scan: input.mongoActive > 0, expectedMissing: null };
+  const extra = input.mongoActive - input.firestoreRead;
+  return extra > 0 ? { scan: true, expectedMissing: extra } : { scan: false, expectedMissing: 0 };
+}
+
+/** Whether a deletion scan can stop: the copy ran out of ids, or all the expected deletions were found. */
+export const deletionScanDone = (batchSize: number, found: number, expectedMissing: number | null, batchLimit = DELETION_CHECK_BATCH) =>
+  batchSize < batchLimit || (expectedMissing !== null && found >= expectedMissing);
+
+/** The update that marks copies whose documents were deleted in the app. They are kept, never removed. */
+export const markDeletedUpdate = (now: Date) => ({ $set: { _deletedInApp: true, _deletedNoticedAt: now } });
+
+/** A root collection's subcollection names, as last discovered. */
+export interface SubcollectionCacheEntry {
+  names: string[];
+  discoveredAt: string;
+}
+
+/**
+ * The cached subcollection names of `root`, or null when they must be looked up again: never
+ * discovered, older than SUBCOLLECTION_CACHE_DAYS, or a Full refresh.
+ */
+export function cachedSubcollections(
+  cache: Record<string, SubcollectionCacheEntry> | null | undefined,
+  root: string,
+  now: Date,
+  full: boolean,
+  maxAgeDays = SUBCOLLECTION_CACHE_DAYS,
+): string[] | null {
+  if (full) return null;
+  const entry = cache?.[root];
+  if (!entry || !Array.isArray(entry.names)) return null;
+  const at = Date.parse(entry.discoveredAt);
+  if (Number.isNaN(at) || now.getTime() - at > maxAgeDays * 86_400_000) return null;
+  return [...entry.names];
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Settings and state
  * ---------------------------------------------------------------------------------------------- */
 
@@ -132,6 +319,8 @@ export interface ReportingCopyConfig {
   requestedBy: string | null;
   /** The name of whoever pressed Refresh now, shown on the run it starts. */
   requestedByName: string | null;
+  /** The request is a Full refresh: subcollections looked up again and every collection checked for deletions. */
+  requestedFull: boolean;
   updatedAt: string | null;
   updatedBy: string | null;
 }
@@ -147,6 +336,7 @@ export const DEFAULT_REPORTING_COPY_CONFIG: ReportingCopyConfig = {
   requestedAt: null,
   requestedBy: null,
   requestedByName: null,
+  requestedFull: false,
   updatedAt: null,
   updatedBy: null,
 };
@@ -164,11 +354,31 @@ export interface ReportingCopyRun {
   startedAt: string;
   finishedAt: string | null;
   durationSeconds: number | null;
+  /** Documents read from Firestore (before 2026-10-15, when every one was written: documents copied). */
   documents: number;
-  /** MongoDB collections fully written (root collections and `<parent>.<sub>` ones). */
+  /** Absent on runs before 2026-10-15, which rewrote everything and removed what was gone. */
+  inserted?: number;
+  updated?: number;
+  unchanged?: number;
+  restored?: number;
+  markedDeleted?: number;
+  /** MongoDB collections fully written and checked (root collections and `<parent>.<sub>` ones). */
   collections: number;
-  removed: number;
+  /** Runs before 2026-10-15 only: documents deleted from the copy. Newer runs never delete. */
+  removed?: number;
+  /** A Full refresh (subcollections looked up again, every collection checked for deletions). */
+  full?: boolean;
   error: string | null;
+}
+
+/** Add counts to a run (or any tally), treating counts it lacks as 0. */
+export function addChangeCounts<T extends Partial<ReportingCopyChangeCounts>>(target: T, delta: Partial<ReportingCopyChangeCounts>): T {
+  const next: Record<string, unknown> = { ...target };
+  for (const key of CHANGE_COUNT_KEYS) {
+    const current = typeof next[key] === 'number' ? (next[key] as number) : undefined;
+    if (delta[key] !== undefined || current !== undefined) next[key] = (current ?? 0) + (delta[key] ?? 0);
+  }
+  return next as T;
 }
 
 /**
@@ -184,7 +394,23 @@ export interface ReportingCopyProgress {
   step: 'root' | 'discover' | 'sub';
   subcollections: string[];
   subIndex: number;
-  /** Last document written in the current target: an id for a root, a full path for a subcollection. */
+  /**
+   * Within a root or subcollection step: `copy` (pages of Firestore documents) then `deletions`
+   * (the check for documents deleted in the app). A target is complete once both are done. Absent
+   * on progress saved before 2026-10-15: `copy`.
+   */
+  phase?: 'copy' | 'deletions';
+  /**
+   * The current target's deletion scan, once counted: how many deleted documents the counts say to
+   * expect (null: scan to the end, a Full refresh) and how many have been found. Null before counting.
+   */
+  deletionScan?: { expectedMissing: number | null; found: number } | null;
+  /** A Full refresh: subcollections looked up again, every collection's deletions checked in full. */
+  full?: boolean;
+  /**
+   * In `copy`: the last Firestore document read (an id for a root, a full path for a subcollection).
+   * In `deletions`: the last MongoDB `_id` checked.
+   */
   cursor: string | null;
   /** The MongoDB collection being written, for the screen. */
   target: string | null;
@@ -194,15 +420,17 @@ export interface ReportingCopyProgress {
   /** Targets given up on, with the reason — the run then ends as failed. */
   failures: string[];
   ticks: number;
-  /** Documents written and removed per MongoDB collection so far, in the order they were copied. */
+  /** Counts per MongoDB collection so far, in the order they were copied. */
   collectionCounts?: ReportingCopyCollectionCount[];
 }
 
-export interface ReportingCopyCollectionCount {
+export interface ReportingCopyCollectionCount extends Partial<ReportingCopyChangeCounts> {
   name: string;
+  /** Documents read from Firestore (on entries before 2026-10-15: documents written). */
   documents: number;
-  removed: number;
-  /** Written in full (and its stale documents removed) in this run. */
+  /** Entries before 2026-10-15 only: documents deleted from the copy. */
+  removed?: number;
+  /** Read in full and checked for deletions in this run. */
   complete: boolean;
 }
 
@@ -221,6 +449,8 @@ export interface ReportingCopyState {
   /** Stop pressed (ISO), and by whom: the slice copying finishes its page and ends the run as stopped. */
   cancelRequestedAt: string | null;
   cancelRequestedBy: string | null;
+  /** Subcollection names per root collection, reused for SUBCOLLECTION_CACHE_DAYS (a Full refresh looks again). */
+  subcollectionCache?: Record<string, SubcollectionCacheEntry>;
 }
 
 export const EMPTY_REPORTING_COPY_STATE: ReportingCopyState = {
@@ -275,6 +505,7 @@ export function normalizeReportingCopyConfig(raw: Record<string, unknown> | unde
     requestedAt: isoOrNull(data.requestedAt),
     requestedBy: typeof data.requestedBy === 'string' ? data.requestedBy : null,
     requestedByName: typeof data.requestedByName === 'string' ? data.requestedByName : null,
+    requestedFull: data.requestedFull === true,
     updatedAt: isoOrNull(data.updatedAt),
     updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : null,
   };
@@ -449,12 +680,14 @@ export const REPORTING_COPY_HISTORY_SUBCOLLECTION = 'history';
  * subcollections), the rest spread over its subcollections. Not rounded, so the first collection of
  * 151 reads as a sliver rather than 0%.
  */
-export function reportingCopyPercent(progress: Pick<ReportingCopyProgress, 'roots' | 'index' | 'step' | 'cursor' | 'subcollections' | 'subIndex'> | null): number {
+export function reportingCopyPercent(
+  progress: Pick<ReportingCopyProgress, 'roots' | 'index' | 'step' | 'cursor' | 'subcollections' | 'subIndex' | 'phase'> | null,
+): number {
   if (!progress?.roots?.length) return 0;
   const total = progress.roots.length;
   if (progress.index >= total) return 100;
   let within = 0;
-  if (progress.step === 'root') within = progress.cursor ? 0.25 : 0;
+  if (progress.step === 'root') within = progress.phase === 'deletions' ? 0.4 : progress.cursor ? 0.25 : 0;
   else if (progress.step === 'discover') within = 0.5;
   else within = 0.5 + 0.5 * (progress.subcollections.length ? progress.subIndex / progress.subcollections.length : 0);
   return Math.min(100, ((progress.index + within) / total) * 100);
@@ -470,17 +703,14 @@ export function formatReportingCopyPercent(percent: number): string {
 export function addCollectionCount(
   counts: readonly ReportingCopyCollectionCount[] | undefined,
   name: string,
-  delta: { documents?: number; removed?: number; complete?: boolean },
+  delta: Partial<ReportingCopyChangeCounts> & { complete?: boolean },
 ): ReportingCopyCollectionCount[] {
   const list = [...(counts ?? [])];
   const at = list.findIndex((entry) => entry.name === name);
-  const current = at >= 0 ? list[at] : { name, documents: 0, removed: 0, complete: false };
-  const next = {
-    ...current,
-    documents: current.documents + (delta.documents ?? 0),
-    removed: current.removed + (delta.removed ?? 0),
-    complete: current.complete || delta.complete === true,
-  };
+  const current: ReportingCopyCollectionCount = at >= 0
+    ? list[at]
+    : { name, documents: 0, inserted: 0, updated: 0, unchanged: 0, restored: 0, markedDeleted: 0, complete: false };
+  const next = { ...addChangeCounts(current, delta), complete: current.complete || delta.complete === true };
   if (at >= 0) list[at] = next;
   else list.push(next);
   return list;
@@ -539,9 +769,18 @@ export interface ReportingCopyHistoryEntry {
   finishedAt: string | null;
   durationSeconds: number | null;
   status: ReportingCopyRunStatus;
+  /** Documents read (entries before 2026-10-15: documents copied — every one was rewritten). */
   documents: number;
   collections: number;
-  removed: number;
+  /** Absent on entries before 2026-10-15, which have `removed` instead. */
+  inserted?: number;
+  updated?: number;
+  unchanged?: number;
+  restored?: number;
+  markedDeleted?: number;
+  /** Entries before 2026-10-15 only: documents deleted from the copy. */
+  removed?: number;
+  full?: boolean;
   error: string | null;
   /** Collections given up on, with the reason. */
   skipped: string[];
@@ -566,7 +805,13 @@ export function buildReportingCopyHistoryEntry(
     status: run.status,
     documents: run.documents,
     collections: run.collections,
-    removed: run.removed,
+    // Only the counts the run has: Firestore refuses undefined, and old runs have `removed` instead.
+    ...Object.fromEntries(
+      (['inserted', 'updated', 'unchanged', 'restored', 'markedDeleted', 'removed'] as const)
+        .filter((key) => typeof run[key] === 'number')
+        .map((key) => [key, run[key]]),
+    ),
+    full: run.full === true,
     error: run.error,
     skipped: [...(progress?.failures ?? [])],
     perCollection: counts.slice(0, cap),

@@ -58,6 +58,31 @@ const STATUS_BADGE: Record<ReportingCopyRunStatus, { variant: 'success' | 'dange
 
 const count = (value: number | null | undefined) => (value ?? 0).toLocaleString('en-IN');
 
+interface ChangeCounted {
+  documents: number;
+  inserted?: number;
+  updated?: number;
+  unchanged?: number;
+  restored?: number;
+  markedDeleted?: number;
+  removed?: number;
+}
+
+/** Runs before 2026-10-15 rewrote everything and removed what was gone: they have `removed`, not change counts. */
+const hasChangeCounts = (entry: ChangeCounted) => typeof entry.inserted === 'number';
+
+/** New · Changed · Unchanged · Restored, or dashes for an older full-copy run. */
+const changeCells = (entry: ChangeCounted) =>
+  hasChangeCounts(entry)
+    ? [count(entry.inserted), count(entry.updated), count(entry.unchanged), count(entry.restored)]
+    : ['—', '—', '—', '—'];
+
+/** Deleted in app: marked in newer runs; removed outright by the older full copies. */
+const deletedCell = (entry: ChangeCounted) =>
+  hasChangeCounts(entry) ? count(entry.markedDeleted) : `${count(entry.removed)} removed`;
+
+const CHANGE_HEADS = ['New', 'Changed', 'Unchanged', 'Restored'];
+
 /** Whether the tab is in front: the screen copies only while someone can see it. */
 function usePageVisible() {
   const [visible, setVisible] = useState(true);
@@ -106,6 +131,7 @@ export default function ReportingDatabasePage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [confirmFull, setConfirmFull] = useState(false);
   const [history, setHistory] = useState<ReportingCopyHistoryEntry[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ReportingCopyHistoryEntry | null>(null);
@@ -232,14 +258,14 @@ export default function ReportingDatabasePage() {
     setIsSaving(false);
   };
 
-  const handleRefresh = async () => {
+  const handleRefresh = async (full = false) => {
     if (!canRun) return;
     setIsRefreshing(true);
     try {
-      const result = await refreshReportingCopyNow();
+      const result = await refreshReportingCopyNow(full);
       setOverview(result.overview);
       toast({
-        title: result.queued ? 'Refresh started' : 'Already refreshing',
+        title: result.queued ? (full ? 'Full refresh started' : 'Refresh started') : 'Already refreshing',
         description: result.queued
           ? result.slice?.ok === false
             ? `The first part failed (${result.slice.error ?? 'unknown error'}); it is retried while this page stays open.`
@@ -336,7 +362,19 @@ export default function ReportingDatabasePage() {
                   {stopping ? 'Stopping…' : 'Stop'}
                 </Button>
               )}
-              <Button onClick={handleRefresh} disabled={isRefreshing || running} className="rounded-full shadow-md">
+              {!running && (
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmFull(true)}
+                  disabled={isRefreshing}
+                  className="rounded-full"
+                  title="Look for subcollections again and check every collection for deleted documents"
+                >
+                  <ListTree className="mr-2 h-4 w-4" />
+                  Full refresh
+                </Button>
+              )}
+              <Button onClick={() => void handleRefresh()} disabled={isRefreshing || running} className="rounded-full shadow-md">
                 {isRefreshing || running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 {running ? 'Refreshing…' : 'Refresh now'}
               </Button>
@@ -387,10 +425,21 @@ export default function ReportingDatabasePage() {
                 <>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {[
-                      { label: 'Documents', value: lastRun.documents.toLocaleString('en-IN') },
-                      { label: 'Collections', value: lastRun.collections.toLocaleString('en-IN') },
-                      { label: 'Removed', value: lastRun.removed.toLocaleString('en-IN') },
-                      { label: 'Started', value: formatWhen(lastRun.startedAt, timeZone) },
+                      ...(hasChangeCounts(lastRun)
+                        ? [
+                          { label: 'Read', value: count(lastRun.documents) },
+                          { label: 'New', value: count(lastRun.inserted) },
+                          { label: 'Changed', value: count(lastRun.updated) },
+                          { label: 'Unchanged', value: count(lastRun.unchanged) },
+                          { label: 'Restored', value: count(lastRun.restored) },
+                          { label: 'Deleted in app', value: count(lastRun.markedDeleted) },
+                        ]
+                        : [
+                          { label: 'Documents', value: count(lastRun.documents) },
+                          { label: 'Removed', value: count(lastRun.removed) },
+                          { label: 'Started', value: formatWhen(lastRun.startedAt, timeZone) },
+                        ]),
+                      { label: 'Collections', value: count(lastRun.collections) },
                       { label: 'Finished', value: running ? '—' : formatWhen(lastRun.finishedAt, timeZone) },
                       { label: 'Duration', value: running ? 'Running' : formatDuration(lastRun.durationSeconds) },
                     ].map((fact) => (
@@ -406,7 +455,7 @@ export default function ReportingDatabasePage() {
                       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span className="min-w-0 truncate" title={progress.target ?? undefined}>
                           {progress.roots
-                            ? `Copying… collection ${Math.min(progress.index + 1, rootCount)} of ${rootCount} · ${count(lastRun.documents)} documents so far`
+                            ? `${lastRun.full ? 'Full refresh' : 'Refreshing'}… collection ${Math.min(progress.index + 1, rootCount)} of ${rootCount} · ${count(lastRun.documents)} read, ${count((lastRun.inserted ?? 0) + (lastRun.updated ?? 0) + (lastRun.restored ?? 0))} written so far`
                             : 'Listing collections…'}
                         </span>
                         <span className="shrink-0">{formatReportingCopyPercent(percent)}</span>
@@ -552,7 +601,7 @@ export default function ReportingDatabasePage() {
                 )}
 
                 <div className="text-xs text-muted-foreground">
-                  A scheduled refresh takes several 15-minute scheduler ticks to copy everything (a refresh watched on this
+                  A scheduled refresh takes several 15-minute scheduler ticks to read everything (a refresh watched on this
                   page goes faster), so a time missed by a late tick still runs on the next one. Refreshing more often than a
                   full copy takes simply starts the next one when it ends.
                 </div>
@@ -595,17 +644,18 @@ export default function ReportingDatabasePage() {
                   <TableHead>By</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead className="text-right">Documents</TableHead>
+                  <TableHead className="text-right">Read</TableHead>
+                  {CHANGE_HEADS.map((head) => <TableHead key={head} className="text-right">{head}</TableHead>)}
+                  <TableHead className="whitespace-nowrap text-right">Deleted in app</TableHead>
                   <TableHead className="text-right">Collections</TableHead>
-                  <TableHead className="text-right">Removed</TableHead>
                   <TableHead>Error</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {history === null && !historyError && !currentEntry ? (
-                  <TableLoading colSpan={9} rows={3} />
+                  <TableLoading colSpan={13} rows={3} />
                 ) : historyRows.length === 0 ? (
-                  <TableEmpty colSpan={9} icon={<History />}>No refresh has finished yet.</TableEmpty>
+                  <TableEmpty colSpan={13} icon={<History />}>No refresh has finished yet.</TableEmpty>
                 ) : (
                   historyRows.map((entry) => {
                     const current = entry.runId === currentEntry?.runId;
@@ -624,15 +674,18 @@ export default function ReportingDatabasePage() {
                         }}
                       >
                         <TableCell className="whitespace-nowrap">{formatWhen(entry.startedAt, timeZone)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{entry.trigger === 'manual' ? 'Refresh now' : 'Schedule'}</TableCell>
+                        <TableCell className="whitespace-nowrap">{entry.trigger === 'manual' ? (entry.full ? 'Full refresh' : 'Refresh now') : 'Schedule'}</TableCell>
                         <TableCell className="whitespace-nowrap">{entry.requestedBy || '—'}</TableCell>
                         <TableCell>
                           <Badge variant={current && stopping ? 'warning' : badge.variant}>{current && stopping ? 'Stopping' : badge.label}</Badge>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{current ? 'Running' : formatDuration(entry.durationSeconds)}</TableCell>
                         <TableCell className="text-right tabular-nums">{count(entry.documents)}</TableCell>
+                        {changeCells(entry).map((value, i) => (
+                          <TableCell key={CHANGE_HEADS[i]} className="text-right tabular-nums">{value}</TableCell>
+                        ))}
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{deletedCell(entry)}</TableCell>
                         <TableCell className="text-right tabular-nums">{count(entry.collections)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{count(entry.removed)}</TableCell>
                         <TableCell>
                           <span className="block max-w-xs truncate text-xs text-muted-foreground" title={entry.error ?? undefined}>
                             {entry.error || '—'}
@@ -654,11 +707,17 @@ export default function ReportingDatabasePage() {
             <div>
               <strong>A one-way copy for MongoDB tools.</strong> Each refresh copies every collection of the app&apos;s
               database into <code>newdatabase</code> (Firestore with MongoDB compatibility), so it can be queried with
-              MongoDB Compass, BI connectors or scripts. Records deleted in the app are removed from the copy too.
+              MongoDB Compass, BI connectors or scripts.
+            </div>
+            <div>
+              <strong>Each refresh writes only new and changed documents.</strong> Documents deleted in the app stay in the
+              copy, marked <code>_deletedInApp: true</code> (with <code>_deletedNoticedAt</code>) — filter reports with{' '}
+              <code>{'{ _deletedInApp: { $ne: true } }'}</code>. Subcollections are looked up once a week; Full refresh looks
+              for new ones now and checks every collection for deletions.
             </div>
             <div>
               <strong>The app never reads it.</strong> Nothing typed into the copy comes back, and changing it changes
-              nothing in the app — it is overwritten by the next refresh.
+              nothing in the app — a document edited there is overwritten when it next changes in the app.
             </div>
             <div>
               <strong>It holds everything, including personal data</strong> — employee details, salary and identity
@@ -674,11 +733,22 @@ export default function ReportingDatabasePage() {
         onOpenChange={setConfirmStop}
         destructive
         title="Stop the refresh?"
-        description="The page being copied is finished, then the run ends as stopped. What has been copied so far stays in the reporting database; the collection it was on is left part-refreshed until the next full refresh."
+        description="The page being copied is finished, then the run ends as stopped. What has been copied so far stays in the reporting database; the collection it was on is left part-refreshed until the next refresh."
         confirmLabel="Stop refresh"
         cancelLabel="Keep copying"
         loading={isStopping}
         onConfirm={handleStop}
+      />
+
+      <ConfirmDialog
+        open={confirmFull}
+        onOpenChange={setConfirmFull}
+        title="Run a full refresh?"
+        description="Like Refresh now, only new and changed documents are written. It also looks for subcollections again instead of reusing the names found in the last week, and checks every collection's copy against the app for deleted documents instead of trusting the counts, so it reads about twice as much and takes longer. Use it after adding a new kind of record, or if the copy looks out of step."
+        confirmLabel="Start full refresh"
+        cancelLabel="Cancel"
+        loading={isRefreshing}
+        onConfirm={() => handleRefresh(true)}
       />
 
       <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
@@ -687,7 +757,7 @@ export default function ReportingDatabasePage() {
             <DialogTitle>Refresh of {selected ? formatWhen(selected.startedAt, timeZone) : ''}</DialogTitle>
             <DialogDescription>
               {selected
-                ? `${selected.trigger === 'manual' ? `Refresh now${selected.requestedBy ? ` by ${selected.requestedBy}` : ''}` : 'Scheduled'} · ${STATUS_BADGE[selected.status]?.label ?? selected.status} · ${count(selected.documents)} documents in ${count(selected.collections)} collections`
+                ? `${selected.trigger === 'manual' ? `${selected.full ? 'Full refresh' : 'Refresh now'}${selected.requestedBy ? ` by ${selected.requestedBy}` : ''}` : 'Scheduled'} · ${STATUS_BADGE[selected.status]?.label ?? selected.status} · ${count(selected.documents)} documents ${hasChangeCounts(selected) ? 'read' : 'copied'} in ${count(selected.collections)} collections`
                 : ''}
             </DialogDescription>
           </DialogHeader>
@@ -708,20 +778,24 @@ export default function ReportingDatabasePage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Collection</TableHead>
-                    <TableHead className="text-right">Documents</TableHead>
-                    <TableHead className="text-right">Removed</TableHead>
+                    <TableHead className="text-right">Read</TableHead>
+                    {CHANGE_HEADS.map((head) => <TableHead key={head} className="text-right">{head}</TableHead>)}
+                    <TableHead className="whitespace-nowrap text-right">Deleted in app</TableHead>
                     <TableHead>State</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {selected.perCollection.length === 0 ? (
-                    <TableEmpty colSpan={4}>No per-collection counts for this run (recorded from 15 Oct 2026).</TableEmpty>
+                    <TableEmpty colSpan={8}>No per-collection counts for this run (recorded from 15 Oct 2026).</TableEmpty>
                   ) : (
                     selected.perCollection.map((entry) => (
                       <TableRow key={entry.name}>
                         <TableCell className="break-all font-mono text-xs">{entry.name}</TableCell>
                         <TableCell className="text-right tabular-nums">{count(entry.documents)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{count(entry.removed)}</TableCell>
+                        {changeCells(entry).map((value, i) => (
+                          <TableCell key={CHANGE_HEADS[i]} className="text-right tabular-nums">{value}</TableCell>
+                        ))}
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{deletedCell(entry)}</TableCell>
                         <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{entry.complete ? 'Complete' : 'Partly copied'}</TableCell>
                       </TableRow>
                     ))

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   DocumentReference,
   FieldPath,
@@ -13,15 +13,24 @@ import {
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
 import { getFirebaseAdminFirestore } from './firebase-admin';
 import {
+  ACTIVE_COPY_FILTER,
+  addChangeCounts,
   addCollectionCount,
   buildReportingCopyHistoryEntry,
+  cachedSubcollections,
+  decideDeletionCheck,
   decideReportingCopyStop,
+  DELETION_CHECK_BATCH,
+  deletionScanDone,
   EMPTY_REPORTING_COPY_STATE,
   endReportingCopyRun,
   EXCLUDED_COLLECTIONS,
+  EXISTING_COPY_PROJECTION,
   isDirectChildOf,
   makeValueConverter,
+  markDeletedUpdate,
   normalizeReportingCopyConfig,
+  planPageWrites,
   READ_PAGE,
   REPORTING_COPY_COLLECTION,
   REPORTING_COPY_HISTORY_KEEP,
@@ -34,6 +43,8 @@ import {
   SUBCOLLECTION_SAMPLE,
   TARGET_DATABASE,
   WRITE_BATCH,
+  type ExistingCopy,
+  type ReportingCopyChangeCounts,
   type ReportingCopyConfig,
   type ReportingCopyDue,
   type ReportingCopyHistoryEntry,
@@ -47,17 +58,21 @@ import {
  * The scheduled refresh of the reporting copy — the app-hosted port of `tools/mongo-sync/sync.mjs`.
  *
  * Same copy, same shapes: root collections → same-named MongoDB collections with `_id` = document
- * id; subcollections (found by sampling) → `<parent>.<sub>` with `_id` = full path and
- * `_parentPath`; every document stamped `_syncRun` / `_syncedAt`, and each collection's documents
- * not stamped by this run deleted once the collection has been written in full.
+ * id; subcollections (found by sampling, the names cached for a week) → `<parent>.<sub>` with
+ * `_id` = full path and `_parentPath`.
  *
- * What differs is that a request has a time limit and a full copy (≈100k documents, ~150
- * collections) does not fit in one. So a run is a sequence of slices: each tick claims the run for
- * its time budget, copies page after page, saves its cursor to `reportingCopy/state` after every
- * page, and the next tick carries on from that cursor. The run id is kept for the whole run, so a
- * collection whose pages were written over several ticks still has every document stamped with the
- * same `_syncRun` when its stale-delete runs — which is why that delete waits until the collection
- * has been fully written in this run.
+ * Incremental (from 2026-10-15): every Firestore document is read, but only new and changed ones
+ * are written. Each copy carries `_hash` (the fingerprint of its converted content), and a page's
+ * existing copies are looked up in one `$in` query; a same-hash document is not written at all.
+ * Nothing is ever deleted: once a collection is read in full, its copies not marked deleted are
+ * counted against the documents read, and only when the copy has more are its ids checked against
+ * Firestore — the missing ones get `_deletedInApp: true` and `_deletedNoticedAt`, and are restored
+ * if they come back. A collection is complete only once that check has finished.
+ *
+ * A request has a time limit and a full read (≈100k documents, ~150 collections) does not fit in
+ * one. So a run is a sequence of slices: each tick claims the run for its time budget, works page
+ * after page (or batch after batch of the deletion check), saves its cursor to
+ * `reportingCopy/state` after each, and the next tick carries on from that cursor.
  */
 
 const NOT_CONFIGURED = 'NEWDATABASE_MONGODB_URI is not set on the server (App Hosting secret), so the copy cannot connect.';
@@ -71,6 +86,7 @@ const MAX_ATTEMPTS = 3;
 const MAX_RUN_MS = 24 * 60 * 60 * 1000;
 
 const convert = makeValueConverter({ Timestamp, GeoPoint, DocumentReference });
+const sha1 = (text: string) => createHash('sha1').update(text).digest('hex');
 
 /* ------------------------------------------------------------------------------------------------
  * Connections
@@ -194,14 +210,19 @@ export async function saveReportingCopySettings(value: ReportingCopySettingsInpu
  * already refreshing everything, and a request queued behind it would start a second full copy
  * the moment it finished.
  */
-export async function requestReportingCopyRun(userId: string, userName: string): Promise<{ queued: boolean; reason: string }> {
+export async function requestReportingCopyRun(
+  userId: string,
+  userName: string,
+  options: { full?: boolean } = {},
+): Promise<{ queued: boolean; reason: string }> {
   const db = getFirebaseAdminFirestore();
   const { config: configRef, state: stateRef } = refs(db);
+  const full = options.full === true;
   return db.runTransaction(async (tx) => {
     const stateSnap = await tx.get(stateRef);
     if (normalizeState(stateSnap.data()).progress) return { queued: false, reason: 'A refresh is already running.' };
-    tx.set(configRef, { requestedAt: new Date().toISOString(), requestedBy: userId, requestedByName: userName }, { merge: true });
-    return { queued: true, reason: 'Refresh requested.' };
+    tx.set(configRef, { requestedAt: new Date().toISOString(), requestedBy: userId, requestedByName: userName, requestedFull: full }, { merge: true });
+    return { queued: true, reason: full ? 'Full refresh requested.' : 'Refresh requested.' };
   });
 }
 
@@ -215,7 +236,7 @@ export interface ReportingCopyStopResult {
  * Stop. While a slice holds the run it is only asked to stop (`cancelRequestedAt`): it finishes the
  * page it is on, saves, and ends the run as `stopped` — so nothing is half-written. With no slice
  * copying (no lease, or one that expired) the run is ended here and now. Either way what was copied
- * stays, and the unfinished collection gets no stale-delete.
+ * stays, and the unfinished collection gets no deletion check.
  */
 export async function stopReportingCopyRun(userName: string): Promise<ReportingCopyStopResult> {
   const db = getFirebaseAdminFirestore();
@@ -270,25 +291,28 @@ class LeaseLostError extends Error {
   }
 }
 
-const newProgress = (runId: number): ReportingCopyProgress => ({
-  runId, roots: null, index: 0, step: 'root', subcollections: [], subIndex: 0,
+const newProgress = (runId: number, full: boolean): ReportingCopyProgress => ({
+  runId, roots: null, index: 0, step: 'root', subcollections: [], subIndex: 0, phase: 'copy', deletionScan: null, full,
   cursor: null, target: null, attempts: 0, lastError: null, failures: [], ticks: 1,
 });
 
+/** A fresh target: copy phase, no cursor, no deletion scan. */
+const freshTarget = { phase: 'copy' as const, deletionScan: null, cursor: null, attempts: 0, lastError: null };
+
 /** On to the next root collection. */
 function nextRoot(progress: ReportingCopyProgress) {
-  Object.assign(progress, { index: progress.index + 1, step: 'root', subcollections: [], subIndex: 0, cursor: null, attempts: 0, lastError: null });
+  Object.assign(progress, { ...freshTarget, index: progress.index + 1, step: 'root', subcollections: [], subIndex: 0 });
 }
 
 /** On to the next subcollection of the current root, or the next root after the last one. */
 function nextSub(progress: ReportingCopyProgress) {
   if (progress.subIndex + 1 >= progress.subcollections.length) return nextRoot(progress);
-  Object.assign(progress, { subIndex: progress.subIndex + 1, cursor: null, attempts: 0, lastError: null });
+  Object.assign(progress, { ...freshTarget, subIndex: progress.subIndex + 1 });
 }
 
 /**
  * Give up on the current collection after repeated failures, so one bad collection cannot stall the
- * copy of the rest. Its MongoDB copy is left as it was (no stale-delete) and the run ends failed.
+ * copy of the rest. Its MongoDB copy is left as it was (no deletion check) and the run ends failed.
  * A root that fails takes its subcollections with it; listing the roots failing ends the run.
  */
 function giveUpOnTarget(progress: ReportingCopyProgress, message: string) {
@@ -314,7 +338,13 @@ async function subcollectionsOf(db: Firestore, root: string): Promise<string[]> 
   return [...names].sort();
 }
 
-/** Copy one page of a source query (in document-id order, after `cursor`) into `name`. */
+type PageCounts = Omit<ReportingCopyChangeCounts, 'markedDeleted'>;
+
+/**
+ * Copy one page of a source query (in document-id order, after `cursor`) into `name`, writing only
+ * what is new or changed: one `$in` lookup of the page's existing copies, then upserts for the
+ * documents planPageWrites says differ.
+ */
 async function copyPage(
   target: Db,
   name: string,
@@ -324,23 +354,70 @@ async function copyPage(
     after: (cursor: string) => string | DocumentReference;
     cursorOf: (doc: QueryDocumentSnapshot) => string;
     keep: (doc: QueryDocumentSnapshot) => boolean;
-    toDoc: (doc: QueryDocumentSnapshot) => Document;
-    runId: number;
+    toDoc: (doc: QueryDocumentSnapshot) => Document & { _id: string };
   },
-): Promise<{ written: number; cursor: string | null; done: boolean }> {
+): Promise<{ counts: PageCounts; cursor: string | null; done: boolean }> {
   let q = query.orderBy(FieldPath.documentId()).limit(READ_PAGE);
   if (cursor) q = q.startAfter(options.after(cursor));
   const snap = await q.get();
-  const syncedAt = new Date();
-  const ops: AnyBulkWriteOperation<Document>[] = snap.docs.filter(options.keep).map((doc) => {
-    const body: Document = { ...options.toDoc(doc), _syncRun: options.runId, _syncedAt: syncedAt };
-    return { replaceOne: { filter: { _id: body._id }, replacement: body, upsert: true } };
-  });
+  const docs = snap.docs.filter(options.keep).map(options.toDoc);
+  const existing = docs.length
+    ? await target.collection(name).find({ _id: { $in: docs.map((doc) => doc._id) } } as Document, { projection: EXISTING_COPY_PROJECTION }).toArray()
+    : [];
+  const plan = planPageWrites(docs, existing as ExistingCopy[], { hash: sha1, now: new Date() });
+  const ops = plan.writes as unknown as AnyBulkWriteOperation<Document>[];
   for (let i = 0; i < ops.length; i += WRITE_BATCH) {
     await target.collection(name).bulkWrite(ops.slice(i, i + WRITE_BATCH), { ordered: false });
   }
   const last = snap.docs[snap.docs.length - 1];
-  return { written: ops.length, cursor: last ? options.cursorOf(last) : cursor, done: snap.size < READ_PAGE };
+  return { counts: plan.counts, cursor: last ? options.cursorOf(last) : cursor, done: snap.size < READ_PAGE };
+}
+
+/**
+ * One step of a finished collection's deletion check. The first step counts the copies not marked
+ * deleted against the documents read this run (decideDeletionCheck); equal ends the check there.
+ * Otherwise each step takes the next DELETION_CHECK_BATCH ids of the copy (in `_id` order, after
+ * `progress.cursor`), asks Firestore which still exist (getAll with an empty field mask), and marks
+ * the rest `_deletedInApp`. Never deletes.
+ */
+async function checkDeletionsStep(
+  target: Db,
+  name: string,
+  progress: ReportingCopyProgress,
+  firestoreRead: number,
+  exists: (ids: string[]) => Promise<Set<string>>,
+): Promise<{ markedDeleted: number; done: boolean }> {
+  const collection = target.collection(name);
+  if (!progress.deletionScan) {
+    const mongoActive = await collection.countDocuments(ACTIVE_COPY_FILTER as Document);
+    const decision = decideDeletionCheck({ mongoActive, firestoreRead, full: progress.full === true });
+    if (!decision.scan) return { markedDeleted: 0, done: true };
+    progress.deletionScan = { expectedMissing: decision.expectedMissing, found: 0 };
+    progress.cursor = null;
+  }
+  const filter: Document = progress.cursor ? { ...ACTIVE_COPY_FILTER, _id: { $gt: progress.cursor } } : { ...ACTIVE_COPY_FILTER };
+  const batch = await collection.find(filter, { projection: { _id: 1 } }).sort({ _id: 1 }).limit(DELETION_CHECK_BATCH).toArray();
+  const ids = batch.map((doc) => String(doc._id));
+  let markedDeleted = 0;
+  if (ids.length) {
+    const present = await exists(ids);
+    const missing = ids.filter((id) => !present.has(id));
+    if (missing.length) {
+      await collection.updateMany({ _id: { $in: missing } } as Document, markDeletedUpdate(new Date()));
+      markedDeleted = missing.length;
+    }
+    progress.cursor = ids[ids.length - 1];
+  }
+  progress.deletionScan.found += markedDeleted;
+  return { markedDeleted, done: deletionScanDone(ids.length, progress.deletionScan.found, progress.deletionScan.expectedMissing) };
+}
+
+/** Which of these documents exist in Firestore — a read each, with no fields returned. */
+async function existingInFirestore(db: Firestore, refsOf: (id: string) => DocumentReference, ids: string[]): Promise<Set<string>> {
+  const snaps = await db.getAll(...ids.map(refsOf), { fieldMask: [] });
+  const present = new Set<string>();
+  snaps.forEach((snap, i) => { if (snap.exists) present.add(ids[i]); });
+  return present;
 }
 
 /**
@@ -420,11 +497,13 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
       lastScheduledSlot: latest,
       handledRequestAt: due.trigger === 'manual' ? config.requestedAt : state.handledRequestAt,
     };
+    // Only "Full refresh" is full; a scheduled run never is.
+    const full = due.trigger === 'manual' && config.requestedFull;
     const run: ReportingCopyRun = {
       runId: now.getTime(), trigger: due.trigger ?? 'schedule',
       requestedBy: due.trigger === 'manual' ? config.requestedByName : null,
-      status: 'running', startedAt: stamp,
-      finishedAt: null, durationSeconds: null, documents: 0, collections: 0, removed: 0, error: null,
+      status: 'running', startedAt: stamp, finishedAt: null, durationSeconds: null,
+      documents: 0, inserted: 0, updated: 0, unchanged: 0, restored: 0, markedDeleted: 0, collections: 0, full, error: null,
     };
     // A Stop left over from an earlier run must not end this one.
     const cleared = { cancelRequestedAt: null, cancelRequestedBy: null };
@@ -434,7 +513,7 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
       tx.set(stateRef, next);
       return { action: 'not-configured' as const, reason: NOT_CONFIGURED, state: next, ended: { run: lastRun, progress: null } };
     }
-    const next = { ...state, ...consumed, ...cleared, lastRun: run, progress: newProgress(run.runId), lease, nextDueAt: null, updatedAt: stamp };
+    const next = { ...state, ...consumed, ...cleared, lastRun: run, progress: newProgress(run.runId, full), lease, nextDueAt: null, updatedAt: stamp };
     tx.set(stateRef, next);
     return { action: 'started' as const, reason: due.reason, state: next, ended: noEnded };
   });
@@ -483,10 +562,15 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
   };
   const stopped = () => result(true, 'stopped', 'The refresh was stopped; what was copied is kept.', state);
 
-  /** Copied into the per-collection tally. */
-  const tally = (name: string, delta: { documents?: number; removed?: number; complete?: boolean }) => {
+  /** Added to the run's counts and the per-collection tally. */
+  const tally = (name: string, delta: Partial<ReportingCopyChangeCounts> & { complete?: boolean }) => {
+    const { complete, ...counts } = delta;
+    Object.assign(run, addChangeCounts(run, counts));
+    if (complete) run.collections += 1;
     progress.collectionCounts = addCollectionCount(progress.collectionCounts, name, delta);
   };
+  /** Documents read from Firestore for `name` so far in this run — what the deletion check counts against. */
+  const readSoFar = (name: string) => progress.collectionCounts?.find((entry) => entry.name === name)?.documents ?? 0;
 
   let target: Db;
   try {
@@ -518,64 +602,59 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
       }
       const root = progress.roots[progress.index];
 
-      if (progress.step === 'root') {
-        progress.target = root;
-        const page = await copyPage(target, root, db.collection(root), progress.cursor, {
-          after: (cursor) => cursor,
-          cursorOf: (doc) => doc.id,
-          keep: () => true,
-          toDoc: (doc) => ({ _id: doc.id, ...(convert(doc.data()) as Document) }),
-          runId: run.runId,
-        });
-        run.documents += page.written;
-        progress.cursor = page.cursor;
-        progress.attempts = 0;
-        tally(root, { documents: page.written });
-        if (page.done) {
-          const removed = (await target.collection(root).deleteMany({ _syncRun: { $ne: run.runId } })).deletedCount;
-          run.removed += removed;
-          run.collections += 1;
-          tally(root, { removed, complete: true });
-          Object.assign(progress, { step: 'discover', cursor: null, lastError: null });
-        }
-        worked = true;
-        if (await stopIfAsked(await save())) return stopped();
-        continue;
-      }
-
       if (progress.step === 'discover') {
-        if (worked && deadline - Date.now() < DISCOVERY_RESERVE_MS) break;
-        progress.target = `${root} (looking for subcollections)`;
-        const subs = await subcollectionsOf(db, root);
-        if (subs.length) Object.assign(progress, { step: 'sub', subcollections: subs, subIndex: 0, cursor: null, attempts: 0, lastError: null });
+        const now = new Date();
+        const cached = cachedSubcollections(state.subcollectionCache, root, now, progress.full === true);
+        let extra: Partial<ReportingCopyState> = {};
+        let subs = cached;
+        if (!subs) {
+          if (worked && deadline - Date.now() < DISCOVERY_RESERVE_MS) break;
+          progress.target = `${root} (looking for subcollections)`;
+          subs = await subcollectionsOf(db, root);
+          state.subcollectionCache = { ...(state.subcollectionCache ?? {}), [root]: { names: subs, discoveredAt: now.toISOString() } };
+          extra = { subcollectionCache: state.subcollectionCache };
+        }
+        if (subs.length) Object.assign(progress, { ...freshTarget, step: 'sub', subcollections: subs, subIndex: 0 });
         else nextRoot(progress);
         worked = true;
-        if (await stopIfAsked(await save())) return stopped();
+        if (await stopIfAsked(await save(extra))) return stopped();
         continue;
       }
 
-      // step === 'sub'
-      const sub = progress.subcollections[progress.subIndex];
-      const name = subcollectionTarget(root, sub);
-      progress.target = name;
-      // A collection group spans every parent of this name; keep only this root's children.
-      const page = await copyPage(target, name, db.collectionGroup(sub), progress.cursor, {
-        after: (cursor) => db.doc(cursor),
-        cursorOf: (doc) => doc.ref.path,
-        keep: (doc) => isDirectChildOf(doc.ref.path, root),
-        toDoc: (doc) => ({ _id: doc.ref.path, _parentPath: doc.ref.parent.parent!.path, ...(convert(doc.data()) as Document) }),
-        runId: run.runId,
-      });
-      run.documents += page.written;
-      progress.cursor = page.cursor;
-      progress.attempts = 0;
-      tally(name, { documents: page.written });
-      if (page.done) {
-        const removed = (await target.collection(name).deleteMany({ _syncRun: { $ne: run.runId } })).deletedCount;
-        run.removed += removed;
-        run.collections += 1;
-        tally(name, { removed, complete: true });
-        nextSub(progress);
+      // A root collection or one of its subcollections: pages of documents, then the deletion check.
+      const isRoot = progress.step === 'root';
+      const sub = isRoot ? null : progress.subcollections[progress.subIndex];
+      const name = sub ? subcollectionTarget(root, sub) : root;
+      if ((progress.phase ?? 'copy') === 'copy') {
+        progress.target = name;
+        const page = sub
+          // A collection group spans every parent of this name; keep only this root's children.
+          ? await copyPage(target, name, db.collectionGroup(sub), progress.cursor, {
+            after: (cursor) => db.doc(cursor),
+            cursorOf: (doc) => doc.ref.path,
+            keep: (doc) => isDirectChildOf(doc.ref.path, root),
+            toDoc: (doc) => ({ _id: doc.ref.path, _parentPath: doc.ref.parent.parent!.path, ...(convert(doc.data()) as Document) }),
+          })
+          : await copyPage(target, root, db.collection(root), progress.cursor, {
+            after: (cursor) => cursor,
+            cursorOf: (doc) => doc.id,
+            keep: () => true,
+            toDoc: (doc) => ({ _id: doc.id, ...(convert(doc.data()) as Document) }),
+          });
+        progress.cursor = page.cursor;
+        progress.attempts = 0;
+        tally(name, page.counts);
+        if (page.done) Object.assign(progress, { phase: 'deletions', deletionScan: null, cursor: null, lastError: null });
+      } else {
+        progress.target = `${name} (checking for deletions)`;
+        const check = await checkDeletionsStep(target, name, progress, readSoFar(name), (ids) =>
+          existingInFirestore(db, sub ? (id) => db.doc(id) : (id) => db.collection(root).doc(id), ids));
+        progress.attempts = 0;
+        tally(name, { markedDeleted: check.markedDeleted, complete: check.done });
+        if (check.done) {
+          if (isRoot) Object.assign(progress, { ...freshTarget, step: 'discover' });
+          else nextSub(progress);
+        }
       }
       worked = true;
       if (await stopIfAsked(await save())) return stopped();

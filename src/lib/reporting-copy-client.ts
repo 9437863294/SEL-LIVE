@@ -58,10 +58,11 @@ export interface ReportingCopySliceResult {
   error?: string;
 }
 
-export const refreshReportingCopyNow = () =>
+/** "Refresh now"; `full`: a Full refresh (subcollections looked up again, every collection checked for deletions). */
+export const refreshReportingCopyNow = (full = false) =>
   authorizedFetch<{ queued: boolean; reason: string; busy: boolean; slice: ReportingCopySliceResult | null; overview: ReportingCopyOverview }>(
     '/api/reporting-copy/run',
-    { method: 'POST', body: JSON.stringify({ action: 'start' }) },
+    { method: 'POST', body: JSON.stringify({ action: 'start', full }) },
   );
 
 /** One more slice of the run in progress; `busy` when another slice (the scheduler, another tab) holds it. */
