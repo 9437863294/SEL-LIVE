@@ -1,14 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, CalendarClock, CheckCircle2, DatabaseZap, History, Info, Loader2,
-  RefreshCw, Save, ShieldAlert, XCircle,
+  AlertTriangle, CalendarClock, CheckCircle2, DatabaseZap, History, Info, ListTree, Loader2,
+  RefreshCw, Save, ShieldAlert, Square, XCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/shared/page-header';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -19,22 +22,53 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
 import {
+  buildReportingCopyHistoryEntry,
   describeReportingCopySchedule,
   EVERY_HOURS_OPTIONS,
+  formatReportingCopyPercent,
   REPORTING_COPY_RESOURCE,
+  reportingCopyPercent,
   WEEKDAY_NAMES,
   type ReportingCopyFrequency,
+  type ReportingCopyHistoryEntry,
+  type ReportingCopyRunStatus,
   type ReportingCopySettingsInput,
 } from '@/lib/reporting-copy';
 import {
+  continueReportingCopy,
   fetchReportingCopy,
+  fetchReportingCopyHistory,
   refreshReportingCopyNow,
   saveReportingCopySettings,
+  stopReportingCopy,
   type ReportingCopyOverview,
 } from '@/lib/reporting-copy-client';
 
-/** While a run is going, the screen re-reads its progress this often. */
+/** While a run is going and this screen is not driving it (hidden tab, no Run permission), it re-reads progress this often. */
 const POLL_MS = 15_000;
+/** After a busy or failed slice, the screen waits this long before asking for the next one. */
+const BACKOFF_MS = 5_000;
+
+const STATUS_BADGE: Record<ReportingCopyRunStatus, { variant: 'success' | 'danger' | 'warning' | 'progress'; label: string }> = {
+  succeeded: { variant: 'success', label: 'Succeeded' },
+  failed: { variant: 'danger', label: 'Failed' },
+  stopped: { variant: 'warning', label: 'Stopped' },
+  running: { variant: 'progress', label: 'Running' },
+};
+
+const count = (value: number | null | undefined) => (value ?? 0).toLocaleString('en-IN');
+
+/** Whether the tab is in front: the screen copies only while someone can see it. */
+function usePageVisible() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState === 'visible');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  return visible;
+}
 
 const formatWhen = (iso: string | null | undefined, timeZone: string) => {
   if (!iso) return '—';
@@ -70,6 +104,14 @@ export default function ReportingDatabasePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [history, setHistory] = useState<ReportingCopyHistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ReportingCopyHistoryEntry | null>(null);
+  /** The last slice this screen asked for: busy (someone else is copying) or failed. */
+  const [sliceNote, setSliceNote] = useState<string | null>(null);
+  const visible = usePageVisible();
 
   /** Re-read the run while it is going; the draft is left alone so an edit in progress is not lost. */
   const poll = useCallback(async () => {
@@ -77,6 +119,15 @@ export default function ReportingDatabasePage() {
       setOverview(await fetchReportingCopy());
     } catch {
       // A missed poll is retried on the next one.
+    }
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory((await fetchReportingCopyHistory()).runs);
+      setHistoryError(null);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : 'Could not load the run history.');
     }
   }, []);
 
@@ -94,15 +145,76 @@ export default function ReportingDatabasePage() {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Could not load the reporting database settings.');
       },
     );
+    fetchReportingCopyHistory().then(
+      ({ runs }) => { if (!cancelled) setHistory(runs); },
+      (error) => { if (!cancelled) setHistoryError(error instanceof Error ? error.message : 'Could not load the run history.'); },
+    );
     return () => { cancelled = true; };
   }, [authzLoading, canView]);
 
   const running = Boolean(overview?.state.running);
+  /** This screen carries the run on itself while it is open, in front, and allowed to. */
+  const driving = running && visible && canRun;
+
   useEffect(() => {
-    if (!running) return;
+    if (!running || driving) return;
     const timer = window.setInterval(() => void poll(), POLL_MS);
     return () => window.clearInterval(timer);
-  }, [running, poll]);
+  }, [running, driving, poll]);
+
+  // Back-to-back slices: the next as soon as the last answers, 5 s apart after a busy or failed
+  // one. Ends when the run ends, or the tab is hidden or left (the scheduler carries on from there).
+  useEffect(() => {
+    if (!driving) return;
+    let active = true;
+    let timer: number | undefined;
+    const step = async () => {
+      if (!active) return;
+      let delay = 0;
+      try {
+        const result = await continueReportingCopy();
+        if (!active) return;
+        setOverview(result.overview);
+        if (result.busy) {
+          setSliceNote('Another part of the run is copying (the scheduler or another open tab); checking again shortly.');
+          delay = BACKOFF_MS;
+        } else if (!result.slice.ok) {
+          setSliceNote(`The last part failed (${result.slice.error ?? 'unknown error'}); retrying.`);
+          delay = BACKOFF_MS;
+        } else {
+          setSliceNote(null);
+        }
+        if (!result.overview.state.running) {
+          setSliceNote(null);
+          void loadHistory();
+          const status = result.overview.state.lastRun?.status;
+          toast({
+            title: status === 'succeeded' ? 'Refresh finished' : status === 'stopped' ? 'Refresh stopped' : 'Refresh ended',
+            description: result.overview.state.lastRun?.error ?? 'The reporting copy is up to date.',
+            variant: status === 'failed' ? 'destructive' : undefined,
+          });
+          return;
+        }
+      } catch (error) {
+        if (!active) return;
+        setSliceNote(`Could not reach the server (${error instanceof Error ? error.message : 'unknown error'}); retrying.`);
+        delay = BACKOFF_MS;
+      }
+      if (active) timer = window.setTimeout(() => void step(), delay);
+    };
+    void step();
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [driving, loadHistory, toast]);
+
+  // A run that ended while this screen was only polling: pick up its history line.
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running) void loadHistory();
+    wasRunning.current = running;
+  }, [running, loadHistory]);
 
   const update = (patch: Partial<ReportingCopySettingsInput>) => setDraft((current) => (current ? { ...current, ...patch } : current));
 
@@ -130,8 +242,8 @@ export default function ReportingDatabasePage() {
         title: result.queued ? 'Refresh started' : 'Already refreshing',
         description: result.queued
           ? result.slice?.ok === false
-            ? `The first part failed (${result.slice.error ?? 'unknown error'}); the scheduler retries within 15 minutes.`
-            : 'The first part has been copied; the scheduler continues every 15 minutes until it is done.'
+            ? `The first part failed (${result.slice.error ?? 'unknown error'}); it is retried while this page stays open.`
+            : 'Copying continues while this page stays open; otherwise the scheduler carries it on every 15 minutes.'
           : result.reason,
         variant: result.slice?.ok === false ? 'destructive' : undefined,
       });
@@ -139,6 +251,26 @@ export default function ReportingDatabasePage() {
       toast({ title: 'Could not start the refresh', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     }
     setIsRefreshing(false);
+  };
+
+  /** Throws on failure so the confirm dialog stays open for a retry. */
+  const handleStop = async () => {
+    if (!canRun) return;
+    setIsStopping(true);
+    try {
+      const result = await stopReportingCopy();
+      setOverview(result.overview);
+      if (result.outcome === 'stopped') void loadHistory();
+      toast({
+        title: result.outcome === 'nothing' ? 'Nothing to stop' : result.outcome === 'stopped' ? 'Refresh stopped' : 'Stopping',
+        description: result.outcome === 'signalled' ? 'The page being copied is finished first; what was copied is kept.' : result.reason,
+      });
+    } catch (error) {
+      toast({ title: 'Could not stop the refresh', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+      throw error;
+    } finally {
+      setIsStopping(false);
+    }
   };
 
   if (authzLoading || (canView && !overview && !loadError)) {
@@ -165,8 +297,18 @@ export default function ReportingDatabasePage() {
   const lastRun = overview?.state.lastRun ?? null;
   const progress = overview?.state.progress ?? null;
   const rootCount = progress?.roots?.length ?? 0;
-  const percent = rootCount ? Math.min(100, Math.round(((progress?.index ?? 0) / rootCount) * 100)) : 0;
+  const percent = reportingCopyPercent(progress);
   const dirty = Boolean(overview && draft && JSON.stringify(toSettings(overview)) !== JSON.stringify(draft));
+  const stopping = Boolean(overview?.state.stopping);
+  const startedBy = lastRun
+    ? lastRun.trigger === 'manual' ? `Started by ${lastRun.requestedBy || 'Refresh now'}` : 'Scheduled'
+    : null;
+  // The run in progress heads the history table, with its counts so far.
+  const currentEntry = running && lastRun ? buildReportingCopyHistoryEntry(lastRun, progress) : null;
+  const historyRows = [
+    ...(currentEntry ? [currentEntry] : []),
+    ...(history ?? []).filter((entry) => entry.runId !== currentEntry?.runId),
+  ];
 
   return (
     <>
@@ -182,10 +324,23 @@ export default function ReportingDatabasePage() {
           backHref="/settings"
           backLabel="Back to settings"
           actions={canRun ? (
-            <Button onClick={handleRefresh} disabled={isRefreshing || running} className="rounded-full shadow-md">
-              {isRefreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              {running ? 'Refreshing…' : 'Refresh now'}
-            </Button>
+            <>
+              {running && (
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmStop(true)}
+                  disabled={isStopping || stopping}
+                  className="rounded-full border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                >
+                  {isStopping || stopping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
+                  {stopping ? 'Stopping…' : 'Stop'}
+                </Button>
+              )}
+              <Button onClick={handleRefresh} disabled={isRefreshing || running} className="rounded-full shadow-md">
+                {isRefreshing || running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                {running ? 'Refreshing…' : 'Refresh now'}
+              </Button>
+            </>
           ) : undefined}
         />
 
@@ -217,12 +372,12 @@ export default function ReportingDatabasePage() {
                 <div className="min-w-0 flex-1">
                   <CardTitle>{running ? 'Refresh in progress' : 'Last refresh'}</CardTitle>
                   <CardDescription className="text-xs">
-                    {lastRun ? `${lastRun.trigger === 'manual' ? 'Started by Refresh now' : 'Scheduled'} · ${formatWhen(lastRun.startedAt, timeZone)}` : 'Not refreshed from the app yet'}
+                    {lastRun ? `${startedBy} · ${formatWhen(lastRun.startedAt, timeZone)}` : 'Not refreshed from the app yet'}
                   </CardDescription>
                 </div>
                 {lastRun && (
-                  <Badge variant={lastRun.status === 'succeeded' ? 'success' : lastRun.status === 'failed' ? 'danger' : 'progress'}>
-                    {lastRun.status === 'succeeded' ? 'Succeeded' : lastRun.status === 'failed' ? 'Failed' : 'Running'}
+                  <Badge variant={STATUS_BADGE[lastRun.status]?.variant ?? 'neutral'}>
+                    {stopping ? 'Stopping' : STATUS_BADGE[lastRun.status]?.label ?? lastRun.status}
                   </Badge>
                 )}
               </div>
@@ -249,17 +404,32 @@ export default function ReportingDatabasePage() {
                   {running && progress && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span className="min-w-0 truncate">
-                          {progress.roots ? `Collection ${Math.min(progress.index + 1, rootCount)} of ${rootCount}` : 'Listing collections'}
-                          {progress.target ? ` · ${progress.target}` : ''}
+                        <span className="min-w-0 truncate" title={progress.target ?? undefined}>
+                          {progress.roots
+                            ? `Copying… collection ${Math.min(progress.index + 1, rootCount)} of ${rootCount} · ${count(lastRun.documents)} documents so far`
+                            : 'Listing collections…'}
                         </span>
-                        <span className="shrink-0">{percent}%</span>
+                        <span className="shrink-0">{formatReportingCopyPercent(percent)}</span>
                       </div>
                       <Progress value={percent} className="h-2" />
+                      {progress.target && (
+                        <div className="truncate text-xs text-muted-foreground" title={progress.target}>Now at {progress.target}</div>
+                      )}
                       <div className="text-xs text-muted-foreground">
-                        {overview?.state.working ? 'Copying now.' : 'Waiting for the next scheduler tick (every 15 minutes).'}
+                        {stopping
+                          ? `Stopping${overview?.state.cancelRequestedBy ? ` (asked by ${overview.state.cancelRequestedBy})` : ''} once the page being copied is saved.`
+                          : driving
+                            ? 'This continues on its own while this page is open; if you leave, the scheduler carries it on every 15 minutes.'
+                            : canRun && !visible
+                              ? 'Paused here while this tab is hidden; the scheduler carries it on every 15 minutes, and coming back resumes it.'
+                              : overview?.state.working
+                                ? 'Copying now.'
+                                : 'Carried on by the scheduler every 15 minutes, or by keeping this page open (Run permission).'}
                         {' '}Part {progress.ticks} of the run.
                       </div>
+                      {sliceNote && driving && (
+                        <div className="break-words text-xs text-muted-foreground">{sliceNote}</div>
+                      )}
                       {progress.lastError && (
                         <div className="break-words rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
                           Retrying after an error: {progress.lastError}
@@ -269,7 +439,12 @@ export default function ReportingDatabasePage() {
                   )}
 
                   {!running && lastRun.error && (
-                    <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                    <div
+                      className={cn(
+                        'flex items-start gap-2 rounded-lg border p-3 text-xs',
+                        lastRun.status === 'stopped' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-rose-200 bg-rose-50 text-rose-700',
+                      )}
+                    >
                       <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
                       <span className="min-w-0 break-words">{lastRun.error}</span>
                     </div>
@@ -377,8 +552,9 @@ export default function ReportingDatabasePage() {
                 )}
 
                 <div className="text-xs text-muted-foreground">
-                  A refresh takes several 15-minute scheduler ticks to copy everything, so a time missed by a late tick still
-                  runs on the next one. Refreshing more often than a full copy takes simply starts the next one when it ends.
+                  A scheduled refresh takes several 15-minute scheduler ticks to copy everything (a refresh watched on this
+                  page goes faster), so a time missed by a late tick still runs on the next one. Refreshing more often than a
+                  full copy takes simply starts the next one when it ends.
                 </div>
 
                 {canEdit && (
@@ -393,6 +569,83 @@ export default function ReportingDatabasePage() {
             )}
           </Card>
         </div>
+
+        {/* ── Run history ── */}
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-cyan-100 dark:bg-cyan-900/40 p-2">
+                <ListTree className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <CardTitle>Run history</CardTitle>
+                <CardDescription className="text-xs">The last 50 refreshes. Select one for its collection-by-collection counts.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {historyError && (
+              <div className="break-words rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{historyError}</div>
+            )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Trigger</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead className="text-right">Documents</TableHead>
+                  <TableHead className="text-right">Collections</TableHead>
+                  <TableHead className="text-right">Removed</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {history === null && !historyError && !currentEntry ? (
+                  <TableLoading colSpan={9} rows={3} />
+                ) : historyRows.length === 0 ? (
+                  <TableEmpty colSpan={9} icon={<History />}>No refresh has finished yet.</TableEmpty>
+                ) : (
+                  historyRows.map((entry) => {
+                    const current = entry.runId === currentEntry?.runId;
+                    const badge = STATUS_BADGE[entry.status] ?? STATUS_BADGE.failed;
+                    return (
+                      <TableRow
+                        key={entry.runId}
+                        className="cursor-pointer"
+                        tabIndex={0}
+                        onClick={() => setSelected(entry)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelected(entry);
+                          }
+                        }}
+                      >
+                        <TableCell className="whitespace-nowrap">{formatWhen(entry.startedAt, timeZone)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{entry.trigger === 'manual' ? 'Refresh now' : 'Schedule'}</TableCell>
+                        <TableCell className="whitespace-nowrap">{entry.requestedBy || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant={current && stopping ? 'warning' : badge.variant}>{current && stopping ? 'Stopping' : badge.label}</Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{current ? 'Running' : formatDuration(entry.durationSeconds)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{count(entry.documents)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{count(entry.collections)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{count(entry.removed)}</TableCell>
+                        <TableCell>
+                          <span className="block max-w-xs truncate text-xs text-muted-foreground" title={entry.error ?? undefined}>
+                            {entry.error || '—'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
         {/* ── What this is ── */}
         <div className="flex items-start gap-2 rounded-lg border border-border/40 bg-muted/40 p-3">
@@ -415,6 +668,73 @@ export default function ReportingDatabasePage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmStop}
+        onOpenChange={setConfirmStop}
+        destructive
+        title="Stop the refresh?"
+        description="The page being copied is finished, then the run ends as stopped. What has been copied so far stays in the reporting database; the collection it was on is left part-refreshed until the next full refresh."
+        confirmLabel="Stop refresh"
+        cancelLabel="Keep copying"
+        loading={isStopping}
+        onConfirm={handleStop}
+      />
+
+      <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <DialogContent size="lg">
+          <DialogHeader>
+            <DialogTitle>Refresh of {selected ? formatWhen(selected.startedAt, timeZone) : ''}</DialogTitle>
+            <DialogDescription>
+              {selected
+                ? `${selected.trigger === 'manual' ? `Refresh now${selected.requestedBy ? ` by ${selected.requestedBy}` : ''}` : 'Scheduled'} · ${STATUS_BADGE[selected.status]?.label ?? selected.status} · ${count(selected.documents)} documents in ${count(selected.collections)} collections`
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {selected && (
+            <DialogBody className="space-y-3">
+              {selected.error && (
+                <div className="break-words rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{selected.error}</div>
+              )}
+              {selected.skipped.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium">Skipped collections</div>
+                  <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                    {selected.skipped.map((reason) => <li key={reason} className="break-words">{reason}</li>)}
+                  </ul>
+                </div>
+              )}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Collection</TableHead>
+                    <TableHead className="text-right">Documents</TableHead>
+                    <TableHead className="text-right">Removed</TableHead>
+                    <TableHead>State</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selected.perCollection.length === 0 ? (
+                    <TableEmpty colSpan={4}>No per-collection counts for this run (recorded from 15 Oct 2026).</TableEmpty>
+                  ) : (
+                    selected.perCollection.map((entry) => (
+                      <TableRow key={entry.name}>
+                        <TableCell className="break-all font-mono text-xs">{entry.name}</TableCell>
+                        <TableCell className="text-right tabular-nums">{count(entry.documents)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{count(entry.removed)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{entry.complete ? 'Complete' : 'Partly copied'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              {selected.collectionsOmitted > 0 && (
+                <div className="text-xs text-muted-foreground">…and {count(selected.collectionsOmitted)} more collections not listed.</div>
+              )}
+            </DialogBody>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

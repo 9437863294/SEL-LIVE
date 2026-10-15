@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addCollectionCount,
+  buildReportingCopyHistoryEntry,
+  decideReportingCopyStop,
+  endReportingCopyRun,
+  formatReportingCopyPercent,
+  reportingCopyHistoryOverflow,
+  reportingCopyPercent,
+  reportingCopyStopRequested,
   DEFAULT_REPORTING_COPY_CONFIG,
   describeReportingCopySchedule,
   isDirectChildOf,
@@ -146,4 +154,89 @@ test('a collection-group document belongs to a root only when it sits directly u
   assert.equal(isDirectChildOf('projects/p1/bills/b1', 'projects'), true);
   assert.equal(isDirectChildOf('users/u1/bills/b1', 'projects'), false);
   assert.equal(isDirectChildOf('projects/p1/stages/s1/bills/b1', 'projects'), false);
+});
+
+const roots = Array.from({ length: 151 }, (_, i) => `c${String(i).padStart(3, '0')}`);
+const at = (overrides) => ({ roots, index: 0, step: 'root', cursor: null, subcollections: [], subIndex: 0, ...overrides });
+
+test('progress is collections done of total, with a share of the current one', () => {
+  assert.equal(reportingCopyPercent(null), 0);
+  assert.equal(reportingCopyPercent(at({ roots: null })), 0);
+  assert.equal(reportingCopyPercent(at({})), 0);
+  // The owner's stuck run: 210 documents into collection 1 of 151 — a sliver, shown as "<1%", not 0%.
+  const first = reportingCopyPercent(at({ cursor: 'doc210' }));
+  assert.ok(first > 0 && first < 1);
+  assert.equal(formatReportingCopyPercent(first), '<1%');
+  assert.equal(formatReportingCopyPercent(0), '0%');
+  // 75 roots done, finding the 76th's subcollections: (75 + 0.5) / 151.
+  assert.equal(reportingCopyPercent(at({ index: 75, step: 'discover' })), (75.5 / 151) * 100);
+  // Two of four subcollections of root 10 done: 10 + 0.5 + 0.25.
+  assert.equal(reportingCopyPercent(at({ index: 10, step: 'sub', subcollections: ['a', 'b', 'c', 'd'], subIndex: 2 })), (10.75 / 151) * 100);
+  assert.equal(reportingCopyPercent(at({ index: 151 })), 100);
+  assert.equal(formatReportingCopyPercent(99.9), '99%');
+});
+
+test('Stop signals a slice holding a live lease and ends a run nobody is copying', () => {
+  const now = new Date('2026-10-15T10:00:00Z');
+  const progress = at({});
+  assert.equal(decideReportingCopyStop({ progress: null, lease: null }, now), 'nothing');
+  assert.equal(decideReportingCopyStop({ progress, lease: { holder: 'h', expiresAt: '2026-10-15T10:01:00Z' } }, now), 'signal');
+  // The owner's case: started yesterday, no scheduler — lease released or long expired.
+  assert.equal(decideReportingCopyStop({ progress, lease: null }, now), 'end-now');
+  assert.equal(decideReportingCopyStop({ progress, lease: { holder: 'h', expiresAt: '2026-10-14T06:30:00Z' } }, now), 'end-now');
+  assert.equal(reportingCopyStopRequested({ progress, cancelRequestedAt: '2026-10-15T09:59:00Z' }), true);
+  assert.equal(reportingCopyStopRequested({ progress, cancelRequestedAt: null }), false);
+  // A Stop left on a state with no run in progress stops nothing.
+  assert.equal(reportingCopyStopRequested({ progress: null, cancelRequestedAt: '2026-10-15T09:59:00Z' }), false);
+});
+
+const runStub = {
+  runId: Date.parse('2026-10-14T06:27:00Z'), trigger: 'manual', requestedBy: 'Ashish', status: 'running',
+  startedAt: '2026-10-14T06:27:00.000Z', finishedAt: null, durationSeconds: null,
+  documents: 210, collections: 0, removed: 0, error: null,
+};
+
+test('a run ends as stopped, failed or succeeded', () => {
+  const now = new Date('2026-10-15T06:27:30Z');
+  const stopped = endReportingCopyRun(runStub, { failures: [], target: 'accessAuditLogs' }, { now, stoppedBy: 'Ashish' });
+  assert.equal(stopped.status, 'stopped');
+  assert.equal(stopped.durationSeconds, 86_430);
+  assert.equal(stopped.finishedAt, now.toISOString());
+  assert.equal(stopped.error, 'Stopped by Ashish at accessAuditLogs.');
+  assert.equal(stopped.documents, 210);
+  // A stop with no name (the requester unknown) still stops.
+  assert.equal(endReportingCopyRun(runStub, null, { now, stoppedBy: null }).status, 'stopped');
+  assert.equal(endReportingCopyRun(runStub, { failures: [], target: null }, { now }).status, 'succeeded');
+  const failed = endReportingCopyRun(runStub, { failures: ['x: boom'], target: null }, { now });
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.error, /1 collection\(s\) could not be copied: x: boom/);
+  assert.equal(endReportingCopyRun(runStub, null, { now, error: 'too long' }).error, 'too long');
+});
+
+test('per-collection counts add up, and a history entry caps them', () => {
+  let counts = addCollectionCount(undefined, 'a', { documents: 1000 });
+  counts = addCollectionCount(counts, 'a', { documents: 20 });
+  counts = addCollectionCount(counts, 'a', { removed: 3, complete: true });
+  counts = addCollectionCount(counts, 'a.sub', { documents: 5 });
+  assert.deepEqual(counts, [
+    { name: 'a', documents: 1020, removed: 3, complete: true },
+    { name: 'a.sub', documents: 5, removed: 0, complete: false },
+  ]);
+  const many = Array.from({ length: 230 }, (_, i) => ({ name: `c${i}`, documents: i, removed: 0, complete: true }));
+  const entry = buildReportingCopyHistoryEntry({ ...runStub, status: 'succeeded' }, { failures: ['z: gone'], collectionCounts: many });
+  assert.equal(entry.perCollection.length, 200);
+  assert.equal(entry.collectionsOmitted, 30);
+  assert.deepEqual(entry.skipped, ['z: gone']);
+  assert.equal(entry.requestedBy, 'Ashish');
+  assert.equal(entry.status, 'succeeded');
+  const bare = buildReportingCopyHistoryEntry({ ...runStub, requestedBy: undefined }, null);
+  assert.deepEqual([bare.perCollection, bare.collectionsOmitted, bare.skipped, bare.requestedBy], [[], 0, [], null]);
+});
+
+test('history keeps the newest 50 runs', () => {
+  const ids = Array.from({ length: 53 }, (_, i) => 1_000 + i);
+  // Shuffled input: the oldest three go, whatever order they came in.
+  assert.deepEqual(reportingCopyHistoryOverflow([...ids].reverse().sort(() => 0), 50).sort((a, b) => a - b), [1000, 1001, 1002]);
+  assert.deepEqual(reportingCopyHistoryOverflow([1005, 1001, 1003], 50), []);
+  assert.deepEqual(reportingCopyHistoryOverflow([3, 1, 2], 2), [1]);
 });

@@ -130,6 +130,8 @@ export interface ReportingCopyConfig {
   /** "Refresh now" (ISO): the next tick starts a run if none has started since. */
   requestedAt: string | null;
   requestedBy: string | null;
+  /** The name of whoever pressed Refresh now, shown on the run it starts. */
+  requestedByName: string | null;
   updatedAt: string | null;
   updatedBy: string | null;
 }
@@ -144,16 +146,20 @@ export const DEFAULT_REPORTING_COPY_CONFIG: ReportingCopyConfig = {
   scheduleFrom: null,
   requestedAt: null,
   requestedBy: null,
+  requestedByName: null,
   updatedAt: null,
   updatedBy: null,
 };
 
-export type ReportingCopyRunStatus = 'running' | 'succeeded' | 'failed';
+/** `stopped`: ended early with Stop; what had been copied by then is kept. */
+export type ReportingCopyRunStatus = 'running' | 'succeeded' | 'failed' | 'stopped';
 
 /** The run in progress or the last one finished — counts grow as the run goes. */
 export interface ReportingCopyRun {
   runId: number;
   trigger: 'schedule' | 'manual';
+  /** For a manual run: the name of whoever pressed Refresh now (absent on runs from before 2026-10-15). */
+  requestedBy?: string | null;
   status: ReportingCopyRunStatus;
   startedAt: string;
   finishedAt: string | null;
@@ -188,6 +194,16 @@ export interface ReportingCopyProgress {
   /** Targets given up on, with the reason — the run then ends as failed. */
   failures: string[];
   ticks: number;
+  /** Documents written and removed per MongoDB collection so far, in the order they were copied. */
+  collectionCounts?: ReportingCopyCollectionCount[];
+}
+
+export interface ReportingCopyCollectionCount {
+  name: string;
+  documents: number;
+  removed: number;
+  /** Written in full (and its stale documents removed) in this run. */
+  complete: boolean;
 }
 
 /** `reportingCopy/state`: written only by the job. */
@@ -202,6 +218,9 @@ export interface ReportingCopyState {
   handledRequestAt: string | null;
   nextDueAt: string | null;
   updatedAt: string | null;
+  /** Stop pressed (ISO), and by whom: the slice copying finishes its page and ends the run as stopped. */
+  cancelRequestedAt: string | null;
+  cancelRequestedBy: string | null;
 }
 
 export const EMPTY_REPORTING_COPY_STATE: ReportingCopyState = {
@@ -212,6 +231,8 @@ export const EMPTY_REPORTING_COPY_STATE: ReportingCopyState = {
   handledRequestAt: null,
   nextDueAt: null,
   updatedAt: null,
+  cancelRequestedAt: null,
+  cancelRequestedBy: null,
 };
 
 const isoOrNull = (value: unknown): string | null => {
@@ -253,6 +274,7 @@ export function normalizeReportingCopyConfig(raw: Record<string, unknown> | unde
     scheduleFrom: isoOrNull(data.scheduleFrom),
     requestedAt: isoOrNull(data.requestedAt),
     requestedBy: typeof data.requestedBy === 'string' ? data.requestedBy : null,
+    requestedByName: typeof data.requestedByName === 'string' ? data.requestedByName : null,
     updatedAt: isoOrNull(data.updatedAt),
     updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : null,
   };
@@ -409,4 +431,150 @@ export function describeReportingCopySchedule(config: ReportingCopyConfig): stri
     return `Weekly on ${days || 'no day'} at ${config.timeOfDay}${zone}`;
   }
   return `Daily at ${config.timeOfDay}${zone}`;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Progress, stopping and history
+ * ---------------------------------------------------------------------------------------------- */
+
+/** How many finished runs `reportingCopy/state/history` keeps; older ones are deleted on write. */
+export const REPORTING_COPY_HISTORY_KEEP = 50;
+/** Per-collection rows kept on a history entry (a full copy has ~150 roots plus subcollections). */
+export const REPORTING_COPY_HISTORY_COLLECTIONS = 200;
+export const REPORTING_COPY_HISTORY_SUBCOLLECTION = 'history';
+
+/**
+ * How far a run has got, 0–100, by collections: the roots done, plus a share of the current one —
+ * a quarter once some of its documents are written, half once they all are (finding its
+ * subcollections), the rest spread over its subcollections. Not rounded, so the first collection of
+ * 151 reads as a sliver rather than 0%.
+ */
+export function reportingCopyPercent(progress: Pick<ReportingCopyProgress, 'roots' | 'index' | 'step' | 'cursor' | 'subcollections' | 'subIndex'> | null): number {
+  if (!progress?.roots?.length) return 0;
+  const total = progress.roots.length;
+  if (progress.index >= total) return 100;
+  let within = 0;
+  if (progress.step === 'root') within = progress.cursor ? 0.25 : 0;
+  else if (progress.step === 'discover') within = 0.5;
+  else within = 0.5 + 0.5 * (progress.subcollections.length ? progress.subIndex / progress.subcollections.length : 0);
+  return Math.min(100, ((progress.index + within) / total) * 100);
+}
+
+/** The percentage as the screen shows it: "<1%" for a run that has started but not reached 1%. */
+export function formatReportingCopyPercent(percent: number): string {
+  if (percent > 0 && percent < 1) return '<1%';
+  return `${Math.floor(percent)}%`;
+}
+
+/** Add one page's counts to the per-collection tally (a new entry the first time a name appears). */
+export function addCollectionCount(
+  counts: readonly ReportingCopyCollectionCount[] | undefined,
+  name: string,
+  delta: { documents?: number; removed?: number; complete?: boolean },
+): ReportingCopyCollectionCount[] {
+  const list = [...(counts ?? [])];
+  const at = list.findIndex((entry) => entry.name === name);
+  const current = at >= 0 ? list[at] : { name, documents: 0, removed: 0, complete: false };
+  const next = {
+    ...current,
+    documents: current.documents + (delta.documents ?? 0),
+    removed: current.removed + (delta.removed ?? 0),
+    complete: current.complete || delta.complete === true,
+  };
+  if (at >= 0) list[at] = next;
+  else list.push(next);
+  return list;
+}
+
+/**
+ * What Stop does. `nothing`: no run in progress. `signal`: a slice holds a live lease — mark the
+ * request and let it finish its page and end the run. `end-now`: no slice is copying (the lease is
+ * absent or expired, e.g. a run whose scheduler never came) — end the run on the spot.
+ */
+export function decideReportingCopyStop(
+  state: Pick<ReportingCopyState, 'progress' | 'lease'>,
+  now: Date,
+): 'nothing' | 'signal' | 'end-now' {
+  if (!state.progress) return 'nothing';
+  if (state.lease && Date.parse(state.lease.expiresAt) > now.getTime()) return 'signal';
+  return 'end-now';
+}
+
+/** Whether a slice must stop: a run is in progress and Stop has been pressed. */
+export const reportingCopyStopRequested = (state: Pick<ReportingCopyState, 'progress' | 'cancelRequestedAt'>) =>
+  Boolean(state.progress && state.cancelRequestedAt);
+
+/**
+ * A run's final record. `stoppedBy` set: Stop ended it (status `stopped`, whatever failed before);
+ * otherwise `failed` when any collection was given up on, else `succeeded`. An `error` passed in
+ * (the 24-hour limit, no connection string) fails the run with that message.
+ */
+export function endReportingCopyRun(
+  run: ReportingCopyRun,
+  progress: Pick<ReportingCopyProgress, 'failures' | 'target'> | null,
+  options: { now: Date; stoppedBy?: string | null; error?: string },
+): ReportingCopyRun {
+  const failures = progress?.failures ?? [];
+  const durationSeconds = Math.max(0, Math.round((options.now.getTime() - Date.parse(run.startedAt)) / 1000));
+  const failureText = failures.length
+    ? `${failures.length} collection(s) could not be copied: ${failures.slice(0, 5).join('; ')}${failures.length > 5 ? ` …and ${failures.length - 5} more` : ''}`
+    : null;
+  if (options.stoppedBy !== undefined) {
+    const where = progress?.target ? ` at ${progress.target}` : '';
+    return {
+      ...run, status: 'stopped', finishedAt: options.now.toISOString(), durationSeconds,
+      error: `Stopped${options.stoppedBy ? ` by ${options.stoppedBy}` : ''}${where}.${failureText ? ` ${failureText}` : ''}`,
+    };
+  }
+  if (options.error) return { ...run, status: 'failed', finishedAt: options.now.toISOString(), durationSeconds, error: options.error };
+  return { ...run, status: failureText ? 'failed' : 'succeeded', finishedAt: options.now.toISOString(), durationSeconds, error: failureText };
+}
+
+/** `reportingCopy/state/history/{runId}`: one finished run. */
+export interface ReportingCopyHistoryEntry {
+  runId: number;
+  trigger: 'schedule' | 'manual';
+  requestedBy: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  durationSeconds: number | null;
+  status: ReportingCopyRunStatus;
+  documents: number;
+  collections: number;
+  removed: number;
+  error: string | null;
+  /** Collections given up on, with the reason. */
+  skipped: string[];
+  /** At most REPORTING_COPY_HISTORY_COLLECTIONS entries; `collectionsOmitted` counts the rest. */
+  perCollection: ReportingCopyCollectionCount[];
+  collectionsOmitted: number;
+}
+
+export function buildReportingCopyHistoryEntry(
+  run: ReportingCopyRun,
+  progress: Pick<ReportingCopyProgress, 'failures' | 'collectionCounts'> | null,
+  cap = REPORTING_COPY_HISTORY_COLLECTIONS,
+): ReportingCopyHistoryEntry {
+  const counts = progress?.collectionCounts ?? [];
+  return {
+    runId: run.runId,
+    trigger: run.trigger,
+    requestedBy: run.requestedBy ?? null,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    durationSeconds: run.durationSeconds,
+    status: run.status,
+    documents: run.documents,
+    collections: run.collections,
+    removed: run.removed,
+    error: run.error,
+    skipped: [...(progress?.failures ?? [])],
+    perCollection: counts.slice(0, cap),
+    collectionsOmitted: Math.max(0, counts.length - cap),
+  };
+}
+
+/** The run ids to delete so only the newest `keep` remain (ids are start times, so newest = largest). */
+export function reportingCopyHistoryOverflow(runIds: readonly number[], keep = REPORTING_COPY_HISTORY_KEEP): number[] {
+  return [...runIds].sort((a, b) => b - a).slice(Math.max(0, keep));
 }

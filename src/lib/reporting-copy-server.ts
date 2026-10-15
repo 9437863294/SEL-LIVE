@@ -13,21 +13,30 @@ import {
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
 import { getFirebaseAdminFirestore } from './firebase-admin';
 import {
+  addCollectionCount,
+  buildReportingCopyHistoryEntry,
+  decideReportingCopyStop,
   EMPTY_REPORTING_COPY_STATE,
+  endReportingCopyRun,
   EXCLUDED_COLLECTIONS,
   isDirectChildOf,
   makeValueConverter,
   normalizeReportingCopyConfig,
   READ_PAGE,
   REPORTING_COPY_COLLECTION,
+  REPORTING_COPY_HISTORY_KEEP,
+  REPORTING_COPY_HISTORY_SUBCOLLECTION,
   reportingCopyDue,
+  reportingCopyHistoryOverflow,
   reportingCopyNextDueAt,
+  reportingCopyStopRequested,
   subcollectionTarget,
   SUBCOLLECTION_SAMPLE,
   TARGET_DATABASE,
   WRITE_BATCH,
   type ReportingCopyConfig,
   type ReportingCopyDue,
+  type ReportingCopyHistoryEntry,
   type ReportingCopyProgress,
   type ReportingCopyRun,
   type ReportingCopySettingsInput,
@@ -91,7 +100,34 @@ async function targetDatabase(): Promise<Db> {
 const refs = (db: Firestore) => ({
   config: db.collection(REPORTING_COPY_COLLECTION).doc('config'),
   state: db.collection(REPORTING_COPY_COLLECTION).doc('state'),
+  /** Finished runs, newest REPORTING_COPY_HISTORY_KEEP kept. Server-only with the rest of `reportingCopy`. */
+  history: db.collection(REPORTING_COPY_COLLECTION).doc('state').collection(REPORTING_COPY_HISTORY_SUBCOLLECTION),
 });
+
+/**
+ * Save a finished run to the history and drop the oldest beyond the limit. Best effort: a run that
+ * copied everything is not failed because its history line could not be written.
+ */
+async function recordHistory(db: Firestore, run: ReportingCopyRun, progress: ReportingCopyProgress | null): Promise<void> {
+  try {
+    const history = refs(db).history;
+    const entry = buildReportingCopyHistoryEntry(run, progress);
+    await history.doc(String(entry.runId)).set(entry);
+    const ids = (await history.select('runId').get()).docs.map((doc) => Number(doc.get('runId'))).filter(Number.isFinite);
+    const overflow = reportingCopyHistoryOverflow(ids, REPORTING_COPY_HISTORY_KEEP);
+    await Promise.all(overflow.map((runId) => history.doc(String(runId)).delete()));
+  } catch (error) {
+    console.error('[reporting-copy] could not record the run in the history', error);
+  }
+}
+
+/** The newest finished runs, newest first. */
+export async function listReportingCopyHistory(limit = REPORTING_COPY_HISTORY_KEEP): Promise<ReportingCopyHistoryEntry[]> {
+  const db = getFirebaseAdminFirestore();
+  const capped = Math.min(REPORTING_COPY_HISTORY_KEEP, Math.max(1, Math.floor(limit) || REPORTING_COPY_HISTORY_KEEP));
+  const snap = await refs(db).history.orderBy('runId', 'desc').limit(capped).get();
+  return snap.docs.map((doc) => doc.data() as ReportingCopyHistoryEntry);
+}
 
 const normalizeState = (raw: Record<string, unknown> | undefined): ReportingCopyState => ({
   ...EMPTY_REPORTING_COPY_STATE,
@@ -107,8 +143,11 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 export interface ReportingCopyOverview {
   configured: boolean;
   config: ReportingCopyConfig;
-  /** `running`: a run is in progress; `working`: a slice of it is copying at this moment. */
-  state: Omit<ReportingCopyState, 'lease'> & { running: boolean; working: boolean };
+  /**
+   * `running`: a run is in progress; `working`: a slice of it is copying at this moment;
+   * `stopping`: Stop has been pressed and the slice copying has not ended the run yet.
+   */
+  state: Omit<ReportingCopyState, 'lease'> & { running: boolean; working: boolean; stopping: boolean };
   due: ReportingCopyDue;
   nextDueAt: string | null;
   checkedAt: string;
@@ -124,10 +163,16 @@ export async function readReportingCopy(): Promise<ReportingCopyOverview> {
   const running = Boolean(state.progress);
   // The lease holder is an internal id; whether a slice is working right now is enough.
   const working = Boolean(lease && Date.parse(lease.expiresAt) > now.getTime());
+  // Runs started before names were recorded: look up whoever pressed Refresh now.
+  if (state.lastRun?.trigger === 'manual' && !state.lastRun.requestedBy && config.requestedBy) {
+    const user = await db.collection('users').doc(config.requestedBy).get().catch(() => null);
+    const name = user?.exists ? String(user.get('name') || user.get('email') || '') : '';
+    state.lastRun = { ...state.lastRun, requestedBy: config.requestedByName || name || null };
+  }
   return {
     configured: reportingCopyConfigured(),
     config,
-    state: { ...state, running, working },
+    state: { ...state, running, working, stopping: reportingCopyStopRequested(state) },
     due: reportingCopyDue(config, state, now),
     nextDueAt: running ? null : reportingCopyNextDueAt(config, state, now),
     checkedAt: now.toISOString(),
@@ -149,15 +194,55 @@ export async function saveReportingCopySettings(value: ReportingCopySettingsInpu
  * already refreshing everything, and a request queued behind it would start a second full copy
  * the moment it finished.
  */
-export async function requestReportingCopyRun(userId: string): Promise<{ queued: boolean; reason: string }> {
+export async function requestReportingCopyRun(userId: string, userName: string): Promise<{ queued: boolean; reason: string }> {
   const db = getFirebaseAdminFirestore();
   const { config: configRef, state: stateRef } = refs(db);
   return db.runTransaction(async (tx) => {
     const stateSnap = await tx.get(stateRef);
     if (normalizeState(stateSnap.data()).progress) return { queued: false, reason: 'A refresh is already running.' };
-    tx.set(configRef, { requestedAt: new Date().toISOString(), requestedBy: userId }, { merge: true });
+    tx.set(configRef, { requestedAt: new Date().toISOString(), requestedBy: userId, requestedByName: userName }, { merge: true });
     return { queued: true, reason: 'Refresh requested.' };
   });
+}
+
+export interface ReportingCopyStopResult {
+  /** nothing: no run to stop · signalled: the slice copying ends it after its page · stopped: ended now. */
+  outcome: 'nothing' | 'signalled' | 'stopped';
+  reason: string;
+}
+
+/**
+ * Stop. While a slice holds the run it is only asked to stop (`cancelRequestedAt`): it finishes the
+ * page it is on, saves, and ends the run as `stopped` — so nothing is half-written. With no slice
+ * copying (no lease, or one that expired) the run is ended here and now. Either way what was copied
+ * stays, and the unfinished collection gets no stale-delete.
+ */
+export async function stopReportingCopyRun(userName: string): Promise<ReportingCopyStopResult> {
+  const db = getFirebaseAdminFirestore();
+  const { config: configRef, state: stateRef } = refs(db);
+  const outcome = await db.runTransaction(async (tx) => {
+    const [configSnap, stateSnap] = await tx.getAll(configRef, stateRef);
+    const state = normalizeState(stateSnap.data());
+    const now = new Date();
+    const stamp = now.toISOString();
+    const decision = decideReportingCopyStop(state, now);
+    if (decision === 'nothing') return { outcome: 'nothing' as const, reason: 'No refresh is running.', ended: null };
+    if (decision === 'signal') {
+      tx.update(stateRef, { cancelRequestedAt: stamp, cancelRequestedBy: userName, updatedAt: stamp });
+      return { outcome: 'signalled' as const, reason: 'Stopping after the page being copied.', ended: null };
+    }
+    const config = normalizeReportingCopyConfig(configSnap.data());
+    const progress = state.progress;
+    const lastRun = state.lastRun ? endReportingCopyRun(state.lastRun, progress, { now, stoppedBy: userName }) : state.lastRun;
+    const next: ReportingCopyState = {
+      ...state, lastRun, progress: null, lease: null, cancelRequestedAt: null, cancelRequestedBy: null,
+      nextDueAt: reportingCopyNextDueAt(config, state, now), updatedAt: stamp,
+    };
+    tx.set(stateRef, next);
+    return { outcome: 'stopped' as const, reason: 'The refresh has been stopped.', ended: lastRun ? { run: lastRun, progress } : null };
+  });
+  if (outcome.ended) await recordHistory(db, outcome.ended.run, outcome.ended.progress);
+  return { outcome: outcome.outcome, reason: outcome.reason };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -166,8 +251,11 @@ export async function requestReportingCopyRun(userId: string): Promise<{ queued:
 
 export interface ReportingCopyTickResult {
   ok: boolean;
-  /** idle: nothing due · busy: another slice holds the run · started/continued: worked, more to do · finished · not-configured. */
-  action: 'idle' | 'busy' | 'started' | 'continued' | 'finished' | 'not-configured';
+  /**
+   * idle: nothing due (or, for `continue`, nothing in progress) · busy: another slice holds the run ·
+   * started/continued: worked, more to do · finished · stopped: Stop ended the run · not-configured.
+   */
+  action: 'idle' | 'busy' | 'started' | 'continued' | 'finished' | 'stopped' | 'not-configured';
   reason: string;
   lastRun: ReportingCopyRun | null;
   progress: ReportingCopyProgress | null;
@@ -258,11 +346,15 @@ async function copyPage(
 /**
  * One slice of work: start a due run or continue the one in progress, for at most `budgetMs`.
  *
- * Called by the scheduler tick (a ~4-minute budget) and by "Refresh now" (a short one, so the screen
- * shows the run moving). Fast when there is nothing to do: two reads, and a write only when the
- * next due time changed.
+ * Called by the scheduler tick (a ~4-minute budget), by "Refresh now" (a short one, so the screen
+ * shows the run moving) and by the settings screen while it is open (`mode: 'continue'`, ~40 s at a
+ * time, back to back). `continue` only carries on a run in progress; it never starts one. Fast when
+ * there is nothing to do: two reads, and a write only when the next due time changed.
+ *
+ * A lease that has expired is claimable: the slice that held it died (timed out, tab closed with
+ * the instance stopped) and the next caller — tick or screen — takes over from the saved cursor.
  */
-export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): Promise<ReportingCopyTickResult> {
+export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetMs: number; mode?: 'any' | 'continue' }): Promise<ReportingCopyTickResult> {
   const db = getFirebaseAdminFirestore();
   const { config: configRef, state: stateRef } = refs(db);
   const holder = randomUUID();
@@ -275,21 +367,30 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
     const state = normalizeState(stateSnap.data());
     const now = new Date();
     const stamp = now.toISOString();
+    const noEnded = null as { run: ReportingCopyRun; progress: ReportingCopyProgress | null } | null;
     if (state.lease && Date.parse(state.lease.expiresAt) > now.getTime()) {
-      return { action: 'busy' as const, reason: 'Another tick is working on the run.', state };
+      return { action: 'busy' as const, reason: 'Another part of the run is copying right now.', state, ended: noEnded };
     }
     const lease = { holder, expiresAt: new Date(now.getTime() + budgetMs + LEASE_GRACE_MS).toISOString() };
 
     if (state.progress && state.lastRun) {
-      if (now.getTime() - Date.parse(state.lastRun.startedAt) > MAX_RUN_MS) {
-        const lastRun: ReportingCopyRun = {
-          ...state.lastRun, status: 'failed', finishedAt: stamp,
-          durationSeconds: Math.round((now.getTime() - Date.parse(state.lastRun.startedAt)) / 1000),
-          error: `The run did not finish within 24 hours (stopped at ${state.progress.target ?? 'the start'}).`,
+      // Stop was pressed and no slice was left to act on it: end the run here.
+      if (reportingCopyStopRequested(state)) {
+        const lastRun = endReportingCopyRun(state.lastRun, state.progress, { now, stoppedBy: state.cancelRequestedBy });
+        const next = {
+          ...state, lastRun, progress: null, lease: null, cancelRequestedAt: null, cancelRequestedBy: null,
+          nextDueAt: reportingCopyNextDueAt(config, state, now), updatedAt: stamp,
         };
+        tx.set(stateRef, next);
+        return { action: 'stopped' as const, reason: 'The refresh was stopped.', state: next, ended: { run: lastRun, progress: state.progress } };
+      }
+      if (now.getTime() - Date.parse(state.lastRun.startedAt) > MAX_RUN_MS) {
+        const lastRun = endReportingCopyRun(state.lastRun, state.progress, {
+          now, error: `The run did not finish within 24 hours (stopped at ${state.progress.target ?? 'the start'}).`,
+        });
         const next = { ...state, lastRun, progress: null, lease: null, nextDueAt: reportingCopyNextDueAt(config, state, now), updatedAt: stamp };
         tx.set(stateRef, next);
-        return { action: 'idle' as const, reason: 'Ended a run that had been going for over 24 hours.', state: next };
+        return { action: 'idle' as const, reason: 'Ended a run that had been going for over 24 hours.', state: next, ended: { run: lastRun, progress: state.progress } };
       }
       const progress = { ...state.progress, ticks: state.progress.ticks + 1 };
       // A lease that expired rather than being released: the last slice died mid-page (timed out or
@@ -301,14 +402,16 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
       }
       const next = { ...state, progress, lease, updatedAt: stamp };
       tx.set(stateRef, next);
-      return { action: 'continued' as const, reason: 'Continuing the run in progress.', state: next };
+      return { action: 'continued' as const, reason: 'Continuing the run in progress.', state: next, ended: noEnded };
     }
+
+    if (mode === 'continue') return { action: 'idle' as const, reason: 'No refresh is running.', state, ended: noEnded };
 
     const due = reportingCopyDue(config, state, now);
     if (!due.due) {
       const nextDueAt = reportingCopyNextDueAt(config, state, now);
       if (nextDueAt !== state.nextDueAt) tx.set(stateRef, { nextDueAt }, { merge: true });
-      return { action: 'idle' as const, reason: due.reason, state: { ...state, nextDueAt } };
+      return { action: 'idle' as const, reason: due.reason, state: { ...state, nextDueAt }, ended: noEnded };
     }
 
     // Starting a run answers the request and every slot up to now, so neither starts a second one.
@@ -318,24 +421,29 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
       handledRequestAt: due.trigger === 'manual' ? config.requestedAt : state.handledRequestAt,
     };
     const run: ReportingCopyRun = {
-      runId: now.getTime(), trigger: due.trigger ?? 'schedule', status: 'running', startedAt: stamp,
+      runId: now.getTime(), trigger: due.trigger ?? 'schedule',
+      requestedBy: due.trigger === 'manual' ? config.requestedByName : null,
+      status: 'running', startedAt: stamp,
       finishedAt: null, durationSeconds: null, documents: 0, collections: 0, removed: 0, error: null,
     };
+    // A Stop left over from an earlier run must not end this one.
+    const cleared = { cancelRequestedAt: null, cancelRequestedBy: null };
     if (!reportingCopyConfigured()) {
       const lastRun: ReportingCopyRun = { ...run, status: 'failed', finishedAt: stamp, durationSeconds: 0, error: NOT_CONFIGURED };
-      const next = { ...state, ...consumed, lastRun, nextDueAt: reportingCopyNextDueAt(config, { ...state, ...consumed }, now), updatedAt: stamp };
+      const next = { ...state, ...consumed, ...cleared, lastRun, nextDueAt: reportingCopyNextDueAt(config, { ...state, ...consumed }, now), updatedAt: stamp };
       tx.set(stateRef, next);
-      return { action: 'not-configured' as const, reason: NOT_CONFIGURED, state: next };
+      return { action: 'not-configured' as const, reason: NOT_CONFIGURED, state: next, ended: { run: lastRun, progress: null } };
     }
-    const next = { ...state, ...consumed, lastRun: run, progress: newProgress(run.runId), lease, nextDueAt: null, updatedAt: stamp };
+    const next = { ...state, ...consumed, ...cleared, lastRun: run, progress: newProgress(run.runId), lease, nextDueAt: null, updatedAt: stamp };
     tx.set(stateRef, next);
-    return { action: 'started' as const, reason: due.reason, state: next };
+    return { action: 'started' as const, reason: due.reason, state: next, ended: noEnded };
   });
 
   const result = (ok: boolean, action: ReportingCopyTickResult['action'], reason: string, state: ReportingCopyState, error?: string): ReportingCopyTickResult => ({
     ok, action, reason, lastRun: state.lastRun, progress: state.progress, nextDueAt: state.nextDueAt, ...(error ? { error } : {}),
   });
   if (claim.action !== 'started' && claim.action !== 'continued') {
+    if (claim.ended) await recordHistory(db, claim.ended.run, claim.ended.progress);
     return result(claim.action !== 'not-configured', claim.action, claim.reason, claim.state);
   }
 
@@ -343,29 +451,41 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
   const progress = state.progress!;
   const run = state.lastRun!;
 
-  /** Save progress, only while this slice still holds the run. `{ lease: null }` also gives the run back. */
-  const save = async (extra: Partial<ReportingCopyState> = {}) => {
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(stateRef);
-      if (normalizeState(snap.data()).lease?.holder !== holder) throw new LeaseLostError();
+  /**
+   * Save progress, only while this slice still holds the run. `{ lease: null }` also gives the run
+   * back. Answers whether Stop has been pressed meanwhile, so the loop ends after this page.
+   */
+  const save = async (extra: Partial<ReportingCopyState> = {}): Promise<{ stop: boolean; stoppedBy: string | null }> =>
+    db.runTransaction(async (tx) => {
+      const current = normalizeState((await tx.get(stateRef)).data());
+      if (current.lease?.holder !== holder) throw new LeaseLostError();
       tx.update(stateRef, { progress: state.progress, lastRun: state.lastRun, updatedAt: new Date().toISOString(), ...extra });
+      return { stop: Boolean(current.cancelRequestedAt), stoppedBy: current.cancelRequestedBy };
     });
-  };
 
-  const finish = async () => {
-    const finishedAt = new Date();
-    const failures = progress.failures;
-    state.lastRun = {
-      ...run, status: failures.length ? 'failed' : 'succeeded', finishedAt: finishedAt.toISOString(),
-      durationSeconds: Math.round((finishedAt.getTime() - Date.parse(run.startedAt)) / 1000),
-      error: failures.length
-        ? `${failures.length} collection(s) could not be copied: ${failures.slice(0, 5).join('; ')}${failures.length > 5 ? ` …and ${failures.length - 5} more` : ''}`
-        : null,
-    };
+  /** End the run: finished (`stoppedBy` undefined) or stopped. Releases the lease and records the history. */
+  const end = async (stoppedBy?: string | null) => {
+    const endedAt = new Date();
+    const finalProgress: ReportingCopyProgress = { ...progress };
+    state.lastRun = endReportingCopyRun(run, progress, stoppedBy === undefined ? { now: endedAt } : { now: endedAt, stoppedBy });
     state.progress = null;
     const config = normalizeReportingCopyConfig((await configRef.get()).data());
-    state.nextDueAt = reportingCopyNextDueAt(config, state, finishedAt);
-    await save({ lease: null, nextDueAt: state.nextDueAt });
+    state.nextDueAt = reportingCopyNextDueAt(config, state, endedAt);
+    await save({ lease: null, nextDueAt: state.nextDueAt, cancelRequestedAt: null, cancelRequestedBy: null });
+    await recordHistory(db, state.lastRun, finalProgress);
+  };
+
+  /** After each saved page: end the run if Stop was pressed. True when it was. */
+  const stopIfAsked = async (saved: { stop: boolean; stoppedBy: string | null }) => {
+    if (!saved.stop) return false;
+    await end(saved.stoppedBy);
+    return true;
+  };
+  const stopped = () => result(true, 'stopped', 'The refresh was stopped; what was copied is kept.', state);
+
+  /** Copied into the per-collection tally. */
+  const tally = (name: string, delta: { documents?: number; removed?: number; complete?: boolean }) => {
+    progress.collectionCounts = addCollectionCount(progress.collectionCounts, name, delta);
   };
 
   let target: Db;
@@ -382,14 +502,18 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
 
   try {
     const excluded = new Set(EXCLUDED_COLLECTIONS);
+    // Discovery waits for a fresh slice when little budget is left — but a slice shorter than the
+    // reserve (the screen's 40 s ones) must still be able to do it, or the run would never move on.
+    let worked = false;
     while (Date.now() < deadline) {
       if (!progress.roots) {
         progress.roots = (await db.listCollections()).map((ref) => ref.id).filter((id) => !excluded.has(id)).sort();
-        await save();
+        worked = true;
+        if (await stopIfAsked(await save())) return stopped();
         continue;
       }
       if (progress.index >= progress.roots.length) {
-        await finish();
+        await end();
         return result(true, 'finished', 'The copy is up to date.', state);
       }
       const root = progress.roots[progress.index];
@@ -406,22 +530,27 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
         run.documents += page.written;
         progress.cursor = page.cursor;
         progress.attempts = 0;
+        tally(root, { documents: page.written });
         if (page.done) {
-          run.removed += (await target.collection(root).deleteMany({ _syncRun: { $ne: run.runId } })).deletedCount;
+          const removed = (await target.collection(root).deleteMany({ _syncRun: { $ne: run.runId } })).deletedCount;
+          run.removed += removed;
           run.collections += 1;
+          tally(root, { removed, complete: true });
           Object.assign(progress, { step: 'discover', cursor: null, lastError: null });
         }
-        await save();
+        worked = true;
+        if (await stopIfAsked(await save())) return stopped();
         continue;
       }
 
       if (progress.step === 'discover') {
-        if (deadline - Date.now() < DISCOVERY_RESERVE_MS) break;
+        if (worked && deadline - Date.now() < DISCOVERY_RESERVE_MS) break;
         progress.target = `${root} (looking for subcollections)`;
         const subs = await subcollectionsOf(db, root);
         if (subs.length) Object.assign(progress, { step: 'sub', subcollections: subs, subIndex: 0, cursor: null, attempts: 0, lastError: null });
         else nextRoot(progress);
-        await save();
+        worked = true;
+        if (await stopIfAsked(await save())) return stopped();
         continue;
       }
 
@@ -440,15 +569,21 @@ export async function advanceReportingCopy({ budgetMs }: { budgetMs: number }): 
       run.documents += page.written;
       progress.cursor = page.cursor;
       progress.attempts = 0;
+      tally(name, { documents: page.written });
       if (page.done) {
-        run.removed += (await target.collection(name).deleteMany({ _syncRun: { $ne: run.runId } })).deletedCount;
+        const removed = (await target.collection(name).deleteMany({ _syncRun: { $ne: run.runId } })).deletedCount;
+        run.removed += removed;
         run.collections += 1;
+        tally(name, { removed, complete: true });
         nextSub(progress);
       }
-      await save();
+      worked = true;
+      if (await stopIfAsked(await save())) return stopped();
     }
+    // Check for Stop while still holding the lease (ending the run needs it), then give the run back.
+    if (await stopIfAsked(await save())) return stopped();
     await save({ lease: null });
-    return result(true, claim.action, 'Time budget used; the next tick continues.', state);
+    return result(true, claim.action, 'Time budget used; the next slice continues.', state);
   } catch (error) {
     if (error instanceof LeaseLostError) return result(true, 'busy', error.message, state);
     const message = messageOf(error);

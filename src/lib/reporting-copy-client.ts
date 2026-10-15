@@ -7,7 +7,9 @@
  */
 
 import { auth } from './firebase';
-import type { ReportingCopyConfig, ReportingCopyDue, ReportingCopyProgress, ReportingCopyRun, ReportingCopySettingsInput } from './reporting-copy';
+import type {
+  ReportingCopyConfig, ReportingCopyDue, ReportingCopyHistoryEntry, ReportingCopyProgress, ReportingCopyRun, ReportingCopySettingsInput,
+} from './reporting-copy';
 
 export interface ReportingCopyOverview {
   /** Whether NEWDATABASE_MONGODB_URI is set on the server. */
@@ -20,8 +22,11 @@ export interface ReportingCopyOverview {
     handledRequestAt: string | null;
     nextDueAt: string | null;
     updatedAt: string | null;
+    cancelRequestedAt: string | null;
+    cancelRequestedBy: string | null;
     running: boolean;
     working: boolean;
+    stopping: boolean;
   };
   due: ReportingCopyDue;
   nextDueAt: string | null;
@@ -46,8 +51,31 @@ export const fetchReportingCopy = () => authorizedFetch<ReportingCopyOverview>('
 export const saveReportingCopySettings = (settings: ReportingCopySettingsInput) =>
   authorizedFetch<ReportingCopyOverview>('/api/reporting-copy/settings', { method: 'PUT', body: JSON.stringify(settings) });
 
+export interface ReportingCopySliceResult {
+  ok: boolean;
+  action: 'idle' | 'busy' | 'started' | 'continued' | 'finished' | 'stopped' | 'not-configured';
+  reason: string;
+  error?: string;
+}
+
 export const refreshReportingCopyNow = () =>
-  authorizedFetch<{ queued: boolean; reason: string; slice: { ok: boolean; error?: string } | null; overview: ReportingCopyOverview }>(
+  authorizedFetch<{ queued: boolean; reason: string; busy: boolean; slice: ReportingCopySliceResult | null; overview: ReportingCopyOverview }>(
     '/api/reporting-copy/run',
+    { method: 'POST', body: JSON.stringify({ action: 'start' }) },
+  );
+
+/** One more slice of the run in progress; `busy` when another slice (the scheduler, another tab) holds it. */
+export const continueReportingCopy = () =>
+  authorizedFetch<{ busy: boolean; slice: ReportingCopySliceResult; overview: ReportingCopyOverview }>(
+    '/api/reporting-copy/run',
+    { method: 'POST', body: JSON.stringify({ action: 'continue' }) },
+  );
+
+export const stopReportingCopy = () =>
+  authorizedFetch<{ outcome: 'nothing' | 'signalled' | 'stopped'; reason: string; overview: ReportingCopyOverview }>(
+    '/api/reporting-copy/stop',
     { method: 'POST' },
   );
+
+export const fetchReportingCopyHistory = (limit = 50) =>
+  authorizedFetch<{ runs: ReportingCopyHistoryEntry[] }>(`/api/reporting-copy/history?limit=${limit}`);
