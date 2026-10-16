@@ -72,6 +72,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { FilterBar } from "@/components/shared/filter-bar";
+import { ListSortControl } from "@/components/shared/list-sort-control";
+import { useRecurringSortControl } from "./use-sort-control";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { TableCard } from "@/components/shared/table-card";
 import {
@@ -278,9 +280,12 @@ function PaymentRegisterView() {
   );
   const activeFilterCount = (Object.keys(initialFilters) as Array<keyof Filters>)
     .filter((key) => filters[key] !== initialFilters[key]).length;
+  // Opening order from Settings › Field Control › Sort Order; the user can re-sort for themselves.
+  const sortControl = useRecurringSortControl("payments");
+  const sortPaymentRows = sortControl.sortRows;
   const rows = useMemo(
     () =>
-      normalized
+      sortPaymentRows(normalized
         .filter((p) => {
           // Split, so a single-status pick from the Select and a multi-status drill-down from the
           // dashboard ("Approved,Payment Processing") go through the same comparison.
@@ -319,8 +324,8 @@ function PaymentRegisterView() {
             .toLowerCase()
             .includes(filters.search.toLowerCase());
         })
-        .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [normalized, filters, activeProjects, activeDepartments],
+      ),
+    [normalized, filters, activeProjects, activeDepartments, sortPaymentRows],
   );
   const totals = useMemo(
     () => ({
@@ -515,6 +520,7 @@ function PaymentRegisterView() {
             activeCount={activeFilterCount - (filters.search ? 1 : 0)}
             onClear={() => setFilters(initialFilters)}
           >
+            <ListSortControl control={sortControl} />
             <FilterSelect
               value={filters.status}
               onChange={(status) => setFilters((f) => ({ ...f, status }))}

@@ -95,11 +95,13 @@ const SETTINGS_ITEMS = [
     icon: SlidersHorizontal,
     text: 'Field Control',
     href: '/recurring-payments/settings/field-control',
-    description: 'Show, hide, require or relabel any field on every form in the module.',
+    description: 'Show, hide, require or relabel any field, and set the order each list opens in.',
     gradient: 'from-rose-500 to-pink-600',
     bg: 'bg-rose-50',
     iconColor: 'text-rose-600',
-    scope: 'Manage Field Control',
+    // Everyone who can open Settings sees it: the page has a read-only mode, and gating the card on
+    // 'Manage Field Control' hid it from most administrators, who then couldn't find it at all.
+    scope: 'View',
   },
 ] as const;
 

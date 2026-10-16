@@ -61,6 +61,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { FilterBar } from "@/components/shared/filter-bar";
+import { ListSortControl } from "@/components/shared/list-sort-control";
+import { useRecurringSortControl } from "./use-sort-control";
 import { TableCard } from "@/components/shared/table-card";
 import {
   DropdownMenu,
@@ -189,9 +191,12 @@ export default function RecurringMasterRegister() {
     );
   }, [rows, obligationIds, calendar, organizationId]);
 
+  // Opening order from Settings › Field Control › Sort Order; the user can re-sort for themselves.
+  const sortControl = useRecurringSortControl("masters");
+  const sortMasterRows = sortControl.sortRows;
   const visible = useMemo(
     () =>
-      rows
+      sortMasterRows(rows
         .filter((master) => {
           const matchesSearch =
             `${master.title} ${master.category} ${master.vendorName} ${master.branchName || ""} ${master.projectName || ""} ${master.department || ""} ${master.accountNumber || ""}`
@@ -207,8 +212,8 @@ export default function RecurringMasterRegister() {
             (filters.owner === ALL || master.assignedTo === filters.owner)
           );
         })
-        .sort((a, b) => a.title.localeCompare(b.title)),
-    [filters, rows, search],
+      ),
+    [filters, rows, search, sortMasterRows],
   );
 
   const canAdd = can("Add", "Recurring Payments.Recurring Masters");
@@ -709,6 +714,7 @@ export default function RecurringMasterRegister() {
             activeCount={activeFilterCount - (search.trim() ? 1 : 0)}
             onClear={() => { setSearch(""); setFilters(DEFAULT_MASTER_FILTERS); }}
           >
+            <ListSortControl control={sortControl} />
             <Filter
               value={filters.status}
               label="All statuses"

@@ -28,7 +28,7 @@
     "test:inventory": "node --experimental-strip-types --test tests/inventory-domain.test.mjs",
     "test:project-management": "node --experimental-strip-types --test tests/project-management-domain.test.mjs tests/tower-progress-domain.test.mjs tests/project-control-domain.test.mjs tests/project-control-evm.test.mjs tests/project-management-mc-control.test.mjs tests/project-management-mc-quantity.test.mjs tests/project-management-inspection-quantity.test.mjs tests/project-management-supply-ledger.test.mjs",
     "test:project-control": "node --experimental-strip-types --test tests/project-control-domain.test.mjs tests/project-control-evm.test.mjs tests/project-management-mc-control.test.mjs tests/project-management-mc-quantity.test.mjs tests/project-management-inspection-quantity.test.mjs tests/project-management-supply-ledger.test.mjs",
-    "test:recurring-payments": "node --experimental-strip-types --test tests/recurring-payments-schedule.test.mjs tests/recurring-payments-e-approval.test.mjs",
+    "test:recurring-payments": "node --experimental-strip-types --test tests/recurring-payments-schedule.test.mjs tests/recurring-payments-e-approval.test.mjs tests/list-sort.test.mjs",
     "test:reporting-copy": "node --experimental-strip-types --test tests/reporting-copy.test.mjs",
     "test:tour-travel": "node --experimental-strip-types --test tests/tour-travel-domain.test.mjs",
     "test:hr": "node --experimental-strip-types --test tests/hr-domain.test.mjs",
