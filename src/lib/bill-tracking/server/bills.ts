@@ -25,6 +25,7 @@ import {
 } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
 import { isNoteType } from '../certification.ts';
+import { resolveRetentionClaims } from '../retention.ts';
 import { WORKFLOW_ACTION_RULES, actionBlocked, nextStepAfter, resubmitTo, stepDoers, workflowStep, type WorkflowActor } from '../workflow.ts';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
@@ -39,6 +40,7 @@ import type {
   BillTrackingConfig,
   BillWorkflowStatus,
   DueDateRevision,
+  RetentionClaim,
 } from '../types';
 import { BtError, db, type BtContext, type BtResource } from './context';
 import {
@@ -49,6 +51,7 @@ import {
   loadConfig,
   loadGstSetup,
   loadProject,
+  loadProjectRetention,
   logActivityTx,
   nowIso,
   userName,
@@ -90,6 +93,7 @@ const AUDITED_FIELDS = [
   'remarks',
   'retentionExpectedReleaseDate',
   'retentionDisputed',
+  'retentionClaims',
 ] as const;
 
 /** Fields that, once a bill is approved, change only with `Edit After Approval` and a reason. */
@@ -183,10 +187,12 @@ interface ComposeArgs {
   /** The invoice a credit/debit note adjusts, loaded by the caller. */
   against?: StoredBill;
   gstSetup?: RegistrationSetup;
+  /** A retention bill's claims, already checked against what is still to raise (`withRetentionClaims`). */
+  retentionClaims?: RetentionClaim[];
 }
 
 /** Builds every stored field of a bill from validated input plus masters; derived totals included. */
-export function composeBill({ context, input, config, project, client, existing, ownerName, against, gstSetup }: ComposeArgs): Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
+export function composeBill({ context, input, config, project, client, existing, ownerName, against, gstSetup, retentionClaims }: ComposeArgs): Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
   const billType = config.billTypes.find((entry) => entry.id === input.billTypeId);
   const keeping = existing?.billTypeId === input.billTypeId;
   if (!billType) throw new BtError(keeping ? 'This bill’s sub category was deleted from Settings — choose another.' : 'Choose a sub category.');
@@ -277,6 +283,9 @@ export function composeBill({ context, input, config, project, client, existing,
     deductions,
     // Recorded separately (`certification.ts` on the server); an edit of the raised bill keeps it.
     certification: existing?.certification,
+    // A retention bill keeps the retention it claims; any other bill has none.
+    retentionClaims: billType.isRetentionBill || input.transactionType === 'retention_bill' ? (retentionClaims ?? []) : undefined,
+    retentionClaimBillIds: billType.isRetentionBill || input.transactionType === 'retention_bill' ? [...new Set((retentionClaims ?? []).map((claim) => claim.billId))] : undefined,
     grossAmount: totals.grossAmount,
     totalDeduction: totals.totalDeduction,
     statutoryDeduction: totals.statutoryDeduction,
@@ -349,6 +358,24 @@ async function assertUniqueInvoice(context: BtContext, projectId: string, invoic
   if (clash) throw new BtError(`GST invoice ${invoice} is already recorded on this project (bill ${clash.data().billSerialNumber ?? clash.id}).`, 409, { billId: clash.id });
 }
 
+/**
+ * A retention bill's claims, checked against the project's bills and releases (any year) and given
+ * their snapshots. Any other bill must not carry claims.
+ */
+async function withRetentionClaims(context: BtContext, input: BillInput, config: BillTrackingConfig, billId?: string): Promise<RetentionClaim[] | undefined> {
+  const billType = config.billTypes.find((entry) => entry.id === input.billTypeId);
+  const isRetention = Boolean(billType?.isRetentionBill) || input.transactionType === 'retention_bill';
+  if (!isRetention) {
+    if (input.retentionClaims.length) throw new BtError('Only a retention bill can claim retention — choose a retention sub category or the Retention bill type.');
+    return undefined;
+  }
+  if (!input.retentionClaims.length) return [];
+  const { bills, releases } = await loadProjectRetention(context, input.projectId);
+  const resolved = resolveRetentionClaims(input.retentionClaims, { id: billId, projectId: input.projectId }, bills, releases, config.settings.tolerance);
+  if ('error' in resolved) throw new BtError(resolved.error, 409);
+  return resolved.claims;
+}
+
 export async function createBill(context: BtContext, input: BillInput): Promise<{ id: string }> {
   context.require('Bills', 'Add', input.projectId);
   const config = await loadConfig(context.organizationId);
@@ -357,12 +384,12 @@ export async function createBill(context: BtContext, input: BillInput): Promise<
   const client = await loadClient(input.clientId ?? project.clientId);
   await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber);
   const ownerName = await userName(input.collectionOwnerId);
-  const [against, gstSetup] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup()]);
+  const [against, gstSetup, retentionClaims] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), withRetentionClaims(context, input, config)]);
 
   const firestore = db();
   const ref = firestore.collection(BT_COLLECTIONS.bills).doc();
   await firestore.runTransaction(async (transaction) => {
-    const composed = composeBill({ context, input, config, project, client, ownerName, against, gstSetup });
+    const composed = composeBill({ context, input, config, project, client, ownerName, against, gstSetup, retentionClaims });
     let billSerialNumber = composed.billSerialNumber;
     if ((input.autoNumber || !billSerialNumber) && config.settings.numbering.enabled) {
       const counterRef = firestore.collection(BT_COLLECTIONS.counters).doc(`${context.organizationId}_${composed.financialYear}`);
@@ -410,7 +437,7 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
   const client = await loadClient(input.clientId ?? project.clientId);
   await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber, billId);
   const ownerName = await userName(input.collectionOwnerId);
-  const [against, gstSetup] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup()]);
+  const [against, gstSetup, retentionClaims] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), withRetentionClaims(context, input, config, billId)]);
 
   let version = 0;
   await firestore.runTransaction(async (transaction) => {
@@ -419,7 +446,7 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
     if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
       throw new BtError('Someone else changed this bill while you were editing it. Reload to see their changes, then edit again.', 409);
     }
-    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, gstSetup });
+    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, gstSetup, retentionClaims });
 
     const protectedChange = PROTECTED_FIELDS.filter((key) => JSON.stringify(current[key] ?? null) !== JSON.stringify((composed as Record<string, unknown>)[key] ?? null));
     if (protectedChange.length && isPastApproval(current.workflowStatus)) {

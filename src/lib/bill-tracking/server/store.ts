@@ -12,7 +12,7 @@ import { resolveRegistrationsDoc } from '@/lib/gst-registrations';
 
 import { DEFAULT_CONFIG, withConfigDefaults } from '../defaults.ts';
 import type { RegistrationSetup } from '../gst.ts';
-import type { Bill, BillActivity, BillTrackingConfig, ProjectProfile } from '../types';
+import type { Bill, BillActivity, BillTrackingConfig, ProjectProfile, RetentionRelease } from '../types';
 import { BtError, db, type BtContext } from './context';
 
 export const BT_COLLECTIONS = {
@@ -244,6 +244,18 @@ export async function loadScopedDocs<T>(collection: string, context: Pick<BtCont
   const base = db().collection(collection).where('organizationId', '==', context.organizationId);
   const snapshots = context.scope === null ? [await base.get()] : await Promise.all(chunk(context.scope, 30).map((ids) => base.where(projectField, 'in', ids).get()));
   return snapshots.flatMap((snapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id })));
+}
+
+/** One project's live bills of every year and its retention releases — what a retention claim is checked against. */
+export async function loadProjectRetention(context: Pick<BtContext, 'organizationId'>, projectId: string): Promise<{ bills: Bill[]; releases: RetentionRelease[] }> {
+  const [bills, releases] = await Promise.all([
+    db().collection(BT_COLLECTIONS.bills).where('organizationId', '==', context.organizationId).where('projectId', '==', projectId).where('isDeleted', '==', false).get(),
+    db().collection(BT_COLLECTIONS.retention).where('organizationId', '==', context.organizationId).where('projectId', '==', projectId).get(),
+  ]);
+  return {
+    bills: bills.docs.map((doc) => ({ ...(doc.data() as Bill), id: doc.id })),
+    releases: releases.docs.map((doc) => ({ ...(doc.data() as RetentionRelease), id: doc.id })),
+  };
 }
 
 /** Loads one bill and enforces scope; deleted bills are returned only when asked for. */

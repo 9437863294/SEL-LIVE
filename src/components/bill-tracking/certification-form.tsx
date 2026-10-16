@@ -193,11 +193,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const gross = grossAmount(taxable, gstTotal);
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   const inputs = deductionInputs(form.deductions);
-  const lines = useMemo(
-    () => computeDeductions(inputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(inputs), taxable, gross, deductionGstType, config.deductionTypes, config.settings.roundDeductionsToRupee],
-  );
+  const lines = computeDeductions(inputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
   const deducted = totalDeduction(lines);
   const net = netReceivable(gross, deducted, config.settings.roundNetToRupee);
   const raisedByType = useMemo(() => new Map([...deductionsByType(bill.deductions ?? []).entries()].map(([id, entry]) => [id, entry.amount])), [bill.deductions]);

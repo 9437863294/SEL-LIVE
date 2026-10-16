@@ -28,9 +28,6 @@
   .dark :where(.bg-white\/20:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.2);
   }
-  .dark :where(.hover\:bg-white\/20:not(.keep-light, .keep-light *)):hover {
-    background-color: hsl(var(--dc-100) / 0.2);
-  }
   .dark :where(.bg-white\/25:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.25);
   }
@@ -58,11 +55,6 @@
   }
   .dark :where(.bg-white\/80:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.8);
-  }
-  .dark :where(.hover\:bg-white\/80:not(.keep-light, .keep-light *)):hover,
-  .dark :where(.hover\:bg-slate-50\/80:not(.keep-light, .keep-light *)):hover,
-  .dark :where(.bg-slate-100\/80:not(.keep-light, .keep-light *)) {
-    background-color: hsl(var(--dc-100) / 0.8);
   }
   .dark :where(.bg-white\/85:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.85);
@@ -98,6 +90,13 @@
   }
   .dark :where(.bg-slate-50\/80:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--dc-50) / 0.8);
+  }
+  .dark :where(.hover\:bg-slate-50\/80:not(.keep-light, .keep-light *)):hover,
+  .dark :where(.bg-slate-100\/80:not(.keep-light, .keep-light *)) {
+    background-color: hsl(var(--dc-100) / 0.8);
+  }
+  .dark :where(.bg-slate-50\/95:not(.keep-light, .keep-light *)) {
+    background-color: hsl(var(--dc-50) / 0.95);
   }
   .dark :where(.hover\:bg-slate-100:not(.keep-light, .keep-light *)):hover,
   .dark :where(.bg-slate-200:not(.keep-light, .keep-light *)),
@@ -203,8 +202,7 @@
   .dark :where(.hover\:text-slate-800:not(.keep-light, .keep-light *)):hover {
     color: hsl(0 0% 96%);
   }
-  .dark :where(.hover\:text-slate-900:not(.keep-light, .keep-light *)):hover,
-  .dark :where(.hover\:text-slate-950:not(.keep-light, .keep-light *)):hover {
+  .dark :where(.hover\:text-slate-900:not(.keep-light, .keep-light *)):hover {
     color: hsl(0 0% 98%);
   }
   .dark :where(.border-white:not(.keep-light, .keep-light *)) {
@@ -304,6 +302,9 @@
   .dark :where(.border-stone-200:not(.keep-light, .keep-light *)),
   .dark :where(.divide-stone-200:not(.keep-light, .keep-light *)) > :not([hidden]) ~ :not([hidden]) {
     border-color: hsl(240 4% 20% / 1);
+  }
+  .dark :where(.border-slate-200\/60:not(.keep-light, .keep-light *)) {
+    border-color: hsl(240 4% 20% / 0.6);
   }
   .dark :where(.border-slate-200\/70:not(.keep-light, .keep-light *)) {
     border-color: hsl(240 4% 20% / 0.7);
@@ -985,9 +986,6 @@
   .dark :where(.from-cyan-50\/60:not(.keep-light, .keep-light *)) {
     --tw-gradient-from: rgb(6 182 212 / 0.060) var(--tw-gradient-from-position);
   }
-  .dark :where(.from-cyan-50\/70:not(.keep-light, .keep-light *)) {
-    --tw-gradient-from: rgb(6 182 212 / 0.070) var(--tw-gradient-from-position);
-  }
   .dark :where(.via-cyan-50:not(.keep-light, .keep-light *)),
   .dark :where(.via-cyan-100:not(.keep-light, .keep-light *)) {
     --tw-gradient-stops: var(--tw-gradient-from), rgb(6 182 212 / 0.100) var(--tw-gradient-via-position), var(--tw-gradient-to);
@@ -1147,9 +1145,6 @@
   .dark :where(.from-blue-50\/60:not(.keep-light, .keep-light *)) {
     --tw-gradient-from: rgb(59 130 246 / 0.060) var(--tw-gradient-from-position);
   }
-  .dark :where(.from-blue-50\/70:not(.keep-light, .keep-light *)) {
-    --tw-gradient-from: rgb(59 130 246 / 0.070) var(--tw-gradient-from-position);
-  }
   .dark :where(.via-blue-50:not(.keep-light, .keep-light *)),
   .dark :where(.via-blue-100:not(.keep-light, .keep-light *)) {
     --tw-gradient-stops: var(--tw-gradient-from), rgb(59 130 246 / 0.100) var(--tw-gradient-via-position), var(--tw-gradient-to);
@@ -1160,9 +1155,6 @@
   }
   .dark :where(.to-blue-50\/40:not(.keep-light, .keep-light *)) {
     --tw-gradient-to: rgb(59 130 246 / 0.050) var(--tw-gradient-to-position);
-  }
-  .dark :where(.to-blue-50\/60:not(.keep-light, .keep-light *)) {
-    --tw-gradient-to: rgb(59 130 246 / 0.060) var(--tw-gradient-to-position);
   }
   .dark :where(.text-blue-700:not(.keep-light, .keep-light *):not([class*="bg-"][class*="-300"], [class*="bg-"][class*="-400"], [class*="bg-"][class*="-500"])),
   .dark :where(.text-blue-800:not(.keep-light, .keep-light *):not([class*="bg-"][class*="-300"], [class*="bg-"][class*="-400"], [class*="bg-"][class*="-500"])),
@@ -1234,9 +1226,6 @@
   }
   .dark :where(.from-indigo-50\/60:not(.keep-light, .keep-light *)) {
     --tw-gradient-from: rgb(99 102 241 / 0.060) var(--tw-gradient-from-position);
-  }
-  .dark :where(.from-indigo-50\/70:not(.keep-light, .keep-light *)) {
-    --tw-gradient-from: rgb(99 102 241 / 0.070) var(--tw-gradient-from-position);
   }
   .dark :where(.via-indigo-50:not(.keep-light, .keep-light *)),
   .dark :where(.via-indigo-100:not(.keep-light, .keep-light *)) {
@@ -1335,9 +1324,6 @@
   .dark :where(.to-violet-50\/50:not(.keep-light, .keep-light *)) {
     --tw-gradient-to: rgb(139 92 246 / 0.050) var(--tw-gradient-to-position);
   }
-  .dark :where(.to-violet-50\/60:not(.keep-light, .keep-light *)) {
-    --tw-gradient-to: rgb(139 92 246 / 0.060) var(--tw-gradient-to-position);
-  }
   .dark :where(.text-violet-700:not(.keep-light, .keep-light *):not([class*="bg-"][class*="-300"], [class*="bg-"][class*="-400"], [class*="bg-"][class*="-500"])),
   .dark :where(.text-violet-800:not(.keep-light, .keep-light *):not([class*="bg-"][class*="-300"], [class*="bg-"][class*="-400"], [class*="bg-"][class*="-500"])),
   .dark :where(.text-violet-900:not(.keep-light, .keep-light *):not([class*="bg-"][class*="-300"], [class*="bg-"][class*="-400"], [class*="bg-"][class*="-500"])),
@@ -1412,9 +1398,6 @@
   }
   .dark :where(.bg-fuchsia-100:not(.keep-light, .keep-light *)) {
     background-color: rgb(217 70 239 / 0.180);
-  }
-  .dark :where(.hover\:bg-fuchsia-100:not(.keep-light, .keep-light *)):hover {
-    background-color: rgb(217 70 239 / 0.240);
   }
   .dark :where(.border-fuchsia-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(217 70 239 / 0.320);

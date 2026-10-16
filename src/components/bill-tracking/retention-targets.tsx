@@ -19,27 +19,46 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { isoWeekOf } from '@/lib/bill-tracking/calculations';
+import { formatINR } from '@/lib/bill-tracking/money';
+import { RETENTION_STATE_LABELS, type BillRetention, type RetentionTotals } from '@/lib/bill-tracking/retention';
 import type { RetentionRow, TargetPerformanceRow, ForecastWindow } from '@/lib/bill-tracking/reports';
 import type { CollectionTarget, RetentionRelease } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BillFilterBar, useUrlFilters } from './bt-filters';
 import { BtTable, type BtColumn } from './bt-table';
+import { ToolbarSelect } from './bt-toolbar';
 import { TargetActualChart } from './dashboard-charts';
 import { RetentionTable } from './reports';
-import { Amount, BtEmpty, BtError, BtLoading, ExportMenu, MoneyKpi, dateText, percentText } from './bt-ui';
+import { Amount, BtEmpty, BtError, BtLoading, ExportMenu, MoneyKpi, dateText, percentText, BT_TAB, BT_TABS_LIST, RetentionStateBadge, StatStrip, TabCount, TruncatedText } from './bt-ui';
+
+/** One bill with retention: held, raised on retention bills, received, still to raise. */
+type RetentionBillRow = BillRetention & {
+  id: string;
+  gstInvoiceNumber?: string;
+  billSerialNumber?: string;
+  billDate: string;
+  projectId: string;
+  projectName: string;
+  billTypeName: string;
+};
 
 interface RetentionData {
   rows: RetentionRow[];
   totals: { deducted: number; released: number; balance: number; dueThisMonth: number; overdue: number };
   releases: RetentionRelease[];
+  byBill: RetentionBillRow[];
+  byBillTotals: RetentionTotals;
 }
+
+const STATE_FILTERS = (['not_raised', 'partly_raised', 'raised', 'received'] as const).map((value) => ({ value, label: RETENTION_STATE_LABELS[value] }));
 
 export function RetentionPage() {
   const lookups = useLookups();
@@ -48,19 +67,23 @@ export function RetentionPage() {
   const filters = useUrlFilters();
   const { data, loading, error, reload } = useBtQuery<RetentionData>(`retention?${filters.apiQuery()}`);
   const [releaseFor, setReleaseFor] = useState<string | null>(null);
-  const [form, setForm] = useState({ projectId: '', againstBillId: '', releaseDate: lookups.today, amount: '', kind: 'retention_invoice', remarks: '' });
+  const [form, setForm] = useState({ projectId: '', againstBillId: '', deductionTypeId: '', releaseDate: lookups.today, amount: '', kind: 'retention_invoice', remarks: '' });
+  const [tab, setTab] = useState('bills');
+  const [stateFilter, setStateFilter] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const openRelease = (projectId: string) => {
-    setForm((current) => ({ ...current, projectId }));
+  const openRelease = (projectId: string, bill?: RetentionBillRow) => {
+    // From a bill row: that bill, its first head with retention still out, and that amount.
+    const head = bill?.heads.find((entry) => entry.pendingToRaise > 0) ?? bill?.heads[0];
+    setForm((current) => ({ ...current, projectId, againstBillId: bill?.id ?? '', deductionTypeId: head?.deductionTypeId ?? '', kind: head?.kind ?? current.kind, amount: head ? String(head.pendingToRaise || '') : '' }));
     setReleaseFor(projectId || 'new');
   };
   const save = async () => {
     setSaving(true);
     setFormError(null);
     try {
-      await btFetch('retention', { body: { projectId: form.projectId, againstBillId: form.againstBillId || undefined, releaseDate: form.releaseDate, amount: Number(form.amount), kind: form.kind, remarks: form.remarks } });
+      await btFetch('retention', { body: { projectId: form.projectId, againstBillId: form.againstBillId || undefined, deductionTypeId: form.againstBillId ? form.deductionTypeId || undefined : undefined, releaseDate: form.releaseDate, amount: Number(form.amount), kind: form.kind, remarks: form.remarks } });
       toast({ title: 'Retention release recorded' });
       setReleaseFor(null);
       reload();
@@ -104,6 +127,81 @@ export function RetentionPage() {
     },
   ];
 
+  const billRows = (data?.byBill ?? []).filter((row) => !stateFilter || row.state === stateFilter);
+  const billColumns: BtColumn<RetentionBillRow>[] = [
+    {
+      key: 'invoice',
+      header: 'GST invoice',
+      pinned: true,
+      mobile: 'title',
+      sortValue: (row) => row.gstInvoiceNumber ?? '',
+      cell: (row) => (
+        <Link href={`/bill-tracking/bills/${row.id}?tab=retention`} className="whitespace-nowrap font-medium text-emerald-700 hover:underline">
+          {row.gstInvoiceNumber || 'NA'}
+        </Link>
+      ),
+      total: 'Total',
+    },
+    { key: 'bill', header: 'Bill no.', label: 'Bill no.', sortValue: (row) => row.billSerialNumber ?? '', cell: (row) => <TruncatedText text={row.billSerialNumber} className="max-w-[150px] text-xs text-slate-600" /> },
+    { key: 'project', header: 'Project', sortValue: (row) => row.projectName, cell: (row) => <TruncatedText text={row.projectName} className="max-w-[180px]" /> },
+    { key: 'date', header: 'Bill date', sortValue: (row) => row.billDate, cell: (row) => <span className="whitespace-nowrap">{dateText(row.billDate)}</span> },
+    { key: 'type', header: 'Sub category', defaultHidden: true, cell: (row) => row.billTypeName },
+    { key: 'held', header: 'Held', align: 'right', sortValue: (row) => row.held, cell: (row) => <Amount value={row.held} />, total: <Amount value={data?.byBillTotals.held} /> },
+    { key: 'claimed', header: 'Raised', align: 'right', sortValue: (row) => row.claimed, cell: (row) => <Amount value={row.claimed} muted />, total: <Amount value={data?.byBillTotals.claimed} /> },
+    { key: 'received', header: 'Received', align: 'right', sortValue: (row) => row.received, cell: (row) => <Amount value={row.received} muted className="text-emerald-700" />, total: <Amount value={data?.byBillTotals.received} /> },
+    {
+      key: 'pending',
+      header: 'Still to raise',
+      align: 'right',
+      mobile: 'aside',
+      sortValue: (row) => row.pendingToRaise,
+      cell: (row) => <Amount value={row.pendingToRaise} muted className={row.pendingToRaise > 0 ? 'font-semibold text-amber-700' : undefined} />,
+      total: <Amount value={data?.byBillTotals.pendingToRaise} />,
+    },
+    { key: 'awaiting', header: 'Awaiting payment', align: 'right', defaultHidden: true, sortValue: (row) => row.awaitingPayment, cell: (row) => <Amount value={row.awaitingPayment} muted />, total: <Amount value={data?.byBillTotals.awaitingPayment} /> },
+    { key: 'state', header: 'Status', mobile: 'detail', sortValue: (row) => row.state, cell: (row) => <RetentionStateBadge state={row.state} /> },
+    {
+      key: 'retentionBills',
+      header: 'Retention bills',
+      cell: (row) =>
+        row.claims.length ? (
+          <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs">
+            {[...new Map(row.claims.map((claim) => [claim.retentionBillId, claim])).values()].map((claim) => (
+              <Link key={claim.retentionBillId} href={`/bill-tracking/bills/${claim.retentionBillId}?tab=retention`} className="whitespace-nowrap text-emerald-700 hover:underline">
+                {claim.reference}
+              </Link>
+            ))}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      label: 'Actions',
+      mobile: 'omit',
+      align: 'right',
+      cell: (row) => (
+        <div className="flex justify-end gap-1">
+          {row.pendingToRaise > 0 && can('Bills', 'Add') ? (
+            <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
+              <Link href={`/bill-tracking/bills/new?type=retention_bill&project=${row.projectId}&claim=${row.id}`}>Raise retention bill</Link>
+            </Button>
+          ) : null}
+          {row.state !== 'received' && can('Retention', 'Manage') ? (
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => openRelease(row.projectId, row)}>
+              Record release
+            </Button>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+  // The release dialog: bills of the chosen project, and the heads of the chosen bill.
+  const projectBills = (data?.byBill ?? []).filter((row) => row.projectId === form.projectId);
+  const chosenBill = projectBills.find((row) => row.id === form.againstBillId);
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -130,11 +228,50 @@ export function RetentionPage() {
         </div>
       ) : null}
       {loading && !data ? <BtLoading /> : null}
-      {data ? <RetentionTable data={data} onRelease={can('Retention', 'Manage') ? openRelease : undefined} /> : null}
       {data ? (
-        <div className="space-y-2">
-          <BtTable caption="Release ledger" rows={data.releases} columns={releaseColumns} storageKey="retention-releases" rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : undefined)} empty={<BtEmpty title="No retention releases recorded." />} />
-        </div>
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className={BT_TABS_LIST}>
+            <TabsTrigger className={BT_TAB} value="bills">
+              By bill <TabCount value={data.byBill.length} />
+            </TabsTrigger>
+            <TabsTrigger className={BT_TAB} value="projects">
+              By project <TabCount value={data.rows.length} />
+            </TabsTrigger>
+            <TabsTrigger className={BT_TAB} value="ledger">
+              Release ledger <TabCount value={data.releases.length} />
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="bills" className="space-y-4">
+            <StatStrip
+              items={[
+                { label: 'Bills with retention', value: data.byBillTotals.bills.toLocaleString('en-IN') },
+                { label: 'Retention not raised', value: data.byBillTotals.byState.not_raised.toLocaleString('en-IN'), hint: data.byBillTotals.byState.partly_raised ? `+ ${data.byBillTotals.byState.partly_raised} partly raised` : undefined, tone: data.byBillTotals.byState.not_raised ? 'text-amber-700' : 'text-slate-900' },
+                { label: 'Still to raise', value: <Amount value={data.byBillTotals.pendingToRaise} compact />, tone: data.byBillTotals.pendingToRaise > 0 ? 'text-amber-700' : 'text-slate-900' },
+                { label: 'Raised · awaiting payment', value: <Amount value={data.byBillTotals.awaitingPayment} compact />, tone: 'text-violet-700' },
+                { label: 'Received', value: <Amount value={data.byBillTotals.received} compact />, tone: 'text-emerald-700' },
+              ]}
+            />
+            <BtTable
+              caption={<span>{billRows.length.toLocaleString('en-IN')} bill{billRows.length === 1 ? '' : 's'} with retention</span>}
+              toolbarSlot={<ToolbarSelect label="Status" value={stateFilter} onChange={setStateFilter} options={STATE_FILTERS} allLabel="All" />}
+              rows={billRows}
+              columns={billColumns}
+              storageKey="retention-by-bill"
+              rowHref={(row) => `/bill-tracking/bills/${row.id}?tab=retention`}
+              showTotals
+              empty={<BtEmpty icon={PiggyBank} title={stateFilter ? 'No bills with that retention status.' : 'No retention deducted for the selected filters.'} />}
+            />
+          </TabsContent>
+
+          <TabsContent value="projects">
+            <RetentionTable data={data} onRelease={can('Retention', 'Manage') ? openRelease : undefined} />
+          </TabsContent>
+
+          <TabsContent value="ledger">
+            <BtTable caption="Release ledger" rows={data.releases} columns={releaseColumns} storageKey="retention-releases" rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : undefined)} empty={<BtEmpty title="No retention releases recorded." />} />
+          </TabsContent>
+        </Tabs>
       ) : null}
 
       <Dialog open={Boolean(releaseFor)} onOpenChange={(open) => !open && setReleaseFor(null)}>
@@ -167,23 +304,64 @@ export function RetentionPage() {
               <Label>Amount (₹) *</Label>
               <Input inputMode="decimal" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} />
             </div>
-            <div className="space-y-1">
-              <Label>Head</Label>
-              <Select value={form.kind} onValueChange={(value) => setForm({ ...form, kind: value })}>
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Against bill</Label>
+              <Select
+                value={form.againstBillId || 'none'}
+                onValueChange={(value) => {
+                  const bill = projectBills.find((row) => row.id === value);
+                  const head = bill?.heads.find((entry) => entry.pendingToRaise > 0) ?? bill?.heads[0];
+                  setForm({ ...form, againstBillId: value === 'none' ? '' : value, deductionTypeId: head?.deductionTypeId ?? '', kind: head?.kind ?? form.kind });
+                }}
+                disabled={!form.projectId}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={form.projectId ? 'Not against one bill' : 'Choose the project first'} />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="retention_cpbg">Against CPBG</SelectItem>
-                  <SelectItem value="retention_invoice">Against invoice</SelectItem>
-                  <SelectItem value="retention_time_extension">Time extension</SelectItem>
-                  <SelectItem value="retention_other">Other</SelectItem>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="none">Not against one bill (the project)</SelectItem>
+                  {projectBills.map((row) => (
+                    <SelectItem key={row.id} value={row.id}>
+                      {row.gstInvoiceNumber || row.billSerialNumber || 'Bill'} · {dateText(row.billDate)} · held {formatINR(row.held)}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label>Against bill id (optional)</Label>
-              <Input value={form.againstBillId} onChange={(event) => setForm({ ...form, againstBillId: event.target.value })} placeholder="Paste from the bill URL" />
+            <div className="space-y-1 sm:col-span-2">
+              <Label>Head</Label>
+              {chosenBill ? (
+                <Select
+                  value={form.deductionTypeId}
+                  onValueChange={(value) => {
+                    const head = chosenBill.heads.find((entry) => entry.deductionTypeId === value);
+                    setForm({ ...form, deductionTypeId: value, kind: head?.kind ?? form.kind });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose the retention head" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {chosenBill.heads.map((head) => (
+                      <SelectItem key={head.deductionTypeId} value={head.deductionTypeId}>
+                        {head.name} · held {formatINR(head.held)} · still out {formatINR(Math.max(0, head.held - head.received))}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={form.kind} onValueChange={(value) => setForm({ ...form, kind: value })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="retention_cpbg">Against CPBG</SelectItem>
+                    <SelectItem value="retention_invoice">Against invoice</SelectItem>
+                    <SelectItem value="retention_time_extension">Time extension</SelectItem>
+                    <SelectItem value="retention_other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="space-y-1 sm:col-span-2">
               <Label>Remarks</Label>

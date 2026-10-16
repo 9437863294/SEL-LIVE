@@ -28,6 +28,7 @@ import {
   type BillWorkflowStatus,
   type CertificationState,
 } from '@/lib/bill-tracking/types';
+import { RETENTION_STATE_LABELS, type RetentionState } from '@/lib/bill-tracking/retention';
 import { exportWorkbook } from '@/lib/report-excel';
 import { DEFAULT_COMPANY_PROFILE, type CompanyProfile } from '@/lib/company-profile';
 import { useCompanyProfile, useUiText } from '@/hooks/use-company-profile';
@@ -104,6 +105,23 @@ const CERTIFICATION_TONES: Record<CertificationState, StatusTone> = {
 };
 
 /** Awaiting certification / certified and matched / certified with a note still to raise. */
+const RETENTION_TONES: Record<RetentionState, StatusTone> = {
+  none: 'neutral',
+  not_raised: 'warning',
+  partly_raised: 'progress',
+  raised: 'info',
+  received: 'success',
+};
+
+/** Whether a bill's retention has been put on a retention bill, and whether it has come in. */
+export function RetentionStateBadge({ state }: { state: RetentionState }) {
+  return (
+    <StatusBadge tone={RETENTION_TONES[state]} dot>
+      {RETENTION_STATE_LABELS[state]}
+    </StatusBadge>
+  );
+}
+
 export function CertificationBadge({ state }: { state: CertificationState }) {
   return (
     <StatusBadge tone={CERTIFICATION_TONES[state]} dot>

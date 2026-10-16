@@ -32,6 +32,7 @@ import { subtractMoney, sumMoney, toPaise } from '../money.ts';
 import type { CollectionInput } from '../schemas';
 import type { Bill, BillCollection, BillCollectionRef, BillTrackingConfig, CollectionStatus, RetentionRelease } from '../types';
 import { receiptBlockReason } from '../certification.ts';
+import { allocateToClaims } from '../retention.ts';
 import { assertMonthOpen, calculationOptions } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
@@ -106,22 +107,34 @@ async function readBills(transaction: Transaction, context: BtContext, billIds: 
   return bills;
 }
 
-function retentionReleaseFor(context: BtContext, collection: StoredCollection, bill: StoredBill, amount: number): Omit<RetentionRelease, 'id'> & { organizationId: string } {
-  return clean({
-    organizationId: context.organizationId,
-    projectId: bill.projectId,
-    projectNameSnapshot: bill.projectNameSnapshot,
-    retentionBillId: bill.id,
-    collectionId: collection.id,
-    kind: 'retention_invoice',
-    releaseDate: collection.receiptDate,
-    amount,
-    remarks: `Receipt against retention bill ${bill.gstInvoiceNumber || bill.billSerialNumber || bill.id}`,
-    status: 'active',
-    createdBy: context.userId,
-    createdByName: context.userName,
-    createdAt: nowIso(),
-  });
+/**
+ * The retention released by a receipt on a retention bill: one release per bill and head the
+ * retention bill claims, in proportion to the claims (`allocateToClaims`), so each original bill
+ * shows its retention as received. A retention bill without claims (imported) releases against the
+ * project only, as before.
+ */
+function retentionReleasesFor(context: BtContext, collection: StoredCollection, bill: StoredBill, amount: number): (Omit<RetentionRelease, 'id'> & { organizationId: string })[] {
+  const reference = bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
+  return allocateToClaims(bill.retentionClaims ?? [], amount).map(({ claim, amount: part }) =>
+    clean({
+      organizationId: context.organizationId,
+      projectId: bill.projectId,
+      projectNameSnapshot: bill.projectNameSnapshot,
+      againstBillId: claim?.billId,
+      againstBillSerial: claim?.billRef,
+      deductionTypeId: claim?.deductionTypeId,
+      retentionBillId: bill.id,
+      collectionId: collection.id,
+      kind: claim?.kind ?? 'retention_invoice',
+      releaseDate: collection.receiptDate,
+      amount: part,
+      remarks: claim ? `Receipt against retention bill ${reference} · ${claim.deductionTypeName} of ${claim.billRef ?? 'bill'}` : `Receipt against retention bill ${reference}`,
+      status: 'active',
+      createdBy: context.userId,
+      createdByName: context.userName,
+      createdAt: nowIso(),
+    }),
+  );
 }
 
 export async function createCollection(context: BtContext, input: CollectionInput): Promise<{ id: string; unallocated: number }> {
@@ -194,7 +207,7 @@ export async function createCollection(context: BtContext, input: CollectionInpu
       const { ref: billRef, bill } = bills.get(entry.billId) as { ref: DocumentReference; bill: StoredBill };
       const mirror: BillCollectionRef = clean({ collectionId: ref.id, receiptDate: input.receiptDate, amount: entry.amount, status, utrNumber: input.utrNumber, paymentMode: input.paymentMode });
       transaction.update(billRef, billUpdateFor(bill, [...(bill.collections ?? []), mirror], config));
-      if (verify && bill.isRetentionBill) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), retentionReleaseFor(context, collection, bill, entry.amount));
+      if (verify && bill.isRetentionBill) for (const release of retentionReleasesFor(context, collection, bill, entry.amount)) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), release);
       logActivityTx(transaction, context, {
         entityType: 'collection',
         entityId: ref.id,
@@ -291,7 +304,7 @@ export async function changeCollectionStatus(context: BtContext, collectionId: s
       const { ref: billRef, bill } = entry;
       const collections = (bill.collections ?? []).map((mirror) => (mirror.collectionId === collectionId ? { ...mirror, status } : mirror));
       transaction.update(billRef, billUpdateFor(bill, collections, config));
-      if (action === 'verify' && bill.isRetentionBill) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), retentionReleaseFor(context, collection, bill, allocation.amount));
+      if (action === 'verify' && bill.isRetentionBill) for (const release of retentionReleasesFor(context, collection, bill, allocation.amount)) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), release);
       logActivityTx(transaction, context, {
         entityType: 'collection',
         entityId: collectionId,

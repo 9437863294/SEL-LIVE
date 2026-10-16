@@ -28,6 +28,7 @@ import {
   Pencil,
   PhoneCall,
   PiggyBank,
+  Plus,
   ReceiptIndianRupee,
   Scissors,
   ShieldCheck,
@@ -54,8 +55,9 @@ import { cn } from '@/lib/utils';
 import { daysBetween, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
+import type { BillRetention } from '@/lib/bill-tracking/retention';
 import { STEP_PERMISSION, availableActions, certificationBlocked, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
-import { formatINR } from '@/lib/bill-tracking/money';
+import { formatINR, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import {
   AGEING_BASIS_LABELS,
   COMMITMENT_STATUS_LABELS,
@@ -75,7 +77,7 @@ import {
 
 import { btDownload, btFetch, useBt, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, CertificationBadge, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, CertificationBadge, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount, RetentionStateBadge } from './bt-ui';
 
 interface Detail {
   bill: BillRow;
@@ -86,6 +88,8 @@ interface Detail {
   documents: BillDocument[];
   activity: BillActivity[];
   retention: RetentionRelease[];
+  /** Held, raised on retention bills, received, still to raise — for a bill that can hold retention. */
+  retentionPosition: BillRetention | null;
   /** Raised vs notes vs the client's certification; null for a credit / debit note. */
   certification: CertificationComparison | null;
   /** Credit / debit notes raised against this invoice. */
@@ -153,6 +157,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
             <WorkflowStatusBadge status={bill.workflowStatus} />
             <TransactionTypeBadge type={bill.transactionType} />
             {detail.certification && !bill.isDeleted ? <CertificationBadge state={detail.certification.summary.state} /> : null}
+            {detail.retentionPosition && detail.retentionPosition.state !== 'none' && !bill.isDeleted ? <RetentionStateBadge state={detail.retentionPosition.state} /> : null}
             {bill.isDeleted ? <StatusBadge tone="danger">Deleted</StatusBadge> : null}
           </div>
         }
@@ -219,6 +224,11 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
                   {detail.certification && canCertify ? (
                     <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/${bill.id}/certify`)}>
                       <ClipboardCheck className="mr-2 h-4 w-4" /> {bill.certification ? 'Edit client certification' : 'Record client certification'}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {detail.retentionPosition && toPaise(detail.retentionPosition.pendingToRaise) > 0 && can('Bills', 'Add') ? (
+                    <DropdownMenuItem onSelect={() => router.push(raiseRetentionHref(bill))}>
+                      <PiggyBank className="mr-2 h-4 w-4" /> Raise retention bill
                     </DropdownMenuItem>
                   ) : null}
                   {detail.certification?.suggestedNote && can('Bills', 'Add') ? (
@@ -367,7 +377,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           <CollectionsTab detail={detail} reload={reload} />
         </TabsContent>
         <TabsContent value="retention">
-          <RetentionTab bill={bill} releases={detail.retention} />
+          <RetentionTab bill={bill} releases={detail.retention} position={detail.retentionPosition} />
         </TabsContent>
         <TabsContent value="documents">
           <DocumentsTab bill={bill} documents={detail.documents} reload={reload} />
@@ -963,48 +973,206 @@ export function LedgerTable({ lines }: { lines: LedgerLine[] }) {
   );
 }
 
-function RetentionTab({ bill, releases }: { bill: BillRow; releases: RetentionRelease[] }) {
-  const retentionLines = bill.deductions.filter((line) => line.kind.startsWith('retention'));
+/** The new-bill form as a retention bill, with this bill's pending retention ticked. */
+const raiseRetentionHref = (bill: Pick<Bill, 'id' | 'projectId'>) => `/bill-tracking/bills/new?type=retention_bill&project=${bill.projectId}&claim=${bill.id}`;
+
+function RetentionTab({ bill, releases, position }: { bill: BillRow; releases: RetentionRelease[]; position: BillRetention | null }) {
+  const { can } = useBt();
+  const claimsOfThisBill = bill.retentionClaims ?? [];
+  const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
+  const receivedFor = (billId: string, deductionTypeId: string) =>
+    sumMoney(releases.filter((release) => release.status === 'active' && release.retentionBillId === bill.id && release.againstBillId === billId && release.deductionTypeId === deductionTypeId).map((release) => release.amount));
+  const holds = position && position.state !== 'none';
+
   return (
-    <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="space-y-4 p-4">
-        <SectionHeader title="Retention on this bill" icon={PiggyBank} as="h3" />
-        {retentionLines.length === 0 && releases.length === 0 ? <p className="text-sm text-muted-foreground">No retention deducted on or released against this bill.</p> : null}
-        {retentionLines.length ? (
-          <ul className="space-y-1 text-sm">
-            {retentionLines.map((line) => (
-              <li key={line.id} className="flex justify-between gap-2">
-                <span>Held · {line.deductionTypeName}</span>
-                <Amount value={line.amount} />
+    <div className="space-y-4">
+      {holds ? (
+        <>
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <PiggyBank className="h-4 w-4 text-violet-600" aria-hidden="true" />
+                <h3 className="text-sm font-semibold text-slate-800">Retention on this bill</h3>
+                <RetentionStateBadge state={position.state} />
+              </div>
+              {toPaise(position.pendingToRaise) > 0 && can('Bills', 'Add') && !bill.isDeleted ? (
+                <Button asChild size="sm" className="gap-1.5">
+                  <Link href={raiseRetentionHref(bill)}>
+                    <Plus className="h-4 w-4" /> Raise retention bill for {formatINR(position.pendingToRaise)}
+                  </Link>
+                </Button>
+              ) : null}
+            </header>
+            <div className="p-4">
+              <StatStrip
+                items={[
+                  { label: 'Retention held', value: <Amount value={position.held} /> },
+                  { label: 'Raised on retention bills', value: <Amount value={position.claimed} /> },
+                  { label: 'Received', value: <Amount value={position.received} />, tone: 'text-emerald-700' },
+                  { label: 'Still to raise', value: <Amount value={position.pendingToRaise} />, tone: toPaise(position.pendingToRaise) > 0 ? 'text-amber-700' : 'text-slate-900' },
+                  { label: 'Raised · awaiting payment', value: <Amount value={position.awaitingPayment} />, tone: toPaise(position.awaitingPayment) > 0 ? 'text-violet-700' : 'text-slate-900' },
+                ]}
+              />
+            </div>
+            <div className="overflow-x-auto border-t border-slate-100">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">Retention head</th>
+                    <th className="px-3 py-2.5 text-right">Held</th>
+                    <th className="px-3 py-2.5 text-right">Raised</th>
+                    <th className="px-3 py-2.5 text-right">Received</th>
+                    <th className="px-3 py-2.5 text-right">Still to raise</th>
+                    <th className="px-3 py-2.5 text-right">Awaiting payment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {position.heads.map((head) => (
+                    <tr key={head.deductionTypeId} className="border-t border-slate-100">
+                      <td className="px-3 py-2">{head.name}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Amount value={head.held} />
+                      </td>
+                      <td className="px-3 py-2 text-right">{toPaise(head.claimed) ? <Amount value={head.claimed} /> : '—'}</td>
+                      <td className="px-3 py-2 text-right text-emerald-700">{toPaise(head.received) ? <Amount value={head.received} /> : '—'}</td>
+                      <td className={cn('px-3 py-2 text-right font-medium', toPaise(head.pendingToRaise) > 0 ? 'text-amber-700' : 'text-slate-400')}>
+                        <Amount value={head.pendingToRaise} />
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-600">{toPaise(head.awaitingPayment) ? <Amount value={head.awaitingPayment} /> : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header className="border-b border-slate-100 px-4 py-3">
+              <h3 className="text-sm font-semibold text-slate-800">Raised on retention bills</h3>
+            </header>
+            {position.claims.length ? (
+              <ul className="divide-y divide-slate-100 text-sm">
+                {position.claims.map((claim, index) => (
+                  <li key={`${claim.retentionBillId}-${claim.deductionTypeId}-${index}`} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+                    <span>
+                      <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${claim.retentionBillId}?tab=retention`}>
+                        {claim.reference}
+                      </Link>
+                      <span className="text-slate-500"> · {dateText(claim.billDate)} · {position.heads.find((head) => head.deductionTypeId === claim.deductionTypeId)?.name ?? 'Retention'}</span>
+                    </span>
+                    <Amount value={claim.amount} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-4 py-4 text-sm text-slate-500">No retention bill has claimed this bill’s retention yet.</p>
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {isRetentionBill ? (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-800">Retention claimed by this bill</h3>
+            {can('Bills', 'Edit') && !bill.isDeleted ? (
+              <Button asChild size="sm" variant="outline" className="gap-1.5">
+                <Link href={`/bill-tracking/bills/${bill.id}/edit`}>
+                  <Pencil className="h-4 w-4" /> {claimsOfThisBill.length ? 'Change' : 'Choose the bills'}
+                </Link>
+              </Button>
+            ) : null}
+          </header>
+          {claimsOfThisBill.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[600px] text-sm">
+                <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">Bill</th>
+                    <th className="px-3 py-2.5 text-left">Retention head</th>
+                    <th className="px-3 py-2.5 text-right">Claimed</th>
+                    <th className="px-3 py-2.5 text-right">Received</th>
+                    <th className="px-3 py-2.5 text-right">Awaiting payment</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {claimsOfThisBill.map((claim) => {
+                    const received = receivedFor(claim.billId, claim.deductionTypeId);
+                    return (
+                      <tr key={`${claim.billId}-${claim.deductionTypeId}`} className="border-t border-slate-100">
+                        <td className="px-3 py-2">
+                          <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${claim.billId}?tab=retention`}>
+                            {claim.billRef ?? 'Bill'}
+                          </Link>
+                          <span className="text-xs text-slate-500"> · {dateText(claim.billDate)}</span>
+                        </td>
+                        <td className="px-3 py-2">{claim.deductionTypeName}</td>
+                        <td className="px-3 py-2 text-right">
+                          <Amount value={claim.amount} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-emerald-700">{toPaise(received) ? <Amount value={received} /> : '—'}</td>
+                        <td className="px-3 py-2 text-right">
+                          <Amount value={Math.max(0, claim.amount - received)} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+                    <td colSpan={2} className="px-3 py-2.5">
+                      Total
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <Amount value={sumMoney(claimsOfThisBill.map((claim) => claim.amount))} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <Amount value={sumMoney(claimsOfThisBill.map((claim) => receivedFor(claim.billId, claim.deductionTypeId)))} />
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : (
+            <p className="px-4 py-4 text-sm text-amber-800">This retention bill does not say whose retention it claims. Choose the bills so they show their retention as raised and receipts here are credited back to them.</p>
+          )}
+        </section>
+      ) : null}
+
+      {!holds && !isRetentionBill ? (
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-6 text-sm text-muted-foreground">No retention was deducted on this bill.</CardContent>
+        </Card>
+      ) : null}
+
+      {releases.length ? (
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <header className="border-b border-slate-100 px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-800">Releases</h3>
+          </header>
+          <ul className="divide-y divide-slate-100 text-sm">
+            {releases.map((release) => (
+              <li key={release.id} className={cn('flex flex-wrap justify-between gap-2 px-4 py-2', release.status === 'cancelled' && 'text-muted-foreground line-through')}>
+                <span>
+                  {dateText(release.releaseDate)} · {release.remarks ?? 'Release'}
+                </span>
+                <Amount value={release.amount} />
               </li>
             ))}
           </ul>
-        ) : null}
-        {releases.length ? (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Releases</p>
-            <ul className="mt-1 space-y-1 text-sm">
-              {releases.map((release) => (
-                <li key={release.id} className={`flex justify-between gap-2 ${release.status === 'cancelled' ? 'text-muted-foreground line-through' : ''}`}>
-                  <span>
-                    {dateText(release.releaseDate)} · {release.remarks ?? 'Release'}
-                  </span>
-                  <Amount value={release.amount} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <p className="text-xs text-muted-foreground">
-          Expected release: {dateText(bill.retentionExpectedReleaseDate)}
-          {bill.retentionDisputed ? ' · marked disputed' : ''}. Releases are recorded on the{' '}
-          <Link href={`/bill-tracking/retention?project=${bill.projectId}`} className="text-emerald-700 hover:underline">
-            Retention ledger
-          </Link>
-          .
-        </p>
-      </CardContent>
-    </Card>
+        </section>
+      ) : null}
+
+      <p className="text-xs text-muted-foreground">
+        Expected release: {dateText(bill.retentionExpectedReleaseDate)}
+        {bill.retentionDisputed ? ' · marked disputed' : ''}. Releases not paid through a retention bill are recorded on the{' '}
+        <Link href={`/bill-tracking/retention?project=${bill.projectId}`} className="text-emerald-700 hover:underline">
+          Retention page
+        </Link>
+        .
+      </p>
+    </div>
   );
 }
 

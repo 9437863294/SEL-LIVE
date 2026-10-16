@@ -84,6 +84,11 @@ export const billInputSchema = z.object({
   /** Credit / debit note: the invoice it adjusts. Required for a credit note. */
   againstBillId: optionalText(128),
   deductions: z.array(deductionLineSchema).max(60).default([]),
+  /** Retention bill only: the retention it claims back, per bill and retention head. */
+  retentionClaims: z
+    .array(z.object({ billId: z.string().min(1).max(128), deductionTypeId: z.string().min(1).max(64), amount: money }))
+    .max(300)
+    .default([]),
   targetWeek: optionalText(10),
   collectionOwnerId: optionalText(128),
   currentStage: optionalText(120),
@@ -204,6 +209,8 @@ export const retentionReleaseSchema = z.object({
   projectId: z.string().min(1).max(128),
   againstBillId: optionalText(128),
   retentionBillId: optionalText(128),
+  /** The retention head released, when the release is against a bill. */
+  deductionTypeId: optionalText(64),
   kind: z.enum(DEDUCTION_KINDS).default('retention_invoice'),
   releaseDate: dateKey,
   amount: money.refine((value) => value > 0, 'Release amount must be positive.'),
