@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { ArrowDownAZ, ArrowUpAZ, Loader2, Lock, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from 'lucide-react';
+import { ArrowDownAZ, ArrowUpAZ, History, Loader2, Lock, RotateCcw, Save, ShieldAlert, SlidersHorizontal } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -281,6 +282,14 @@ export default function SiteAccountFieldControlSettings() {
         </div>
       )}
 
+      <Tabs defaultValue="fields" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="fields" className="gap-1.5"><SlidersHorizontal className="h-4 w-4" /> Fields</TabsTrigger>
+          <TabsTrigger value="sort" className="gap-1.5"><ArrowDownAZ className="h-4 w-4" /> Sort order</TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5"><History className="h-4 w-4" /> History</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="fields" forceMount className="mt-0 space-y-4 data-[state=inactive]:hidden">
       <TableCard
         icon={SlidersHorizontal}
         title={formDef.title}
@@ -362,6 +371,15 @@ export default function SiteAccountFieldControlSettings() {
               </TableBody>
             </Table>
       </TableCard>
+
+      <p className="text-xs text-muted-foreground">
+        Locked fields are required by the form&apos;s own logic — for example, a record&apos;s own project/date/amount, or an
+        entity&apos;s own name — so they can&apos;t be hidden or made optional here, but their label can still be renamed.
+        Changes apply to everyone using this module.
+      </p>
+      </TabsContent>
+
+      <TabsContent value="sort" forceMount className="mt-0 space-y-4 data-[state=inactive]:hidden">
       {/* ── Sort Order ─────────────────────────────────────────────────────────── */}
       <TableCard
         icon={ArrowDownAZ}
@@ -445,14 +463,12 @@ export default function SiteAccountFieldControlSettings() {
               </TableBody>
             </Table>
       </TableCard>
+      </TabsContent>
 
-      <p className="text-xs text-muted-foreground">
-        Locked fields are required by the form&apos;s own logic — for example, a record&apos;s own project/date/amount, or an
-        entity&apos;s own name — so they can&apos;t be hidden or made optional here, but their label can still be renamed.
-        Changes apply to everyone using this module.
-      </p>
-
-      <FieldControlHistory refreshKey={historyKey} />
+      <TabsContent value="history" className="mt-0">
+        <FieldControlHistory refreshKey={historyKey} defaultOpen />
+      </TabsContent>
+      </Tabs>
     </div>
   );
 }

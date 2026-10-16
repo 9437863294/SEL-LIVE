@@ -5,8 +5,9 @@ import {
   collection, deleteField, doc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import {
-  Building2, CalendarClock, Loader2, RotateCcw, Save, ShieldAlert, ShieldCheck,
+  Building2, CalendarClock, History, Loader2, RotateCcw, Save, ShieldAlert, ShieldCheck,
 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -88,6 +89,7 @@ export default function SiteAccountDateControlSettings() {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<SASProject[]>([]);
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
+  const [tab, setTab] = useState('rule');
   /** Bumped after each save, so the History card shows the new entry. */
   const [historyKey, setHistoryKey] = useState(0);
 
@@ -158,6 +160,16 @@ export default function SiteAccountDateControlSettings() {
         description="How far back an expense or receipt may be dated — for all projects, or one project of its own."
       />
 
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="rule" className="gap-1.5"><CalendarClock className="h-4 w-4" /> Rule</TabsTrigger>
+          <TabsTrigger value="projects" className="gap-1.5">
+            <Building2 className="h-4 w-4" /> Projects with own rule{overridden.length > 0 ? ` (${overridden.length})` : ''}
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5"><History className="h-4 w-4" /> History</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="rule" forceMount className="mt-0 space-y-4 data-[state=inactive]:hidden">
       {/* ── Scope ── its own bar, above everything it governs, as on Month Closure. */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white/80 px-4 py-3">
         <Building2 className="h-4 w-4 shrink-0 text-slate-500" />
@@ -195,19 +207,26 @@ export default function SiteAccountDateControlSettings() {
         onSaved={() => setHistoryKey(k => k + 1)}
       />
 
-      {/* Which projects do not follow the all-projects rule — said where the rule is set. */}
-      {!scopeProject && overridden.length > 0 && (
+      </TabsContent>
+
+      {/* Which projects do not follow the all-projects rule, and what each has instead. */}
+      <TabsContent value="projects" className="mt-0">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Projects with their own rule</CardTitle>
-            <CardDescription>These ignore the rule above. Pick one to change or remove its rule.</CardDescription>
+            <CardDescription>
+              {overridden.length > 0
+                ? 'These ignore the all-projects rule. Pick one to change or remove its rule.'
+                : 'Every project follows the all-projects rule. Give one its own on the Rule tab.'}
+            </CardDescription>
           </CardHeader>
+          {overridden.length > 0 && (
           <CardContent className="divide-y border-t p-0">
             {overridden.map(({ id, name, rule }) => (
               <button
                 key={id}
                 type="button"
-                onClick={() => setScope(id)}
+                onClick={() => { setScope(id); setTab('rule'); }}
                 className="flex w-full items-center justify-between gap-3 px-6 py-2.5 text-left text-sm hover:bg-muted/40"
               >
                 <span className="font-medium text-slate-800">{name}</span>
@@ -215,10 +234,14 @@ export default function SiteAccountDateControlSettings() {
               </button>
             ))}
           </CardContent>
+          )}
         </Card>
-      )}
+      </TabsContent>
 
-      <DateControlHistory scopeName={scopeName} scopeProject={scopeProject} refreshKey={historyKey} />
+      <TabsContent value="history" className="mt-0">
+        <DateControlHistory scopeName={scopeName} scopeProject={scopeProject} refreshKey={historyKey} defaultOpen />
+      </TabsContent>
+      </Tabs>
 
       {!canEdit && (
         <p className="text-xs text-muted-foreground">

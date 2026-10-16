@@ -6,8 +6,9 @@ import {
 } from 'firebase/firestore';
 import {
   AlertTriangle, Building2, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock,
-  Loader2, Lock, LockOpen, ShieldAlert, ShieldCheck, Timer, Undo2,
+  History, Loader2, Lock, LockOpen, ShieldAlert, ShieldCheck, Timer, Undo2,
 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { db } from '@/lib/firebase';
 import { PageHeader } from '@/components/shared/page-header';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -551,6 +552,14 @@ export default function SiteAccountMonthClosureSettings() {
         </span>
       </div>
 
+      <Tabs defaultValue="months" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="months" className="gap-1.5"><CalendarRange className="h-4 w-4" /> Months</TabsTrigger>
+          <TabsTrigger value="auto" className="gap-1.5"><Timer className="h-4 w-4" /> Automatic closing</TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5"><History className="h-4 w-4" /> History</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="auto" forceMount className="mt-0 space-y-4 data-[state=inactive]:hidden">
       {/* ── The automatic rule ── */}
       <AutoCloseRuleCard
         // Keyed by scope, so a draft for one project never carries over to another.
@@ -563,7 +572,9 @@ export default function SiteAccountMonthClosureSettings() {
         canReopen={canReopen}
         onSave={handleSaveRule}
       />
+      </TabsContent>
 
+      <TabsContent value="months" forceMount className="mt-0 space-y-4 data-[state=inactive]:hidden">
       {/* ── Year picker and totals ── */}
       <Card>
         <CardHeader className="pb-3">
@@ -782,8 +793,12 @@ export default function SiteAccountMonthClosureSettings() {
           </div>
         </CardContent>
       </Card>
+      </TabsContent>
 
-      <MonthClosureHistory scopeName={scopeName} scopeProject={scopeProject} refreshKey={historyKey} />
+      <TabsContent value="history" className="mt-0">
+        <MonthClosureHistory scopeName={scopeName} scopeProject={scopeProject} refreshKey={historyKey} defaultOpen />
+      </TabsContent>
+      </Tabs>
 
       {/* ── Close one month ── */}
       <Dialog open={Boolean(closeTarget)} onOpenChange={open => { if (!open) setCloseTarget(null); }}>

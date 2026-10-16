@@ -52,6 +52,6 @@ const CONFIG: SettingsHistoryConfig = {
   searchPlaceholder: 'Search field, form, reason, person…',
 };
 
-export function FieldControlHistory({ refreshKey }: { refreshKey: number }) {
-  return <SettingsHistory config={CONFIG} scopeName="All projects" refreshKey={refreshKey} />;
+export function FieldControlHistory({ refreshKey, defaultOpen }: { refreshKey: number; defaultOpen?: boolean }) {
+  return <SettingsHistory config={CONFIG} scopeName="All projects" refreshKey={refreshKey} defaultOpen={defaultOpen} />;
 }

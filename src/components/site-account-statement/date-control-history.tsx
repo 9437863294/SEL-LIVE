@@ -60,6 +60,6 @@ const CONFIG: SettingsHistoryConfig = {
   searchPlaceholder: 'Search reason, rule, project, person…',
 };
 
-export function DateControlHistory(props: { scopeName: string; scopeProject?: string; refreshKey: number }) {
+export function DateControlHistory(props: { scopeName: string; scopeProject?: string; refreshKey: number; defaultOpen?: boolean }) {
   return <SettingsHistory config={CONFIG} {...props} />;
 }

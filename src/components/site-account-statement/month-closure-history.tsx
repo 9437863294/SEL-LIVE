@@ -69,6 +69,6 @@ const CONFIG: SettingsHistoryConfig = {
   searchPlaceholder: 'Search reason, month, project, person…',
 };
 
-export function MonthClosureHistory(props: { scopeName: string; scopeProject?: string; refreshKey: number }) {
+export function MonthClosureHistory(props: { scopeName: string; scopeProject?: string; refreshKey: number; defaultOpen?: boolean }) {
   return <SettingsHistory config={CONFIG} {...props} />;
 }

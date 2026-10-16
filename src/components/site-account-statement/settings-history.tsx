@@ -116,8 +116,11 @@ export function SettingsHistory({
   scopeName,
   scopeProject,
   refreshKey,
+  defaultOpen = false,
 }: {
   config: SettingsHistoryConfig;
+  /** Open on arrival — for a History tab, where a collapsed card would be one click too many. */
+  defaultOpen?: boolean;
   /** The scope in view: "All projects", or the project's name. */
   scopeName: string;
   scopeProject?: string;
@@ -131,7 +134,7 @@ export function SettingsHistory({
   const [rows, setRows] = useState<AuditLogEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloads, setReloads] = useState(0);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const [search, setSearch] = useState('');
