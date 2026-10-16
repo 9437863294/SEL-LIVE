@@ -20,6 +20,8 @@ import {
   type SASSortDirection,
 } from '@/lib/site-account-statement-sort-registry';
 import type { SASFieldSetting } from './use-field-control';
+import { FieldControlHistory } from './field-control-history';
+import { fieldControlChanges } from '@/lib/site-account-statement-field-control-changes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,6 +59,17 @@ function sortDirectionLabel(listKey: SASListKey, fieldKey: string, direction: SA
   return direction === 'asc' ? 'A to Z' : 'Z to A';
 }
 
+/** Each list's opening sort, described and keyed by list title — what a save is compared on. */
+function describeSorts(doc: SASSortControlDoc): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const listKey of SAS_LIST_KEYS) {
+    const { field, direction } = resolveSort(listKey, doc);
+    const label = SAS_LIST_REGISTRY[listKey].fields.find(f => f.key === field)?.label ?? field;
+    out[SAS_LIST_REGISTRY[listKey].title] = `${label}, ${sortDirectionLabel(listKey, field, direction)}`;
+  }
+  return out;
+}
+
 export default function SiteAccountFieldControlSettings() {
   const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
@@ -77,6 +90,17 @@ export default function SiteAccountFieldControlSettings() {
    * each other's shape.
    */
   const [sortDraft, setSortDraft] = useState<SASSortControlDoc>({});
+
+  /*
+   * The settings as last saved, so a save can say what it changed. The log used to record only
+   * that a save happened, which left nobody able to tell which field had been made optional.
+   */
+  const [savedDraft, setSavedDraft] = useState<Draft>(buildDefaultDraft);
+  const [savedSort, setSavedSort] = useState<SASSortControlDoc>({});
+  /** Why the change is being made — optional, kept with it in History. */
+  const [reason, setReason] = useState('');
+  /** Bumped after each save, so the History card shows the new entry. */
+  const [historyKey, setHistoryKey] = useState(0);
 
   useEffect(
     () =>
@@ -107,6 +131,7 @@ export default function SiteAccountFieldControlSettings() {
             }
           }
           setDraft(next);
+          setSavedDraft(next);
           setLoading(false);
         },
         () => setLoading(false),
@@ -118,7 +143,11 @@ export default function SiteAccountFieldControlSettings() {
     () =>
       onSnapshot(
         doc(db, SAS_COLLECTIONS.settings, SAS_SORT_CONTROL_DOC_ID),
-        (snapshot) => setSortDraft((snapshot.data() as SASSortControlDoc | undefined) ?? {}),
+        (snapshot) => {
+          const stored = (snapshot.data() as SASSortControlDoc | undefined) ?? {};
+          setSortDraft(stored);
+          setSavedSort(stored);
+        },
         // A read failure leaves the registry defaults in force, which is the safe fallback.
         () => undefined,
       ),
@@ -172,7 +201,22 @@ export default function SiteAccountFieldControlSettings() {
         setDoc(doc(db, SAS_COLLECTIONS.settings, SAS_FIELD_CONTROL_DOC_ID), { ...draft, ...stamp }),
         setDoc(doc(db, SAS_COLLECTIONS.settings, SAS_SORT_CONTROL_DOC_ID), { ...sortDraft, ...stamp }),
       ]);
-      void log('Update SAS Field Control', { lists: Object.keys(sortDraft).length });
+      const changes = fieldControlChanges({
+        forms: SAS_FORM_KEYS.map(key => ({ key, title: SAS_FORM_REGISTRY[key].title, fields: SAS_FORM_REGISTRY[key].fields })),
+        before: savedDraft,
+        after: draft,
+        sortBefore: describeSorts(savedSort),
+        sortAfter: describeSorts(sortDraft),
+      });
+      // Awaited, so the History card refreshes with this entry in it. A failed log never fails the save.
+      await log('Update SAS Field Control', {
+        lists: Object.keys(sortDraft).length,
+        changes,
+        changeCount: Object.keys(changes).length,
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+      }).catch(() => {});
+      setReason('');
+      setHistoryKey(k => k + 1);
       toast({ title: 'Saved', description: 'Field control and sort order updated.' });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -214,10 +258,20 @@ export default function SiteAccountFieldControlSettings() {
         title="Field Control"
         description={<>Choose which fields appear, whether they&apos;re required, and what they&apos;re called — per form.</>}
         actions={canEdit ? (
+          <>
+          <Input
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="Reason for this change (optional)"
+            aria-label="Reason for this change"
+            maxLength={300}
+            className="h-9 sm:w-64"
+          />
           <Button onClick={save} disabled={saving}>
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save changes
           </Button>
+          </>
         ) : undefined}
       />
 
@@ -397,6 +451,8 @@ export default function SiteAccountFieldControlSettings() {
         entity&apos;s own name — so they can&apos;t be hidden or made optional here, but their label can still be renamed.
         Changes apply to everyone using this module.
       </p>
+
+      <FieldControlHistory refreshKey={historyKey} />
     </div>
   );
 }

@@ -33,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { DateControlHistory } from './date-control-history';
 
 const MODULE = 'Site Account Statement';
 const ALL_PROJECTS = 'all';
@@ -87,6 +88,8 @@ export default function SiteAccountDateControlSettings() {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<SASProject[]>([]);
   const [scope, setScope] = useState<string>(ALL_PROJECTS);
+  /** Bumped after each save, so the History card shows the new entry. */
+  const [historyKey, setHistoryKey] = useState(0);
 
   useEffect(
     () =>
@@ -189,6 +192,7 @@ export default function SiteAccountDateControlSettings() {
         initialOwn={Boolean(ownRule)}
         allRule={allRule}
         canEdit={canEdit}
+        onSaved={() => setHistoryKey(k => k + 1)}
       />
 
       {/* Which projects do not follow the all-projects rule — said where the rule is set. */}
@@ -214,6 +218,8 @@ export default function SiteAccountDateControlSettings() {
         </Card>
       )}
 
+      <DateControlHistory scopeName={scopeName} scopeProject={scopeProject} refreshKey={historyKey} />
+
       {!canEdit && (
         <p className="text-xs text-muted-foreground">
           You can view this configuration but not change it. Ask an administrator for the Date Control · Edit permission.
@@ -234,7 +240,10 @@ function DateRuleEditor({
   initialOwn,
   allRule,
   canEdit,
+  onSaved,
 }: {
+  /** Called once a change is saved and logged, so the page's History card can refresh. */
+  onSaved: () => void;
   scopeProject?: string;
   scopeName: string;
   initialRule: SASDateRule;
@@ -249,6 +258,8 @@ function DateRuleEditor({
   const [draft, setDraft] = useState<SASDateRule>(initialRule);
   const [own, setOwn] = useState(initialOwn);
   const [saving, setSaving] = useState(false);
+  /** Why the rule is changing — optional, kept with the change in History. */
+  const [reason, setReason] = useState('');
 
   // The all-projects scope always edits its rule; a project edits one only when it has its own.
   const editing = !scopeProject || own;
@@ -271,10 +282,19 @@ function DateRuleEditor({
           ...stamp,
         }, { merge: true });
       }
-      void log('Edit SAS Date Control', {
+      // Awaited, so the History card refreshes with this entry in it. A failed log never fails the save.
+      await log('Edit SAS Date Control', {
         scope: scopeProject ? scopeName : 'All projects',
-        ...(editing ? { enabled: draft.enabled, backdateDays: draft.backdateDays, futureDays: draft.futureDays } : { follows: 'All projects' }),
-      });
+        ...(editing
+          ? {
+              enabled: draft.enabled, backdateDays: draft.backdateDays, futureDays: draft.futureDays,
+              applyToExpenses: draft.applyToExpenses, applyToPayments: draft.applyToPayments,
+            }
+          : { follows: 'All projects' }),
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
+      }).catch(() => {});
+      setReason('');
+      onSaved();
       toast({
         title: 'Saved',
         description: scopeProject
@@ -293,7 +313,16 @@ function DateRuleEditor({
   const today = todayLocal();
   const preview = resolveDateWindow({ settings: editing ? draft : allRule, kind: 'expense', today });
   const actions = canEdit && (
-    <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
+    <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+      <Input
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+        placeholder="Reason for this change (optional)"
+        aria-label="Reason for this change"
+        maxLength={300}
+        className="h-9 sm:mr-auto sm:max-w-md"
+      />
+      <div className="flex flex-wrap justify-end gap-2">
       {editing && (
         <Button
           variant="outline"
@@ -309,6 +338,7 @@ function DateRuleEditor({
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         Save{scopeProject ? ` for ${scopeName}` : ''}
       </Button>
+      </div>
     </div>
   );
 
