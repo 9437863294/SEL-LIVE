@@ -80,6 +80,13 @@ const NOT_CONFIGURED = 'NEWDATABASE_MONGODB_URI is not set on the server (App Ho
 const LEASE_GRACE_MS = 90_000;
 /** Subcollection discovery is up to 500 lookups; it starts only with this much of the budget left. */
 const DISCOVERY_RESERVE_MS = 45_000;
+/**
+ * Progress is saved at most this often between steps, not after every step. Each save is a
+ * transaction (two or three round trips), and from a distant client that was most of the time spent
+ * on small collections. Every step is safe to repeat (upserts by id and hash, idempotent deletion
+ * marks), so a slice that dies only redoes the last few seconds. Stop is noticed at the next save.
+ */
+const SAVE_EVERY_MS = 5_000;
 /** Consecutive failures at one collection before the run gives up on it and moves on. */
 const MAX_ATTEMPTS = 3;
 /** A run still going after this long is ended as failed, so a broken one cannot block the schedule forever. */
@@ -534,13 +541,29 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
    * Save progress, only while this slice still holds the run. `{ lease: null }` also gives the run
    * back. Answers whether Stop has been pressed meanwhile, so the loop ends after this page.
    */
-  const save = async (extra: Partial<ReportingCopyState> = {}): Promise<{ stop: boolean; stoppedBy: string | null }> =>
-    db.runTransaction(async (tx) => {
+  // State changes waiting for the next save (e.g. the subcollection cache) — every save carries them.
+  let pending: Partial<ReportingCopyState> = {};
+  let lastSavedAt = Date.now();
+  const save = async (extra: Partial<ReportingCopyState> = {}): Promise<{ stop: boolean; stoppedBy: string | null }> => {
+    const fields = { ...pending, ...extra };
+    const saved = await db.runTransaction(async (tx) => {
       const current = normalizeState((await tx.get(stateRef)).data());
       if (current.lease?.holder !== holder) throw new LeaseLostError();
-      tx.update(stateRef, { progress: state.progress, lastRun: state.lastRun, updatedAt: new Date().toISOString(), ...extra });
+      tx.update(stateRef, { progress: state.progress, lastRun: state.lastRun, updatedAt: new Date().toISOString(), ...fields });
       return { stop: Boolean(current.cancelRequestedAt), stoppedBy: current.cancelRequestedBy };
     });
+    pending = {};
+    lastSavedAt = Date.now();
+    return saved;
+  };
+  /** Between steps: save only when SAVE_EVERY_MS has passed; otherwise keep `extra` for the next save. */
+  const checkpoint = async (extra: Partial<ReportingCopyState> = {}): Promise<{ stop: boolean; stoppedBy: string | null }> => {
+    if (Date.now() - lastSavedAt < SAVE_EVERY_MS) {
+      pending = { ...pending, ...extra };
+      return { stop: false, stoppedBy: null };
+    }
+    return save(extra);
+  };
 
   /** End the run: finished (`stoppedBy` undefined) or stopped. Releases the lease and records the history. */
   const end = async (stoppedBy?: string | null) => {
@@ -617,7 +640,7 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
         if (subs.length) Object.assign(progress, { ...freshTarget, step: 'sub', subcollections: subs, subIndex: 0 });
         else nextRoot(progress);
         worked = true;
-        if (await stopIfAsked(await save(extra))) return stopped();
+        if (await stopIfAsked(await checkpoint(extra))) return stopped();
         continue;
       }
 
@@ -657,7 +680,7 @@ export async function advanceReportingCopy({ budgetMs, mode = 'any' }: { budgetM
         }
       }
       worked = true;
-      if (await stopIfAsked(await save())) return stopped();
+      if (await stopIfAsked(await checkpoint())) return stopped();
     }
     // Check for Stop while still holding the lease (ending the run needs it), then give the run back.
     if (await stopIfAsked(await save())) return stopped();
