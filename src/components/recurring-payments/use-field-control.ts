@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { RP_COLLECTIONS } from '@/lib/recurring-payments';
+import { BANK_ACCOUNT_REQUIRED_MODES, RP_COLLECTIONS, type PaymentMode } from '@/lib/recurring-payments';
 import { RP_FORM_REGISTRY, type RPFormKey } from '@/lib/recurring-payments-field-registry';
 
 export interface RPFieldSetting {
@@ -90,13 +90,31 @@ function isEmptyValue(value: unknown): boolean {
  * everything configured as required is filled in. Locked fields are skipped here because the
  * form's own hardcoded submit checks already cover them.
  */
+/**
+ * Whether one of Record Payment's mode-conditional fields must be filled in for this payment mode.
+ * Shared by the workflow step, the transaction edit dialog and the register's legacy dialog so all
+ * three agree. A hidden field is never required; "required" in Field Control means "where it applies".
+ */
+export function paymentModeFieldRequired(
+  key: 'bankAccount' | 'chequeNumber' | 'transactionReference',
+  mode: PaymentMode,
+  setting: Pick<RPFieldSetting, 'visible' | 'required'>,
+  requireTransactionReference = true,
+): boolean {
+  if (!setting.visible || !setting.required) return false;
+  if (key === 'bankAccount') return BANK_ACCOUNT_REQUIRED_MODES.includes(mode);
+  if (key === 'chequeNumber') return mode === 'Cheque';
+  return mode !== 'Cash' && requireTransactionReference;
+}
+
 export function validateFieldControlRequirements(
   formKey: RPFormKey,
   values: Record<string, unknown>,
   field: (key: string) => RPFieldSetting,
 ): string | null {
   for (const def of RP_FORM_REGISTRY[formKey].fields) {
-    if (def.locked) continue;
+    // Conditional fields are checked by the form itself, which knows the payment mode.
+    if (def.locked || def.conditional) continue;
     const setting = field(def.key);
     if (!setting.visible || !setting.required) continue;
     if (isEmptyValue(values[def.key])) return setting.label;

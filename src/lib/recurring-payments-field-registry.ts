@@ -34,6 +34,13 @@ export interface RPFieldDef {
   defaultRequired: boolean;
   /** Visible/required are fixed when true — only the label can be customized. */
   locked?: boolean;
+  /**
+   * Required only in some situations the form itself decides — the payment-mode fields of Record
+   * Payment. Field Control still shows/hides and sets "required" for them, but the generic
+   * required-field check skips them, because "required" means "required where it applies" (a bank
+   * account for an electronic payment, not for cash) and only the form knows the mode.
+   */
+  conditional?: boolean;
 }
 
 export interface RPFormDef {
@@ -217,14 +224,14 @@ export const RP_FORM_REGISTRY: Record<RPFormKey, RPFormDef> = {
   },
   recordPayment: {
     title: "Record Payment",
-    description: "The Payment Processing step's action dialog. Payment date/amount and the mode-specific bank fields are locked because the step's own logic hard-requires them.",
+    description: "The Payment Processing step's action dialog. Payment date and amount are locked because the step's own logic needs them. Bank account, cheque number and transaction / UTR apply by payment mode: \"Required\" means required where they apply — bank account for electronic modes, cheque number for cheques, the reference for every mode except cash (and only while Settings › Organization still requires transaction references).",
     fields: [
       { key: "paymentDate", defaultLabel: "Payment date", defaultRequired: true, locked: true },
       { key: "paymentAmount", defaultLabel: "Paid amount", defaultRequired: true, locked: true },
       { key: "mode", defaultLabel: "Payment mode", defaultRequired: false },
-      { key: "bankAccount", defaultLabel: "Bank account", defaultRequired: true, locked: true },
-      { key: "chequeNumber", defaultLabel: "Cheque number", defaultRequired: true, locked: true },
-      { key: "transactionReference", defaultLabel: "Transaction / UTR", defaultRequired: true, locked: true },
+      { key: "bankAccount", defaultLabel: "Bank account", defaultRequired: true, conditional: true },
+      { key: "chequeNumber", defaultLabel: "Cheque number", defaultRequired: true, conditional: true },
+      { key: "transactionReference", defaultLabel: "Transaction / UTR", defaultRequired: true, conditional: true },
       { key: "tdsAmount", defaultLabel: "TDS amount", defaultRequired: false },
       { key: "gstAmount", defaultLabel: "GST amount", defaultRequired: false },
       { key: "deductionAmount", defaultLabel: "Other deduction", defaultRequired: false },

@@ -13,7 +13,6 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import {
-  BANK_ACCOUNT_REQUIRED_MODES,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   PAYMENT_MODES,
   RP_COLLECTIONS,
@@ -35,6 +34,7 @@ import {
 } from '@/lib/recurring-payments';
 import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
 import PaymentPrintNote from './payment-print-note';
+import { paymentModeFieldRequired, useFieldControl, type RPFieldSetting } from './use-field-control';
 import { PaymentEApprovalCard } from './e-approval-link-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,8 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
   const [comments, setComments] = useState<CommentRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [settings, setSettings] = useState<RecurringPaymentSettings>({ ...DEFAULT_RECURRING_PAYMENT_SETTINGS, organizationId });
+  // The Record Payment form's Field Control, so editing a transaction asks for the same fields.
+  const { field: recordPaymentField } = useFieldControl('recordPayment');
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<PaymentTransaction | null>(null);
@@ -187,8 +189,8 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
     const chequeNumber = String(form.get('chequeNumber') || '').trim();
     const transactionReference = String(form.get('transactionReference') || '').trim();
     if (amount <= 0) return toast({ title: 'Amount must be greater than zero', variant: 'destructive' });
-    if (mode === 'Cheque' && !chequeNumber) return toast({ title: 'Cheque number is required for cheque payments', variant: 'destructive' });
-    if (BANK_ACCOUNT_REQUIRED_MODES.includes(mode) && !bankAccount) return toast({ title: 'Bank account is required for electronic payments', variant: 'destructive' });
+    if (!chequeNumber && paymentModeFieldRequired('chequeNumber', mode, recordPaymentField('chequeNumber'))) return toast({ title: `${recordPaymentField('chequeNumber').label} is required for cheque payments`, variant: 'destructive' });
+    if (!bankAccount && paymentModeFieldRequired('bankAccount', mode, recordPaymentField('bankAccount'))) return toast({ title: `${recordPaymentField('bankAccount').label} is required for electronic payments`, variant: 'destructive' });
     if (transactionReference && transactions.some(item => item.id !== original.id && item.transactionReference === transactionReference)) {
       return toast({ title: 'This transaction reference has already been recorded on this payment', variant: 'destructive' });
     }
@@ -437,6 +439,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         onClose={() => setEditingTransaction(null)}
         onSubmit={saveTransactionEdit}
         saving={saving}
+        field={recordPaymentField}
       />
     )}
     {uploadingReceiptFor && (
@@ -456,8 +459,9 @@ function pickTransactionSnapshot(transaction: PaymentTransaction) {
 }
 
 function EditTransactionDialog({
-  transaction, users, onClose, onSubmit, saving,
+  transaction, users, onClose, onSubmit, saving, field,
 }: {
+  field: (key: string) => RPFieldSetting;
   transaction: PaymentTransaction;
   users: Array<{ id: string; name: string }>;
   onClose: () => void;
@@ -492,16 +496,16 @@ function EditTransactionDialog({
               </Select>
             </FieldRow>
             {mode !== 'Cash' && (
-              <FieldRow label="Bank account">
-                <Input name="bankAccount" defaultValue={transaction.bankAccount} required={BANK_ACCOUNT_REQUIRED_MODES.includes(mode)} />
+              <FieldRow label={field('bankAccount').label}>
+                <Input name="bankAccount" defaultValue={transaction.bankAccount} required={paymentModeFieldRequired('bankAccount', mode, field('bankAccount'))} />
               </FieldRow>
             )}
             {mode === 'Cheque' && (
-              <FieldRow label="Cheque number">
-                <Input name="chequeNumber" defaultValue={transaction.chequeNumber} required />
+              <FieldRow label={field('chequeNumber').label}>
+                <Input name="chequeNumber" defaultValue={transaction.chequeNumber} required={paymentModeFieldRequired('chequeNumber', mode, field('chequeNumber'))} />
               </FieldRow>
             )}
-            <FieldRow label={mode === 'Cash' ? 'Cash voucher / receipt no.' : 'Transaction / UTR'}>
+            <FieldRow label={mode === 'Cash' ? 'Cash voucher / receipt no.' : field('transactionReference').label}>
               <Input name="transactionReference" defaultValue={transaction.transactionReference} />
             </FieldRow>
             <FieldRow label="TDS amount">

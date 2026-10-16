@@ -24,7 +24,6 @@ import { useToast } from '@/hooks/use-toast';
 import { createExpenseRequest } from '@/ai';
 import type { AccountHead, Department, SubAccountHead } from '@/lib/types';
 import {
-  BANK_ACCOUNT_REQUIRED_MODES,
   billingPeriodAdjustmentError,
   billingPeriodAdjustmentWindow,
   daysUntilDate,
@@ -65,7 +64,7 @@ import { ControlledField } from './controlled-field';
 import { TableCard } from '@/components/shared/table-card';
 import { ListSortControl, type ListSortControlState } from '@/components/shared/list-sort-control';
 import { useRecurringSortControl } from './use-sort-control';
-import { useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
+import { paymentModeFieldRequired, useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
 import { dispatchNotification } from '@/lib/notifications';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
@@ -234,9 +233,13 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     if (action === 'Record Payment' && paymentAmount <= 0 && !confirmingSettled) return toast({ title: 'Paid amount is required', variant: 'destructive' });
     // A transaction reference is only meaningful for non-cash modes — a cash payment has no UTR
     // or transaction number to record, so it's exempt from this setting regardless.
-    if (action === 'Record Payment' && !confirmingSettled && paymentMode !== 'Cash' && settings.controls.requireTransactionReference && !transactionReference) return toast({ title: 'Transaction reference is required', variant: 'destructive' });
-    if (action === 'Record Payment' && !confirmingSettled && paymentMode === 'Cheque' && !chequeNumber) return toast({ title: 'Cheque number is required for cheque payments', variant: 'destructive' });
-    if (action === 'Record Payment' && !confirmingSettled && BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode) && !bankAccount) return toast({ title: 'Bank account is required for electronic payments', variant: 'destructive' });
+    // Each follows its Field Control setting (Recurring Payments › Settings › Field Control), applied
+    // to the chosen mode — see `paymentModeFieldRequired`.
+    const modeFieldMissing = (key: 'bankAccount' | 'chequeNumber' | 'transactionReference', value: string) =>
+      action === 'Record Payment' && !confirmingSettled && !value && paymentModeFieldRequired(key, paymentMode, recordPaymentField(key), settings.controls.requireTransactionReference);
+    if (modeFieldMissing('transactionReference', transactionReference)) return toast({ title: `${recordPaymentField('transactionReference').label} is required`, variant: 'destructive' });
+    if (modeFieldMissing('chequeNumber', chequeNumber)) return toast({ title: `${recordPaymentField('chequeNumber').label} is required for cheque payments`, variant: 'destructive' });
+    if (modeFieldMissing('bankAccount', bankAccount)) return toast({ title: `${recordPaymentField('bankAccount').label} is required for electronic payments`, variant: 'destructive' });
     const approvalDate = [...(selected.workflowHistory || [])].reverse().find(item => item.action === 'Approve')?.timestamp;
     const approvedOn = timestampDateOnly(approvalDate);
     if (action === 'Record Payment' && paymentDate && approvedOn && paymentDate < approvedOn) return toast({ title: 'Payment date cannot be before the approval date', variant: 'destructive' });
@@ -576,14 +579,14 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
         {recordPaymentField('mode').visible && <ControlledField setting={recordPaymentField('mode')}><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></ControlledField>}
         {/* Bank account and UTR/transaction reference only apply once money actually moves
             through a bank — a cash payment has neither, so they're hidden rather than shown
-            as fields nobody knows how to fill in. These three are locked in Field Control because
-            the step's own logic already hard-requires them for the applicable payment modes — the
-            reference following Settings' "require transaction reference", as the submit check does. */}
-        {paymentMode !== 'Cash' && <ControlledField setting={recordPaymentField('bankAccount')}><Input name="bankAccount" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></ControlledField>}
-        {paymentMode === 'Cheque' && <ControlledField setting={recordPaymentField('chequeNumber')}><Input name="chequeNumber" required /></ControlledField>}
+            as fields nobody knows how to fill in. Field Control can hide them or make them optional;
+            "required" applies only in the modes each one belongs to (`paymentModeFieldRequired`),
+            the reference also following Settings' "require transaction reference". */}
+        {paymentMode !== 'Cash' && <ControlledField setting={{ ...recordPaymentField('bankAccount'), required: paymentModeFieldRequired('bankAccount', paymentMode, recordPaymentField('bankAccount')) }}><Input name="bankAccount" required={paymentModeFieldRequired('bankAccount', paymentMode, recordPaymentField('bankAccount'))} /></ControlledField>}
+        {paymentMode === 'Cheque' && <ControlledField setting={recordPaymentField('chequeNumber')}><Input name="chequeNumber" required={paymentModeFieldRequired('chequeNumber', paymentMode, recordPaymentField('chequeNumber'))} /></ControlledField>}
         {paymentMode === 'Cash'
           ? <ControlledField setting={{ ...recordPaymentField('transactionReference'), required: false, label: 'Cash voucher / receipt no.' }}><Input name="transactionReference" /></ControlledField>
-          : <ControlledField setting={{ ...recordPaymentField('transactionReference'), required: requireTransactionReference }}><Input name="transactionReference" required={requireTransactionReference} /></ControlledField>}
+          : <ControlledField setting={{ ...recordPaymentField('transactionReference'), required: paymentModeFieldRequired('transactionReference', paymentMode, recordPaymentField('transactionReference'), requireTransactionReference) }}><Input name="transactionReference" required={paymentModeFieldRequired('transactionReference', paymentMode, recordPaymentField('transactionReference'), requireTransactionReference)} /></ControlledField>}
         <ControlledField setting={recordPaymentField('tdsAmount')}><Input name="tdsAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('tdsAmount').required} /></ControlledField>
         <ControlledField setting={recordPaymentField('gstAmount')}><Input name="gstAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('gstAmount').required} /></ControlledField>
         <ControlledField setting={recordPaymentField('deductionAmount')}><Input name="deductionAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('deductionAmount').required} /></ControlledField>

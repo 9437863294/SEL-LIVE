@@ -74,6 +74,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { FilterBar } from "@/components/shared/filter-bar";
 import { ListSortControl } from "@/components/shared/list-sort-control";
 import { useRecurringSortControl } from "./use-sort-control";
+import { paymentModeFieldRequired, useFieldControl } from "./use-field-control";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { TableCard } from "@/components/shared/table-card";
 import {
@@ -1102,6 +1103,8 @@ function TransactionDialog({
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  // Record Payment's Field Control, so this older dialog asks for the reference on the same terms.
+  const { field } = useFieldControl("recordPayment");
   const [saving, setSaving] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -1115,9 +1118,12 @@ function TransactionDialog({
     const transactionReference = String(
       form.get("transactionReference") || "",
     ).trim();
-    if (amount <= 0 || !transactionReference)
+    if (amount <= 0)
+      return toast({ title: "Amount is required", variant: "destructive" });
+    const enteredMode = String(form.get("mode") || "NEFT") as PaymentMode;
+    if (!transactionReference && paymentModeFieldRequired("transactionReference", enteredMode, field("transactionReference")))
       return toast({
-        title: "Amount and transaction reference are required",
+        title: `${field("transactionReference").label} is required`,
         variant: "destructive",
       });
     setSaving(true);
@@ -1128,13 +1134,16 @@ function TransactionDialog({
         payment.id,
         RP_COLLECTIONS.transactions,
       );
-      const duplicate = await getDocs(
-        query(
-          txCollection,
-          where("transactionReference", "==", transactionReference),
-        ),
-      );
-      if (!duplicate.empty)
+      // A blank reference (cash, or one made optional in Field Control) isn't a duplicate of another blank.
+      const duplicate = transactionReference
+        ? await getDocs(
+            query(
+              txCollection,
+              where("transactionReference", "==", transactionReference),
+            ),
+          )
+        : null;
+      if (duplicate && !duplicate.empty)
         throw new Error(
           "This transaction reference is already recorded against the payment.",
         );
@@ -1319,13 +1328,13 @@ function TransactionDialog({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Bank account">
+          <Field label={field("bankAccount").label}>
             <Input name="bankAccount" />
           </Field>
-          <Field label="Transaction / UTR reference">
-            <Input name="transactionReference" required />
+          <Field label={field("transactionReference").label}>
+            <Input name="transactionReference" />
           </Field>
-          <Field label="Cheque number">
+          <Field label={field("chequeNumber").label}>
             <Input name="chequeNumber" />
           </Field>
           <Field label="TDS amount">
