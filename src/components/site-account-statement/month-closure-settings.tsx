@@ -43,6 +43,7 @@ import {
   type SASMonthClosureSettings,
 } from '@/lib/site-account-statement-month-closure';
 import { AutoCloseRuleCard } from '@/components/site-account-statement/auto-close-rule-card';
+import { MonthClosureHistory } from '@/components/site-account-statement/month-closure-history';
 import {
   currentPeriod, fyLabelOf, fyPeriods, fyStartOf, periodLabel,
 } from '@/lib/site-account-statement-period-range';
@@ -133,6 +134,14 @@ export default function SiteAccountMonthClosureSettings() {
   // Dialogs
   const [closeTarget, setCloseTarget] = useState<string | null>(null);
   const [closeNote, setCloseNote] = useState('');
+  /** Bumped once an action's log entry is written, so the History card shows it. */
+  const [historyKey, setHistoryKey] = useState(0);
+
+  /** Writes the activity entry the History card reads, then refreshes it. A failed log never fails the action. */
+  async function record(action: string, detail: Record<string, unknown>) {
+    await log(action, detail).catch(() => {});
+    setHistoryKey(k => k + 1);
+  }
   const [reopenTarget, setReopenTarget] = useState<string | null>(null);
   const [reopenReason, setReopenReason] = useState('');
   /** Days until a reopened month locks again; null keeps it open until closed by hand. */
@@ -277,7 +286,7 @@ export default function SiteAccountMonthClosureSettings() {
       // same minute do not overwrite each other. A whole-document write would.
       { merge: true },
     );
-    void log(activity, { scope: scopeProject ? scopeName : 'All projects', ...detail });
+    await record(activity, { scope: scopeProject ? scopeName : 'All projects', ...detail });
   }
 
   async function handleClose(period: string) {
@@ -386,7 +395,7 @@ export default function SiteAccountMonthClosureSettings() {
         },
         { merge: true },
       );
-      void log('Clear SAS Month Exception', { scope: scopeName, period });
+      await record('Clear SAS Month Exception', { scope: scopeName, period });
       toast({
         title: `${periodLabel(period)} follows all projects`,
         description: `${scopeName} no longer has its own setting for this month.`,
@@ -432,7 +441,7 @@ export default function SiteAccountMonthClosureSettings() {
         },
         { merge: true },
       );
-      void log('Change SAS Auto-Close Rule', {
+      await record('Change SAS Auto-Close Rule', {
         scope: scopeProject ? scopeName : 'All projects',
         rule: next ? `${next.enabled ? 'on' : 'off'} · day ${next.dayOfNextMonth} · from ${next.startPeriod}` : 'follows all projects',
         ...(changeReason ? { reason: changeReason } : {}),
@@ -773,6 +782,8 @@ export default function SiteAccountMonthClosureSettings() {
           </div>
         </CardContent>
       </Card>
+
+      <MonthClosureHistory scopeName={scopeName} scopeProject={scopeProject} refreshKey={historyKey} />
 
       {/* ── Close one month ── */}
       <Dialog open={Boolean(closeTarget)} onOpenChange={open => { if (!open) setCloseTarget(null); }}>
