@@ -72,6 +72,14 @@ export function SessionExpiryDialog({
     onOpenChange(open);
   }, [onLogout, onOpenChange, clearCountdownTimer]);
 
+  // The countdown reads the latest close handler through a ref: AppShell passes an inline
+  // `onLogout`, so depending on the handler would restart the countdown (and wipe typed input)
+  // on every parent render.
+  const handleDialogCloseRef = useRef(handleDialogClose);
+  useEffect(() => {
+    handleDialogCloseRef.current = handleDialogClose;
+  }, [handleDialogClose]);
+
   // Initialize dialog state when opened
   useEffect(() => {
     if (!isOpen) {
@@ -93,20 +101,20 @@ export function SessionExpiryDialog({
     setFailedAttempts(0);
     setIsLocked(false);
 
-    // Start countdown timer
+    // Start countdown timer. The count lives in this closure, not a setState updater: updaters
+    // run during render, and logging out from one updates AuthProvider mid-render.
+    let remaining = COUNTDOWN_DURATION;
     countdownTimerRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearCountdownTimer();
-          handleDialogClose(false);
-          return 0;
-        }
-        return prev - 1;
-      });
+      remaining -= 1;
+      setCountdown(Math.max(remaining, 0));
+      if (remaining <= 0) {
+        clearCountdownTimer();
+        handleDialogCloseRef.current(false);
+      }
     }, 1000);
 
     return () => clearCountdownTimer();
-  }, [isOpen, savedUser, clearCountdownTimer, handleDialogClose]);
+  }, [isOpen, savedUser, clearCountdownTimer]);
 
   // Auto-focus input when auth method changes
   useEffect(() => {
