@@ -67,6 +67,7 @@ const CONFIG: SettingsHistoryConfig = {
   detailsOf,
   emptyVerb: 'closed or reopened',
   searchPlaceholder: 'Search reason, month, project, person…',
+  exportName: 'Month Closure',
 };
 
 export function MonthClosureHistory(props: { scopeName: string; scopeProject?: string; refreshKey: number; defaultOpen?: boolean }) {

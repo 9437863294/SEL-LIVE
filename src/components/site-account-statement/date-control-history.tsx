@@ -58,6 +58,7 @@ const CONFIG: SettingsHistoryConfig = {
   detailsOf,
   emptyVerb: 'changed',
   searchPlaceholder: 'Search reason, rule, project, person…',
+  exportName: 'Date Control',
 };
 
 export function DateControlHistory(props: { scopeName: string; scopeProject?: string; refreshKey: number; defaultOpen?: boolean }) {

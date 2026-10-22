@@ -50,6 +50,7 @@ const CONFIG: SettingsHistoryConfig = {
   hideScope: true,
   emptyVerb: 'changed',
   searchPlaceholder: 'Search field, form, reason, person…',
+  exportName: 'Field Control',
 };
 
 export function FieldControlHistory({ refreshKey, defaultOpen }: { refreshKey: number; defaultOpen?: boolean }) {

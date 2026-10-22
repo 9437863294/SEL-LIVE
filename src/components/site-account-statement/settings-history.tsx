@@ -15,8 +15,9 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, History, Loader2, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, History, Loader2, RefreshCw } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
 import { logDate, logTime, toAuditLog, userLabel, type AuditLogEntry } from '@/components/shared/record-history';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,8 @@ export interface SettingsHistoryConfig {
   /** What the page is a history of, for the empty state: "closed or reopened", "changed". */
   emptyVerb: string;
   searchPlaceholder: string;
+  /** The export's file and sheet name — "Month Closure" gives month-closure-history-<date>.xlsx. */
+  exportName: string;
 }
 
 /** `YYYY-MM-DD` of an entry, in the viewer's own day, for the date filters. */
@@ -127,7 +130,9 @@ export function SettingsHistory({
   /** Bumped by the page after each change it saves, so the new entry appears. */
   refreshKey: number;
 }) {
-  const { actions, subjectHeader, subjectOf, reasonOf, facet, hideScope, detailsOf, emptyVerb, searchPlaceholder } = config;
+  const { actions, subjectHeader, subjectOf, reasonOf, facet, hideScope, detailsOf, emptyVerb, searchPlaceholder, exportName } = config;
+  const { toast } = useToast();
+  const [exporting, setExporting] = useState(false);
   const showScope = !scopeProject && !hideScope;
   const actionNames = Object.keys(actions).join('|');
 
@@ -235,6 +240,66 @@ export function SettingsHistory({
     });
   }
 
+  /**
+   * The rows on screen — filters and search applied — as a spreadsheet, each with everything its
+   * opened panel shows: the full reason, the before → after, the person's email, the exact time.
+   */
+  async function exportExcel() {
+    if (exporting || shown.length === 0) return;
+    setExporting(true);
+    try {
+      // Loaded on demand: the library is large, and most visits to a settings page never export.
+      const ExcelJS = (await import('exceljs')).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet(`${exportName} History`.slice(0, 31));
+      ws.columns = [
+        { header: 'When', key: 'when', width: 20 },
+        { header: 'Action', key: 'action', width: 20 },
+        { header: subjectHeader, key: 'subject', width: 42 },
+        ...(hideScope ? [] : [{ header: 'Project', key: 'project', width: 28 }]),
+        { header: 'By', key: 'by', width: 24 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Reason / note', key: 'reason', width: 50 },
+        { header: 'Details', key: 'details', width: 60 },
+      ];
+      ws.getRow(1).font = { bold: true };
+      for (const log of shown) {
+        const when = logDate(log);
+        const ctx = ctxOf(log);
+        ws.addRow({
+          when: when ? format(when, 'dd MMM yyyy, HH:mm:ss') : '',
+          action: actions[log.action]?.label ?? log.action,
+          subject: subjectOf(log, ctx),
+          project: scopeOf(log),
+          by: userLabel(log),
+          email: log.userEmail ?? '',
+          reason: reasonOf(log).text,
+          details: (detailsOf?.(log, ctx) ?? []).map(([label, value]) => `${label}: ${value}`).join('\n'),
+        });
+      }
+      for (const key of ['subject', 'reason', 'details']) {
+        ws.getColumn(key).alignment = { wrapText: true, vertical: 'top' };
+      }
+      ws.views = [{ state: 'frozen', ySplit: 1 }];
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columns.length } };
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${slug(exportName)}-history${scopeProject ? `-${slug(scopeName)}` : ''}-${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Exported', description: `${shown.length} entr${shown.length === 1 ? 'y' : 'ies'} saved to Excel.` });
+    } catch (e: any) {
+      toast({ title: 'Export failed', description: e?.message || 'The history could not be exported.', variant: 'destructive' });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const latest = inScope[0];
   const columns = showScope ? 7 : 6;
 
@@ -272,14 +337,27 @@ export function SettingsHistory({
               onClear={clearFilters}
               summary={rows ? `${shown.length} of ${inScope.length} shown` : undefined}
               actions={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => { setRows(null); setReloads(n => n + 1); }}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" /> Refresh
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={exportExcel}
+                    disabled={exporting || shown.length === 0}
+                    title="Export the entries shown — filters and search applied — to Excel"
+                  >
+                    {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Export
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => { setRows(null); setReloads(n => n + 1); }}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Refresh
+                  </Button>
+                </>
               }
             >
               <FilterSelect label="Action" anyLabel="All actions" value={action} onChange={setAction} options={options.actions} />
