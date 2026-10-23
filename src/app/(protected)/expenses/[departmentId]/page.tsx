@@ -8,13 +8,13 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   Plus, ShieldAlert, SlidersHorizontal,
-  Calendar as CalendarIcon, Edit, Save, Loader2, Lock,
+  Calendar as CalendarIcon, Edit, Lock,
   Receipt, IndianRupee, FileText, TrendingUp, Upload, X, Building2, BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, runTransaction } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, runTransaction, deleteField } from 'firebase/firestore';
 import type { AccountHead, DailyRequisitionEntry, Department, ExpenseRequest, Project, SubAccountHead } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -22,28 +22,19 @@ import { TableCard } from '@/components/shared/table-card';
 import { FilterBar, SearchInput } from '@/components/shared/filter-bar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, startOfToday, endOfToday } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { Label } from '@/components/ui/label';
 import { diffFields, logUserActivity } from '@/lib/activity-logger';
 import { ExpenseImportDialog } from '@/components/expenses/import-dialog';
+import { EditExpenseDialog, PAYMENT_LOCKED_FIELDS, type EditLock } from '@/components/expenses/edit-expense-dialog';
+import type { ExpenseFormValues } from '@/components/expenses/expense-request-fields';
+import type { StatutoryValue } from '@/components/expenses/statutory-section';
 import {
   ExpenseDetailsDialog,
   PaidBalanceCell,
@@ -61,10 +52,10 @@ import {
 } from '@/components/expenses/expense-details-dialog';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
-import { applyColumnSettings, resolveDatePreset } from '@/lib/expenses-settings';
+import { applyColumnSettings, resolveDatePreset, type ExpenseDataControl } from '@/lib/expenses-settings';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import { isPaymentLocked, requisitionsByRequestNo } from '@/lib/requisition-progress';
-import { buildExpenseStatutory, statutoryInputFrom } from '@/lib/statutory';
+import { buildExpenseStatutory, hasStatutory, statutoryInputFrom, type ExpenseStatutory } from '@/lib/statutory';
 import { PageHeader } from '@/components/shared/page-header';
 
 /* ── editing ─────────────────────────────────────────────────────────────── */
@@ -80,9 +71,6 @@ type EditableValues = Pick<ExpenseRequest, EditableField>;
 
 const TEXT_FIELDS = ['projectId', 'partyName', 'headOfAccount', 'subHeadOfAccount', 'description', 'remarks'] as const;
 
-/** Once money has gone out against the requisition, these belong to the payment record. */
-const PAYMENT_LOCKED_FIELDS: readonly EditableField[] = ['amount', 'partyName', 'projectId'];
-
 const FIELD_LABELS: Record<EditableField, string> = {
   projectId: 'project',
   amount: 'amount',
@@ -93,7 +81,7 @@ const FIELD_LABELS: Record<EditableField, string> = {
   remarks: 'remarks',
 };
 
-/** The dialog's inputs. Amount stays text while typing, so a cleared box reads as empty, not ₹0. */
+/** A request's editable fields as text, as the dialog opened on them — what a save is compared with. */
 type EditForm = Record<EditableField, string>;
 
 const asText = (value: unknown) => (value === undefined || value === null ? '' : String(value));
@@ -108,30 +96,29 @@ const editFormFrom = (expense: ExpenseRequest): EditForm => ({
   remarks: asText(expense.remarks),
 });
 
-interface EditLock {
-  /** Nothing may change: received, and the data rules keep received requests closed. */
-  locked: boolean;
-  /** Amount, party and project may not change: the requisition has been paid, in part or in full. */
-  paymentLocked: boolean;
-  /** Why, in the words the row's button and the dialog show. */
-  reason: string;
-  receptionNo: string;
-}
-
 function editLockOf(
   expense: ExpenseRequest,
   requisition: DailyRequisitionEntry | undefined,
-  allowEditAfterReception: boolean,
+  rules: Pick<ExpenseDataControl, 'allowEditAfterReception' | 'allowStatutoryEditAfterReception'>,
 ): EditLock {
   const { receptionNo } = receptionOf(expense, requisition);
-  const locked = !!receptionNo && !allowEditAfterReception;
+  const locked = !!receptionNo && !rules.allowEditAfterReception;
   const paymentLocked = !!requisition && isPaymentLocked(requisition);
+  const paidAgainst = requisition?.receptionNo || receptionNo || 'its requisition';
   const reason = locked
     ? `Locked — received in Daily Requisition as ${receptionNo}`
     : paymentLocked
-      ? `Paid against ${requisition?.receptionNo || receptionNo || 'its requisition'} — the amount, party and project can no longer change`
+      ? `Paid against ${paidAgainst} — the amount, party and project can no longer change`
       : '';
-  return { locked, paymentLocked, reason, receptionNo };
+  // GST & TDS pre-fill the requisition's verification, so once it is received they stay as they
+  // were unless Data Control says otherwise; once paid, the net payable is the payment.
+  const statutoryLocked = locked || paymentLocked || (!!receptionNo && !rules.allowStatutoryEditAfterReception);
+  const statutoryReason = paymentLocked
+    ? `Paid against ${paidAgainst} — the GST & TDS can no longer change`
+    : receptionNo && !rules.allowStatutoryEditAfterReception
+      ? 'The GST & TDS stay as they were once received — an administrator can allow changing them in Expenses › Settings › Data Control'
+      : reason;
+  return { locked, paymentLocked, statutoryLocked, reason, statutoryReason, receptionNo };
 }
 
 /** A save the lock rules turned down: its message is shown as is, unlike an unexpected failure. */
@@ -162,8 +149,12 @@ export default function DepartmentExpensesPage() {
   const [detailsExpense, setDetailsExpense] = useState<ExpenseRequest | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRequest | null>(null);
-  const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  /**
+   * Parties on other departments' requests. New Request offers every party on record, so the edit
+   * form does too — read once, the first time a request is opened for editing.
+   */
+  const [otherDepartmentParties, setOtherDepartmentParties] = useState<string[] | null>(null);
 
   /**
    * The opening period is configured, not hard-coded.
@@ -373,7 +364,34 @@ export default function DepartmentExpensesPage() {
   };
 
   const lockFor = (expense: ExpenseRequest) =>
-    editLockOf(expense, requisitionOf(requisitionByRequestNo, expense), settings.data.allowEditAfterReception);
+    editLockOf(expense, requisitionOf(requisitionByRequestNo, expense), settings.data);
+
+  /** Party names already on an expense request or a requisition — what "existing" means for the party rule. */
+  const recordedPartyNames = useMemo(
+    () =>
+      [
+        ...new Set(
+          [
+            ...(otherDepartmentParties ?? []),
+            ...expenses.map(expense => expense.partyName),
+            ...requisitions.map(requisition => requisition.partyName),
+          ].filter((name): name is string => typeof name === 'string' && name.trim() !== ''),
+        ),
+      ].sort(),
+    [otherDepartmentParties, expenses, requisitions],
+  );
+
+  const loadOtherDepartmentParties = () => {
+    if (otherDepartmentParties) return;
+    setOtherDepartmentParties([]);
+    getDocs(collection(db, 'expenseRequests'))
+      .then(snap => setOtherDepartmentParties(snap.docs.map(d => (d.data() as ExpenseRequest).partyName)))
+      .catch(error => {
+        console.error('Could not read the parties on other requests:', error);
+        // Try again on the next opening rather than leave the list short for the whole visit.
+        setOtherDepartmentParties(null);
+      });
+  };
 
   const openEditDialog = (expense: ExpenseRequest) => {
     const decision = editDecisionFor(expense);
@@ -393,8 +411,8 @@ export default function DepartmentExpensesPage() {
       });
       return;
     }
+    loadOtherDepartmentParties();
     setEditingExpense(expense);
-    setEditForm(editFormFrom(expense));
     setIsEditDialogOpen(true);
   };
 
@@ -416,11 +434,12 @@ export default function DepartmentExpensesPage() {
     }
   };
 
-  const handleUpdateExpense = async () => {
-    if (!editingExpense || !editForm || !user) return;
+  /** `statutory` is the GST & TDS section when it was changed in the dialog, else null. */
+  const handleUpdateExpense = async (values: ExpenseFormValues, statutory: StatutoryValue | null) => {
+    if (!editingExpense || !user) return;
     // The write, not the button, is the gate — and it is asked of the amount being saved as well as
     // the one the row was opened with, so an edit cannot be banded into and then out of.
-    const savingAmount = Number(editForm.amount.trim());
+    const savingAmount = Number(values.amount);
     const decision = editDecisionFor({
       amount: Number.isFinite(savingAmount) && savingAmount > 0 ? savingAmount : Number(editingExpense.amount) || 0,
     });
@@ -438,12 +457,11 @@ export default function DepartmentExpensesPage() {
     const openedWith = editFormFrom(before);
     const shownLock = lockFor(before);
 
-    // Checked whenever the amount is the user's to set. An untouched amount is compared as typed, so
-    // rounding an old value does not count as changing it.
-    const amountText = editForm.amount.trim();
-    const amountTouched = amountText !== openedWith.amount.trim();
-    const parsedAmount = Number(amountText);
-    const amountValid = amountText !== '' && Number.isFinite(parsedAmount) && parsedAmount > 0;
+    // Checked whenever the amount is the user's to set. An untouched amount is the very figure the
+    // form opened with, so rounding an old value does not count as changing it.
+    const parsedAmount = Number(values.amount);
+    const amountTouched = parsedAmount !== (Number(before.amount) || 0);
+    const amountValid = Number.isFinite(parsedAmount) && parsedAmount > 0;
     if ((amountTouched || !shownLock.paymentLocked) && !amountValid) {
       toast({ title: 'Check the amount', description: 'Enter an amount above zero.', variant: 'destructive' });
       return;
@@ -456,11 +474,11 @@ export default function DepartmentExpensesPage() {
       if (amount !== Number(before.amount)) changes.amount = amount;
     }
     for (const key of TEXT_FIELDS) {
-      const next = editForm[key].trim();
+      const next = (values[key] ?? '').trim();
       if (next !== openedWith[key].trim()) changes[key] = next;
     }
     const changed = Object.keys(changes) as EditableField[];
-    if (!changed.length) {
+    if (!changed.length && !statutory) {
       toast({ title: 'Nothing to save', description: 'No field was changed.' });
       setIsEditDialogOpen(false);
       return;
@@ -470,28 +488,49 @@ export default function DepartmentExpensesPage() {
     try {
       const requisition = await currentRequisitionFor(before);
       const expenseRef = doc(db, 'expenseRequests', before.id);
-      await runTransaction(db, async transaction => {
+      // What the GST & TDS were saved as, for the activity log: null when they were removed.
+      const savedStatutory = await runTransaction(db, async transaction => {
         const snap = await transaction.get(expenseRef);
         if (!snap.exists()) throw refusal('This request no longer exists.');
         // Judged on the request as it is now: it may have been received while the dialog was open.
         const live = { ...(snap.data() as ExpenseRequest), id: snap.id };
-        const lock = editLockOf(live, requisition, settings.data.allowEditAfterReception);
+        const lock = editLockOf(live, requisition, settings.data);
         if (lock.locked) throw refusal(`${lock.reason}. Nothing was saved.`);
-        const blocked = changed.filter(key => PAYMENT_LOCKED_FIELDS.includes(key));
+        const blocked = changed.filter(key => (PAYMENT_LOCKED_FIELDS as readonly EditableField[]).includes(key));
         if (lock.paymentLocked && blocked.length) {
           throw refusal(
             `${lock.reason}. Undo the change to the ${blocked.map(key => FIELD_LABELS[key]).join(', ')} — the description and remarks can still be edited.`,
           );
         }
-        // GST, TDS and the net payable were worked out from the amount this request was raised
-        // for. Changing the amount without working them out again leaves `statutory.taxableAmount`
-        // and `statutory.netPayable` describing a figure the request no longer carries — and Daily
-        // Requisition's GST & TDS verification starts from those, so the wrong gross and net would
-        // follow the request into the payment. The deductions are absolute amounts and stay as
-        // entered; only the figures that scale with the taxable value move.
+        if (statutory && lock.statutoryLocked) {
+          throw refusal(`${lock.statutoryReason}. Undo the change to the GST & TDS — nothing was saved.`);
+        }
         const write: Record<string, unknown> = { ...changes };
-        if (changes.amount !== undefined && live.statutory) {
-          const recomputed = buildExpenseStatutory(Number(changes.amount) || 0, statutoryInputFrom(live.statutory));
+        const taxable = changes.amount ?? (Number(live.amount) || 0);
+        let written: ExpenseStatutory | null | undefined;
+        if (statutory) {
+          // Entered here: saved as New Request saves it, worked out on the amount being saved. The
+          // registration chosen on the bill is kept on the request itself, as New Request keeps it.
+          const { gstRegistrationId = '', ...input } = statutory;
+          if (hasStatutory(input)) {
+            written = buildExpenseStatutory(taxable, input);
+            if (written.netPayable < 0) {
+              throw refusal('The deductions come to more than the invoice value. Nothing was saved.');
+            }
+            write.statutory = written;
+          } else if (live.statutory) {
+            written = null;
+            write.statutory = deleteField();
+          }
+          if (gstRegistrationId !== (live.gstRegistrationId ?? '')) write.gstRegistrationId = gstRegistrationId;
+        } else if (changes.amount !== undefined && live.statutory) {
+          // GST, TDS and the net payable were worked out from the amount this request was raised
+          // for. Changing the amount without working them out again leaves `statutory.taxableAmount`
+          // and `statutory.netPayable` describing a figure the request no longer carries — and Daily
+          // Requisition's GST & TDS verification starts from those, so the wrong gross and net would
+          // follow the request into the payment. The deductions are absolute amounts and stay as
+          // entered; only the figures that scale with the taxable value move.
+          const recomputed = buildExpenseStatutory(taxable, statutoryInputFrom(live.statutory));
           if (recomputed.netPayable < 0) {
             throw refusal(
               'At that amount the deductions recorded for this request come to more than the invoice value. Nothing was saved.',
@@ -500,6 +539,7 @@ export default function DepartmentExpensesPage() {
           write.statutory = recomputed;
         }
         transaction.update(expenseRef, write);
+        return written;
       });
       await logUserActivity({
         userId: user.id,
@@ -512,13 +552,23 @@ export default function DepartmentExpensesPage() {
         details: {
           requestNo: before.requestNo || '',
           department: department?.name || 'N/A',
-          changes: diffFields(before, changes),
+          changes: diffFields(
+            { ...before, statutory: before.statutory ?? null, gstRegistrationId: before.gstRegistrationId ?? '' },
+            {
+              ...changes,
+              ...(statutory
+                ? {
+                    ...(savedStatutory !== undefined ? { statutory: savedStatutory } : {}),
+                    gstRegistrationId: statutory.gstRegistrationId ?? '',
+                  }
+                : {}),
+            },
+          ),
         },
       });
       toast({ title: 'Success', description: 'Expense request updated successfully.' });
       setIsEditDialogOpen(false);
       setEditingExpense(null);
-      setEditForm(null);
       void fetchData({ silent: true });
     } catch (error) {
       if (isRefusal(error)) {
@@ -532,17 +582,6 @@ export default function DepartmentExpensesPage() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleSubHeadChange = (subHeadName: string) => {
-    if (!editForm) return;
-    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
-    const parentHead = accountHeads.find(h => h.id === selectedSubHead?.headId);
-    setEditForm({
-      ...editForm,
-      subHeadOfAccount: subHeadName,
-      headOfAccount: parentHead ? parentHead.name : '',
-    });
   };
 
   if (isLoading || isAuthLoading) {
@@ -577,8 +616,6 @@ export default function DepartmentExpensesPage() {
   }
 
   const editLock = editingExpense ? lockFor(editingExpense) : null;
-  const fieldsLocked = !!editLock?.paymentLocked;
-  const amountInvalid = !!editForm && !fieldsLocked && !(Number(editForm.amount.trim()) > 0);
 
   return (
     <>
@@ -774,7 +811,7 @@ export default function DepartmentExpensesPage() {
                   {filteredExpenses.length > 0 ? (
                     filteredExpenses.map(expense => {
                       const requisition = requisitionOf(requisitionByRequestNo, expense);
-                      const lock = editLockOf(expense, requisition, settings.data.allowEditAfterReception);
+                      const lock = editLockOf(expense, requisition, settings.data);
                       // Per row: an assignment can cover one amount and not another, so the row
                       // this user may not edit says which it is rather than offering a button that
                       // refuses on the way in.
@@ -882,122 +919,21 @@ export default function DepartmentExpensesPage() {
         />
       )}
 
-      {/* Edit Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={open => { if (!isSaving) setIsEditDialogOpen(open); }}>
-        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex flex-wrap items-center gap-2">
-              <Edit className="h-4 w-4 text-primary" />
-              Edit Expense: <span className="text-primary">{editingExpense?.requestNo}</span>
-            </DialogTitle>
-            <DialogDescription>Update the details of this expense request.</DialogDescription>
-          </DialogHeader>
-
-          {editLock?.locked ? (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>{editLock.reason}. Nothing here can be saved.</span>
-            </div>
-          ) : editLock?.paymentLocked ? (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span>{editLock.reason}. Reverse the payment in Bank Balance first to change them.</span>
-            </div>
-          ) : editLock?.receptionNo ? (
-            <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Received in Daily Requisition as <span className="font-medium text-foreground">{editLock.receptionNo}</span>.
-              Changes made here do not update the requisition — correct it in Daily Requisition as well.
-            </div>
-          ) : null}
-
-          {editForm && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 py-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Project Name</Label>
-                <Select
-                  value={editForm.projectId}
-                  onValueChange={value => setEditForm({ ...editForm, projectId: value })}
-                  disabled={fieldsLocked}
-                >
-                  <SelectTrigger className="h-9" aria-label="Project Name"><SelectValue /></SelectTrigger>
-                  <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-expense-amount" className="text-xs font-semibold">Amount</Label>
-                <Input
-                  id="edit-expense-amount"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step="0.01"
-                  className="h-9"
-                  value={editForm.amount}
-                  disabled={fieldsLocked}
-                  aria-invalid={amountInvalid || undefined}
-                  onChange={e => setEditForm({ ...editForm, amount: e.target.value })}
-                />
-                {amountInvalid && <p className="text-xs text-destructive">Enter an amount above zero.</p>}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-expense-party" className="text-xs font-semibold">Name of the party</Label>
-                <Input
-                  id="edit-expense-party"
-                  className="h-9"
-                  value={editForm.partyName}
-                  disabled={fieldsLocked}
-                  onChange={e => setEditForm({ ...editForm, partyName: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5">
-                {/* Derived from the sub-head. A Select with no items can never show its value, so
-                    this is a read-only box. */}
-                <Label htmlFor="edit-expense-head" className="text-xs font-semibold">Head of A/c</Label>
-                <Input id="edit-expense-head" className="h-9" value={editForm.headOfAccount} readOnly disabled />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Sub-Head of A/c</Label>
-                <Select value={editForm.subHeadOfAccount} onValueChange={handleSubHeadChange}>
-                  <SelectTrigger className="h-9" aria-label="Sub-Head of A/c"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {subAccountHeads.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                <Label htmlFor="edit-expense-description" className="text-xs font-semibold">Description</Label>
-                <Textarea
-                  id="edit-expense-description"
-                  rows={2}
-                  value={editForm.description}
-                  onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                <Label htmlFor="edit-expense-remarks" className="text-xs font-semibold">Remarks</Label>
-                <Textarea
-                  id="edit-expense-remarks"
-                  rows={2}
-                  value={editForm.remarks}
-                  onChange={e => setEditForm({ ...editForm, remarks: e.target.value })}
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <DialogClose asChild><Button variant="outline" size="sm" disabled={isSaving}>Cancel</Button></DialogClose>
-            <Button
-              size="sm"
-              onClick={handleUpdateExpense}
-              disabled={isSaving || !!editLock?.locked}
-              className="gap-2 min-w-[120px]"
-            >
-              {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit — the New Request form, opened on the request (components/expenses/edit-expense-dialog) */}
+      <EditExpenseDialog
+        expense={editingExpense}
+        lock={editLock}
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        departmentName={department?.name ?? ''}
+        settings={settings}
+        projects={projects}
+        accountHeads={accountHeads}
+        subAccountHeads={subAccountHeads}
+        recordedParties={recordedPartyNames}
+        isSaving={isSaving}
+        onSave={handleUpdateExpense}
+      />
     </>
   );
 }

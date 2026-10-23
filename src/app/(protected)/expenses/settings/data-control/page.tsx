@@ -232,7 +232,7 @@ export default function ExpensesDataControlPage() {
               title="Allow GST & TDS editing after reception"
               hint={
                 data.allowEditAfterReception
-                  ? 'Recorded for the edit screen. Today GST & TDS are fixed when the request is raised and no screen changes them.'
+                  ? 'The register’s Edit lets GST, TDS and deductions change on a request that already carries a reception number. Once it is paid they stay fixed.'
                   : 'Only applies while editing after reception is allowed.'
               }
               control={

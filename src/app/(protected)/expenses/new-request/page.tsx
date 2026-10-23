@@ -8,11 +8,9 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { Save, Loader2, Check, ChevronsUpDown, Receipt, Sparkles, ShieldAlert, Hash, CalendarClock } from 'lucide-react';
+import { Save, Loader2, Receipt, Sparkles, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, runTransaction, getDoc } from 'firebase/firestore';
@@ -21,10 +19,7 @@ import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHe
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
-import { cn } from '@/lib/utils';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useState, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -41,23 +36,17 @@ import {
 import { ExpenseBadge } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
-import {
-  defaultExpensesSettings,
-  findDuplicateRequest,
-  requestAmountError,
-  resolveFormField,
-  toIsoStamp,
-  type ExpensesModuleSettings,
-} from '@/lib/expenses-settings';
+import { findDuplicateRequest, resolveFormField, toIsoStamp } from '@/lib/expenses-settings';
 import { allocateRequestNos } from '@/lib/expenses-import';
 import { PageHeader } from '@/components/shared/page-header';
+import { StatutorySection, FORM_LABEL as LABEL, type StatutoryValue } from '@/components/expenses/statutory-section';
 import {
-  StatutorySection,
-  FORM_GRID as GRID,
-  FORM_LABEL as LABEL,
-  FORM_READ_ONLY as READ_ONLY,
-  type StatutoryValue,
-} from '@/components/expenses/statutory-section';
+  ExpenseRequestFields,
+  ExpenseRequestTotals,
+  buildExpenseFormSchema,
+  findRecordedParty,
+  type ExpenseFormValues,
+} from '@/components/expenses/expense-request-fields';
 import { useBillRegistration } from '@/components/expenses/bill-registration';
 import {
   EMPTY_STATUTORY,
@@ -66,64 +55,6 @@ import {
   hasStatutory,
   statutoryErrors,
 } from '@/lib/statutory';
-
-
-/** How two spellings of a party name are compared: case and spacing do not make a new party. */
-const partyKey = (name: unknown) => String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
-
-/** The on-record spelling of a party name, or undefined when it is not on record. */
-const findRecordedParty = (name: string, recorded: readonly string[]): string | undefined => {
-  const key = partyKey(name);
-  return key ? recorded.find(candidate => partyKey(candidate) === key) : undefined;
-};
-
-/**
- * Built from the module's field configuration rather than fixed, so making Remarks mandatory (or
- * Party optional) under Settings actually changes what the form will accept. Project, amount and
- * sub-head stay required whatever the configuration says — the record is meaningless without them,
- * which is why the settings screen will not let them be relaxed either.
- *
- * With "Restrict parties to existing names" on, a party must be one already on an expense request
- * or a requisition (`recordedParties`). Blank is still governed by the field's own required setting.
- * With a largest request amount set (Settings › Data Control), anything above it is refused.
- */
-const buildExpenseFormSchema = (settings: ExpensesModuleSettings, recordedParties: readonly string[] = []) => {
-  const text = (key: Parameters<typeof resolveFormField>[1]) => {
-    const field = resolveFormField(settings, key);
-    return field.visible && field.required
-      ? z.string().min(1, `${field.label} is required.`)
-      : z.string().optional();
-  };
-
-  return z
-    .object({
-      departmentId: z.string().min(1, 'Department is required.'),
-      projectId: z.string().min(1, 'Project is required.'),
-      amount: z.coerce.number().gte(0, 'Amount must be a non-negative number.'),
-      headOfAccount: z.string().min(1, 'Head of Account is required.'),
-      subHeadOfAccount: z.string().min(1, 'Sub-Head of Account is required.'),
-      remarks: text('remarks'),
-      description: text('description'),
-      partyName: text('partyName'),
-    })
-    .superRefine((values, ctx) => {
-      const tooMuch = requestAmountError(Number(values.amount) || 0, settings.data);
-      if (tooMuch) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: tooMuch });
-      if (!settings.data.restrictPartyToExisting) return;
-      const name = values.partyName?.trim();
-      if (name && !findRecordedParty(name, recordedParties)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['partyName'],
-          message: `"${name}" is not a party on record. Choose one from the list — adding new parties is turned off in Expenses › Settings › Data Control.`,
-        });
-      }
-    });
-};
-
-const expenseFormSchema = buildExpenseFormSchema(defaultExpensesSettings());
-
-type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 
 function NewExpenseRequestForm() {
   const { toast } = useToast();
@@ -162,8 +93,6 @@ function NewExpenseRequestForm() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
-  /** The picker's suggestions: the names on record plus any typed in this session. */
-  const [partyNames, setPartyNames] = useState<string[]>([]);
   /** Party names already on an expense request or a requisition — what "existing" means for the party rule. */
   const [recordedPartyNames, setRecordedPartyNames] = useState<string[]>([]);
   /** Every request number in use in any department, so a new one never repeats one imported from a file. */
@@ -175,12 +104,10 @@ function NewExpenseRequestForm() {
   const [previewRequestNo, setPreviewRequestNo] = useState('Generating...');
   const [timestamp, setTimestamp] = useState('');
 
-  const [partySearch, setPartySearch] = useState('');
   /** GST & TDS (Statutory section). Optional; stored on the request only when something is entered. */
   const [statutory, setStatutory] = useState<StatutoryValue>(EMPTY_STATUTORY);
   const [showStatutoryErrors, setShowStatutoryErrors] = useState(false);
   const [statutoryKey, setStatutoryKey] = useState(0);
-  const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(buildExpenseFormSchema(settings, recordedPartyNames)),
@@ -195,10 +122,6 @@ function NewExpenseRequestForm() {
       partyName: partyNameFromUrl || '',
     },
   });
-
-  useEffect(() => {
-    if (partyNameFromUrl) setPartySearch(partyNameFromUrl);
-  }, [partyNameFromUrl]);
 
   /**
    * This page had no permission check of its own — it trusted the links that lead to it, and a
@@ -261,7 +184,6 @@ function NewExpenseRequestForm() {
         const existingExpenseParties = existingExpenses.map(expense => expense.partyName);
         const existingRequisitionParties = requisitionsSnap.docs.map(doc => (doc.data() as DailyRequisitionEntry).partyName);
         const uniquePartyNames = [...new Set([...existingExpenseParties, ...existingRequisitionParties].filter(Boolean))].sort();
-        setPartyNames(uniquePartyNames);
         setRecordedPartyNames(uniquePartyNames);
         setRecordedRequestNos(existingExpenses.map(expense => expense.requestNo).filter(Boolean));
         setRecentRequests(
@@ -307,15 +229,6 @@ function NewExpenseRequestForm() {
     generatePreviewId();
     setTimestamp(format(new Date(), 'dd MMM yyyy, HH:mm'));
   }, [form, form.watch('departmentId'), recordedRequestNos]);
-
-  const handleSubHeadChange = (subHeadName: string) => {
-    const selectedSubHead = subAccountHeads.find(sh => sh.name === subHeadName);
-    form.setValue('subHeadOfAccount', subHeadName);
-    if (selectedSubHead) {
-      const parentHead = accountHeads.find(h => h.id === selectedSubHead.headId);
-      form.setValue('headOfAccount', parentHead ? parentHead.name : '');
-    }
-  };
 
   /** Settings › Data Control › "Capture GST & TDS on new requests". Off hides the section and ignores anything in it. */
   const captureStatutory = settings.data.gstTdsCapture;
@@ -455,9 +368,8 @@ function NewExpenseRequestForm() {
         ...prev,
         { requestNo: newRequestNo, partyName: savedPartyName, amount: data.amount, createdAt: requestFields.createdAt },
       ]);
-      if (savedPartyName) {
-        if (!partyNames.includes(savedPartyName)) setPartyNames(prev => [...prev, savedPartyName].sort());
-        if (!recordedPartyNames.includes(savedPartyName)) setRecordedPartyNames(prev => [...prev, savedPartyName].sort());
+      if (savedPartyName && !recordedPartyNames.includes(savedPartyName)) {
+        setRecordedPartyNames(prev => [...prev, savedPartyName].sort());
       }
 
       toast({ title: 'Request Created', description: `Expense request ${newRequestNo} has been successfully created.` });
@@ -471,7 +383,6 @@ function NewExpenseRequestForm() {
         description: '',
         partyName: '',
       });
-      setPartySearch('');
       setStatutory(EMPTY_STATUTORY);
       setShowStatutoryErrors(false);
       setStatutoryKey(key => key + 1);
@@ -484,24 +395,11 @@ function NewExpenseRequestForm() {
   };
 
 
-  /** Settings › Data Control › "Restrict parties to existing names". */
-  const restrictParty = settings.data.restrictPartyToExisting;
-  const partyOptions = restrictParty ? recordedPartyNames : partyNames;
-
   // `watchedAmount` is read further up as well — the assignment for raising a request can be
   // banded by amount, so the gate watches the same figure the totals below do.
   const withStatutoryNow = captureStatutory && hasStatutory(statutory);
   const netPayableNow = withStatutoryNow ? computeStatutory(watchedAmount, statutory).net : watchedAmount;
-  const headOfAccount = form.watch('headOfAccount');
-  const headError = form.formState.errors.headOfAccount?.message;
   const inrText = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
-  const optional = (key: Parameters<typeof resolveFormField>[1]) =>
-    !fieldFor(key).required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>;
-  /** The help text set under Settings › Field Control, if any. */
-  const help = (key: Parameters<typeof resolveFormField>[1]) => {
-    const text = fieldFor(key).helpText;
-    return text ? <FormDescription className="text-[11px]">{text}</FormDescription> : null;
-  };
 
   return (
     <div className="w-full space-y-4">
@@ -535,27 +433,19 @@ function NewExpenseRequestForm() {
       ) : (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(data => handleSave(data))} className="space-y-4">
-            {/* One card, one 6-column grid shared with the GST & TDS part below, so every column lines up:
-                row 1 — who and where it is booked · row 2 — how much and what for. */}
-            <Card className="overflow-hidden border-slate-200/80 bg-white shadow-sm">
-              <div className="flex flex-col gap-2 border-b bg-slate-50/70 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-slate-900">Request details</h2>
-                  <p className="text-xs text-muted-foreground">Who is being paid, for what, and how much.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Hash className="h-3.5 w-3.5 text-slate-400" />
-                    <span className={cn('font-medium text-slate-800', /\d/.test(previewRequestNo) && 'font-mono')}>{previewRequestNo}</span>
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <CalendarClock className="h-3.5 w-3.5 text-slate-400" />
-                    {timestamp}
-                  </span>
-                </div>
-              </div>
-
-              <CardContent className={cn(GRID, 'p-4 sm:p-5')}>
+            {/* The same fields the register's Edit dialog shows (components/expenses/expense-request-fields). */}
+            <ExpenseRequestFields
+              form={form}
+              settings={settings}
+              projects={projects}
+              accountHeads={accountHeads}
+              subAccountHeads={subAccountHeads}
+              recordedParties={recordedPartyNames}
+              requestNo={previewRequestNo}
+              timestamp={timestamp}
+              netPayable={netPayableNow}
+              withStatutory={withStatutoryNow}
+              department={
                 <FormField
                   control={form.control}
                   name="departmentId"
@@ -576,189 +466,10 @@ function NewExpenseRequestForm() {
                     </FormItem>
                   )}
                 />
-
-                <FormField
-                  control={form.control}
-                  name="projectId"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className={LABEL}>{fieldFor('projectId').label}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select project" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}</SelectContent>
-                      </Select>
-                      {help('projectId')}
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
-                  )}
-                />
-
-                {fieldFor('partyName').visible && <FormField
-                  control={form.control}
-                  name="partyName"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5 sm:col-span-2">
-                      <FormLabel className={LABEL}>{fieldFor('partyName').label}{optional('partyName')}</FormLabel>
-                      <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              className={cn('flex h-9 w-full justify-between px-3 font-normal text-sm', !field.value && 'text-muted-foreground')}
-                            >
-                              <span className="truncate">{field.value || (restrictParty ? 'Select a party on record' : 'Select or type a party')}</span>
-                              <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" side="bottom" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search party name..." value={partySearch} onValueChange={setPartySearch} />
-                            <CommandList>
-                              <CommandEmpty>{restrictParty ? 'No party on record matches.' : 'No party found.'}</CommandEmpty>
-                              <CommandGroup>
-                                {partyOptions.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map(name => (
-                                  <CommandItem
-                                    value={name}
-                                    key={name}
-                                    onSelect={currentValue => {
-                                      field.onChange(currentValue);
-                                      form.setValue('partyName', currentValue);
-                                      setPartySearch(currentValue);
-                                      setPartyPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn('mr-2 h-4 w-4', name === field.value ? 'opacity-100' : 'opacity-0')} />
-                                    {name}
-                                  </CommandItem>
-                                ))}
-                                {!restrictParty && partySearch && !partyNames.some(n => n.toLowerCase() === partySearch.toLowerCase()) && (
-                                  <CommandItem
-                                    value={partySearch}
-                                    onSelect={currentValue => {
-                                      field.onChange(currentValue);
-                                      form.setValue('partyName', currentValue);
-                                      setPartySearch(currentValue);
-                                      setPartyNames(prev => [...prev, currentValue].sort());
-                                      setPartyPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check className="mr-2 h-4 w-4 opacity-0" />
-                                    Add &quot;{partySearch}&quot;
-                                  </CommandItem>
-                                )}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                      {restrictParty && <FormDescription className="text-[11px]">Only parties already on record can be chosen.</FormDescription>}
-                      {help('partyName')}
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
-                  )}
-                />}
-
-                <FormField
-                  control={form.control}
-                  name="subHeadOfAccount"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className={LABEL}>{fieldFor('subHeadOfAccount').label}</FormLabel>
-                      <Select onValueChange={handleSubHeadChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select sub-head" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>{subAccountHeads.map(sh => <SelectItem key={sh.id} value={sh.name}>{sh.name}</SelectItem>)}</SelectContent>
-                      </Select>
-                      {help('subHeadOfAccount')}
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
-                  )}
-                />
-
-                {/* The head is derived from the sub-head, so it is shown, not asked for. */}
-                <div className="min-w-0 space-y-1.5">
-                  <p className={LABEL}>{fieldFor('headOfAccount').label}</p>
-                  <div className={cn(READ_ONLY, headOfAccount ? 'font-medium text-slate-800' : 'text-muted-foreground')}>
-                    <span className="truncate">{headOfAccount || 'Set by the sub-head'}</span>
-                  </div>
-                  {fieldFor('headOfAccount').helpText && <p className="text-[11px] text-muted-foreground">{fieldFor('headOfAccount').helpText}</p>}
-                  {headError && form.watch('subHeadOfAccount') && <p className="text-[11px] font-medium text-destructive">{headError}</p>}
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className={LABEL}>
-                        {fieldFor('amount').label}
-                        {withStatutoryNow && <span className="ml-1 font-normal text-muted-foreground">(before GST)</span>}
-                      </FormLabel>
-                      <div className="relative">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            placeholder="0.00"
-                            className="h-9 pl-7 text-right text-sm font-semibold tabular-nums"
-                            {...field}
-                            value={field.value === 0 ? '' : field.value}
-                          />
-                        </FormControl>
-                      </div>
-                      {help('amount')}
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="min-w-0 space-y-1.5">
-                  <p className={LABEL}>Net payable</p>
-                  <div className={cn(READ_ONLY, 'justify-end border-emerald-200 bg-emerald-50/70 font-semibold tabular-nums text-emerald-800')}>
-                    {inrText(netPayableNow)}
-                  </div>
-                </div>
-
-                {fieldFor('description').visible && <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5 sm:col-span-2">
-                      <FormLabel className={LABEL}>{fieldFor('description').label}{optional('description')}</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="What the payment is for, e.g. Cement supply for Block A" className="h-9 text-sm" />
-                      </FormControl>
-                      {help('description')}
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
-                  )}
-                />}
-
-                {fieldFor('remarks').visible && <FormField
-                  control={form.control}
-                  name="remarks"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5 sm:col-span-2">
-                      <FormLabel className={LABEL}>{fieldFor('remarks').label}{optional('remarks')}</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="Anything else worth noting" className="h-9 text-sm" />
-                      </FormControl>
-                      {help('remarks')}
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
-                  )}
-                />}
-              </CardContent>
-
-              {/* Only as much tax detail as the bill has — and none when Data Control turns GST & TDS capture off */}
-              {captureStatutory && (
-                <div className="border-t bg-slate-50/50 p-4 sm:p-5">
+              }
+              statutory={
+                // Only as much tax detail as the bill has — and none when Data Control turns GST & TDS capture off
+                captureStatutory && (
                   <StatutorySection
                     key={statutoryKey}
                     amount={watchedAmount}
@@ -768,25 +479,14 @@ function NewExpenseRequestForm() {
                     projectId={form.watch('projectId')}
                     departmentId={form.watch('departmentId')}
                   />
-                </div>
-              )}
-            </Card>
+                )
+              }
+            />
 
             {/* Totals and Save, always in reach */}
             <div className="sticky bottom-0 z-10 rounded-t-xl border border-b-0 bg-background/95 px-4 py-3 shadow-[0_-8px_24px_-20px_rgba(15,23,42,0.5)] backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-sm">
-                  <span>
-                    <span className="text-muted-foreground">Amount </span>
-                    <span className="font-semibold tabular-nums">{inrText(watchedAmount)}</span>
-                  </span>
-                  {withStatutoryNow && (
-                    <span>
-                      <span className="text-muted-foreground">Net payable </span>
-                      <span className="text-base font-bold tabular-nums text-emerald-700">{inrText(netPayableNow)}</span>
-                    </span>
-                  )}
-                </div>
+                <ExpenseRequestTotals amount={watchedAmount} netPayable={netPayableNow} withStatutory={withStatutoryNow} />
                 {/* A refusal that comes from the assignment rather than the role says so on the
                     button itself — the department and amount are the two things that can change it,
                     and neither is obvious from a greyed-out Save. */}

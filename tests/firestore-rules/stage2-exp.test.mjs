@@ -7,7 +7,7 @@
 import test, { after, before } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc,
+  addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, setDoc,
   updateDoc, where, writeBatch,
 } from 'firebase/firestore';
 import { as, rulesEnv, seed } from './helpers.mjs';
@@ -226,6 +226,8 @@ test('edit: Edit on the department changes the request, never its department, nu
     await tx.get(ref);
     tx.update(ref, { amount: 750, partyName: 'Acme Ltd', statutory: { taxableAmount: 750, netPayable: 700 } });
   }));
+  // The edit carries New Request's GST & TDS section, registration included.
+  await assertSucceeds(updateDoc(doc(fs, 'expenseRequests/E1'), { statutory: deleteField(), gstRegistrationId: 'R2' }));
   await assertSucceeds(updateDoc(doc(fs, 'expenseRequests/E1'), { remarks: 'checked', description: 'A4 paper' }));
   for (const change of [{ departmentId: 'D2' }, { requestNo: 'ACC/9999' }, { receptionNo: 'DR/1' }, { generatedByUserId: 'uEdit' }]) {
     await assertFails(updateDoc(doc(fs, 'expenseRequests/E1'), change));

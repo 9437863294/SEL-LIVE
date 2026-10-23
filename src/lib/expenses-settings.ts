@@ -160,9 +160,8 @@ export interface ExpenseDataControl {
   importRequestNoSource: 'generate' | 'file';
   /**
    * Whether the GST, TDS and deductions of a request may still be changed once it carries a
-   * reception number. Only meaningful while `allowEditAfterReception` is on. Today no edit screen
-   * changes a request's statutory figures — they are fixed at New Request — so this is stored
-   * for the screen that will, rather than enforced anywhere yet.
+   * reception number. Only meaningful while `allowEditAfterReception` is on. Enforced by the
+   * department register's Edit (`editLockOf`); a paid request's stay fixed either way.
    */
   allowStatutoryEditAfterReception: boolean;
   /** Whether New Request shows the GST & TDS section at all. */
