@@ -134,7 +134,7 @@
     "lucide-react": "^0.417.0",
     "mailparser": "^3.9.28",
     "mongodb": "^6.21.0",
-    "next": "^16.2.10",
+    "next": "^16.4.3",
     "next-nprogress-bar": "^2.4.7",
     "nodemailer": "^10.0.16",
     "openai": "^6.9.1",

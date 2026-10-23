@@ -78,6 +78,9 @@ const nextConfig: NextConfig = {
   },
   devIndicators: false,
   experimental: {
+    // `next dev` / `next build` remind about Next.js releases that fix a published security
+    // advisory, and `next upgrade --agent` defaults to that policy.
+    agentUpgrade: 'security',
     turbopackFileSystemCacheForDev: false,
     // These are all imported by name across hundreds of files. Without this the
     // barrel entry point is pulled into the shared chunk graph wholesale.
