@@ -87,7 +87,7 @@ Without them the release build still succeeds but the APK is **unsigned** and wi
 | Target | appId | Opens at |
 | --- | --- | --- |
 | `full` | `com.sel.full` (overridden to `com.sel` by `.env`) | `/` |
-| `driver` | `com.sel.driver` | `/driver-management/mobile-hub` |
+| `driver` | `com.sel.driver` | `/driver-management` |
 
 `.env` currently pins `CAPACITOR_APP_ID=com.sel` and `CAPACITOR_APP_NAME=SEL`, which is why the
 locally generated config shows those rather than the per-target defaults. `applicationId` in

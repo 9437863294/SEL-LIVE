@@ -30,7 +30,7 @@ const targetConfig =
         APP_TARGET: 'driver',
         CAPACITOR_APP_ID: 'com.sel.driver',
         CAPACITOR_APP_NAME: 'SEL Driver',
-        CAPACITOR_START_PATH: '/driver-management/mobile-hub',
+        CAPACITOR_START_PATH: '/driver-management',
       };
 
 const mergedEnv = {

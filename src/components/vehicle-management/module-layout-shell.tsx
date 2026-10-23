@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, type ReactNode } from 'react';
-import { usePathname } from 'next/navigation';
 import {
   Activity,
   BadgeCheck,
@@ -88,7 +87,6 @@ const canViewModuleWith = (can: Can) =>
 const canSee = (can: Can, item: Section) => (item.resource ? canResource(can, item.resource) : canViewModuleWith(can));
 
 export default function VehicleManagementLayoutShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname() ?? '';
   const { can, isLoading } = useAuthorization();
   const canViewModule = canViewModuleWith(can);
 
@@ -102,13 +100,9 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
     return [...byGroup.values()];
   }, [can]);
 
-  // Only tabs whose sidebar row is visible. Not on the driver app's screens, which are not in this
-  // menu at all: they are the pages Driver Management re-exports, and that module's bar serves them.
-  // An empty tab list keeps the bottom bar off the screen.
-  const isDriverAppRoute = pathname.startsWith('/vehicle-management/driver-mobile');
-  const mobileTabs = isDriverAppRoute
-    ? []
-    : bottomTabPriority.filter((tab) => sections.some((item) => item.href === tab.href && canSee(can, item)));
+  // Only tabs whose sidebar row is visible. (The driver app's screens live in Driver Management alone;
+  // their old /vehicle-management/driver-mobile addresses redirect there — next.config.ts.)
+  const mobileTabs = bottomTabPriority.filter((tab) => sections.some((item) => item.href === tab.href && canSee(can, item)));
 
   return (
     <ModuleShell

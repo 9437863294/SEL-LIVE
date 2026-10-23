@@ -102,7 +102,7 @@ jobs:
           APP_TARGET: ${{ env.TARGET }}
           CAPACITOR_APP_ID: ${{ env.TARGET == 'driver' && 'com.sel.driver' || 'com.sel' }}
           CAPACITOR_APP_NAME: ${{ env.TARGET == 'driver' && 'SEL Driver' || 'SEL' }}
-          CAPACITOR_START_PATH: ${{ env.TARGET == 'driver' && '/driver-management/mobile-hub' || '/' }}
+          CAPACITOR_START_PATH: ${{ env.TARGET == 'driver' && '/driver-management' || '/' }}
           CAPACITOR_LIVE_URL: ${{ vars.CAPACITOR_LIVE_URL || 'https://seltech.store' }}
         run: |
           npx cap sync android

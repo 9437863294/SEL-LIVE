@@ -51,6 +51,9 @@ service cloud.firestore {
         'billTrackingConfig', 'billTrackingCounters', 'billTrackingDocuments', 'billTrackingFollowUps',
         'billTrackingImportJobs', 'billTrackingRetention', 'billTrackingSavedViews', 'billTrackingTargets',
         'chatConversations',
+        // Employee trip claims (Driver Management): every read and write goes through
+        // /api/driver-management on the Admin SDK (src/lib/employee-trips).
+        'employeeTripClaims', 'employeeTripCounters', 'employeeTripRecords', 'employeeTripSettings',
         // Only ever used to mint ids: doc(collection(db, 'contraIds')).id — nothing is read or written.
         'contraIds',
         'employeeAttendance', 'employeeLeaveBalance', 'employeeSensitive', 'employeeSwipes',
@@ -3180,7 +3183,8 @@ service cloud.firestore {
           == request.resource.data.driverId;
     }
 
-    /* ── Employee trip reimbursement (driver-management/employee-trips/page.tsx) ── */
+    /* ── Employee trip reimbursement, retired (the old driver-management/employee-trips page; the
+     *    collection held no records when My Trips and the employeeTrip* collections replaced it) ── */
 
     /** canManageAll: works every claim. Everyone else files and edits their own. */
     function vmClaimManager() {

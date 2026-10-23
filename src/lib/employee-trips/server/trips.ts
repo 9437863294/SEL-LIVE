@@ -1,0 +1,176 @@
+import 'server-only';
+
+/**
+ * Recording, editing and deleting your own trips. Only drafts change: a trip on a claim belongs to
+ * the workflow until the claim sends it back. The server prices every save from the rate card and
+ * recomputes the flags; the figures the form showed are a preview, never the record.
+ */
+
+import { priceTrip, rateFor } from '../rates.ts';
+import { tripInputSchema } from '../schemas.ts';
+import { tripFlags, validateTrip } from '../trips.ts';
+import { ET_COLLECTIONS, type TripClaimSettings, type TripRecord } from '../types.ts';
+import { TripError, db, nowIso, type TripContext } from './context';
+import { companyVehicles, departmentOptions, loadSettings, odometerDocId, projectOptions } from './lookups';
+import { afterAudit } from './notify';
+
+const tripsCollection = () => db().collection(ET_COLLECTIONS.trips);
+
+export function toTrip(id: string, data: FirebaseFirestore.DocumentData): TripRecord {
+  return {
+    id,
+    organizationId: String(data.organizationId ?? 'default'),
+    employeeId: String(data.employeeId ?? ''),
+    employeeName: String(data.employeeName ?? ''),
+    tripDate: String(data.tripDate ?? ''),
+    ownership: data.ownership === 'company' ? 'company' : 'own',
+    vehicleType: String(data.vehicleType ?? ''),
+    vehicleNumber: String(data.vehicleNumber ?? ''),
+    vehicleId: data.vehicleId ?? null,
+    fromPlace: String(data.fromPlace ?? ''),
+    toPlace: String(data.toPlace ?? ''),
+    purpose: String(data.purpose ?? ''),
+    startOdometer: typeof data.startOdometer === 'number' ? data.startOdometer : null,
+    endOdometer: typeof data.endOdometer === 'number' ? data.endOdometer : null,
+    distanceKm: Number(data.distanceKm ?? 0),
+    projectId: data.projectId ?? null,
+    projectName: data.projectName ?? null,
+    departmentId: data.departmentId ?? null,
+    departmentName: data.departmentName ?? null,
+    tollAmount: Number(data.tollAmount ?? 0),
+    parkingAmount: Number(data.parkingAmount ?? 0),
+    ratePerKm: typeof data.ratePerKm === 'number' ? data.ratePerKm : null,
+    rateRevisionId: data.rateRevisionId ?? null,
+    distanceAmount: Number(data.distanceAmount ?? 0),
+    totalAmount: Number(data.totalAmount ?? 0),
+    flags: Array.isArray(data.flags) ? data.flags : [],
+    notes: String(data.notes ?? ''),
+    status: data.status ?? 'draft',
+    claimId: data.claimId ?? null,
+    claimNumber: data.claimNumber ?? null,
+    decision: data.decision ?? null,
+    returnNote: data.returnNote ?? null,
+    previousClaims: Array.isArray(data.previousClaims) ? data.previousClaims : [],
+    createdAt: String(data.createdAt ?? ''),
+    updatedAt: String(data.updatedAt ?? ''),
+  };
+}
+
+const byNewest = (a: TripRecord, b: TripRecord) => b.tripDate.localeCompare(a.tripDate) || b.createdAt.localeCompare(a.createdAt);
+
+export async function employeeTrips(organizationId: string, employeeId: string): Promise<TripRecord[]> {
+  const snapshot = await tripsCollection().where('employeeId', '==', employeeId).get();
+  return snapshot.docs
+    .map((doc) => toTrip(doc.id, doc.data()))
+    .filter((trip) => trip.organizationId === organizationId)
+    .sort(byNewest);
+}
+
+/** Every logged trip on these vehicle numbers, anyone's — for the odometer-overlap flag. */
+export async function vehicleTrips(organizationId: string, vehicleNumbers: string[]): Promise<TripRecord[]> {
+  const numbers = [...new Set(vehicleNumbers.filter(Boolean))];
+  const results: TripRecord[] = [];
+  for (let at = 0; at < numbers.length; at += 30) {
+    const snapshot = await tripsCollection().where('vehicleNumber', 'in', numbers.slice(at, at + 30)).get();
+    results.push(...snapshot.docs.map((doc) => toTrip(doc.id, doc.data())).filter((trip) => trip.organizationId === organizationId));
+  }
+  return results;
+}
+
+export const listMyTrips = (context: TripContext) => employeeTrips(context.organizationId, context.userId);
+
+/** Rate, amounts and flags for a trip as it stands, from the current rate card. */
+export function priceAndFlag(
+  trip: Pick<TripRecord, 'id' | 'tripDate' | 'vehicleType' | 'ownership' | 'distanceKm' | 'tollAmount' | 'parkingAmount' | 'fromPlace' | 'toPlace' | 'startOdometer' | 'endOdometer' | 'vehicleNumber' | 'status'>,
+  settings: TripClaimSettings,
+  others: { sameEmployee: TripRecord[]; sameVehicle: TripRecord[] },
+) {
+  const rate = rateFor(settings.rateRevisions, trip.tripDate, trip.vehicleType, trip.ownership);
+  const pricing = priceTrip({ distanceKm: trip.distanceKm, ratePerKm: rate.ratePerKm, tollAmount: trip.tollAmount, parkingAmount: trip.parkingAmount, allowTollParking: settings.rules.allowTollParking });
+  const flags = tripFlags({ ...trip, ratePerKm: rate.ratePerKm }, { rules: settings.rules, ...others });
+  return { ratePerKm: rate.ratePerKm, rateRevisionId: rate.revisionId, distanceAmount: pricing.distanceAmount, totalAmount: pricing.totalAmount, flags };
+}
+
+export async function saveTrip(context: TripContext, body: unknown, tripId?: string): Promise<{ trip: TripRecord }> {
+  const input = tripInputSchema.parse(body);
+  const [settings, vehicles, projects, departments, mine] = await Promise.all([
+    loadSettings(context.organizationId),
+    companyVehicles(),
+    projectOptions(),
+    departmentOptions(),
+    listMyTrips(context),
+  ]);
+
+  const existing = tripId ? mine.find((trip) => trip.id === tripId) : undefined;
+  if (tripId && !existing) throw new TripError('That trip was not found among yours.', 404);
+  if (existing && existing.status !== 'draft') throw new TripError('This trip is on a claim and can no longer be changed.', 409);
+
+  const companyVehicle = input.ownership === 'company' && input.vehicleId ? vehicles.find((vehicle) => vehicle.id === input.vehicleId) ?? null : null;
+  const result = validateTrip(input, { rules: settings.rules, today: context.today, companyVehicle });
+  if (!result.ok) throw new TripError('Check the highlighted fields.', 400, { fields: result.errors });
+  const value = result.value;
+
+  const project = value.projectId ? projects.find((entry) => entry.id === value.projectId) : null;
+  const department = value.departmentId ? departments.find((entry) => entry.id === value.departmentId) : null;
+  if (value.projectId && !project) throw new TripError('That project no longer exists.', 400, { fields: { projectId: 'Choose another project.' } });
+  if (value.departmentId && !department) throw new TripError('That department no longer exists.', 400, { fields: { departmentId: 'Choose another department.' } });
+
+  const id = existing?.id ?? tripsCollection().doc().id;
+  const draft = { ...value, id, status: 'draft' as const };
+  const sameVehicle = await vehicleTrips(context.organizationId, [value.vehicleNumber]);
+  const priced = priceAndFlag(draft, settings, { sameEmployee: mine, sameVehicle });
+  const now = nowIso();
+
+  const record: TripRecord = {
+    ...draft,
+    organizationId: context.organizationId,
+    employeeId: context.userId,
+    employeeName: context.userName,
+    projectName: project?.name ?? null,
+    departmentName: department?.name ?? null,
+    ...priced,
+    claimId: null,
+    claimNumber: null,
+    decision: null,
+    returnNote: existing?.returnNote ?? null,
+    previousClaims: existing?.previousClaims ?? [],
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+  };
+
+  const ref = tripsCollection().doc(id);
+  const odometerRef = db().collection(ET_COLLECTIONS.counters).doc(odometerDocId(context.organizationId));
+  await db().runTransaction(async (transaction) => {
+    const [current, odometer] = await Promise.all([transaction.get(ref), value.vehicleId && value.endOdometer !== null ? transaction.get(odometerRef) : Promise.resolve(null)]);
+    // Submitted between the read above and now: the claim owns it.
+    if (current.exists && current.data()?.status !== 'draft') throw new TripError('This trip was just submitted on a claim and can no longer be changed.', 409);
+    if (current.exists && current.data()?.employeeId !== context.userId) throw new TripError('That trip is not yours.', 403);
+    transaction.set(ref, record);
+    if (odometer && value.vehicleId && value.endOdometer !== null) {
+      const last = (odometer.data()?.readings ?? {})[value.vehicleId] as { km?: number } | undefined;
+      if (!last?.km || value.endOdometer > last.km) {
+        transaction.set(odometerRef, { readings: { [value.vehicleId]: { km: value.endOdometer, date: value.tripDate } } }, { merge: true });
+      }
+    }
+  });
+
+  afterAudit(context, existing ? 'Edit Trip' : 'Record Trip', { tripDate: record.tripDate, vehicle: record.vehicleNumber, distanceKm: record.distanceKm, amount: record.totalAmount }, id);
+  return { trip: record };
+}
+
+export async function deleteTrip(context: TripContext, tripId: string): Promise<{ ok: true }> {
+  const ref = tripsCollection().doc(tripId);
+  let deleted: TripRecord | null = null;
+  await db().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists) throw new TripError('That trip was not found.', 404);
+    const trip = toTrip(snapshot.id, snapshot.data()!);
+    if (trip.employeeId !== context.userId || trip.organizationId !== context.organizationId) throw new TripError('That trip is not yours.', 403);
+    if (trip.status !== 'draft') throw new TripError('Only unclaimed trips can be deleted.', 409);
+    transaction.delete(ref);
+    deleted = trip;
+  });
+  const trip = deleted as TripRecord | null;
+  if (trip) afterAudit(context, 'Delete Trip', { tripDate: trip.tripDate, vehicle: trip.vehicleNumber, distanceKm: trip.distanceKm, amount: trip.totalAmount }, tripId);
+  return { ok: true };
+}

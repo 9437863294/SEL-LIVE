@@ -16,7 +16,6 @@ import { permissionModules } from "@/lib/permissions";
 import type { Density } from "@/lib/appearance/model";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAppearance } from "@/components/theme/ThemeProvider";
-import { useCurrentDriverProfile } from "@/components/vehicle-management/hooks";
 import { cn } from "@/lib/utils";
 
 const moduleIcons: Record<string, string> = {
@@ -103,7 +102,7 @@ const moduleDescriptions: Record<string, string> = {
   Employee: "Manage employee information and records.",
   "Vehicle Management": "Manage fleet, trips, fuel usage, and maintenance.",
   "Driver Management":
-    "Driver mobile workflows, trip actions, and assignment execution.",
+    "Record official trips on your own or a company vehicle, claim per-km reimbursement, and run the driver app.",
   "Site Account Statement":
     "Track project-wise payments, expenses, and budgets with forecasts and reports.",
   "Tour, Travel & Expense":
@@ -197,20 +196,6 @@ export default function ModuleDashboard({ className }: { className?: string } = 
   const { modules, addModule, updateModule, updateModuleOrder, isLoading } =
     useModules();
   const { can, isLoading: authLoading } = useAuthorization();
-  const hasDriverPermission =
-    can("View Module", "Driver Management") ||
-    can("View", "Driver Management.Driver Mobile Hub") ||
-    can("View", "Driver Management.Employee Trip Log") ||
-    can("Add", "Driver Management.Employee Trip Log") ||
-    can("Edit", "Driver Management.Employee Trip Log") ||
-    can("View", "Vehicle Management.Driver Mobile") ||
-    can("View", "Vehicle Management.Employee Trip Reimbursement") ||
-    can("Add", "Vehicle Management.Employee Trip Reimbursement") ||
-    can("Edit", "Vehicle Management.Employee Trip Reimbursement") ||
-    can("View", "Vehicle Management.Driver Management");
-  const { driver } = useCurrentDriverProfile(
-    !authLoading && !hasDriverPermission,
-  );
   const [dragging, setDragging] = useState<{
     id: string;
     title: string;
@@ -222,19 +207,13 @@ export default function ModuleDashboard({ className }: { className?: string } = 
       return [];
     }
 
-    const isAssignedDriverWithVehicle = Boolean(
-      driver?.id &&
-      (driver?.assignedVehicleId || driver?.assignedVehicleNumber),
-    );
-
     const availableModuleNames = Object.keys(permissionModules).filter(
       (moduleName) => {
         // Filtered here rather than at render, so a card already saved in the user's own arrangement
         // disappears too — `visibleSavedModules` below is filtered against this same list.
         if (HIDDEN_FROM_DASHBOARD.has(moduleName)) return false;
-        if (moduleName === "Driver Management") {
-          return hasDriverPermission || isAssignedDriverWithVehicle;
-        }
+        // Every employee records their own trips and claims there; its pages check anything more.
+        if (moduleName === "Driver Management") return true;
         return can("View Module", moduleName);
       },
     );
@@ -263,10 +242,6 @@ export default function ModuleDashboard({ className }: { className?: string } = 
     isLoading,
     can,
     authLoading,
-    hasDriverPermission,
-    driver?.id,
-    driver?.assignedVehicleId,
-    driver?.assignedVehicleNumber,
   ]);
 
   // ── Personal arrangement ──────────────────────────────────────────────────────────────────────────

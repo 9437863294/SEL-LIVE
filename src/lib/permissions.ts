@@ -687,6 +687,9 @@ export const permissionModules = {
     "Driver Fuel": ["View", "Add", "Edit", "Delete"],
     "Driver Daily Status": ["View", "Add", "Edit", "Delete"],
     "Driver Trips": ["View", "Add", "Edit"],
+    // Retired with the old reimbursement page. Kept so roles that hold it keep their reach: View or
+    // Approve here counts as Trip Claims · View All, Export as Trip Claims · Export
+    // (src/lib/employee-trips/access.ts).
     "Employee Trip Log": [
       "View",
       "Add",
@@ -696,6 +699,11 @@ export const permissionModules = {
       "Export",
       "Approve",
     ],
+    // Recording and claiming your own trips needs no permission, and neither does approving or
+    // paying a claim: being named on that stage in Settings › Workflow is the authority. These are
+    // the wider grants — every employee's claims, the CSV, acting for an absent assignee.
+    "Trip Claims": ["View All", "Export", "Override Workflow"],
+    "Trip Settings": ["View", "Edit"],
     "Trip Management": ["View", "Add", "Edit", "Delete", "Export"],
   },
   "Store & Stock Management": {

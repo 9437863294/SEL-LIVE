@@ -55,12 +55,7 @@ export default function AppShell({
         };
     }, [user?.id]);
 
-    const isDriverRoute = useMemo(
-        () =>
-            safePathname.startsWith('/driver-management') ||
-            safePathname.startsWith('/vehicle-management/driver-mobile'),
-        [safePathname]
-    );
+    const isDriverRoute = useMemo(() => safePathname.startsWith('/driver-management'), [safePathname]);
 
     const isAndroidWebView = useMemo(() => {
         if (typeof navigator === 'undefined') return false;

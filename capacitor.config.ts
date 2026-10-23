@@ -8,7 +8,9 @@ const isDriverTarget = appTarget !== 'full';
 
 const defaultAppId = isDriverTarget ? 'com.sel.driver' : 'com.sel.full';
 const defaultAppName = isDriverTarget ? 'SEL Driver' : 'SEL Live';
-const defaultStartPath = isDriverTarget ? '/driver-management/mobile-hub' : '/';
+// The driver app opens on Driver Management's dashboard (installed builds that still start at the
+// retired /driver-management/mobile-hub are redirected there — next.config.ts).
+const defaultStartPath = isDriverTarget ? '/driver-management' : '/';
 
 const appId = (process.env.CAPACITOR_APP_ID || defaultAppId).trim();
 const appName = (process.env.CAPACITOR_APP_NAME || defaultAppName).trim();

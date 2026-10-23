@@ -176,7 +176,7 @@ export function VehicleDetailsDialog({
     },
     access.driver && {
       title: 'Driver Daily Logs',
-      href: '/vehicle-management/driver-mobile/daily-status',
+      href: '/driver-management/daily-status',
       rows: records[VEHICLE_COLLECTIONS.driverDailyStatus] || [],
       dateKeys: ['statusDate'],
       detail: (row: Row) => `${row.driverName || '-'} · ${row.routeSummary || 'No route summary'}`,

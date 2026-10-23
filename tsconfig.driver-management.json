@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/env.d.ts",
+    "src/lib/employee-trips/**/*.ts",
+    "src/app/api/driver-management/**/*.ts",
+    "src/app/(protected)/driver-management/**/*.ts",
+    "src/app/(protected)/driver-management/**/*.tsx",
+    "src/components/driver-management/**/*.ts",
+    "src/components/driver-management/**/*.tsx"
+  ],
+  "exclude": ["node_modules"]
+}

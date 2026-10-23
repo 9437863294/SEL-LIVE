@@ -21,7 +21,7 @@ This project can build two Android app targets from the same codebase:
   - `APP_TARGET=driver`
   - `CAPACITOR_APP_ID=com.sel.driver`
   - `CAPACITOR_APP_NAME=SEL Driver`
-  - `CAPACITOR_START_PATH=/driver-management/mobile-hub`
+  - `CAPACITOR_START_PATH=/driver-management` (builds made before 2026-10-23 start at `/driver-management/mobile-hub`, which redirects there)
 
 - Full target:
   - `APP_TARGET=full`

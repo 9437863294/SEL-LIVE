@@ -49,18 +49,14 @@ const isDriverAppClient = (currentPath: string, searchParams: SearchParamGetter)
   const isNativeCapacitor =
     typeof maybeCapacitor?.isNativePlatform === 'function' && Boolean(maybeCapacitor.isNativePlatform());
   if (isNativeCapacitor) {
-    // Only driver-specific routes trigger driver login; the general SEL app starts at '/'
-    return (
-      currentPath.startsWith('/driver-management') ||
-      currentPath.startsWith('/vehicle-management/driver-mobile')
-    );
+    // Only driver-specific routes trigger driver login; the general SEL app starts at '/'. (The old
+    // /vehicle-management/driver-mobile paths redirect here before this runs — next.config.ts.)
+    return currentPath.startsWith('/driver-management');
   }
 
   const ua = navigator.userAgent || '';
   const isAndroidWebView = /Android/i.test(ua) && /\bwv\b/i.test(ua);
-  const isDriverRoute =
-    currentPath.startsWith('/driver-management') || currentPath.startsWith('/vehicle-management/driver-mobile');
-  return isAndroidWebView && isDriverRoute;
+  return isAndroidWebView && currentPath.startsWith('/driver-management');
 };
 
 export function ClientSessionHandler() {

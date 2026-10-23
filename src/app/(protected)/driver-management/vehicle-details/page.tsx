@@ -1,1 +1,1 @@
-export { default } from '@/app/(protected)/vehicle-management/driver-mobile/vehicle-details/page';
+export { default } from '@/components/driver-management/driver-app/assigned-vehicle';
