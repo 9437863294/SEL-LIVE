@@ -169,6 +169,17 @@ export function TripFormDialog({
   const [locating, setLocating] = useState(false);
 
   /**
+   * A GPS trip is dated by when it was driven, so the field is shown but not editable.
+   *
+   * Both ends of the recording: at the start because the drive is happening now, and at the
+   * review because the date was fixed when the wheels turned. The review in particular matters
+   * for a drive that crosses midnight — the trip belongs to the day it began, and leaving the
+   * field editable invited somebody to 'correct' it to today and detach the claim from its
+   * measured evidence.
+   */
+  const gpsDated = mode === 'gps-start' || Boolean(gps);
+
+  /**
    * Put the device's current place in the From box.
    *
    * Silent on failure beyond clearing the spinner: location can be refused, unavailable indoors,
@@ -381,8 +392,8 @@ export function TripFormDialog({
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Trip date" required error={liveErrors.tripDate} htmlFor="trip-date" hint={daysLeft !== null && daysLeft <= 7 && daysLeft >= 0 ? `Claim within ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : undefined}>
-          <Input id="trip-date" type="date" value={form.tripDate} max={data.today} onChange={(event) => set('tripDate', event.target.value)} aria-invalid={Boolean(liveErrors.tripDate)} className="bg-white" />
+        <Field label="Trip date" required error={liveErrors.tripDate} htmlFor="trip-date" hint={gpsDated ? 'The day you drove it.' : daysLeft !== null && daysLeft <= 7 && daysLeft >= 0 ? `Claim within ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : undefined}>
+          <Input id="trip-date" type="date" value={form.tripDate} max={data.today} disabled={gpsDated} onChange={(event) => set('tripDate', event.target.value)} aria-invalid={Boolean(liveErrors.tripDate)} className="bg-white" />
         </Field>
         <Field label="Vehicle" required error={liveErrors.ownership}>
           <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Vehicle ownership">
