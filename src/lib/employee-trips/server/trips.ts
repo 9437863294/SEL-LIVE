@@ -82,6 +82,28 @@ export async function vehicleTrips(organizationId: string, vehicleNumbers: strin
 
 export const listMyTrips = (context: TripContext) => employeeTrips(context.organizationId, context.userId);
 
+/**
+ * Every employee's trips, for the organisation-wide register.
+ *
+ * Separate from `listMyTrips` rather than a flag on it, so the permission check cannot be
+ * skipped by a caller that forgets to pass one: asking for everybody's trips is a different
+ * request from asking for your own, and it reads as one here.
+ *
+ * Gated on the same `View All` that opens the claims register. Seeing what colleagues claimed
+ * for — where they drove, when, and how far — is the same disclosure whether it is read off a
+ * claim or off the trips behind it, so it cannot be the weaker permission.
+ */
+export async function listAllTrips(context: TripContext): Promise<TripRecord[]> {
+  if (!context.trip.viewAll) {
+    throw new TripError('Seeing every employee’s trips needs Driver Management · Trip Claims · View All.', 403);
+  }
+  const snapshot = await tripsCollection().get();
+  return snapshot.docs
+    .map((doc) => toTrip(doc.id, doc.data()))
+    .filter((trip) => trip.organizationId === context.organizationId)
+    .sort(byNewest);
+}
+
 /** Rate, amounts and flags for a trip as it stands, from the current rate card. */
 export function priceAndFlag(
   trip: Pick<TripRecord, 'id' | 'tripDate' | 'vehicleType' | 'ownership' | 'distanceKm' | 'tollAmount' | 'parkingAmount' | 'fromPlace' | 'toPlace' | 'startOdometer' | 'endOdometer' | 'vehicleNumber' | 'status'>,

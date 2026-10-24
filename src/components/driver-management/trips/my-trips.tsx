@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, ListChecks, Pencil, Plus, ReceiptText, Route, Trash2, Undo2 } from 'lucide-react';
+import { CalendarClock, ListChecks, LocateFixed, Pencil, Plus, ReceiptText, Route, Trash2, Undo2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -190,7 +191,35 @@ export default function MyTrips() {
     },
     { header: 'Date', cell: (trip) => <span className="whitespace-nowrap">{shortDate(trip.tripDate)}</span> },
     { header: 'Vehicle', cell: (trip) => <VehicleLabel inline ownership={trip.ownership} vehicleNumber={trip.vehicleNumber} vehicleType={trip.vehicleType} /> },
-    { header: 'Distance', align: 'right', cell: (trip) => <Km value={trip.distanceKm} className="whitespace-nowrap" /> },
+    {
+      header: 'Distance',
+      align: 'right',
+      /*
+        A measured distance and a typed one are both just a number in this column, and they are
+        not the same evidence — which is the whole reason `source` and the GPS block are stored.
+        Shown here rather than only to the approver: the employee should see which of their trips
+        carry a measurement before they put them on a claim.
+      */
+      cell: (trip) => (
+        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+          <Km value={trip.distanceKm} className="whitespace-nowrap" />
+          {trip.source === 'gps' && (
+            <Badge
+              variant="outline"
+              className="gap-1 border-sky-200 bg-sky-50 text-[10px] text-sky-700"
+              title={
+                trip.gps
+                  ? `Measured by GPS: ${trip.gps.measuredKm} km from ${trip.gps.fixes} fixes.`
+                  : 'Measured by GPS.'
+              }
+            >
+              <LocateFixed className="h-3 w-3" aria-hidden />
+              GPS
+            </Badge>
+          )}
+        </span>
+      ),
+    },
     {
       header: 'Amount',
       align: 'right',
@@ -281,7 +310,7 @@ export default function MyTrips() {
             {/* The next step is the prominent one: claiming once there is something to claim. */}
             <Button type="button" variant={candidates.length ? 'outline' : 'default'} className={candidates.length ? undefined : VM_PRIMARY_BUTTON} onClick={() => { setEditing(null); setFormOpen(true); }}>
               <Plus className="mr-2 h-4 w-4" aria-hidden />
-              Record trip
+              Type it in
             </Button>
             {/*
               The GPS recorder sits beside the manual button because they produce the same thing:

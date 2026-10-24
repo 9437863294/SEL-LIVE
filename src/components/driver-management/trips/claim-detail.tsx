@@ -10,7 +10,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Banknote, CircleCheck, GitBranch, ReceiptText, RotateCcw, Send, Undo2, XCircle } from 'lucide-react';
+import { Banknote, CircleCheck, GitBranch, LocateFixed, ReceiptText, RotateCcw, Send, Undo2, XCircle } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -157,7 +158,34 @@ export default function ClaimDetailView({ claimId }: { claimId: string }) {
       header: 'Odometer',
       cell: (trip) => (trip.startOdometer !== null && trip.endOdometer !== null ? <span className="whitespace-nowrap tabular-nums text-xs">{trip.startOdometer.toLocaleString('en-IN')} – {trip.endOdometer.toLocaleString('en-IN')}</span> : <span className="text-xs text-muted-foreground">Typed in</span>),
     },
-    { header: 'Distance', align: 'right', cell: (trip) => <Km value={trip.distanceKm} /> },
+    {
+      header: 'Distance',
+      align: 'right',
+      /*
+        The approver is the reader this was stored for. Deciding whether to cut the kilometres on
+        a line is a different judgement when the figure was measured over 212 GPS fixes than when
+        it was typed from memory, and until now the two looked identical here.
+      */
+      cell: (trip) => (
+        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+          <Km value={trip.distanceKm} />
+          {trip.source === 'gps' && (
+            <Badge
+              variant="outline"
+              className="gap-1 border-sky-200 bg-sky-50 text-[10px] text-sky-700"
+              title={
+                trip.gps
+                  ? `Measured by GPS: ${trip.gps.measuredKm} km over ${trip.gps.fixes} fixes, ${Math.round(trip.gps.movingMinutes)} min moving, ${trip.gps.stopCount} stop(s).`
+                  : 'Measured by GPS.'
+              }
+            >
+              <LocateFixed className="h-3 w-3" aria-hidden />
+              GPS
+            </Badge>
+          )}
+        </span>
+      ),
+    },
     {
       header: 'Claimed',
       align: 'right',

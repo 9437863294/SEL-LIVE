@@ -119,7 +119,7 @@ export function GpsTripButton() {
     // No `w-full`: a full-width direct child of PageHeader actions takes a whole row from `sm` up.
     <Button type="button" variant="outline" onClick={() => context.setStartOpen(true)}>
       <LocateFixed className="mr-2 h-4 w-4" aria-hidden />
-      Record by GPS
+      Drive &amp; record
     </Button>
   );
 }
