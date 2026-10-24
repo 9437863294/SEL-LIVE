@@ -4,7 +4,6 @@ import { useMemo, type ReactNode } from 'react';
 import {
   Banknote,
   CarFront,
-  ClipboardCheck,
   Fuel,
   Gauge,
   Inbox,
@@ -49,7 +48,6 @@ const sections: Section[] = [
   { id: 'trips',           href: '/driver-management/trips',           label: 'Live GPS Trip',    access: { resource: 'Driver Trips' }, icon: LocateFixed, tone: 'sky', group: 'driver' },
   { id: 'trip-log',        href: '/driver-management/trip-log',        label: 'GPS Trip Log',     access: { resource: 'Driver Trips' }, icon: ListFilter, tone: 'indigo', group: 'driver' },
   { id: 'fuel',            href: '/driver-management/fuel',            label: 'Fuel Entries',     access: { resource: 'Driver Fuel' }, icon: Fuel, tone: 'amber', group: 'driver' },
-  { id: 'daily-status',    href: '/driver-management/daily-status',    label: 'Daily Status',     access: { resource: 'Driver Daily Status' }, icon: ClipboardCheck, tone: 'emerald', group: 'driver' },
   { id: 'settings',        href: '/driver-management/settings',        label: 'Settings',         access: 'settings', icon: Settings,    tone: 'slate',   group: 'admin' },
 ];
 
@@ -66,11 +64,10 @@ const legacyResourceMap: Record<string, string[]> = {
   // The retired hub's grant still opens the vehicle page, as that page's own check allows.
   'Assigned Vehicle Details': ['Vehicle Management.Driver Mobile', 'Driver Management.Driver Mobile Hub'],
   'Driver Fuel':            ['Vehicle Management.Driver Mobile Fuel'],
-  'Driver Daily Status':    ['Vehicle Management.Driver Daily Status'],
   'Driver Trips':           ['Vehicle Management.Driver Mobile Trip'],
 };
 
-const driverSelfResources = new Set(['Assigned Vehicle Details', 'Driver Fuel', 'Driver Daily Status', 'Driver Trips']);
+const driverSelfResources = new Set(['Assigned Vehicle Details', 'Driver Fuel', 'Driver Trips']);
 
 // The phone's bottom bar leads with these, in this order, under their short names; every other
 // page the user can open follows them, and "More" opens the full menu. Everyone gets their own
@@ -85,7 +82,6 @@ const bottomTabPriority: ModuleNavTab[] = [
   { href: '/driver-management/payments',     label: 'Pay',      icon: Banknote, ariaLabel: 'Payments' },
   { href: '/driver-management/my-claims',    label: 'Claims',   icon: ReceiptText, ariaLabel: 'My claims' },
   { href: '/driver-management/trips',        label: 'GPS',      icon: LocateFixed, ariaLabel: 'Live GPS trip' },
-  { href: '/driver-management/daily-status', label: 'Status',   icon: ClipboardCheck, ariaLabel: 'Daily status' },
   { href: '/driver-management/fuel',         label: 'Fuel',     icon: Fuel, ariaLabel: 'Fuel entries' },
 ];
 

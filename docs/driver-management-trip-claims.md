@@ -66,10 +66,12 @@ Nobody acts on their own claim. The claimant can withdraw a claim until someone 
   and `src/app/api/driver-management/*`.
 - Screens: `src/components/driver-management/trips/`; pages under
   `src/app/(protected)/driver-management/`. The driver app's screens (My Vehicle, Live GPS Trip, GPS
-  Trip Log, Fuel Entries, Daily Status) are in `src/components/driver-management/driver-app/` and
+  Trip Log, Fuel Entries — company vehicles only) are in `src/components/driver-management/driver-app/` and
   exist only here: their old `/vehicle-management/driver-mobile/*` copies, the Driver Mobile hub
-  (now the Overview's driver panel), Driver Management's copy of Trip Management and the old
-  Employee Trips page are redirects in `next.config.ts`. Driver APKs now start at `/driver-management`.
+  (now the Overview's driver panel), Driver Management's copy of Trip Management, the old
+  Employee Trips page and the retired Daily Status page are redirects in `next.config.ts` (Daily
+  Status's old logs stay in `vehicleManagementDriverDailyStatus`; Driver Master still counts them as
+  history when a driver is deleted). Driver APKs now start at `/driver-management`.
 - The reporting line is read by `reportingAuthorityOf` in `server/lookups.ts` (Access Management's
   `accessGrants.reportingManagerId`, then greytHR's `employees/{employeeId}.reportingManagerEmployeeId`)
   and frozen on each claim as `reportingAuthorityIds`, which re-routing reuses.

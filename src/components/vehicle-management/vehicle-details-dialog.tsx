@@ -102,7 +102,6 @@ export function VehicleDetailsDialog({
           { name: VEHICLE_COLLECTIONS.maintenance, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.maintenance },
           { name: VEHICLE_COLLECTIONS.fuel, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.fuel },
           { name: VEHICLE_COLLECTIONS.trips, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.trips },
-          { name: VEHICLE_COLLECTIONS.driverDailyStatus, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.driver },
           { name: VEHICLE_COLLECTIONS.driverAssignments, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.driver },
           { name: VEHICLE_COLLECTIONS.driver, idField: 'assignedVehicleId', numberField: 'assignedVehicleNumber', allowed: access.driver },
         ].filter((source) => source.allowed);
@@ -173,15 +172,6 @@ export function VehicleDetailsDialog({
         ? `${row.previousDriverName ? `Previous: ${row.previousDriverName} · ` : ''}${row.vehicleNumber || '-'}`
         : `${row.experienceYears || 0} years experience · Blood ${row.bloodGroup || '-'}`,
       statusKeys: ['action', 'status'],
-    },
-    access.driver && {
-      title: 'Driver Daily Logs',
-      href: '/driver-management/daily-status',
-      rows: records[VEHICLE_COLLECTIONS.driverDailyStatus] || [],
-      dateKeys: ['statusDate'],
-      detail: (row: Row) => `${row.driverName || '-'} · ${row.routeSummary || 'No route summary'}`,
-      metrics: (row: Row) => `${Number(row.totalDistanceKm || 0).toFixed(1)} km · ${row.totalTrips || 0} trips`,
-      statusKeys: ['runningStatus'],
     },
     access.trips && {
       title: 'Trip Logs',

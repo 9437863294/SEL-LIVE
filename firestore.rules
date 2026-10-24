@@ -2928,6 +2928,13 @@ service cloud.firestore {
       return /databases/$(database)/documents/vehicleManagementVehicles/$(vehicleId);
     }
 
+    /** A company vehicle still in the fleet: in Vehicle Master, and not sold, scrapped or retired. */
+    function vmFleetVehicle(vehicleId) {
+      return vehicleId is string && vehicleId != '' && exists(vmVehiclePath(vehicleId))
+        && !get(vmVehiclePath(vehicleId)).data.get('vehicleStatus', '')
+          .matches('(?i).*(sold|scrap|dispos|inactive|retired|written).*');
+    }
+
     /** The vehicle is assigned to the caller's driver record. */
     function vmDrivesVehicle(vehicleId) {
       return vehicleId is string && vehicleId != '' && hasPermissions() && exists(vmVehiclePath(vehicleId))
@@ -3103,10 +3110,13 @@ service cloud.firestore {
     match /vehicleManagementFuelLogs/{logId} {
       allow read: if vmRegisterReader(resource.data) || vmIsDriver(resource.data.get('driverId', ''));
       allow create: if vmHolds(vmPage('Fuel Management'), ['Add', 'Import'])
-        // A driver's own fill-up (driver-mobile/fuel/page.tsx).
+        // A driver's own fill-up (components/driver-management/driver-app/driver-fuel.tsx) — of an
+        // office vehicle only: one in Vehicle Master and still in the fleet. A personal vehicle's
+        // running is claimed per km (My Trips), never as fuel.
         || (request.resource.data.get('sourceApp', '') == 'Driver Mobile'
           && vmIsMe(request.resource.data.get('enteredByUserId', ''))
-          && vmIsDriver(request.resource.data.get('driverId', '')))
+          && vmIsDriver(request.resource.data.get('driverId', ''))
+          && vmFleetVehicle(request.resource.data.get('vehicleId', '')))
         || vmSasFuelWrite(logId);
       allow update: if vmHolds(vmPage('Fuel Management'), ['Edit']) || vmSasFuelWrite(logId);
       allow delete: if vmHolds(vmPage('Fuel Management'), ['Delete']) || vmSasFuelDelete(logId);

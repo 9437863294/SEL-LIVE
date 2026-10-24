@@ -16,11 +16,13 @@ const nextConfig: NextConfig = {
       //    APKs built before 2026-10-23 still start at it.
       //  - Trip Management was Vehicle Management's page shown in both modules.
       //  - Employee Trips was the reimbursement register that My Trips and claims replaced.
+      //  - Daily Status was retired (2026-10-24); its old logs stay in the database.
       { source: '/vehicle-management/driver-mobile', destination: '/driver-management', permanent: false },
       { source: '/vehicle-management/driver-mobile/:path*', destination: '/driver-management/:path*', permanent: false },
       { source: '/driver-management/mobile-hub', destination: '/driver-management', permanent: false },
       { source: '/driver-management/trip-management', destination: '/vehicle-management/trips', permanent: false },
       { source: '/driver-management/employee-trips', destination: '/driver-management/my-trips', permanent: false },
+      { source: '/driver-management/daily-status', destination: '/driver-management', permanent: false },
       // The Expenses settings screens used to live under /settings as well as inside the module,
       // and the /settings copies had drifted — one of them lost its permission check entirely.
       // They are gone; these keep old links and bookmarks landing on the guarded module pages.

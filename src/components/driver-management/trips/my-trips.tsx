@@ -158,6 +158,8 @@ export default function MyTrips() {
     }
   }
 
+  // One line per trip on a desktop: each cell's parts sit side by side, long text is truncated with
+  // the full value on hover. Phone cards still wrap them (`sm:` below), so nothing is cut off there.
   const columns: ListColumn<TripRecord>[] = [
     {
       header: 'Select',
@@ -169,34 +171,37 @@ export default function MyTrips() {
       header: 'Trip',
       mobile: 'title',
       cell: (trip) => (
-        <div className="min-w-0 max-w-[22rem]">
-          <p className="truncate font-medium text-slate-800">
+        <span className="flex min-w-0 max-w-[26rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
+          <span className="shrink-0 font-medium text-slate-800">
             {trip.fromPlace} → {trip.toPlace}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">{trip.purpose}</p>
+          </span>
+          {trip.purpose && <span className="truncate text-xs text-muted-foreground">· {trip.purpose}</span>}
           {trip.status === 'draft' && trip.returnNote && (
-            <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-amber-700" title={trip.returnNote.remarks}>
-              <Undo2 className="h-3 w-3 shrink-0" aria-hidden />
-              Sent back: {trip.returnNote.remarks}
-            </p>
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber-700" title={`Sent back: ${trip.returnNote.remarks}`}>
+              <Undo2 className="h-3 w-3" aria-hidden />
+              Sent back
+            </span>
           )}
-        </div>
+        </span>
       ),
     },
     { header: 'Date', cell: (trip) => <span className="whitespace-nowrap">{shortDate(trip.tripDate)}</span> },
-    { header: 'Vehicle', cell: (trip) => <VehicleLabel ownership={trip.ownership} vehicleNumber={trip.vehicleNumber} vehicleType={trip.vehicleType} /> },
-    { header: 'Distance', align: 'right', cell: (trip) => <Km value={trip.distanceKm} /> },
+    { header: 'Vehicle', cell: (trip) => <VehicleLabel inline ownership={trip.ownership} vehicleNumber={trip.vehicleNumber} vehicleType={trip.vehicleType} /> },
+    { header: 'Distance', align: 'right', cell: (trip) => <Km value={trip.distanceKm} className="whitespace-nowrap" /> },
     {
       header: 'Amount',
       align: 'right',
-      cell: (trip) => (
-        <span className="inline-flex flex-col items-end">
-          <Money value={trip.decision ? trip.decision.approvedAmount : trip.totalAmount} className="font-medium" />
-          <span className="text-[11px] text-muted-foreground">
-            {trip.decision && trip.decision.approvedAmount !== trip.totalAmount ? <>claimed <Money value={trip.totalAmount} /></> : trip.ratePerKm !== null ? `₹${trip.ratePerKm}/km` : 'no rate'}
+      cell: (trip) => {
+        const cut = trip.decision && trip.decision.approvedAmount !== trip.totalAmount;
+        return (
+          <span className="inline-flex items-baseline justify-end gap-1.5 whitespace-nowrap">
+            <Money value={trip.decision ? trip.decision.approvedAmount : trip.totalAmount} className="font-medium" />
+            <span className="text-[11px] text-muted-foreground">
+              {cut ? <>of <Money value={trip.totalAmount} /></> : trip.ratePerKm !== null ? `@ ₹${trip.ratePerKm}/km` : 'no rate'}
+            </span>
           </span>
-        </span>
-      ),
+        );
+      },
     },
     {
       header: 'Status',
@@ -204,7 +209,7 @@ export default function MyTrips() {
       cell: (trip) => {
         const left = rules && trip.status === 'draft' ? daysLeftToClaim(trip.tripDate, today, rules) : null;
         return (
-          <div className="flex flex-col items-end gap-1 sm:items-start">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:flex-nowrap sm:justify-start sm:whitespace-nowrap">
             <TripStatusBadge status={trip.status} />
             {trip.claimId && trip.claimNumber && (
               <CellLink href={`/driver-management/claims/${trip.claimId}`} className="text-[11px] font-medium text-primary hover:underline">
@@ -213,7 +218,7 @@ export default function MyTrips() {
             )}
             {left !== null && left < 0 && <span className="text-[11px] font-medium text-rose-700">Claim window closed</span>}
             {left !== null && left >= 0 && left <= 7 && <span className="text-[11px] font-medium text-amber-700">Claim within {left} day{left === 1 ? '' : 's'}</span>}
-            <FlagChips flags={trip.flags} />
+            <FlagChips flags={trip.flags} className="sm:flex-nowrap" />
           </div>
         );
       },

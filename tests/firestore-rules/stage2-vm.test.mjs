@@ -345,8 +345,12 @@ test('fuel: drivers file their own; the register writes by action', async () => 
   const entry = { vehicleId: 'v1', fuelDate: '2026-10-05', totalAmount: 900, driverId: 'd1', enteredByUserId: 'uDrv', fuelStatus: 'Submitted', sourceApp: 'Driver Mobile', createdAt: serverTimestamp() };
   await assertSucceeds(addDoc(col('drv', 'vehicleManagementFuelLogs'), entry));
   await assertSucceeds(addDoc(col('mob', 'vehicleManagementFuelLogs'), { ...entry, vehicleId: 'v2', driverId: 'd2', enteredByUserId: 'uMob' }));
-  // Own vehicle (no company vehicle) and a coordinator with a driver-app grant.
-  await assertSucceeds(addDoc(col('drvRole', 'vehicleManagementFuelLogs'), { ...entry, vehicleId: '', driverId: 'd4', enteredByUserId: 'uRole' }));
+  // A coordinator with a driver-app grant and no assigned vehicle fuels a fleet vehicle…
+  await assertSucceeds(addDoc(col('drvRole', 'vehicleManagementFuelLogs'), { ...entry, vehicleId: 'v3', driverId: 'd4', enteredByUserId: 'uRole' }));
+  // …but fuel is for office vehicles only: no own vehicle, no unknown or sold one.
+  await assertFails(addDoc(col('drvRole', 'vehicleManagementFuelLogs'), { ...entry, vehicleId: '', driverId: 'd4', enteredByUserId: 'uRole' }));
+  await assertFails(addDoc(col('drvRole', 'vehicleManagementFuelLogs'), { ...entry, vehicleId: 'v404', driverId: 'd4', enteredByUserId: 'uRole' }));
+  await assertFails(addDoc(col('drvRole', 'vehicleManagementFuelLogs'), { ...entry, vehicleId: 'v9', driverId: 'd4', enteredByUserId: 'uRole' }));
   await assertFails(addDoc(col('drv', 'vehicleManagementFuelLogs'), { ...entry, driverId: 'd9' }));
   await assertFails(addDoc(col('drv', 'vehicleManagementFuelLogs'), { ...entry, enteredByUserId: 'uOther' }));
   await assertFails(addDoc(col('drv', 'vehicleManagementFuelLogs'), { ...entry, sourceApp: 'Register' }));

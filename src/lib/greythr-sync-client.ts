@@ -30,6 +30,7 @@ import type {
   SyncReviewRecord,
 } from './greythr';
 import type { BulkLinkPlan, LinkAuditEntry, LinkReport } from './greythr-linking';
+import type { ReportingPerson } from './reporting-structure';
 
 export interface SyncReport {
   ok: boolean;
@@ -329,6 +330,24 @@ export async function openEmployeeDocument(
   window.open(objectUrl, '_blank', 'noopener');
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * The reporting structure
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface ReportingStructureResponse {
+  ok: boolean;
+  /** One row per employee. The tree is derived on this side — see the route for why. */
+  people: ReportingPerson[];
+  /** Whether the sync fetches the org tree at all; distinguishes 'no managers' from 'never asked'. */
+  groupEnabled: boolean;
+  syncedAt: string | null;
+  fetchedAt: string;
+}
+
+/** Everyone, with the manager greytHR recorded for them. */
+export const fetchReportingStructure = (): Promise<ReportingStructureResponse> =>
+  authorizedFetch<ReportingStructureResponse>('/api/greythr/employees/reporting');
 
 /* ------------------------------------------------------------------------------------------------
  * Linking users to employees

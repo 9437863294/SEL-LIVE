@@ -32,6 +32,7 @@ import {
   ArrowRight,
   BarChart3,
   Briefcase,
+  Network,
   CalendarClock,
   ChevronRight,
   Clock,
@@ -253,6 +254,7 @@ export type EmployeeNavKey =
   | 'sync'
   | 'category'
   | 'position'
+  | 'reporting'
   | 'linking'
   | 'salary'
   | 'payslip';
@@ -375,6 +377,17 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     href: '/employee/position-details',
     icon: Briefcase,
     tone: 'violet',
+    group: 'setup',
+    need: 'view',
+  },
+  {
+    key: 'reporting',
+    label: 'Reporting Structure',
+    short: 'Reporting',
+    description: 'Who reports to whom, and every link that does not resolve.',
+    href: '/employee/reporting',
+    icon: Network,
+    tone: 'cyan',
     group: 'setup',
     need: 'view',
   },

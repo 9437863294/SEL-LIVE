@@ -64,7 +64,18 @@ export function FlagChips({ flags, className }: { flags: readonly FlagCode[]; cl
   );
 }
 
-export function VehicleLabel({ ownership, vehicleNumber, vehicleType }: { ownership: VehicleOwnership; vehicleNumber: string; vehicleType: string }) {
+export function VehicleLabel({ ownership, vehicleNumber, vehicleType, inline = false }: { ownership: VehicleOwnership; vehicleNumber: string; vehicleType: string; inline?: boolean }) {
+  // One line for registers scanned row by row: "OD02AB1234 · Two Wheeler · Own".
+  if (inline) {
+    return (
+      <span className="inline-flex min-w-0 items-baseline gap-1 whitespace-nowrap" title={`${vehicleNumber} · ${vehicleType} · ${OWNERSHIP_LABELS[ownership]}`}>
+        <span className="font-medium text-slate-800">{vehicleNumber}</span>
+        <span className="truncate text-xs text-muted-foreground">
+          · {vehicleType} · {ownership === 'own' ? 'Own' : 'Company'}
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="inline-flex min-w-0 flex-col">
       <span className="truncate font-medium text-slate-800">{vehicleNumber}</span>

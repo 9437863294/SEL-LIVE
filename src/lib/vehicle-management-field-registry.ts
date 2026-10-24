@@ -33,7 +33,6 @@ export type VMFormKey =
   | 'fuel'
   | 'driver'
   | 'insuranceWorkflow'
-  | 'driverMobileDailyStatus'
   | 'driverMobileFuel';
 
 export interface VMFieldDef {
@@ -262,30 +261,11 @@ export const VM_FORM_REGISTRY: Record<VMFormKey, VMFormDef> = {
       { key: 'reassignUserId', defaultLabel: 'Reassign to', defaultRequired: true, locked: true },
     ],
   },
-  driverMobileDailyStatus: {
-    title: 'Driver Daily Status',
-    description: 'The driver-facing Daily Status entry form.',
-    fields: [
-      { key: 'statusDate', defaultLabel: 'Date', defaultRequired: true },
-      { key: 'vehicleId', defaultLabel: 'Vehicle', defaultRequired: true },
-      { key: 'shiftStartTime', defaultLabel: 'Shift Start Time', defaultRequired: false },
-      { key: 'shiftEndTime', defaultLabel: 'Shift End Time', defaultRequired: false },
-      { key: 'openingOdometerKm', defaultLabel: 'Opening Odometer (KM)', defaultRequired: false },
-      { key: 'closingOdometerKm', defaultLabel: 'Closing Odometer (KM)', defaultRequired: false },
-      { key: 'openingFuelLiters', defaultLabel: 'Opening Fuel (Liters)', defaultRequired: false },
-      { key: 'closingFuelLiters', defaultLabel: 'Closing Fuel (Liters)', defaultRequired: false },
-      { key: 'totalTrips', defaultLabel: 'Total Trips', defaultRequired: false },
-      { key: 'runningStatus', defaultLabel: 'Running Status', defaultRequired: true },
-      { key: 'routeSummary', defaultLabel: 'Route Summary', defaultRequired: false },
-      { key: 'issuesReported', defaultLabel: 'Issues Reported', defaultRequired: false },
-      { key: 'remarks', defaultLabel: 'Remarks', defaultRequired: false },
-    ],
-  },
   driverMobileFuel: {
     title: 'Driver Fuel Entry',
-    description: 'The driver-facing Fuel Entry form. Quantity, rate and odometer are locked because the form has its own greater-than-zero check for each.',
+    description: 'The driver-facing Fuel Entry form, for company vehicles only. Vehicle, quantity, rate and odometer are locked because the form checks each itself (the vehicle must be in Vehicle Master).',
     fields: [
-      { key: 'vehicleId', defaultLabel: 'Vehicle', defaultRequired: true },
+      { key: 'vehicleId', defaultLabel: 'Vehicle', defaultRequired: true, locked: true },
       { key: 'fuelDate', defaultLabel: 'Date', defaultRequired: true },
       { key: 'fuelStationName', defaultLabel: 'Fuel Station Name', defaultRequired: true },
       { key: 'quantityLiters', defaultLabel: 'Quantity (Liters)', defaultRequired: true, locked: true },

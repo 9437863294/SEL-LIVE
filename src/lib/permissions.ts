@@ -676,7 +676,7 @@ export const permissionModules = {
     "Driver Mobile": ["View"],
     "Driver Mobile Trip": ["View", "Add", "Edit"],
     "Driver Mobile Fuel": ["View", "Add", "Edit", "Delete"],
-    "Driver Daily Status": ["View", "Add", "Edit", "Delete"],
+    // "Driver Daily Status" was retired with the driver app's Daily Status page (2026-10-24).
     Settings: ["View", "Edit", "Manage Field Control"],
     Reports: ["View", "Export"],
   },
@@ -685,7 +685,7 @@ export const permissionModules = {
     "Driver Mobile Hub": ["View"],
     "Assigned Vehicle Details": ["View"],
     "Driver Fuel": ["View", "Add", "Edit", "Delete"],
-    "Driver Daily Status": ["View", "Add", "Edit", "Delete"],
+    // "Driver Daily Status" was retired with its page (2026-10-24); old logs stay in the database.
     "Driver Trips": ["View", "Add", "Edit"],
     // Retired with the old reimbursement page. Kept so roles that hold it keep their reach: View or
     // Approve here counts as Trip Claims · View All, Export as Trip Claims · Export

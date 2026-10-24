@@ -215,6 +215,9 @@ one `undefined` rejects the *entire* batch of 400.
 | [`src/app/(protected)/employee/leave/page.tsx`](../src/app/(protected)/employee/leave/page.tsx) | The leave register screen. |
 | [`src/app/(protected)/employee/attendance/page.tsx`](../src/app/(protected)/employee/attendance/page.tsx) | The attendance register screen. |
 | [`src/app/(protected)/employee/reports/page.tsx`](../src/app/(protected)/employee/reports/page.tsx) | Headcount, movement and category reports, built from the roster route. |
+| [`src/lib/reporting-structure.ts`](../src/lib/reporting-structure.ts) | Pure derivation of the org tree: depths, subtree sizes, cycles and every unresolved link. |
+| [`src/app/api/greythr/employees/reporting/route.ts`](../src/app/api/greythr/employees/reporting/route.ts) | One row per employee with the manager greytHR recorded. The tree is derived on the client. |
+| [`src/app/(protected)/employee/reporting/page.tsx`](../src/app/(protected)/employee/reporting/page.tsx) | The reporting structure screen — table and hierarchy views. |
 | [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 157 tests, including one per fixed bug. |
 | [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
@@ -380,6 +383,36 @@ Two things the script cannot do for you:
    deliberate decision rather than a default, because the exit policy is what decides whether a
    greytHR separation closes a login — though the default policy (`Flag for review`) changes nobody's
    access, so switching the schedule on is safe.
+
+## 6a. Reporting structure
+
+`reportingManagerEmployeeId` has been written onto every employee record for as long as the
+"Reporting structure" detail group has been on, and for a long time two things read it: the
+profile page, one person at a time, and `reportingAuthorityOf` in the trip-claims module, which
+walks one step up to find an approver. `/employee/reporting` is the view of the whole thing.
+
+**The gaps are the point.** A reporting field is a foreign key maintained by hand in another
+system, so it fails in recognisable ways, and each one is invisible on a single profile and
+obvious across the set:
+
+| Reported as | What it means |
+| --- | --- |
+| Circular reporting | Two or more people reporting to each other. greytHR permits it; a recursive walk over it would not return, so every traversal here is iterative. |
+| Own manager | Somebody recorded as their own manager. Treated as a missing edge, not a one-node cycle. |
+| Manager not in the mirror | greytHR names a manager this platform does not hold — usually outside the API user’s scope. The name is still shown. |
+| Manager has left | The edge resolves and the chain is intact, but an approval routed up it reaches somebody who has gone. |
+| Top of chain | No manager recorded. Not a fault — somebody has to be at the top. |
+
+**A filter never changes the tree.** The structure is derived over the whole roster and the
+filter decides only which rows are drawn. Deriving it over the filtered set would mean hiding
+departed staff promoted their reportees to the top — a hierarchy the screen invented.
+
+Nodes in a cycle carry `depth: null`, because there is no top to measure from, and are appended
+to the hierarchy view below the forest rather than dropped — omitting them would hide exactly
+the people whose data needs attention.
+
+Read-only. greytHR owns the org tree. Changing who approves for whom is a separate question,
+answered by `accessGrants.reportingManagerId` in Access Management.
 
 ### A footnote on time zones
 

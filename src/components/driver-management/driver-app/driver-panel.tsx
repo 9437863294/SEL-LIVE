@@ -3,9 +3,9 @@
 /**
  * The driver's own figures on the Driver Management dashboard — what the separate "Driver Mobile"
  * hub page used to show, minus its cards of links (the sidebar and the phone bar navigate): the
- * assigned vehicle, whether a GPS trip is running, this month's GPS trips, fuel entries and daily
- * status logs, the latest daily status, and — on the Android app — this phone's diagnostics, which
- * support asks for when tracking misbehaves.
+ * assigned vehicle, whether a GPS trip is running, this month's GPS trips and fuel entries, and —
+ * on the Android app — this phone's diagnostics, which support asks for when tracking misbehaves.
+ * (Daily Status was retired on 2026-10-24; its old logs stay in the database.)
  *
  * Shown only to a login linked to a Vehicle Management driver record. Reads the driver's own
  * records with the client SDK, as the hub did (the rules let a driver read their own).
@@ -16,7 +16,7 @@ import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { CarFront, ClipboardCheck, Fuel, LocateFixed, RefreshCw, Smartphone } from 'lucide-react';
+import { CarFront, Fuel, LocateFixed, RefreshCw, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { SectionHeader } from '@/components/shared/page-header';
@@ -26,9 +26,7 @@ import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 interface DriverSummary {
   tripsThisMonth: number;
   fuelThisMonth: number;
-  statusThisMonth: number;
   tripInProgress: boolean;
-  latestStatus: { date: string; running: string; km: number; vehicle: string } | null;
   failed: boolean;
 }
 
@@ -49,25 +47,20 @@ async function readDevice(): Promise<DeviceInfo> {
 }
 
 async function loadSummary(driverId: string): Promise<DriverSummary> {
-  const [fuel, status, trips] = await Promise.all([
+  const [fuel, trips] = await Promise.all([
     getDocs(query(collection(db, VEHICLE_COLLECTIONS.fuel), where('driverId', '==', driverId))),
-    getDocs(query(collection(db, VEHICLE_COLLECTIONS.driverDailyStatus), where('driverId', '==', driverId))),
     getDocs(query(collection(db, VEHICLE_COLLECTIONS.trips), where('driverId', '==', driverId))),
   ]);
   const month = new Date().toISOString().slice(0, 7);
-  const statuses = status.docs.map((doc) => doc.data()).sort((a, b) => String(b.statusDate || '').localeCompare(String(a.statusDate || '')));
-  const latest = statuses[0];
   return {
     tripsThisMonth: trips.docs.filter((doc) => String(doc.data().startDate || '').startsWith(month)).length,
     fuelThisMonth: fuel.docs.filter((doc) => String(doc.data().fuelDate || '').startsWith(month)).length,
-    statusThisMonth: statuses.filter((row) => String(row.statusDate || '').startsWith(month)).length,
     tripInProgress: trips.docs.some((doc) => doc.data().tripStatus === 'In Progress'),
-    latestStatus: latest ? { date: String(latest.statusDate || '—'), running: String(latest.runningStatus || '—'), km: Number(latest.totalDistanceKm || 0), vehicle: String(latest.vehicleNumber || '—') } : null,
     failed: false,
   };
 }
 
-const EMPTY: DriverSummary = { tripsThisMonth: 0, fuelThisMonth: 0, statusThisMonth: 0, tripInProgress: false, latestStatus: null, failed: true };
+const EMPTY: DriverSummary = { tripsThisMonth: 0, fuelThisMonth: 0, tripInProgress: false, failed: true };
 
 export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
   const driverId = String(driver.id ?? '');
@@ -117,11 +110,10 @@ export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
   return (
     <section className="space-y-3">
       <SectionHeader title="My vehicle & driving" icon={CarFront} description={`${String(driver.driverName || driver.name || 'Driver')} · ${String(driver.mobileNumber || 'no mobile on record')}`} />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiCard label="Assigned vehicle" value={String(driver.assignedVehicleNumber || 'Not assigned')} icon={CarFront} tone="blue" accent />
         <KpiCard label="GPS trip" value={loading ? '…' : value.tripInProgress ? 'In progress' : 'Not running'} hint={`${figure(value?.tripsThisMonth)} trips this month`} icon={LocateFixed} tone={value?.tripInProgress ? 'emerald' : 'slate'} accent />
         <KpiCard label="Fuel entries" value={figure(value?.fuelThisMonth)} hint="This month" icon={Fuel} tone="amber" accent />
-        <KpiCard label="Daily status logs" value={figure(value?.statusThisMonth)} hint={value?.latestStatus ? `Last: ${value.latestStatus.date} · ${value.latestStatus.running}` : 'This month'} icon={ClipboardCheck} tone="teal" accent />
       </div>
       {value?.failed && <p className="text-xs text-amber-700">Your driving records could not be loaded just now.</p>}
       {native && (
