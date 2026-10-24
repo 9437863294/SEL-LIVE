@@ -1518,6 +1518,61 @@ test('a missing document is neither', () => {
  * Reporting structure
  * ---------------------------------------------------------------------------------------------- */
 
+/* ── The two shapes greytHR actually returns ── */
+
+test('the bulk org-tree is a flat chain of ids, nearest manager first', () => {
+  // Captured from the live tenant: GET /employee/v2/employees/org-tree returns
+  //   { employeeId: 209, orgtree: [18, 11, 164, 208] }
+  // while the per-employee endpoint for 209 reports level 0 -> 18. So element zero is the
+  // direct manager. Reading this wrong left every one of 316 employees with a blank manager.
+  assert.deepEqual(resolveReportingManager([18, 11, 164, 208]), { employeeId: '18' });
+});
+
+test('greytHR’s own published example rows resolve to their nearest manager', () => {
+  // Straight from the API documentation for GET /employee/v2/employees/org-tree.
+  assert.equal(resolveReportingManager([24]).employeeId, '24');
+  assert.equal(resolveReportingManager([1, 24]).employeeId, '1');
+  assert.equal(resolveReportingManager([11, 5, 1, 24]).employeeId, '11');
+});
+
+test('a chain that contradicts its own manager’s chain still yields the direct manager', () => {
+  // Real rows from the live tenant: 209’s chain omits 217, which 18’s chain includes. greytHR’s
+  // denormalised ancestry disagrees with itself, which is exactly why only element zero is read
+  // here and the rest of the tree is rebuilt by walking direct edges.
+  assert.equal(resolveReportingManager([18, 11, 164, 208]).employeeId, '18');
+  assert.equal(resolveReportingManager([11, 164, 217, 208]).employeeId, '11');
+});
+
+test('the per-employee org-tree still wins, and still carries the name', () => {
+  const payload = [
+    { manager: { employeeId: 18, employeeNo: 'E1028', name: 'DHIRENDRA KUMAR MISHRA' }, level: 0 },
+    { manager: { employeeId: 11, employeeNo: 'E1019', name: 'SRIKANTA KUMAR BHANJA' }, level: -1 },
+  ];
+  assert.deepEqual(resolveReportingManager(payload), {
+    employeeId: '18',
+    name: 'DHIRENDRA KUMAR MISHRA',
+  });
+});
+
+test('an id chain given as strings reads the same', () => {
+  assert.equal(resolveReportingManager(['18', '11']).employeeId, '18');
+});
+
+test('a zero at the head of the chain is skipped, not taken as a manager', () => {
+  assert.equal(resolveReportingManager([0, 18]).employeeId, '18');
+});
+
+test('an empty or all-zero chain resolves to nobody', () => {
+  assert.equal(resolveReportingManager([]), null);
+  assert.equal(resolveReportingManager([0]), null);
+});
+
+test('a mixed array is not mistaken for an id chain', () => {
+  // Guards the id-chain reader against hijacking a payload it does not understand: every entry
+  // must be an id, or it defers to the shapes that handle objects.
+  assert.deepEqual(resolveReportingManager([{ supervisorId: 42 }, 18]), { employeeId: '42', name: undefined });
+});
+
 test('resolveReportingManager finds the manager in a flat object', () => {
   assert.deepEqual(resolveReportingManager({ supervisorId: 42, supervisorName: 'Ravi' }), {
     employeeId: '42',

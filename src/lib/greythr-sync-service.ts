@@ -525,6 +525,16 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
     const created = new Set<string>();
     const outcomes: SyncEmployeeOutcome[] = [];
     const employeeWrites: Array<{ id: string; record: SyncedEmployee & EmployeeOperationalDetail }> = [];
+    /**
+     * How many employees came out of the org tree with a manager.
+     *
+     * Counted because the alternative to counting it was not noticing. The bulk org-tree endpoint
+     * returns a shape the resolver could not read, so it answered `null` for all 316 employees —
+     * and because the *fetch* succeeded, the run reported the group as having run, with no warning
+     * and no error. A group that returns rows and yields nothing from any of them is a silent
+     * failure, and this is what turns it into a loud one.
+     */
+    let reportingManagersResolved = 0;
     const sensitiveWrites: Array<{ id: string; record: EmployeeSensitiveDetail }> = [];
     const positionWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
     const userWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
@@ -579,6 +589,8 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       // Detail is merged onto the same document, so a change in either half triggers the write.
       // `diffSyncedEmployee` only tracks the core fields, so detail-only changes are caught by
       // comparing the assembled block rather than being silently skipped.
+      if (operational.reportingManagerEmployeeId) reportingManagersResolved += 1;
+
       const detailChanged =
         Object.keys(operational).length > 0 &&
         JSON.stringify(operational) !== JSON.stringify(pickOperational(stored));
@@ -839,6 +851,18 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           `Daily swipes failed and were skipped: ${error instanceof Error ? error.message : 'unknown error'}`,
         );
       }
+    }
+
+    /* ── Did the org tree actually yield anything? ── */
+
+    // Rows fetched but not one manager extracted means the payload is a shape the resolver does
+    // not understand — which is exactly how this went unnoticed for as long as it did.
+    if (willRun('reporting') && detail.orgTree.size > 0 && reportingManagersResolved === 0) {
+      warnings.push(
+        `The org tree returned ${detail.orgTree.size} record(s) but no reporting manager could be ` +
+          'read from any of them. greytHR has probably changed the payload shape — see ' +
+          '`resolveReportingManager`. Reporting structure will be blank until this is fixed.',
+      );
     }
 
     /* ── Detail groups refreshed without the roster ── */

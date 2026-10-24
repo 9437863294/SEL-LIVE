@@ -769,6 +769,36 @@ export function resolveReportingManager(
     return null;
   };
 
+  /**
+   * The shape the **bulk** endpoint returns, which is not the one above.
+   *
+   *     { "employeeId": 209, "orgtree": [18, 11, 164, 208] }
+   *
+   * A flat chain of employee ids, nearest manager first — verified against the per-employee
+   * endpoint for the same person, which reports `level: 0 → 18`, then 11, 164, 208 going up.
+   *
+   * This is why every employee showed a blank reporting manager while greytHR had the whole tree:
+   * `fromLevels` needs objects and finds numbers, and the loose walk below needs a key named
+   * `supervisorId` or similar and finds no keys at all. Both return null, for all 316 people, with
+   * no error — the fetch succeeded and the extraction simply had nothing it recognised.
+   *
+   * No name comes with it; callers resolve that from the roster by id.
+   */
+  const fromIdChain = (): { employeeId?: string; name?: string } | null => {
+    if (!Array.isArray(orgtree) || orgtree.length === 0) return null;
+
+    // Every entry must be an id, or this is one of the object shapes and not ours to read.
+    const ids: string[] = [];
+    for (const entry of orgtree) {
+      if (typeof entry === 'number' && Number.isFinite(entry)) ids.push(String(entry));
+      else if (typeof entry === 'string' && /^\d+$/.test(entry.trim())) ids.push(entry.trim());
+      else return null;
+    }
+
+    const direct = ids.find((id) => id && id !== '0');
+    return direct ? { employeeId: direct } : null;
+  };
+
   const visit = (node: unknown, depth = 0): { employeeId?: string; name?: string } | null => {
     if (!node || depth > 4) return null;
 
@@ -811,9 +841,15 @@ export function resolveReportingManager(
     return null;
   };
 
-  // Documented shape first, loose walk second — so a tenant whose payload the heuristic *can* read
-  // keeps working, and one whose payload it cannot is no longer silently blank.
-  return fromLevels() ?? visit(orgtree);
+  /*
+    Both known shapes first, loose walk last.
+
+    `fromLevels` reads the per-employee payload and `fromIdChain` the bulk one — the two endpoints
+    disagree, and the sync uses the bulk one. The heuristic stays behind them so a tenant whose
+    payload it *can* read keeps working, but it is no longer the only thing standing between
+    greytHR's org tree and a blank field.
+  */
+  return fromLevels() ?? fromIdChain() ?? visit(orgtree);
 }
 
 export interface BuildDetailInput {

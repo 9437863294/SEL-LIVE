@@ -403,6 +403,43 @@ obvious across the set:
 | Manager has left | The edge resolves and the chain is intact, but an approval routed up it reaches somebody who has gone. |
 | Top of chain | No manager recorded. Not a fault — somebody has to be at the top. |
 
+**The two org-tree payloads.** The bulk and per-employee endpoints return different shapes, and
+the sync uses the bulk one:
+
+```
+GET /employee/v2/employees/org-tree          →  { employeeId: 209, orgtree: [18, 11, 164, 208] }
+GET /employee/v2/employees/209/org-tree      →  [{ manager: { employeeId: 18, name: '…' }, level: 0 }, …]
+```
+
+The bulk array is a flat chain of ids, nearest manager first — confirmed by comparing the two for
+the same employee, where `level: 0` is id `18` and the array starts `[18, …]`. `resolveReportingManager`
+originally understood only the second shape, so it answered `null` for all 316 employees and every
+reporting field in the mirror was blank. Nothing reported it: the *fetch* succeeded, so the run
+listed "Reporting structure" among the groups it had run, with no warning. The sync now warns when
+the org tree returns rows and yields no manager from any of them.
+
+**Which end is the direct manager.** Element zero. greytHR’s published example cannot settle it —
+that example is internally inconsistent (`6 → [11, 5, 1, 24]` puts 11 under 5, while `11 → [24]`
+puts it under 24) — so it was measured against the live tree instead. For each chain `[m, ...rest]`,
+does `m`’s own chain equal `rest`?
+
+```
+nearest-first : 168/253 chains consistent
+farthest-first:   0/260 chains consistent
+```
+
+**Only element zero is read.** The 85 nearest-first mismatches are greytHR’s stored ancestry
+contradicting itself: `209 → [18, 11, 164, 208]` omits 217, which `18 → [11, 164, 217, 208]`
+includes; `108 → [153, 90, 164]` while `153 → []` claims 153 is top of the org. Depth and ancestry
+are therefore rebuilt from direct edges by `buildReportingStructure` rather than taken from the
+chain — trusting it would import every one of those contradictions.
+
+The per-employee endpoint answers `404` with `{"code":"ORGANIZATION-EXCEPTION"}` for an employee
+with no org tree; `fetchEmployeeDetailBundle` already reads a 404 as “none” rather than a failure.
+
+The bulk payload carries no names, only ids, so `reportingManagerName` stays empty and the screen
+resolves names from the roster.
+
 **A filter never changes the tree.** The structure is derived over the whole roster and the
 filter decides only which rows are drawn. Deriving it over the filtered set would mean hiding
 departed staff promoted their reportees to the top — a hierarchy the screen invented.
