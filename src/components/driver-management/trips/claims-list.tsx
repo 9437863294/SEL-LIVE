@@ -297,7 +297,7 @@ export default function ClaimsList({ mode }: { mode: ClaimsListMode }) {
           columns={columns}
           dense
           onRowClick={(claim) => router.push(`/driver-management/claims/${claim.id}`)}
-          cardHref={selectable ? undefined : (claim) => `/driver-management/claims/${claim.id}`}
+          cardHref={(claim) => `/driver-management/claims/${claim.id}`}
           rowClassName={(claim) => (stageAge(claim).overdue ? 'bg-rose-50/40' : selected.has(claim.id) ? 'bg-primary/5' : undefined)}
           empty={
             <EmptyBlock icon={heading.icon} title={current.value === 'waiting' || current.value === 'ready' ? 'Nothing is waiting for you' : 'No claims here'}>

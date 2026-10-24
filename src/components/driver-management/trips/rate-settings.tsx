@@ -10,7 +10,8 @@
  */
 
 import { useMemo, useState } from 'react';
-import { IndianRupee, Pencil, Plus, Trash2, X } from 'lucide-react';
+import Link from 'next/link';
+import { IndianRupee, Pencil, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -229,6 +230,21 @@ export default function RateSettings() {
               <Plus className="mr-1.5 h-3.5 w-3.5" aria-hidden />
               Other type
             </Button>
+            {/*
+              The list offered above is editable — just not from here.
+
+              It lives in `vehicleManagementSettings/vehicleTypes`, shared with Vehicle Management,
+              and is maintained on that module’s own screen. Without this line the dropdown reads
+              as a fixed list somebody baked in, and the obvious response is to ask for it to be
+              made configurable — which it already is.
+            */}
+            <Link
+              href="/vehicle-management/settings/vehicle-types"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-slate-700"
+            >
+              <SlidersHorizontal className="h-3 w-3" aria-hidden />
+              Edit the vehicle type list
+            </Link>
           </div>
         </div>
       </FormDialog>

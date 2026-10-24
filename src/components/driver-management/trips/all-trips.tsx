@@ -43,7 +43,7 @@ import {
 } from './trip-ui';
 
 /** Same reason as the other registers: a few thousand rows in the DOM at once is a frozen page. */
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 100;
 
 const STATUS_FILTERS: Array<{ value: TripStatus | 'all'; label: string }> = [
   { value: 'all', label: 'All statuses' },
@@ -137,6 +137,7 @@ export default function AllTrips() {
     },
     {
       header: 'Trip',
+      mobile: 'title',
       cell: (trip) => (
         <span className="flex min-w-0 max-w-[24rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
           <span className="truncate text-slate-700">
@@ -171,8 +172,8 @@ export default function AllTrips() {
       ),
     },
     { header: 'Amount', align: 'right', cell: (trip) => <Money value={trip.totalAmount} /> },
-    { header: 'Project', cell: (trip) => <span className="text-xs text-muted-foreground">{trip.projectName || '—'}</span> },
-    { header: 'Status', cell: (trip) => <TripStatusBadge status={trip.status} /> },
+    { header: 'Project', cell: (trip) => <span className="block max-w-[14rem] truncate text-xs text-muted-foreground" title={trip.projectName ?? undefined}>{trip.projectName || '—'}</span> },
+    { header: 'Status', mobile: 'aside', cell: (trip) => <TripStatusBadge status={trip.status} /> },
     {
       header: 'Claim',
       cell: (trip) => <span className="whitespace-nowrap text-xs text-muted-foreground">{trip.claimNumber || '—'}</span>,
@@ -225,9 +226,9 @@ export default function AllTrips() {
           { label: 'Value', value: `₹${totals.amount.toLocaleString('en-IN')}` },
           { label: 'Unclaimed', value: String(totals.unclaimed), hint: `${totals.measured} measured by GPS` },
         ].map((tile) => (
-          <div key={tile.label} className="rounded-xl border border-white/70 bg-white/80 p-2.5">
+          <div key={tile.label} className="min-w-0 rounded-xl border border-white/70 bg-white/80 p-2.5">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tile.label}</p>
-            <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-800">{tile.value}</p>
+            <p className="mt-0.5 truncate text-lg font-semibold tabular-nums text-slate-800">{tile.value}</p>
             {tile.hint && <p className="text-[11px] text-muted-foreground">{tile.hint}</p>}
           </div>
         ))}
@@ -244,7 +245,7 @@ export default function AllTrips() {
         }}
       >
         <Select value={employee} onValueChange={setEmployee}>
-          <SelectTrigger className="h-9 w-[13rem] text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full bg-white text-left sm:w-52" aria-label="Employee"><SelectValue /></SelectTrigger>
           <SelectContent className="max-h-72">
             <SelectItem value="all">Everyone</SelectItem>
             {employees.map(([id, name]) => (
@@ -254,7 +255,7 @@ export default function AllTrips() {
         </Select>
 
         <Select value={status} onValueChange={(value) => setStatus(value as TripStatus | 'all')}>
-          <SelectTrigger className="h-9 w-[11rem] text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full bg-white text-left sm:w-44" aria-label="Status"><SelectValue /></SelectTrigger>
           <SelectContent>
             {STATUS_FILTERS.map((option) => (
               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
@@ -263,7 +264,7 @@ export default function AllTrips() {
         </Select>
 
         <Select value={month} onValueChange={setMonth}>
-          <SelectTrigger className="h-9 w-[10rem] text-xs"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full bg-white text-left sm:w-40" aria-label="Month"><SelectValue /></SelectTrigger>
           <SelectContent className="max-h-72">
             <SelectItem value="all">All months</SelectItem>
             {months.map((value) => (

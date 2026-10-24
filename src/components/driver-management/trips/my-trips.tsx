@@ -176,7 +176,7 @@ export default function MyTrips() {
       mobile: 'title',
       cell: (trip) => (
         <span className="flex min-w-0 max-w-[26rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
-          <span className="shrink-0 font-medium text-slate-800">
+          <span className="truncate font-medium text-slate-800">
             {trip.fromPlace} → {trip.toPlace}
           </span>
           {trip.purpose && <span className="truncate text-xs text-muted-foreground">· {trip.purpose}</span>}
@@ -262,7 +262,7 @@ export default function MyTrips() {
         trip.status === 'draft' ? (
           <div className="flex items-center gap-1.5">
             {claimable(trip) && (
-              <label className="flex items-center gap-2 rounded-md border border-slate-200 px-3 text-sm sm:hidden">
+              <label className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm sm:hidden">
                 <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} />
                 Select
               </label>
@@ -319,7 +319,10 @@ export default function MyTrips() {
             <GpsTripButton />
             <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={candidates.length ? VM_PRIMARY_BUTTON : undefined} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
               <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
-              {chosen.length ? `Create claim (${chosen.length} selected)` : candidates.length ? `Create claim (${candidates.length} unclaimed)` : 'Create claim'}
+              Create claim
+              <span className="hidden sm:inline">
+                {chosen.length ? ` (${chosen.length} selected)` : candidates.length ? ` (${candidates.length} unclaimed)` : ''}
+              </span>
             </Button>
           </>
           )

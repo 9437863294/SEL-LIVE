@@ -188,7 +188,7 @@ export function CreateClaimDialog({
       open={open}
       onOpenChange={onOpenChange}
       size="lg"
-      className="sm:max-w-3xl"
+      className="sm:max-w-[min(48rem,95vw)]"
       title="Create a claim"
       description="Tick the trips to put on this claim — one trip, several, or all of them."
       onSubmit={submit}
@@ -206,7 +206,7 @@ export function CreateClaimDialog({
             {trips.length} of {listed.length} trip{listed.length === 1 ? '' : 's'} · {formatKm(km)}
           </p>
         </div>
-        <p className="max-w-xs text-right text-xs text-slate-600">{routeLine}</p>
+        <p className="max-w-xs text-xs text-slate-600 sm:text-right">{routeLine}</p>
       </div>
 
       <div className="rounded-lg border border-slate-200">
@@ -214,7 +214,7 @@ export function CreateClaimDialog({
           <Checkbox checked={allTicked} onCheckedChange={(value) => setSelected(value === true ? new Set(listed.map((trip) => trip.id)) : new Set())} aria-label="Select all trips" />
           {allTicked ? 'All unclaimed trips selected' : `Select all ${listed.length} unclaimed trips`}
         </label>
-        <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
+        <ul className="divide-y divide-slate-100 sm:max-h-72 sm:overflow-y-auto">
           {listed.map((trip) => {
             const ticked = selected.has(trip.id);
             return (

@@ -380,7 +380,7 @@ export function TripFormDialog({
       onOpenChange={onOpenChange}
       size="lg"
       // Wider than `lg` (672px) so the paired fields and both vehicle buttons sit on one line each.
-      className="sm:max-w-4xl"
+      className="sm:max-w-[min(56rem,95vw)]"
       title={mode === 'gps-start' ? 'Start a GPS trip' : trip ? 'Edit trip' : 'Record a trip'}
       description={
         mode === 'gps-start'
@@ -473,7 +473,8 @@ export function TripFormDialog({
                   {typeOptions.map((option) => (
                     <SelectItem key={option.type} value={option.type}>
                       {option.type}
-                      {option.rate !== null ? ` — ₹${option.rate}/km` : ' — no rate set'}
+                      {/* Same reasoning: the rate is not what you are choosing a vehicle for. */}
+                      {mode !== 'gps-start' && (option.rate !== null ? ` — ₹${option.rate}/km` : ' — no rate set')}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -506,7 +507,7 @@ export function TripFormDialog({
               disabled={locating}
               title="Use my current location"
               aria-label="Use my current location"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-50"
+              className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded text-slate-400 hover:text-slate-700 disabled:opacity-50"
             >
               {locating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <LocateFixed className="h-4 w-4" aria-hidden />}
             </button>
@@ -537,7 +538,7 @@ export function TripFormDialog({
             <Input id="trip-distance" type="number" inputMode="decimal" step="0.1" min="0" value={form.distanceKm} onChange={(event) => set('distanceKm', event.target.value)} className="bg-white" aria-invalid={Boolean(liveErrors.distance)} />
           </Field>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Opening reading (km)" required error={liveErrors.startOdometer} htmlFor="trip-start" hint={lastReading !== null && !trip ? `Last logged: ${lastReading.toLocaleString('en-IN')}` : undefined}>
               <Input id="trip-start" type="number" inputMode="decimal" step="0.1" min="0" value={startText} onChange={(event) => set('startOdometer', event.target.value)} className="bg-white" aria-invalid={Boolean(liveErrors.startOdometer)} />
             </Field>
@@ -558,7 +559,7 @@ export function TripFormDialog({
       </div>
 
       {rules.allowTollParking && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Toll (₹)" error={liveErrors.tollAmount} htmlFor="trip-toll">
             <Input id="trip-toll" type="number" inputMode="decimal" step="0.01" min="0" value={form.tollAmount} onChange={(event) => set('tollAmount', event.target.value)} placeholder="0" className="bg-white" />
           </Field>
@@ -572,6 +573,15 @@ export function TripFormDialog({
         <Textarea id="trip-notes" value={form.notes} onChange={(event) => set('notes', event.target.value)} rows={2} maxLength={500} placeholder="Anything the approver should know" className="bg-white" />
       </Field>
 
+      {/*
+        Hidden while starting a GPS trip.
+
+        The distance is zero until the drive happens, so this panel could only ever read
+        ‘0 km × ₹3/km = ₹0’ — an amount of nothing, shown at the moment somebody is about to set
+        off. It is the first thing they see on the review afterwards, where the kilometres are
+        real and the figure means something.
+      */}
+      {mode !== 'gps-start' && (
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-xs text-slate-600">
@@ -590,6 +600,7 @@ export function TripFormDialog({
               : `Rate card from ${rate.effectiveFrom} · ${vehicleType}, ${form.ownership === 'own' ? 'own vehicle' : 'company vehicle'}.`}
         </p>
       </div>
+      )}
     </FormDialog>
   );
 }

@@ -202,7 +202,7 @@ export function PeoplePicker({ users, value, onChange, disabled, placeholder = '
             <span key={id} className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pl-2.5 pr-1 text-xs text-slate-700">
               <span className="truncate">{nameOf(id)}</span>
               {!disabled && (
-                <button type="button" onClick={() => onChange(value.filter((entry) => entry !== id))} className="rounded-full p-0.5 hover:bg-slate-200" aria-label={`Remove ${nameOf(id)}`}>
+                <button type="button" onClick={() => onChange(value.filter((entry) => entry !== id))} className="-my-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-slate-200" aria-label={`Remove ${nameOf(id)}`}>
                   <X className="h-3 w-3" aria-hidden />
                 </button>
               )}
