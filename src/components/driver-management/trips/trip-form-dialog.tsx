@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Building2, Car, Loader2 } from 'lucide-react';
+import { Building2, Car, Loader2, LocateFixed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -21,9 +21,10 @@ import { FormDialog } from '@/components/shared/form-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR, odometerDistance, ownVehicleTypes, priceTrip, rateFor } from '@/lib/employee-trips/rates';
 import { daysLeftToClaim, validateTrip, type TripErrors, type TripInput } from '@/lib/employee-trips/trips';
-import { formatKm, normaliseVehicleNumber, type TripRecord, type VehicleOwnership } from '@/lib/employee-trips/types';
+import { formatKm, normaliseVehicleNumber, type TripGpsEvidence, type TripRecord, type VehicleOwnership } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
-import { TripApiError, errorMessage, tripFetch, type Bootstrap } from './trip-api';
+import { getCurrentDriverPosition } from '@/lib/driver-mobile-geolocation';
+import { TripApiError, errorMessage, reverseGeocode, tripFetch, type Bootstrap } from './trip-api';
 import { Field, Money, SearchSelect } from './trip-ui';
 
 interface FormState {
@@ -50,9 +51,23 @@ interface FormState {
 const numberText = (value: number | null | undefined) => (value === null || value === undefined ? '' : String(value));
 const toNumber = (value: string): number | null => (value.trim() === '' ? null : Number(value));
 
-function initialState(data: Bootstrap, trip: TripRecord | null, myTrips: TripRecord[]): FormState {
+/**
+ * The form’s opening values.
+ *
+ * `prefill` is what a GPS recording hands over — the measured distance and the places it
+ * reverse-geocoded — applied last so it wins over the suggestions drawn from previous trips.
+ * It is still an ordinary editable form: the employee confirms a measured figure, they do not
+ * merely witness it.
+ */
+function initialState(
+  data: Bootstrap,
+  trip: TripRecord | null,
+  myTrips: TripRecord[],
+  prefill?: Partial<FormState>,
+): FormState {
+  const withPrefill = (state: FormState): FormState => ({ ...state, ...prefill });
   if (trip) {
-    return {
+    return withPrefill({
       tripDate: trip.tripDate,
       ownership: trip.ownership,
       vehicleType: trip.vehicleType,
@@ -70,14 +85,14 @@ function initialState(data: Bootstrap, trip: TripRecord | null, myTrips: TripRec
       tollAmount: trip.tollAmount ? String(trip.tollAmount) : '',
       parkingAmount: trip.parkingAmount ? String(trip.parkingAmount) : '',
       notes: trip.notes,
-    };
+    });
   }
   // A new trip starts from the employee's last one: same kind of vehicle, same project.
   const last = myTrips[0];
   const rules = data.settings.rules;
   const ownership: VehicleOwnership = last && (last.ownership === 'own' ? rules.allowOwnVehicle : rules.allowCompanyVehicle) ? last.ownership : rules.allowOwnVehicle ? 'own' : 'company';
   const sameKind = last?.ownership === ownership ? last : null;
-  return {
+  return withPrefill({
     tripDate: data.today,
     ownership,
     vehicleType: sameKind?.ownership === 'own' ? sameKind.vehicleType : '',
@@ -95,7 +110,7 @@ function initialState(data: Bootstrap, trip: TripRecord | null, myTrips: TripRec
     tollAmount: '',
     parkingAmount: '',
     notes: '',
-  };
+  });
 }
 
 export function TripFormDialog({
@@ -105,6 +120,10 @@ export function TripFormDialog({
   trip,
   myTrips,
   onSaved,
+  prefill,
+  gps,
+  mode = 'save',
+  onStart,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -114,13 +133,60 @@ export function TripFormDialog({
   /** The employee's trips, newest first — for prefills and own-vehicle suggestions. */
   myTrips: TripRecord[];
   onSaved: (trip: TripRecord) => void;
+  /** Opening values from a GPS recording. Editable like any other. */
+  prefill?: Partial<FormState>;
+  /**
+   * `gps-start` collects the trip up front and hands it back instead of saving.
+   *
+   * The same dialog rather than a second one, because the question “what does a trip need” has
+   * one answer. A separate start sheet drifted from this form the moment either changed, and it
+   * already looked and sized differently.
+   */
+  mode?: 'save' | 'gps-start';
+  /** Called in `gps-start` mode with what was entered. */
+  onStart?: (values: {
+    ownership: VehicleOwnership;
+    vehicleType: string;
+    vehicleNumber: string;
+    vehicleId: string | null;
+    tripDate: string;
+    fromPlace: string;
+    purpose: string;
+    projectId: string | null;
+    departmentId: string | null;
+    startOdometer: string | null;
+    notes: string;
+  }) => void;
+  /** Measured evidence, saved beside the claimed figures so an approver can weigh them. */
+  gps?: TripGpsEvidence;
 }) {
   const { toast } = useToast();
   const rules = data.settings.rules;
-  const [form, setForm] = useState<FormState>(() => initialState(data, trip, myTrips));
+  const [form, setForm] = useState<FormState>(() => initialState(data, trip, myTrips, prefill));
   const [errors, setErrors] = useState<TripErrors>({});
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState<false | 'save' | 'next'>(false);
+  const [locating, setLocating] = useState(false);
+
+  /**
+   * Put the device's current place in the From box.
+   *
+   * Silent on failure beyond clearing the spinner: location can be refused, unavailable indoors,
+   * or simply slow, and none of those should interrupt somebody filling in a form they can
+   * perfectly well complete by typing.
+   */
+  const fillFromCurrentLocation = async () => {
+    setLocating(true);
+    try {
+      const position = await getCurrentDriverPosition();
+      const place = await reverseGeocode(position.coords.latitude, position.coords.longitude);
+      if (place) setForm((current) => ({ ...current, fromPlace: place }));
+    } catch {
+      // Nothing to say: the field is still there to type in.
+    } finally {
+      setLocating(false);
+    }
+  };
 
   // A fresh form whenever the dialog opens or switches trip (adjusted during render, not in an
   // effect). Later refreshes of the trip list must not wipe what is being typed.
@@ -129,7 +195,10 @@ export function TripFormDialog({
   if (session !== lastSession) {
     setLastSession(session);
     if (open) {
-      setForm(initialState(data, trip, myTrips));
+      setForm(initialState(data, trip, myTrips, prefill));
+      // Starting a GPS trip means starting it here, so the From box fills itself rather than
+      // asking the driver to name a place their phone already knows.
+      if (mode === 'gps-start' && !prefill?.fromPlace) void fillFromCurrentLocation();
       setErrors({});
       setAttempted(false);
     }
@@ -199,7 +268,7 @@ export function TripFormDialog({
     }
     setSaving(next ? 'next' : 'save');
     try {
-      const result = await tripFetch<{ trip: TripRecord }>(trip ? `trips/${trip.id}` : 'trips', { method: trip ? 'PATCH' : 'POST', body: input });
+      const result = await tripFetch<{ trip: TripRecord }>(trip ? `trips/${trip.id}` : 'trips', { method: trip ? 'PATCH' : 'POST', body: gps ? { ...input, gps } : input });
       onSaved(result.trip);
       toast({ title: trip ? 'Trip updated' : 'Trip recorded', description: `${formatKm(result.trip.distanceKm)} · ${formatINR(result.trip.totalAmount)}` });
       if (next) {
@@ -234,6 +303,41 @@ export function TripFormDialog({
     hint: [vehicle.fuelType, vehicle.assignedDriverName && `Driver: ${vehicle.assignedDriverName}`].filter(Boolean).join(' · ') || undefined,
   }));
 
+  /**
+   * Hand the trip back to the recorder instead of saving it.
+   *
+   * Only the fields a driver can know before setting off are required here — `validateTrip`
+   * insists on a destination and a closing reading, which is exactly right for a recorded trip
+   * and impossible for one about to be driven.
+   */
+  const startRecording = () => {
+    setAttempted(true);
+    const missing: TripErrors = {};
+    if (!form.purpose.trim()) missing.purpose = 'Say what the trip is for.';
+    if (!form.fromPlace.trim()) missing.fromPlace = 'Where does it start?';
+    if (form.ownership === 'own' && !normaliseVehicleNumber(form.vehicleNumber)) {
+      missing.vehicleNumber = 'Which vehicle?';
+    }
+    if (form.ownership === 'company' && !form.vehicleId) missing.vehicleId = 'Choose a vehicle.';
+    if (Object.keys(missing).length > 0) {
+      setErrors(missing);
+      return;
+    }
+    onStart?.({
+      ownership: form.ownership,
+      vehicleType: form.vehicleType,
+      vehicleNumber: form.vehicleNumber,
+      vehicleId: form.vehicleId,
+      tripDate: form.tripDate,
+      fromPlace: form.fromPlace,
+      purpose: form.purpose,
+      projectId: form.projectId,
+      departmentId: form.departmentId,
+      startOdometer: form.startOdometer,
+      notes: form.notes,
+    });
+  };
+
   return (
     <FormDialog
       open={open}
@@ -241,9 +345,13 @@ export function TripFormDialog({
       size="lg"
       // Wider than `lg` (672px) so the paired fields and both vehicle buttons sit on one line each.
       className="sm:max-w-4xl"
-      title={trip ? 'Edit trip' : 'Record a trip'}
-      description="One leg of official travel. The amount is worked out from the company's per-km rate for the vehicle."
-      onSubmit={() => save(false)}
+      title={mode === 'gps-start' ? 'Start a GPS trip' : trip ? 'Edit trip' : 'Record a trip'}
+      description={
+        mode === 'gps-start'
+          ? 'One leg of official travel. Fill in what only you know — the distance, the destination and the closing reading are measured while you drive.'
+          : "One leg of official travel. The amount is worked out from the company's per-km rate for the vehicle."
+      }
+      onSubmit={() => (mode === 'gps-start' ? startRecording() : save(false))}
       submitting={Boolean(saving)}
       footer={
         <>
@@ -252,7 +360,7 @@ export function TripFormDialog({
               Cancel
             </Button>
           </DialogClose>
-          {!trip && (
+          {!trip && mode === 'save' && (
             <Button type="button" variant="secondary" disabled={Boolean(saving)} onClick={() => save(true)}>
               {saving === 'next' && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
               Save &amp; add next
@@ -260,7 +368,7 @@ export function TripFormDialog({
           )}
           <Button type="submit" disabled={Boolean(saving)}>
             {saving === 'save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
-            {trip ? 'Save changes' : 'Save trip'}
+            {mode === 'gps-start' ? 'Start recording' : trip ? 'Save changes' : 'Save trip'}
           </Button>
         </>
       }
@@ -348,10 +456,28 @@ export function TripFormDialog({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="From" required error={liveErrors.fromPlace} htmlFor="trip-from">
-          <Input id="trip-from" value={form.fromPlace} onChange={(event) => set('fromPlace', event.target.value)} placeholder="Office, site, city…" maxLength={120} className="bg-white" aria-invalid={Boolean(liveErrors.fromPlace)} />
+          <div className="relative">
+            <Input id="trip-from" value={form.fromPlace} onChange={(event) => set('fromPlace', event.target.value)} placeholder={locating ? 'Finding your location…' : 'Office, site, city…'} maxLength={200} className="bg-white pr-9" aria-invalid={Boolean(liveErrors.fromPlace)} />
+            {/*
+              Typed by hand for years while the device knew the answer. Offered rather than forced:
+              a trip can be recorded days later from somewhere else entirely, and then the current
+              position is the wrong answer — which is why it fills itself only when a GPS trip is
+              starting, and is a button everywhere else.
+            */}
+            <button
+              type="button"
+              onClick={() => void fillFromCurrentLocation()}
+              disabled={locating}
+              title="Use my current location"
+              aria-label="Use my current location"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1.5 text-slate-400 hover:text-slate-700 disabled:opacity-50"
+            >
+              {locating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <LocateFixed className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
         </Field>
-        <Field label="To" required error={liveErrors.toPlace} htmlFor="trip-to">
-          <Input id="trip-to" value={form.toPlace} onChange={(event) => set('toPlace', event.target.value)} placeholder="Where the trip ended" maxLength={120} className="bg-white" aria-invalid={Boolean(liveErrors.toPlace)} />
+        <Field label="To" required={mode === 'save'} error={mode === 'save' ? liveErrors.toPlace : undefined} htmlFor="trip-to">
+          <Input id="trip-to" value={form.toPlace} onChange={(event) => set('toPlace', event.target.value)} disabled={mode === 'gps-start'} placeholder={mode === 'gps-start' ? 'Measured when you stop' : 'Where the trip ended'} maxLength={200} className="bg-white" aria-invalid={Boolean(mode === 'save' && liveErrors.toPlace)} />
         </Field>
       </div>
       <Field label="Purpose" required error={liveErrors.purpose} htmlFor="trip-purpose">
@@ -379,8 +505,8 @@ export function TripFormDialog({
             <Field label="Opening reading (km)" required error={liveErrors.startOdometer} htmlFor="trip-start" hint={lastReading !== null && !trip ? `Last logged: ${lastReading.toLocaleString('en-IN')}` : undefined}>
               <Input id="trip-start" type="number" inputMode="decimal" step="0.1" min="0" value={startText} onChange={(event) => set('startOdometer', event.target.value)} className="bg-white" aria-invalid={Boolean(liveErrors.startOdometer)} />
             </Field>
-            <Field label="Closing reading (km)" required error={liveErrors.endOdometer ?? liveErrors.distance} htmlFor="trip-end">
-              <Input id="trip-end" type="number" inputMode="decimal" step="0.1" min="0" value={form.endOdometer} onChange={(event) => set('endOdometer', event.target.value)} className="bg-white" aria-invalid={Boolean(liveErrors.endOdometer || liveErrors.distance)} />
+            <Field label="Closing reading (km)" required={mode === 'save'} error={mode === 'save' ? liveErrors.endOdometer ?? liveErrors.distance : undefined} htmlFor="trip-end">
+              <Input id="trip-end" type="number" inputMode="decimal" step="0.1" min="0" value={form.endOdometer} onChange={(event) => set('endOdometer', event.target.value)} disabled={mode === 'gps-start'} placeholder={mode === 'gps-start' ? 'Measured' : undefined} className="bg-white" aria-invalid={Boolean(mode === 'save' && (liveErrors.endOdometer || liveErrors.distance))} />
             </Field>
           </div>
         )}

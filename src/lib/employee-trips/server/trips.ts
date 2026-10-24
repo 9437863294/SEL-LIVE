@@ -51,6 +51,9 @@ export function toTrip(id: string, data: FirebaseFirestore.DocumentData): TripRe
     decision: data.decision ?? null,
     returnNote: data.returnNote ?? null,
     previousClaims: Array.isArray(data.previousClaims) ? data.previousClaims : [],
+    // Every trip written before GPS recording existed is a typed one, which is the truth about it.
+    source: data.source === 'gps' ? 'gps' : 'manual',
+    gps: data.gps ?? null,
     createdAt: String(data.createdAt ?? ''),
     updatedAt: String(data.updatedAt ?? ''),
   };
@@ -134,6 +137,11 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
     decision: null,
     returnNote: existing?.returnNote ?? null,
     previousClaims: existing?.previousClaims ?? [],
+    // Recorded once, by whoever created the trip. An edit that does not resend the evidence
+    // keeps it, so correcting a typo in the purpose cannot quietly downgrade a measured trip
+    // to a typed one.
+    source: input.gps ? 'gps' : existing?.source ?? 'manual',
+    gps: input.gps ?? existing?.gps ?? null,
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };

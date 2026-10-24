@@ -174,3 +174,60 @@ export interface SettingsPayload {
   departments: NamedOption[];
   canEdit: boolean;
 }
+
+/**
+ * A place name for a coordinate, via the reverse-geocode proxy.
+ *
+ * Returns Google's full formatted address, not the locality.
+ *
+ * It filled in "Bhubaneswar" at first, on the reasoning that it is what somebody would type. That
+ * was the wrong trade for this form: a claim is checked by an approver who was not there, and "the
+ * trip started in Bhubaneswar" tells them almost nothing about a city of a million people, while
+ * the street and plot do. The driver can always shorten it; they cannot recover detail the field
+ * never captured.
+ *
+ * The component pieces are assembled only when Google returns no formatted address — rare, but it
+ * answers with bare coordinates near an unmapped site, which is precisely where a site visit ends.
+ *
+ * Never throws. A missing address is a field somebody can type; it must not cost them the trip
+ * they are trying to start.
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const response = await fetch('/api/maps/reverse-geocode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng }),
+    });
+    if (!response.ok) return '';
+    const data = (await response.json()) as {
+      formattedAddress?: string;
+      roadNumber?: string;
+      road?: string;
+      area?: string;
+      locality?: string;
+      city?: string;
+      district?: string;
+      state?: string;
+      postalCode?: string;
+    };
+
+    const formatted = String(data.formattedAddress || '').trim();
+    if (formatted) return formatted;
+
+    // Narrowest first, so the fallback reads the way an address is written.
+    return [
+      [data.roadNumber, data.road].filter(Boolean).join(' '),
+      data.area,
+      data.locality || data.city,
+      data.district && data.district !== (data.locality || data.city) ? data.district : '',
+      data.state,
+      data.postalCode,
+    ]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(', ');
+  } catch {
+    return '';
+  }
+}

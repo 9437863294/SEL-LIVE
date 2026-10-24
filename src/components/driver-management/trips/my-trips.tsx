@@ -30,6 +30,7 @@ import { errorMessage, tripFetch } from './trip-api';
 import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { CreateClaimDialog, type CreatedClaim } from './submit-claim-dialog';
+import { GpsTripButton, GpsTripPanel, GpsTripProvider } from './gps-trip-recorder';
 import { TripFormDialog } from './trip-form-dialog';
 import { ClaimSteps, EmptyBlock, ErrorBlock, FlagChips, Km, LoadingBlock, Money, SegmentTabs, TripStatusBadge, VehicleLabel, shortDate } from './trip-ui';
 
@@ -50,6 +51,8 @@ export default function MyTrips() {
   const { toast } = useToast();
   const { data, error: bootError, loading: bootLoading, reload: reloadBootstrap } = useTripClaims();
   const tripsQuery = useTripQuery<{ trips: TripRecord[] }>('trips');
+  /** Set by the GPS provider below, so the page can stand aside while a trip is being driven. */
+  const [gpsRecording, setGpsRecording] = useState(false);
   const trips = tripsQuery.data?.trips ?? null;
   const loadError = trips ? null : tripsQuery.error;
   const setTrips = (change: (current: TripRecord[]) => TripRecord[]) => tripsQuery.setData((current) => ({ trips: change(current?.trips ?? []) }));
@@ -260,7 +263,8 @@ export default function MyTrips() {
   const noRates = data.settings.rateRevisions.length === 0;
 
   return (
-    <div className="space-y-4">
+    <GpsTripProvider data={data} myTrips={trips ?? []} onSaved={onSaved} onRecordingChange={setGpsRecording}>
+      <div className="space-y-4">
       <PageHeader
         title="My Trips"
         icon={Route}
@@ -270,20 +274,39 @@ export default function MyTrips() {
           { label: 'In process', value: <Money value={sumMoney(all.filter((trip) => trip.status === 'submitted' || trip.status === 'approved').map((trip) => trip.decision?.approvedAmount ?? trip.totalAmount))} /> },
         ]}
         actions={
+          // Nothing to offer mid-drive: a second trip cannot be started, and a claim raised now
+          // would exclude the kilometres being driven.
+          gpsRecording ? null : (
           <>
             {/* The next step is the prominent one: claiming once there is something to claim. */}
             <Button type="button" variant={candidates.length ? 'outline' : 'default'} className={candidates.length ? undefined : VM_PRIMARY_BUTTON} onClick={() => { setEditing(null); setFormOpen(true); }}>
               <Plus className="mr-2 h-4 w-4" aria-hidden />
               Record trip
             </Button>
+            {/*
+              The GPS recorder sits beside the manual button because they produce the same thing:
+              a draft trip. The difference is only whether the distance is measured or typed.
+            */}
+            <GpsTripButton />
             <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={candidates.length ? VM_PRIMARY_BUTTON : undefined} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
               <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
               {chosen.length ? `Create claim (${chosen.length} selected)` : candidates.length ? `Create claim (${candidates.length} unclaimed)` : 'Create claim'}
             </Button>
           </>
+          )
         }
       />
 
+      {/* Full page width: a map and four figures do not fit a header actions row. */}
+      <GpsTripPanel />
+
+      {/*
+        Hidden while recording, not disabled: a greyed-out filter bar and an empty trip list are
+        still a screenful of furniture around the one thing that matters. The list comes back the
+        moment the trip is saved or discarded.
+      */}
+      {!gpsRecording && (
+        <>
       <ClaimSteps approvalName={data.settings.stages.find((stage) => stage.kind === 'approval')?.name} paymentName={data.settings.stages.find((stage) => stage.kind === 'payment')?.name} />
 
       {noRates && (
@@ -384,6 +407,8 @@ export default function MyTrips() {
           {expired.length} unclaimed trip{expired.length === 1 ? ' is' : 's are'} past the {rules?.claimWindowDays}-day claim window and can only be deleted.
         </p>
       )}
+        </>
+      )}
 
       <TripFormDialog open={formOpen} onOpenChange={setFormOpen} data={data} trip={editing} myTrips={all} onSaved={onSaved} />
       <CreateClaimDialog
@@ -406,6 +431,7 @@ export default function MyTrips() {
         description={deleting ? `${deleting.fromPlace} → ${deleting.toPlace} on ${shortDate(deleting.tripDate)}. This cannot be undone.` : undefined}
         onConfirm={confirmDelete}
       />
-    </div>
+      </div>
+    </GpsTripProvider>
   );
 }

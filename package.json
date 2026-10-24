@@ -47,7 +47,7 @@
     "test:people-directory": "node --experimental-strip-types --test tests/people-directory.test.mjs",
     "typecheck:access-control": "tsc -p tsconfig.access-control.json",
     "test:site-account-statement": "node --experimental-strip-types --test tests/site-account-statement-scope.test.mjs tests/site-account-statement-date-policy.test.mjs tests/site-account-statement-sort.test.mjs tests/site-account-statement-period-range.test.mjs tests/site-account-statement-allocations.test.mjs tests/print-table-report.test.mjs tests/site-account-statement-month-closure.test.mjs tests/site-account-statement-auto-close.test.mjs tests/site-account-statement-charts.test.mjs tests/site-account-statement-category-report.test.mjs tests/site-account-statement-project-comparison.test.mjs tests/site-account-statement-subcategory-rule.test.mjs tests/site-account-statement-vehicle-fuel.test.mjs tests/site-account-statement-field-control-changes.test.mjs",
-    "test:greythr": "node --experimental-strip-types --test tests/greythr-domain.test.mjs tests/greythr-linking.test.mjs tests/reporting-structure.test.mjs",
+    "test:greythr": "node --experimental-strip-types --test tests/greythr-domain.test.mjs tests/greythr-linking.test.mjs tests/reporting-structure.test.mjs tests/trip-path.test.mjs tests/trip-field-control.test.mjs",
     "typecheck:greythr": "tsc -p tsconfig.greythr.json",
     "firebase:admin-env": "node scripts/set-firebase-admin-env.mjs",
     "firebase:admin-check": "node scripts/check-firebase-admin.mjs",

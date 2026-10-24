@@ -212,6 +212,30 @@ export interface TripDecision {
   at: string;
 }
 
+/** Whether the distance was measured or entered. */
+export type TripSource = 'manual' | 'gps';
+
+/**
+ * What a GPS-recorded trip measured.
+ *
+ * Stored beside the claimed distance rather than instead of it: the employee can still correct
+ * the figure before submitting, and the approver can see both what was measured and what was
+ * claimed. `fixes` against `droppedFixes` is how a short, sparse path explains itself — a trip
+ * built from 12 of 300 readings deserves a second look.
+ */
+export interface TripGpsEvidence {
+  measuredKm: number;
+  startedAtIso: string;
+  endedAtIso: string;
+  movingMinutes: number;
+  idleMinutes: number;
+  stopCount: number;
+  fixes: number;
+  droppedFixes: number;
+  /** A downsampled path, for drawing the route on the claim. Capped to keep the document small. */
+  path: Array<{ lat: number; lng: number }>;
+}
+
 export interface TripRecord {
   id: string;
   organizationId: string;
@@ -251,6 +275,15 @@ export interface TripRecord {
   returnNote: { remarks: string; byName: string; at: string; claimNumber: string } | null;
   /** Claims this trip was on before (sent back or withdrawn), oldest first. */
   previousClaims: string[];
+  /**
+   * How the distance got here.
+   *
+   * A claim line is money, and 'somebody typed 42' and 'a phone measured 41.6 over 212 fixes'
+   * are not the same evidence. An approver cannot tell them apart without this.
+   */
+  source: TripSource;
+  /** Present only on a GPS-recorded trip — what was measured, for the approver to weigh. */
+  gps: TripGpsEvidence | null;
   createdAt: string;
   updatedAt: string;
 }

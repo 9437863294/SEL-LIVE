@@ -22,6 +22,9 @@ const nextConfig: NextConfig = {
       { source: '/driver-management/mobile-hub', destination: '/driver-management', permanent: false },
       { source: '/driver-management/trip-management', destination: '/vehicle-management/trips', permanent: false },
       { source: '/driver-management/employee-trips', destination: '/driver-management/my-trips', permanent: false },
+      // GPS recording moved onto My Trips: the trip you drive is the trip you claim, so there is no
+      // longer a separate screen that measures a journey no claim can reach.
+      { source: '/driver-management/trips', destination: '/driver-management/my-trips', permanent: false },
       { source: '/driver-management/daily-status', destination: '/driver-management', permanent: false },
       // The Expenses settings screens used to live under /settings as well as inside the module,
       // and the /settings copies had drifted — one of them lost its permission check entirely.

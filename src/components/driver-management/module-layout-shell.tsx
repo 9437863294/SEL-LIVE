@@ -8,7 +8,6 @@ import {
   Gauge,
   Inbox,
   ListFilter,
-  LocateFixed,
   ReceiptText,
   Route,
   Settings,
@@ -41,11 +40,11 @@ const sections: Section[] = [
   { id: 'approvals',       href: '/driver-management/approvals',       label: 'Approvals',        access: 'approver', icon: Inbox,       tone: 'amber',   group: 'workflow' },
   { id: 'payments',        href: '/driver-management/payments',        label: 'Payments',         access: 'payer',    icon: Banknote,    tone: 'emerald', group: 'workflow' },
   { id: 'claims',          href: '/driver-management/claims',          label: 'All Claims',       access: 'viewAll',  icon: ReceiptText, tone: 'blue',    group: 'workflow' },
-  // The driver app, for drivers of company vehicles. "GPS" keeps its trips apart from My Trips (the
-  // trips employees claim); the old Driver Mobile hub is the Overview's driver panel now, and Trip
-  // Management lives in Vehicle Management only (both old addresses redirect — next.config.ts).
+  // The driver app, for drivers of company vehicles. GPS recording is no longer here: it moved onto
+  // My Trips, because the journey measured and the journey claimed are one journey. The old Driver
+  // Mobile hub is the Overview's driver panel now, and Trip Management lives in Vehicle Management
+  // only (every old address redirects — next.config.ts).
   { id: 'vehicle-details', href: '/driver-management/vehicle-details', label: 'My Vehicle',       access: { resource: 'Assigned Vehicle Details' }, icon: CarFront, tone: 'blue', group: 'driver' },
-  { id: 'trips',           href: '/driver-management/trips',           label: 'Live GPS Trip',    access: { resource: 'Driver Trips' }, icon: LocateFixed, tone: 'sky', group: 'driver' },
   { id: 'trip-log',        href: '/driver-management/trip-log',        label: 'GPS Trip Log',     access: { resource: 'Driver Trips' }, icon: ListFilter, tone: 'indigo', group: 'driver' },
   { id: 'fuel',            href: '/driver-management/fuel',            label: 'Fuel Entries',     access: { resource: 'Driver Fuel' }, icon: Fuel, tone: 'amber', group: 'driver' },
   { id: 'settings',        href: '/driver-management/settings',        label: 'Settings',         access: 'settings', icon: Settings,    tone: 'slate',   group: 'admin' },
@@ -81,7 +80,6 @@ const bottomTabPriority: ModuleNavTab[] = [
   { href: '/driver-management/approvals',    label: 'Approve',  icon: Inbox, ariaLabel: 'Approvals' },
   { href: '/driver-management/payments',     label: 'Pay',      icon: Banknote, ariaLabel: 'Payments' },
   { href: '/driver-management/my-claims',    label: 'Claims',   icon: ReceiptText, ariaLabel: 'My claims' },
-  { href: '/driver-management/trips',        label: 'GPS',      icon: LocateFixed, ariaLabel: 'Live GPS trip' },
   { href: '/driver-management/fuel',         label: 'Fuel',     icon: Fuel, ariaLabel: 'Fuel entries' },
 ];
 

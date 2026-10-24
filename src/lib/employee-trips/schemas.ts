@@ -35,6 +35,29 @@ export const tripInputSchema = z.object({
   tollAmount: money,
   parkingAmount: money,
   notes: z.string().max(1000).optional().default(''),
+  /**
+   * Evidence from a GPS recording, when the trip was measured rather than typed.
+   *
+   * Optional so every existing caller and every manually entered trip is unaffected. The path is
+   * capped at 500 points: a Firestore document is limited to 1 MB, and a ten-second fix over a
+   * four-hour drive is 1,440 points before downsampling.
+   */
+  gps: z
+    .object({
+      measuredKm: z.number().nonnegative().max(10000),
+      startedAtIso: z.string().min(1).max(40),
+      endedAtIso: z.string().min(1).max(40),
+      movingMinutes: z.number().nonnegative().max(100000),
+      idleMinutes: z.number().nonnegative().max(100000),
+      stopCount: z.number().int().nonnegative().max(1000),
+      fixes: z.number().int().nonnegative().max(100000),
+      droppedFixes: z.number().int().nonnegative().max(100000),
+      path: z
+        .array(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }))
+        .max(500)
+        .default([]),
+    })
+    .optional(),
 });
 
 export const submitClaimSchema = z.object({
