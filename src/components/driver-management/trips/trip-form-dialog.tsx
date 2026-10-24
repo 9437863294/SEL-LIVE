@@ -10,7 +10,7 @@
  * one ended (same date, vehicle and project).
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Building2, Car, Loader2, LocateFixed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -209,13 +209,38 @@ export function TripFormDialog({
       setForm(initialState(data, trip, myTrips, prefill));
       // Starting a GPS trip means starting it here, so the From box fills itself rather than
       // asking the driver to name a place their phone already knows.
-      if (mode === 'gps-start' && !prefill?.fromPlace) void fillFromCurrentLocation();
       setErrors({});
       setAttempted(false);
     }
   }
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
+
+  /**
+   * Fill From from the device, once per opening, without anybody pressing anything.
+   *
+   * In an effect rather than the session-change branch above, which is where this lived and why
+   * it never worked: that branch compares `session` against state initialised to the very same
+   * value, so it does not run on the render where the dialog is first mounted — and the GPS
+   * dialog is mounted already open. An effect also keeps a side effect out of the render phase.
+   *
+   * Only for a new trip whose From is still empty, and only when the trip is dated today. A trip
+   * recorded three days later from the office would otherwise be stamped with the office as its
+   * origin, quietly and wrongly, on a claim somebody else has to check. The button remains for
+   * that case.
+   */
+  const autoLocatedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || trip) return;
+    if (autoLocatedFor.current === session) return;
+    if (form.fromPlace.trim()) return;
+    if (mode !== 'gps-start' && form.tripDate !== data.today) return;
+    autoLocatedFor.current = session;
+    void fillFromCurrentLocation();
+    // `fillFromCurrentLocation` is stable enough in practice and listing it would re-run this on
+    // every render; the ref above is what actually guarantees one call per opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, trip, session, form.fromPlace, form.tripDate, mode, data.today]);
 
   const companyVehicle = form.ownership === 'company' ? data.vehicles.find((vehicle) => vehicle.id === form.vehicleId) ?? null : null;
   const vehicleType = form.ownership === 'company' ? companyVehicle?.vehicleType ?? '' : form.vehicleType;
