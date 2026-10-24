@@ -9,6 +9,7 @@ import {
   Inbox,
   ListFilter,
   ReceiptText,
+  Users,
   Route,
   Settings,
   Truck,
@@ -39,6 +40,9 @@ const sections: Section[] = [
   { id: 'my-claims',       href: '/driver-management/my-claims',       label: 'My Claims',        access: 'everyone', icon: ReceiptText, tone: 'indigo',  group: 'mine' },
   { id: 'approvals',       href: '/driver-management/approvals',       label: 'Approvals',        access: 'approver', icon: Inbox,       tone: 'amber',   group: 'workflow' },
   { id: 'payments',        href: '/driver-management/payments',        label: 'Payments',         access: 'payer',    icon: Banknote,    tone: 'emerald', group: 'workflow' },
+  // Beside All Claims and on the same permission: an unclaimed trip appears on no claim, so
+  // without this nobody but the employee who recorded it can see it.
+  { id: 'all-trips',       href: '/driver-management/all-trips',       label: 'All Trips',        access: 'viewAll',  icon: Users,       tone: 'cyan',    group: 'workflow' },
   { id: 'claims',          href: '/driver-management/claims',          label: 'All Claims',       access: 'viewAll',  icon: ReceiptText, tone: 'blue',    group: 'workflow' },
   // The driver app, for drivers of company vehicles. GPS recording is no longer here: it moved onto
   // My Trips, because the journey measured and the journey claimed are one journey. The old Driver

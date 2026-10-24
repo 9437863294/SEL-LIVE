@@ -279,7 +279,7 @@ export default function AllTrips() {
         </EmptyBlock>
       ) : (
         <>
-          <DataList rows={filtered.slice(0, limit)} columns={columns} rowKey={(trip) => trip.id} />
+          <DataList rows={filtered.slice(0, limit)} columns={columns} dense />
           {filtered.length > limit && (
             <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <span>
