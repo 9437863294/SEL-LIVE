@@ -1,221 +1,241 @@
-
-
 'use client';
 
-import { useState, useEffect } from 'react';
-import { FolderKanban, Plus, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Construction, Plus, ShieldAlert } from 'lucide-react';
+import { addDoc, collection, deleteDoc, doc, getDocs, runTransaction, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { DataList } from '@/components/shared/data-list';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { TableCard } from '@/components/shared/table-card';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle as CardTitleShad,
-  CardDescription as CardDescriptionShad,
-} from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import type { Project } from '@/lib/types';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ProjectRegister } from '@/components/settings/projects/project-register';
+import { ProjectFormDialog, SubdivisionFormDialog, type InChargePerson } from '@/components/settings/projects/project-dialogs';
+import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { useUiText } from '@/hooks/use-company-profile';
+import { db } from '@/lib/firebase';
+import type { Project, ProjectSubdivision } from '@/lib/types';
+import {
+  ProjectRuleError,
+  buildSubdivision,
+  newSubdivisionId,
+  projectFormFrom,
+  projectPayload,
+  removeSubdivision,
+  subdivisionFormFrom,
+  subdivisionsOf,
+  suggestSubdivisionCode,
+  upsertSubdivision,
+  validateProject,
+  EMPTY_SUBDIVISION_FORM,
+  type ProjectFormValues,
+  type SubdivisionFormValues,
+} from '@/lib/project-subdivisions';
 
-const initialNewProjectState = {
-  projectName: '',
-  siteCode: '',
-  projectSite: '',
-  projectDivision: '',
-  location: '',
-  siteInCharge: 'N/A',
-  status: 'Active' as 'Active' | 'Inactive',
-};
+type ProjectDialog = { mode: 'add' | 'edit'; project: Project | null; initial: ProjectFormValues | null };
+type SiteDialog = { mode: 'add' | 'edit'; project: Project; site: ProjectSubdivision | null; initial: SubdivisionFormValues };
+type DeleteTarget = { kind: 'project'; project: Project } | { kind: 'site'; project: Project; site: ProjectSubdivision };
+
+const byName = (a: Project, b: Project) => (a.projectName ?? '').localeCompare(b.projectName ?? '');
+
+async function loadProjects(): Promise<Project[]> {
+  const snapshot = await getDocs(collection(db, 'projects'));
+  return snapshot.docs.map((projectDoc) => ({ id: projectDoc.id, ...projectDoc.data() }) as Project).sort(byName);
+}
+
+async function loadPeople(): Promise<InChargePerson[]> {
+  const snapshot = await getDocs(collection(db, 'users'));
+  return snapshot.docs
+    .map((userDoc) => {
+      const data = userDoc.data() as { name?: string; email?: string; status?: string };
+      return { id: userDoc.id, name: (data.name ?? '').trim(), detail: data.email, active: data.status !== 'Inactive' };
+    })
+    .filter((person) => person.name && person.active)
+    .map(({ id, name, detail }) => ({ id, name, detail }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A message for the person: the rule they broke, or a plain "try again" for anything technical. */
+function explain(error: unknown, fallback: string): string {
+  if (error instanceof ProjectRuleError) return error.message;
+  console.error(fallback, error);
+  return `${fallback} Check your connection and try again.`;
+}
 
 export default function ManageProjectPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const t = useUiText();
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [people, setPeople] = useState<InChargePerson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  const [newProject, setNewProject] = useState(initialNewProjectState);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
-  const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  // Each dialog's contents outlive its `open` flag, so the title does not change while it fades out.
+  // The form dialogs remount on every opening (`key`), so each starts from its `initial` values.
+  const [projectDialog, setProjectDialog] = useState<ProjectDialog>({ mode: 'add', project: null, initial: null });
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [projectKey, setProjectKey] = useState(0);
+  const [siteDialog, setSiteDialog] = useState<SiteDialog | null>(null);
+  const [siteOpen, setSiteOpen] = useState(false);
+  const [siteKey, setSiteKey] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const openProject = (dialog: ProjectDialog) => {
+    setProjectDialog(dialog);
+    setProjectKey((key) => key + 1);
+    setProjectOpen(true);
+  };
+  const openSite = (dialog: SiteDialog) => {
+    setSiteDialog(dialog);
+    setSiteKey((key) => key + 1);
+    setSiteOpen(true);
+  };
+  const openDelete = (target: DeleteTarget) => {
+    setDeleteTarget(target);
+    setDeleteOpen(true);
+  };
 
   const canView = can('View', 'Settings.Manage Project');
   const canAdd = can('Add', 'Settings.Manage Project');
   const canEdit = can('Edit', 'Settings.Manage Project');
   const canDelete = can('Delete', 'Settings.Manage Project');
+  const abilities = useMemo(() => ({ add: canAdd, edit: canEdit, delete: canDelete }), [canAdd, canEdit, canDelete]);
 
   useEffect(() => {
-    if (!isAuthLoading && canView) {
-        fetchProjects();
-    } else if (!isAuthLoading && !canView) {
-        setIsLoading(false);
-    }
-  }, [isAuthLoading, canView]);
-  
-  const fetchProjects = async () => {
-    setIsLoading(true);
-    try {
-      const querySnapshot = await getDocs(collection(db, 'projects'));
-      const projectsData: Project[] = [];
-      querySnapshot.forEach((doc) => {
-        projectsData.push({ id: doc.id, ...doc.data() } as Project);
-      });
-      setProjects(projectsData);
-    } catch (error) {
-      console.error("Error fetching projects: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch projects.',
-        variant: 'destructive',
-      });
-    }
-    setIsLoading(false);
-  };
-  
-  const handleInputChange = (field: keyof typeof newProject, value: string) => {
-    setNewProject(prev => ({ ...prev, [field]: value }));
-  };
-  
-  const handleSelectChange = (field: keyof typeof newProject, value: string) => {
-    setNewProject(prev => ({ ...prev, [field]: value }));
-  };
-  
-  const resetAddDialog = () => {
-    setNewProject(initialNewProjectState);
-    setIsAddDialogOpen(false);
-  }
+    if (isAuthLoading || !canView) return;
+    let live = true;
+    loadProjects()
+      .then((list) => live && setProjects(list))
+      .catch((error) => {
+        console.error('Error fetching projects: ', error);
+        toast({ title: 'Error', description: 'Failed to fetch projects.', variant: 'destructive' });
+      })
+      .finally(() => live && setIsLoading(false));
+    // The in-charge pickers' list. Optional: without it a name can still be typed in.
+    loadPeople()
+      .then((list) => live && setPeople(list))
+      .catch((error) => console.error('Error fetching users for the in-charge picker: ', error));
+    return () => {
+      live = false;
+    };
+  }, [isAuthLoading, canView, toast]);
 
-  const handleAddProject = async () => {
-    if (!newProject.projectName.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Project name cannot be empty.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  const toggle = useCallback((projectId: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }, []);
+
+  /** Puts a project's new site list on screen without reloading every project. */
+  const showSites = (projectId: string, subdivisions: ProjectSubdivision[]) =>
+    setProjects((current) => current.map((project) => (project.id === projectId ? { ...project, subdivisions } : project)));
+
+  /**
+   * Changes one project's sites inside a transaction: the list is re-read and the change applied to
+   * what is stored now, so a site someone else added a moment ago is kept.
+   */
+  const changeSites = async (projectId: string, change: (current: ProjectSubdivision[]) => ProjectSubdivision[]) => {
+    const ref = doc(db, 'projects', projectId);
+    const next = await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      if (!snapshot.exists()) throw new ProjectRuleError('This project has been deleted. Reload the page.');
+      const updated = change(subdivisionsOf(snapshot.data() as Project));
+      transaction.update(ref, { subdivisions: updated });
+      return updated;
+    });
+    showSites(projectId, next);
+  };
+
+  const saveProject = async (values: ProjectFormValues) => {
+    const payload = projectPayload(values);
     try {
-      await addDoc(collection(db, 'projects'), newProject);
-      toast({
-        title: 'Success',
-        description: `Project "${newProject.projectName}" added.`,
-      });
-      resetAddDialog();
-      fetchProjects(); 
+      if (projectDialog.mode === 'edit' && projectDialog.project) {
+        const { id } = projectDialog.project;
+        await updateDoc(doc(db, 'projects', id), { ...payload });
+        setProjects((current) => current.map((project) => (project.id === id ? { ...project, ...payload } : project)).sort(byName));
+        toast({ title: 'Project updated', description: payload.projectName });
+      } else {
+        const ref = await addDoc(collection(db, 'projects'), payload);
+        setProjects((current) => [...current, { id: ref.id, ...payload }].sort(byName));
+        // Opened straight away: adding its sites is usually the next thing to do.
+        setExpanded((current) => new Set(current).add(ref.id));
+        toast({ title: 'Project added', description: `Add the sub-division sites of "${payload.projectName}" below it.` });
+      }
     } catch (error) {
-      console.error("Error adding project: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to add project.',
-        variant: 'destructive',
-      });
+      throw new Error(explain(error, 'Could not save the project.'));
     }
   };
-  
-  const handleDeleteProject = async (id: string) => {
+
+  const saveSite = async (values: SubdivisionFormValues) => {
+    if (!siteDialog) return;
+    const { project, site: original } = siteDialog;
     try {
-      await deleteDoc(doc(db, "projects", id));
-      toast({
-        title: "Success",
-        description: "Project deleted successfully.",
-      });
-      fetchProjects();
+      await changeSites(project.id, (current) =>
+        upsertSubdivision(current, buildSubdivision(values, original?.id ?? newSubdivisionId(current))),
+      );
+      setExpanded((current) => new Set(current).add(project.id));
+      toast({ title: original ? 'Site updated' : 'Site added', description: `${values.name.trim()} · ${project.projectName}` });
     } catch (error) {
-      console.error("Error deleting project: ", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete project.",
-        variant: "destructive",
-      });
+      throw new Error(explain(error, 'Could not save the site.'));
     }
   };
-  
-  const openEditDialog = (project: Project) => {
-    setEditingProject(project);
-    setIsEditDialogOpen(true);
-  };
-  
-  const handleUpdateProject = async () => {
-    if (!editingProject) return;
-  
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      const projectRef = doc(db, 'projects', editingProject.id);
-      await updateDoc(projectRef, {
-        ...editingProject
-      });
-      toast({
-        title: 'Success',
-        description: 'Project updated successfully.',
-      });
-      setIsEditDialogOpen(false);
-      setEditingProject(null);
-      fetchProjects();
+      if (deleteTarget.kind === 'site') {
+        const { project, site } = deleteTarget;
+        await changeSites(project.id, (current) => removeSubdivision(current, site.id));
+        toast({ title: 'Site removed', description: `${site.name} · ${project.projectName}` });
+      } else {
+        const { project } = deleteTarget;
+        await deleteDoc(doc(db, 'projects', project.id));
+        setProjects((current) => current.filter((other) => other.id !== project.id));
+        toast({ title: 'Project deleted', description: project.projectName });
+      }
     } catch (error) {
-      console.error('Error updating project: ', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to update project.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: explain(error, 'Could not delete it.'), variant: 'destructive' });
+      throw error;
     }
   };
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-        <div className="w-full px-4 sm:px-5">
-            <div className="mb-6 flex items-center justify-between">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-10 w-32" />
-            </div>
-            <Card>
-                <CardContent className="p-0">
-                    <Skeleton className="h-96 w-full" />
-                </CardContent>
-            </Card>
+      <div className="w-full space-y-4 px-4 py-3 sm:px-5">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-10 w-32" />
         </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[76px] rounded-xl" />)}
+        </div>
+        <Skeleton className="h-96 w-full rounded-xl" />
+      </div>
     );
   }
-  
+
   if (!canView) {
-      return (
-        <div className="w-full px-4 sm:px-5">
-            <PageHeader title="Manage Project" backHref="/settings" backLabel="Back to settings" />
-            <Card>
-                <CardHeader>
-                    <CardTitleShad>Access Denied</CardTitleShad>
-                    <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
-                </CardHeader>
-                <CardContent className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContent>
-            </Card>
-        </div>
-      )
+    return (
+      <div className="w-full px-4 sm:px-5">
+        <PageHeader title="Projects" backHref="/settings" backLabel="Back to settings" />
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view this page. Please contact an administrator.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
-  const serialOf = new Map(projects.map((proj, index) => [proj.id, index + 1]));
+  const deleteSites = deleteTarget?.kind === 'project' ? subdivisionsOf(deleteTarget.project).length : 0;
 
   return (
     <>
@@ -228,184 +248,83 @@ export default function ManageProjectPage() {
           style={{ backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
       </div>
-    <div className="w-full px-4 sm:px-5 py-3">
-      <PageHeader
-        title="Manage Projects"
-        backHref="/settings"
-        backLabel="Back to settings"
-        actions={
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button disabled={!canAdd} className="rounded-full shadow-md">
+      {/*
+        From `lg` the page is exactly the screen below the app header (less the settings frame's
+        2.5rem of padding), so the page never scrolls: the register fills what is left and scrolls
+        inside. Below `lg` it flows as usual — a scroller inside a phone screen is too cramped.
+      */}
+      <div className="flex w-full flex-col px-4 py-3 sm:px-5 lg:h-[calc(100dvh-var(--app-header-offset,4rem)-2.5rem)]">
+        <PageHeader
+          title="Projects"
+          description="Every project, and the sub-division sites it is executed at."
+          icon={Construction}
+          backHref="/settings"
+          backLabel="Back to settings"
+          actions={
+            <Button
+              disabled={!canAdd}
+              className="rounded-full shadow-md"
+              onClick={() => openProject({ mode: 'add', project: null, initial: null })}
+            >
               <Plus className="mr-2 h-4 w-4" />
-              Add Project
+              Add project
             </Button>
-          </DialogTrigger>
-          <DialogContent size="lg" onPointerDownOutside={(e) => e.preventDefault()}>
-            <DialogHeader>
-              <DialogTitle>Add New Project</DialogTitle>
-              <DialogDescription>
-                Fill in the details to add a new project.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="projectName">Project Name</Label>
-                    <Input id="projectName" placeholder="e.g. Corporate Office" value={newProject.projectName} onChange={(e) => handleInputChange('projectName', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="siteCode">Site Code</Label>
-                    <Input id="siteCode" placeholder="e.g. SEL-001" value={newProject.siteCode} onChange={(e) => handleInputChange('siteCode', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="projectSite">Project Site</Label>
-                    <Input id="projectSite" placeholder="e.g. Hyderabad" value={newProject.projectSite} onChange={(e) => handleInputChange('projectSite', e.target.value)} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="projectDivision">Project Division</Label>
-                    <Input id="projectDivision" placeholder="e.g. Electrical" value={newProject.projectDivision} onChange={(e) => handleInputChange('projectDivision', e.target.value)} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="location">Location</Label>
-                    <Input id="location" placeholder="e.g. Gachibowli, Hyderabad" value={newProject.location} onChange={(e) => handleInputChange('location', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="siteInCharge">Site in-charge</Label>
-                    <Select value={newProject.siteInCharge} onValueChange={(value) => handleSelectChange('siteInCharge', value)}>
-                        <SelectTrigger id="siteInCharge">
-                            <SelectValue placeholder="Select a user" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="N/A">N/A</SelectItem>
-                            {/* Future: Map users here */}
-                        </SelectContent>
-                    </Select>
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="status">Status</Label>
-                    <Select value={newProject.status} onValueChange={(value: 'Active' | 'Inactive') => handleSelectChange('status', value)}>
-                        <SelectTrigger id="status">
-                            <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Active">Active</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>{t('cancel')}</Button>
-              </DialogClose>
-              <Button onClick={handleAddProject}>Add Project</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        }
+          }
+        />
+
+        <ProjectRegister
+          projects={projects}
+          can={abilities}
+          expanded={expanded}
+          onToggle={toggle}
+          onSetExpanded={setExpanded}
+          onEditProject={(project) => openProject({ mode: 'edit', project, initial: projectFormFrom(project) })}
+          onDeleteProject={(project) => openDelete({ kind: 'project', project })}
+          onAddSite={(project) =>
+            openSite({ mode: 'add', project, site: null, initial: { ...EMPTY_SUBDIVISION_FORM, code: suggestSubdivisionCode(project) } })
+          }
+          onEditSite={(project, site) => openSite({ mode: 'edit', project, site, initial: subdivisionFormFrom(site) })}
+          onDeleteSite={(project, site) => openDelete({ kind: 'site', project, site })}
+        />
+      </div>
+
+      <ProjectFormDialog
+        key={`project-${projectKey}`}
+        open={projectOpen}
+        onOpenChange={setProjectOpen}
+        mode={projectDialog.mode}
+        initial={projectDialog.initial}
+        people={people}
+        validate={(values) => validateProject(values, projects, projectDialog.project)}
+        onSave={saveProject}
       />
 
-      <TableCard title="Projects" icon={FolderKanban} count={projects.length} noun="project">
-        {isLoading ? (
-          <div className="space-y-2 p-4">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
-          </div>
-        ) : (
-          <div className="p-3 sm:p-0">
-            <DataList
-              frameless
-              rows={projects}
-              empty={<p className="py-8 text-center text-sm text-muted-foreground">No projects found.</p>}
-              columns={[
-                { header: 'Sr. No.', mobile: 'omit', className: 'tabular-nums', cell: (proj) => serialOf.get(proj.id) },
-                { header: 'Project Name', mobile: 'title', className: 'font-medium', cell: (proj) => proj.projectName },
-                { header: 'Site Code', className: 'whitespace-nowrap', cell: (proj) => proj.siteCode },
-                { header: 'Project Site', cell: (proj) => proj.projectSite },
-                { header: 'Project Division', cell: (proj) => proj.projectDivision },
-                { header: 'Location', cell: (proj) => proj.location },
-                { header: 'Site in-charge', cell: (proj) => proj.siteInCharge },
-                { header: 'Status', mobile: 'aside', cell: (proj) => <StatusBadge status={proj.status} /> },
-                {
-                  header: 'Actions',
-                  align: 'right',
-                  mobile: 'footer',
-                  cell: (proj) => (
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>{t('delete')}</Button>
-                    </div>
-                  ),
-                },
-              ]}
-            />
-          </div>
-        )}
-      </TableCard>
+      <SubdivisionFormDialog
+        key={`site-${siteKey}`}
+        open={siteOpen}
+        onOpenChange={setSiteOpen}
+        mode={siteDialog?.mode ?? 'add'}
+        projectName={siteDialog?.project.projectName ?? ''}
+        initial={siteDialog?.initial ?? null}
+        people={people}
+        onSave={saveSite}
+      />
 
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent size="lg">
-          <DialogHeader>
-            <DialogTitle>Edit Project</DialogTitle>
-            <DialogDescription>
-              Update the details of the project.
-            </DialogDescription>
-          </DialogHeader>
-          {editingProject && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                 <div className="space-y-2">
-                    <Label htmlFor="editProjectName">Project Name</Label>
-                    <Input id="editProjectName" value={editingProject.projectName} onChange={(e) => setEditingProject({...editingProject, projectName: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editSiteCode">Site Code</Label>
-                    <Input id="editSiteCode" value={editingProject.siteCode} onChange={(e) => setEditingProject({...editingProject, siteCode: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editProjectSite">Project Site</Label>
-                    <Input id="editProjectSite" value={editingProject.projectSite} onChange={(e) => setEditingProject({...editingProject, projectSite: e.target.value})} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="editProjectDivision">Project Division</Label>
-                    <Input id="editProjectDivision" value={editingProject.projectDivision} onChange={(e) => setEditingProject({...editingProject, projectDivision: e.target.value})} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="editLocation">Location</Label>
-                    <Input id="editLocation" value={editingProject.location} onChange={(e) => setEditingProject({...editingProject, location: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editSiteInCharge">Site in-charge</Label>
-                    <Select value={editingProject.siteInCharge} onValueChange={(value) => setEditingProject({...editingProject, siteInCharge: value})}>
-                        <SelectTrigger id="editSiteInCharge">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="N/A">N/A</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="editStatus">Status</Label>
-                    <Select value={editingProject.status} onValueChange={(value: 'Active' | 'Inactive') => setEditingProject({...editingProject, status: value})}>
-                        <SelectTrigger id="editStatus">
-                            <SelectValue/>
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Active">Active</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-            </div>
-          )}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">{t('cancel')}</Button>
-            </DialogClose>
-            <Button onClick={handleUpdateProject}>Update Project</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        destructive
+        title={deleteTarget?.kind === 'site' ? 'Remove this site?' : 'Delete this project?'}
+        description={
+          deleteTarget?.kind === 'site'
+            ? `"${deleteTarget.site.name}" will be removed from ${deleteTarget.project.projectName}.`
+            : deleteTarget
+              ? `"${deleteTarget.project.projectName}"${deleteSites ? ` and its ${deleteSites} sub-division site${deleteSites === 1 ? '' : 's'}` : ''} will be deleted. Records in other modules that point to it will show it as missing — marking it Inactive is usually safer.`
+              : undefined
+        }
+        confirmLabel={deleteTarget?.kind === 'site' ? 'Remove site' : 'Delete project'}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }

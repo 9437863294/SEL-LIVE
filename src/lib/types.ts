@@ -141,6 +141,23 @@ export interface Project {
   loaRef?: string;
   loaDate?: string;
   retentionPct?: number;
+  /** The sites the project is split into on the ground — see `src/lib/project-subdivisions.ts`. */
+  subdivisions?: ProjectSubdivision[];
+}
+
+/**
+ * One sub-division site of a project: a section, substation or work front with its own code and
+ * in-charge. Kept as an array on the project document, so every module that already reads
+ * `projects` gets them with no extra read.
+ */
+export interface ProjectSubdivision {
+  /** Unique within the project only. */
+  id: string;
+  name: string;
+  code?: string;
+  location?: string;
+  siteInCharge?: string;
+  status: "Active" | "Inactive";
 }
 
 /** A client (the paying customer) a project is executed for. Independent of `Project` — one

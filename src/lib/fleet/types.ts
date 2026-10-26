@@ -204,6 +204,12 @@ export interface FleetSettings {
   ocrEnabled: boolean;
   /** Any active employee may drive a company vehicle (D1); off: Driver Master drivers only. */
   anyEmployeeMayDrive: boolean;
+  /**
+   * A trip's project picker lists only the employee's own projects (their greytHR project, linked on
+   * Employee › Category). Off: their projects come first and the rest follow. Either way someone
+   * with no linked project sees every project.
+   */
+  employeeProjectsOnly: boolean;
   /** Company-vehicle trips are fleet trips, and My Trips takes personal vehicles only (D1). */
   companyTripsInFleet: boolean;
   /** Payment report and digest recipients (emails), and who is told about exceptions. */

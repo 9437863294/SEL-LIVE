@@ -14,6 +14,8 @@ import { TripError, db, nowIso, type TripContext } from './context';
 import { companyVehicles, departmentOptions, loadSettings, odometerDocId, projectOptions } from './lookups';
 import { afterAudit } from './notify';
 import { loadFleetSettings } from '@/lib/fleet/server/lookups';
+import { projectAllowed } from '@/lib/employee-projects/links';
+import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
 
 const tripsCollection = () => db().collection(ET_COLLECTIONS.trips);
 
@@ -153,6 +155,10 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
   const project = value.projectId ? projects.find((entry) => entry.id === value.projectId) : null;
   const department = value.departmentId ? departments.find((entry) => entry.id === value.departmentId) : null;
   if (value.projectId && !project) throw new TripError('That project no longer exists.', 400, { fields: { projectId: 'Choose another project.' } });
+  // Settings › Fleet may limit a trip to the employee's own projects; an existing trip keeps its own.
+  if (fleet.employeeProjectsOnly && value.projectId && value.projectId !== existing?.projectId && !projectAllowed(value.projectId, await employeeProjectIdsOf(context.userId), true)) {
+    throw new TripError('Choose one of your projects — trips are limited to the employee’s own projects.', 400, { fields: { projectId: 'Choose one of your projects.' } });
+  }
   if (value.departmentId && !department) throw new TripError('That department no longer exists.', 400, { fields: { departmentId: 'Choose another department.' } });
 
   const id = existing?.id ?? tripsCollection().doc().id;

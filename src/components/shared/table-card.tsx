@@ -27,8 +27,12 @@ export interface TableCardProps {
   /**
    * `contained` (default): the table scrolls inside the card with its header pinned — for long
    * registers. `natural`: the card grows with its rows — for short tables and printouts.
+   * `fill`: the card is a flex column that takes whatever height its parent gives it (`flex-1` in a
+   * column of fixed height) and the table scrolls inside with its header pinned — for a page that
+   * fits the screen instead of scrolling. Where the parent's height is not fixed (a phone), the card
+   * simply grows with its rows.
    */
-  scroll?: 'contained' | 'natural';
+  scroll?: 'contained' | 'natural' | 'fill';
   children: ReactNode;
   /** Placement only. */
   className?: string;
@@ -55,7 +59,7 @@ export function TableCard({
 }: TableCardProps) {
   const hasHead = Boolean(title || description || actions || count !== undefined);
   return (
-    <Card className={cn('table-card min-w-0 overflow-hidden', className)}>
+    <Card className={cn('table-card min-w-0 overflow-hidden', scroll === 'fill' && 'flex min-h-0 flex-col', className)}>
       {hasHead && (
         <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b px-4 py-3 sm:px-5">
           <div className="flex min-w-0 flex-1 basis-[14rem] items-start gap-2.5">
@@ -83,6 +87,10 @@ export function TableCard({
             // One scroller: the table's own wrapper steps aside so the pinned header is pinned to
             // this box, which scrolls both ways.
             'max-h-[min(70vh,42rem)] overflow-auto [&>div]:overflow-visible [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-slate-100 print:max-h-none',
+          scroll === 'fill' &&
+            // The same single scroller, reaching one level deeper: a `DataList` puts its own
+            // sideways-scrolling wrapper around the table's, and either would capture the header.
+            'min-h-0 flex-1 overflow-auto [&>div]:overflow-visible [&_[data-slot=data-list-table]]:overflow-visible [&_[data-slot=table-container]]:overflow-visible [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-slate-100 print:overflow-visible',
         )}
       >
         {children}

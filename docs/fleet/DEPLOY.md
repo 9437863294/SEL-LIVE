@@ -30,6 +30,9 @@ Rules API), then merge in exactly these changes:
   `fleetSettings`, `fleetUploads`, `vehicleManagementTripGeofenceEvents`
 - `fleetJobRuns` — once-only markers the scheduled jobs write (the morning digest and the
   service-due check), so a re-run of the same job on the same day sends nothing twice.
+- `employeeProjectLinks`, `employeeProjectSettings` — which Settings › Projects each value of a greytHR
+  category means, and which category that is (Project Name by default, Project Division or any
+  other), set on Employee › Category through `/api/employee/project-links`.
 
 **`match /vehicleManagementTrips/{tripId}` — replace `create` and `update`** (reads unchanged):
 

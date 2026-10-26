@@ -100,6 +100,8 @@ export interface Bootstrap {
   vehicleTypes: string[];
   vehicles: CompanyVehicleOption[];
   projects: NamedOption[];
+  /** The employee's own projects, and whether the picker is limited to them (Settings › Fleet). */
+  projectScope?: { mine: string[]; onlyMine: boolean };
   departments: NamedOption[];
   odometer: Record<string, { km: number; date: string }>;
 }

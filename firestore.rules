@@ -62,6 +62,11 @@ service cloud.firestore {
         'fleetSettings', 'fleetUploads', 'vehicleManagementTripGeofenceEvents',
         // Once-only markers the scheduled jobs (digest, service due) write.
         'fleetJobRuns',
+        // Employee › Category: which Settings › Projects each greytHR "Project Name" means. Read and
+        // written through /api/employee/project-links (src/lib/employee-projects).
+        'employeeProjectLinks',
+        // …and which greytHR category employees' projects come from (Project Name, Project Division…).
+        'employeeProjectSettings',
         // Only ever used to mint ids: doc(collection(db, 'contraIds')).id — nothing is read or written.
         'contraIds',
         'employeeAttendance', 'employeeLeaveBalance', 'employeeSensitive', 'employeeSwipes',

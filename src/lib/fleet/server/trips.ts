@@ -15,6 +15,8 @@ import 'server-only';
 
 import { computeTripDistanceDeltaKm, type TripLocationPoint } from '@/lib/vehicle-management';
 import { reportingAuthorityOf } from '@/lib/employee-trips/server/lookups';
+import { projectAllowed } from '@/lib/employee-projects/links';
+import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
 import { addDays, istDateKey, istDayStartIso, minutesBetween, monthOfDate, toMs } from '../dates.ts';
 import { attributeKm, detectGeofenceEvents, geofenceAt, measureTrack, visitsFromEvents } from '../geo.ts';
 import { dayAllowance, emergenciesLeft, kmUsedOn, startLimitCheck } from '../limits.ts';
@@ -315,6 +317,11 @@ export async function startTrip(context: FleetContext, body: unknown): Promise<S
   const project = input.projectId ? projects.find((entry) => entry.id === input.projectId) : null;
   if (input.projectId && !project) throw new FleetError('That project no longer exists.', 400, { fields: { projectId: 'Choose another project.' } });
   if (purpose.requiresProject && !project) throw new FleetError(`A ${purpose.name.toLowerCase()} is billed to a project — choose it.`, 400, { fields: { projectId: 'Choose the project.' } });
+  // Settings › Fleet may limit a trip to the employee's own projects (their greytHR project, linked
+  // on Employee › Category); someone with no linked project may pick any.
+  if (settings.employeeProjectsOnly && input.projectId && !projectAllowed(input.projectId, await employeeProjectIdsOf(context.userId), true)) {
+    throw new FleetError('Choose one of your projects — Settings › Fleet limits trips to the employee’s own projects.', 400, { fields: { projectId: 'Choose one of your projects.' } });
+  }
 
   const open = await myOpenTrip(context.userId);
   if (open) throw new FleetError(`You already have a trip running on ${open.vehicleNumber}. End it first.`, 409, { code: 'driver_busy', tripId: open.id });

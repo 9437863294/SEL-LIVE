@@ -23,6 +23,7 @@ import { formatINR, odometerDistance, ownVehicleTypes, priceTrip, rateFor } from
 import { daysLeftToClaim, validateTrip, type TripErrors, type TripInput } from '@/lib/employee-trips/trips';
 import { formatKm, normaliseVehicleNumber, type TripGpsEvidence, type TripRecord, type VehicleOwnership } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
+import { projectChoices } from '@/lib/employee-projects/links';
 import { getCurrentDriverPosition } from '@/lib/driver-mobile-geolocation';
 import { TripApiError, errorMessage, reverseGeocode, tripFetch, type Bootstrap } from './trip-api';
 import { Field, Money, SearchSelect } from './trip-ui';
@@ -59,6 +60,9 @@ const toNumber = (value: string): number | null => (value.trim() === '' ? null :
  * It is still an ordinary editable form: the employee confirms a measured figure, they do not
  * merely witness it.
  */
+/** The project picker for this employee: their own projects first, or only (Settings › Fleet). */
+const ownProjects = (data: Bootstrap) => projectChoices(data.projects, data.projectScope?.mine ?? [], Boolean(data.projectScope?.onlyMine));
+
 function initialState(
   data: Bootstrap,
   trip: TripRecord | null,
@@ -105,7 +109,9 @@ function initialState(
     endOdometer: '',
     distanceKm: '',
     useDistance: false,
-    projectId: last?.projectId && data.projects.some((project) => project.id === last.projectId) ? last.projectId : null,
+    // The employee's own project when they have exactly one (greytHR, linked on Employee ›
+    // Category); else the last trip's, if it may still be chosen.
+    projectId: ownProjects(data).preselect ?? (last?.projectId && ownProjects(data).options.some((project) => project.id === last.projectId) ? last.projectId : null),
     departmentId: last?.departmentId && data.departments.some((department) => department.id === last.departmentId) ? last.departmentId : null,
     tollAmount: '',
     parkingAmount: '',
@@ -566,7 +572,7 @@ export function TripFormDialog({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Project" required={rules.requireProject} error={liveErrors.projectId}>
-          <SearchSelect options={data.projects.map((project) => ({ value: project.id, label: project.name }))} value={form.projectId} onChange={(value) => set('projectId', value)} placeholder={rules.requireProject ? 'Choose project' : 'Head office / none'} allowClear invalid={Boolean(liveErrors.projectId)} />
+          <SearchSelect options={ownProjects(data).options.map((project) => ({ value: project.id, label: project.name, hint: project.mine ? 'Your project' : undefined }))} value={form.projectId} onChange={(value) => set('projectId', value)} placeholder={rules.requireProject ? 'Choose project' : 'Head office / none'} allowClear invalid={Boolean(liveErrors.projectId)} />
         </Field>
         <Field label="Department" error={liveErrors.departmentId}>
           <SearchSelect options={data.departments.map((department) => ({ value: department.id, label: department.name }))} value={form.departmentId} onChange={(value) => set('departmentId', value)} placeholder="Optional" allowClear />

@@ -222,6 +222,7 @@ export const fleetSettingsSchema = z.object({
   fuelRateVariancePct: z.coerce.number().min(0).max(100),
   ocrEnabled: z.boolean(),
   anyEmployeeMayDrive: z.boolean(),
+  employeeProjectsOnly: z.boolean().optional().default(false),
   companyTripsInFleet: z.boolean(),
   reportEmails: z.array(z.string().trim().email('Enter valid email addresses.')).max(30).optional().default([]),
   digestUserIds: idList,

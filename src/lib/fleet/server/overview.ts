@@ -10,6 +10,7 @@ import { dayAllowance, emergenciesLeft, kmUsedOn, tripKmOn } from '../limits.ts'
 import { serviceDueInKm } from '../settings.ts';
 import type { FleetAccess } from '../access.ts';
 import { FLEET_COLLECTIONS, OPEN_TRIP_STATUSES, round1, round2, type FleetApproval, type FleetCategory, type FleetTrip, type GeofenceKind } from '../types.ts';
+import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
 import { db, FleetError, type FleetContext } from './context';
 import { activeGeofences, activePurposes, driverOf, fleetProjects, fleetVehicles, loadFleetSettings } from './lookups';
 import { openFuelExceptions, type FuelEntryView } from './fuel';
@@ -38,7 +39,9 @@ export interface FleetBootstrap {
   access: FleetAccess;
   isApprover: boolean;
   inbox: { approvals: number; reviews: number };
-  settings: { ocrEnabled: boolean; emergencyMonthlyMax: number; gpsGapMinutes: number; companyTripsInFleet: boolean; mismatchAbsKm: number; mismatchPct: number };
+  settings: { ocrEnabled: boolean; emergencyMonthlyMax: number; gpsGapMinutes: number; companyTripsInFleet: boolean; mismatchAbsKm: number; mismatchPct: number; employeeProjectsOnly: boolean };
+  /** The employee's own projects (greytHR project → Settings › Projects, linked on Employee › Category). */
+  myProjectIds: string[];
   vehicles: BootstrapVehicle[];
   purposes: Array<{ id: string; name: string; requiresReason: boolean; requiresProject: boolean }>;
   projects: Array<{ id: string; name: string; code: string }>;
@@ -52,7 +55,7 @@ export interface FleetBootstrap {
 export async function fleetBootstrap(context: FleetContext): Promise<FleetBootstrap> {
   const settings = await loadFleetSettings(context.organizationId);
   const today = context.today;
-  const [vehicles, purposes, projects, fences, driver, touching, openTrip, mine, myApprovalsSnap, inboxSnap, reviewSnap] = await Promise.all([
+  const [vehicles, purposes, projects, fences, driver, touching, openTrip, mine, myApprovalsSnap, inboxSnap, reviewSnap, myProjectIds] = await Promise.all([
     fleetVehicles(settings),
     activePurposes(),
     fleetProjects(),
@@ -64,6 +67,7 @@ export async function fleetBootstrap(context: FleetContext): Promise<FleetBootst
     db().collection(FLEET_COLLECTIONS.approvals).where('driverUserId', '==', context.userId).get(),
     db().collection(FLEET_COLLECTIONS.approvals).where('notifiedIds', 'array-contains', context.userId).get(),
     tripsCol().where('managerIds', 'array-contains', context.userId).get(),
+    employeeProjectIdsOf(context.userId),
   ]);
   const todaysApprovals = (await db().collection(FLEET_COLLECTIONS.approvals).where('dateKey', '==', today).get()).docs.map((doc) => ({ ...(doc.data() as FleetApproval), id: doc.id }));
   const monthKey = monthOfDate(today);
@@ -87,6 +91,7 @@ export async function fleetBootstrap(context: FleetContext): Promise<FleetBootst
       companyTripsInFleet: settings.companyTripsInFleet,
       mismatchAbsKm: settings.mismatchAbsKm,
       mismatchPct: settings.mismatchPct,
+      employeeProjectsOnly: settings.employeeProjectsOnly,
     },
     vehicles: vehicles
       .filter((vehicle) => vehicle.active)
@@ -110,6 +115,7 @@ export async function fleetBootstrap(context: FleetContext): Promise<FleetBootst
     purposes: purposes.map((purpose) => ({ id: purpose.id, name: purpose.name, requiresReason: purpose.requiresReason, requiresProject: purpose.requiresProject })),
     projects: projects.filter((project) => project.active).map((project) => ({ id: project.id, name: project.name, code: project.code })),
     geofences: fences.map((fence) => ({ id: fence.id, name: fence.name, kind: fence.kind, lat: fence.lat, lng: fence.lng, radiusM: fence.radiusM })),
+    myProjectIds,
     openTrip,
     approvalsToday: myApprovalsSnap.docs.map((doc) => ({ ...(doc.data() as FleetApproval), id: doc.id })).filter((approval) => approval.dateKey === today).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     emergenciesLeft: emergenciesLeft(emergenciesUsed, settings.emergencyMonthlyMax),

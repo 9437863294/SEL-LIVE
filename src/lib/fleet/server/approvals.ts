@@ -6,6 +6,8 @@ import 'server-only';
  */
 
 import { reportingAuthorityOf } from '@/lib/employee-trips/server/lookups';
+import { projectAllowed } from '@/lib/employee-projects/links';
+import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
 import { addDays } from '../dates.ts';
 import { buildChain, cancelApproval, createApproval, decideApproval, tickApproval, type ApprovalChain } from '../approvals.ts';
 import { dayAllowance, kmUsedOn } from '../limits.ts';
@@ -50,6 +52,11 @@ export async function requestApproval(context: FleetContext, body: unknown): Pro
   const purpose = purposes.find((entry) => entry.id === input.purposeId);
   if (!purpose) throw new FleetError('Choose the purpose of the trip.', 400, { fields: { purposeId: 'Choose a purpose.' } });
   const project = input.projectId ? projects.find((entry) => entry.id === input.projectId) ?? null : null;
+  // Settings › Fleet may limit a trip to the employee's own projects (their greytHR project, linked
+  // on Employee › Category); someone with no linked project may pick any.
+  if (settings.employeeProjectsOnly && input.projectId && !projectAllowed(input.projectId, await employeeProjectIdsOf(context.userId), true)) {
+    throw new FleetError('Choose one of your projects — Settings › Fleet limits trips to the employee’s own projects.', 400, { fields: { projectId: 'Choose one of your projects.' } });
+  }
 
   const today = context.today;
   const [touching, existing] = await Promise.all([tripsOnDays([today, addDays(today, -1)]), approvalsCol().where('vehicleId', '==', vehicle.id).get()]);

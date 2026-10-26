@@ -98,6 +98,10 @@ class Query {
   limit(count) {
     return new Query(this._db, this._collection, this._filters, count);
   }
+  /** A field mask in the real SDK; the fake returns whole documents, which is a superset. */
+  select() {
+    return this;
+  }
   get() {
     const prefix = `${this._collection}/`;
     const docs = [];

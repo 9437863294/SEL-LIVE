@@ -41,7 +41,7 @@ type NumKey =
   | 'maxTripHours'
   | 'fuelRateVariancePct';
 
-type ToggleKey = 'anyEmployeeMayDrive' | 'companyTripsInFleet' | 'ocrEnabled';
+type ToggleKey = 'anyEmployeeMayDrive' | 'companyTripsInFleet' | 'ocrEnabled' | 'employeeProjectsOnly';
 
 /** The API's ranges (src/lib/fleet/schemas.ts), so the form refuses what the server would. */
 const RULES: Record<NumKey, { min: number; max: number; integer?: boolean; label: string }> = {
@@ -238,6 +238,13 @@ export default function RulesLimitsSettings({ settings, canEdit, onSaved }: { se
           hint="On: every active employee can start a fleet trip and enter fuel. Off: only people with a Driver Master record."
           checked={toggle('anyEmployeeMayDrive')}
           onChange={(value) => setToggles((current) => ({ ...current, anyEmployeeMayDrive: value }))}
+          disabled={!canEdit || saving}
+        />
+        <ToggleRow
+          label="Trips list only the employee's projects"
+          hint="On: the project picker on Fleet Trip and on an own-vehicle trip shows only the employee's own projects — their greytHR project, linked to Settings › Projects on Employee › Category — and the server refuses another. Off: their projects come first and every other project follows. Someone with no linked project always sees them all."
+          checked={toggle('employeeProjectsOnly')}
+          onChange={(value) => setToggles((current) => ({ ...current, employeeProjectsOnly: value }))}
           disabled={!canEdit || saving}
         />
         <ToggleRow

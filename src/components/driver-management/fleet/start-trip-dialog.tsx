@@ -36,6 +36,7 @@ import type { FleetBootstrap } from '@/lib/fleet/server/overview';
 import { fleetErrorMessage, newClientId } from '@/components/fleet/fleet-api';
 import { KmLimitMeter, PhotoCapture } from '@/components/fleet/fleet-ui';
 import { Field, SearchSelect } from '@/components/driver-management/trips/trip-ui';
+import { projectChoices } from '@/lib/employee-projects/links';
 import {
   emptyStartValues,
   ensureUploaded,
@@ -94,7 +95,13 @@ export function StartTripDialog({
 }) {
   const { toast } = useToast();
   // Mounted fresh for each opening (the caller renders it only while open), so these start clean.
-  const [values, setValues] = useState<StartValues>(() => ({ ...emptyStartValues(), ...initial }));
+  // The employee's own project (greytHR, linked on Employee › Category) is pre-selected when they
+  // have exactly one and nothing else was chosen.
+  const projectPick = projectChoices(bootstrap.projects, bootstrap.myProjectIds ?? [], Boolean(bootstrap.settings.employeeProjectsOnly));
+  const [values, setValues] = useState<StartValues>(() => {
+    const start = { ...emptyStartValues(), ...initial };
+    return start.projectId || !projectPick.preselect ? start : { ...start, projectId: projectPick.preselect };
+  });
   const [clientStartId] = useState(() => newClientId('start'));
   const [attempted, setAttempted] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
@@ -164,7 +171,7 @@ export function StartTripDialog({
     [bootstrap.vehicles, values.vehicleId],
   );
   const purposeOptions = bootstrap.purposes.map((entry) => ({ value: entry.id, label: entry.name, hint: entry.requiresProject ? 'Billed to a project' : undefined }));
-  const projectOptions = bootstrap.projects.map((project) => ({ value: project.id, label: project.code ? `${project.code} · ${project.name}` : project.name }));
+  const projectOptions = projectPick.options.map((project) => ({ value: project.id, label: project.code ? `${project.code} · ${project.name}` : project.name, hint: project.mine ? 'Your project' : undefined }));
 
   async function submit(choice?: { useOcr?: boolean }) {
     setAttempted(true);

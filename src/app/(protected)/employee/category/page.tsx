@@ -9,6 +9,12 @@
  * `settings/greythrSync`: the hourly unified sync writes this collection on every run, so its
  * last-successful-run stamp is the honest answer to "is this current". The manual button below is a
  * top-up for when you cannot wait for the next tick — not the only way these rows get refreshed.
+ *
+ * One type does more than list: the category employees' projects come from — "Project Name" unless
+ * changed, "Project Division" or any other — links each value to the app's own project(s) in
+ * Settings › Projects (ProjectLinksPanel, src/lib/employee-projects), so trips and claims can start
+ * from the employee's own project. Which category that is, is a setting: chosen in the panel, or
+ * with "Use for projects" on any other type. The values stay greytHR's; the links are ours.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -36,6 +42,9 @@ import { collection, doc, getDoc, getDocs, orderBy, query } from 'firebase/fires
 import { syncGreytHRCategories } from '@/ai';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { PageHeader } from '@/components/shared/page-header';
+import { ProjectLinksPanel } from '@/components/employee/project-links-panel';
+import { GREYTHR_PROJECT_CATEGORY } from '@/lib/employee-projects/links';
+import { auth } from '@/lib/firebase';
 
 interface Category {
   id: number;
@@ -185,6 +194,49 @@ export default function ManageCategoryPage() {
 
   // Nothing to wait for without permission, and nothing to wait for once the read has returned.
   const isLoading = isAuthLoading || (canView && !hasLoaded);
+
+  /**
+   * Which category employees' projects come from, and whether this person may change it. Until it
+   * arrives the default (Project Name) is assumed, so that type's panel shows at once.
+   */
+  const [projectSource, setProjectSource] = useState<{ sourceCategory: string; canEdit: boolean }>({ sourceCategory: GREYTHR_PROJECT_CATEGORY, canEdit: false });
+  const [switchingSource, setSwitchingSource] = useState(false);
+  useEffect(() => {
+    if (isAuthLoading || !canView) return undefined;
+    let alive = true;
+    void (async () => {
+      const user = auth.currentUser;
+      if (!user) return;
+      const response = await fetch('/api/employee/project-links/source', { headers: { Authorization: `Bearer ${await user.getIdToken()}` } });
+      if (!response.ok || !alive) return;
+      const body = (await response.json()) as { sourceCategory: string; canEdit: boolean };
+      if (alive) setProjectSource(body);
+    })().catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [isAuthLoading, canView]);
+
+  const chooseProjectSource = async (type: string) => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setSwitchingSource(true);
+    try {
+      const response = await fetch('/api/employee/project-links/source', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${await user.getIdToken()}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceCategory: type }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(body.error || 'Not changed.');
+      setProjectSource((current) => ({ ...current, sourceCategory: type }));
+      toast({ title: `Projects now come from ${type}`, description: 'Link its values to projects below. Earlier links are kept.' });
+    } catch (failure) {
+      toast({ variant: 'destructive', title: 'Not changed', description: failure instanceof Error ? failure.message : 'Try again.' });
+    } finally {
+      setSwitchingSource(false);
+    }
+  };
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -474,10 +526,31 @@ export default function ManageCategoryPage() {
                       {term ? `${selectedValues.length} of ${selectedTotal}` : `${selectedTotal} values`}
                     </Badge>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">Read-only — greytHR owns these values</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[11px] text-muted-foreground">
+                      {selectedType === projectSource.sourceCategory ? 'Values from greytHR · each linked to projects in Settings' : 'Read-only — greytHR owns these values'}
+                    </p>
+                    {/* Any other type can become the one employees' projects come from. */}
+                    {projectSource.canEdit && selectedType && selectedType !== projectSource.sourceCategory && (
+                      <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={switchingSource} onClick={() => void chooseProjectSource(selectedType)} title={`Employees' projects come from ${projectSource.sourceCategory} now`}>
+                        {switchingSource ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" aria-hidden /> : null}
+                        Use for projects
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
-                {selectedValues.length === 0 ? (
+                {selectedType === projectSource.sourceCategory ? (
+                  <ProjectLinksPanel
+                    category={selectedType}
+                    types={types}
+                    search={search}
+                    onSourceChanged={(next) => {
+                      setProjectSource((current) => ({ ...current, sourceCategory: next }));
+                      setChosenType(next);
+                    }}
+                  />
+                ) : selectedValues.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-muted-foreground">
                     {term ? 'No value in this type matches your search.' : 'This type has no values mirrored.'}
                   </p>

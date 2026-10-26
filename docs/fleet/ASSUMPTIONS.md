@@ -202,3 +202,20 @@ setting or a small change if the owner wants it otherwise.
     module chips. The key stays `Driver Management` — it names the permissions roles hold, the
     activity log and notification rows, and each user's saved Module Hub layout — and the address
     stays `/driver-management`, which the SEL Driver Android app opens.
+44. **A trip starts from the employee's own project** (owner's request, 2026-10-26).
+    - **Source category:** which greytHR category says an employee's project is a setting. It is
+      "Project Name" by default, and can be "Project Division" or any other mirrored category. It
+      is chosen on Employee › Category, from the panel's "Employees' projects come from" picker or
+      with "Use for projects" on any type, and kept in `employeeProjectSettings/default`.
+    - **Links:** each value of that category is linked to the app's project(s) in Settings ›
+      Projects. One value may cover several, such as a site and its sub-divisions.
+    - **Storage:** links are kept per category in `employeeProjectLinks`, tagged with their
+      category, so switching the source and back loses nothing. Both collections are server-only,
+      because the greytHR sync rewrites the category documents themselves.
+    - **Pickers:** Fleet Trip's and the own-vehicle trip's project pickers list the employee's
+      projects first, marked "Your project", and pre-select one when there is exactly one.
+    - **Restriction:** Settings › Fleet "Trips list only the employee's projects"
+      (`employeeProjectsOnly`, off by default) limits the choice to them, and the server refuses
+      another. Someone with no linked project still sees every project.
+    - **Lookup:** login → `users.employeeId` → `employees/{id}.categories[source]` → links,
+      matched by name ignoring case and spacing.

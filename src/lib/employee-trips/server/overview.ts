@@ -18,6 +18,7 @@ import { listClaims, toClaim } from './claims';
 import { companyVehicles, departmentOptions, hasReportees, lastOdometerReadings, loadSettings, nameResolver, projectOptions, reportingAuthorityOf, vehicleTypeOptions } from './lookups';
 import { listMyTrips, toTrip } from './trips';
 import { loadFleetSettings } from '@/lib/fleet/server/lookups';
+import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
 
 async function waitingForMe(context: TripContext): Promise<TripClaim[]> {
   return (await listClaims(context, 'inbox')).claims;
@@ -36,7 +37,7 @@ function inboxCounts(waiting: TripClaim[], now = new Date()) {
 }
 
 export async function bootstrap(context: TripContext) {
-  const [settings, fleet, vehicles, projects, departments, vehicleTypes, odometer, waiting, authority, nameOf] = await Promise.all([
+  const [settings, fleet, vehicles, projects, departments, vehicleTypes, odometer, waiting, authority, nameOf, myProjectIds] = await Promise.all([
     loadSettings(context.organizationId),
     loadFleetSettings(context.organizationId),
     companyVehicles(),
@@ -47,6 +48,7 @@ export async function bootstrap(context: TripContext) {
     waitingForMe(context),
     reportingAuthorityOf(context.userId),
     nameResolver(),
+    employeeProjectIdsOf(context.userId),
   ]);
   const named = namedStageKinds(settings, context.userId);
   // A reporting authority approves their people's claims without being named in Settings, so the
@@ -83,6 +85,9 @@ export async function bootstrap(context: TripContext) {
     vehicleTypes,
     vehicles,
     projects,
+    // The employee's own projects (greytHR project → Settings › Projects, linked on Employee ›
+    // Category), listed first in the project picker — or only, when Settings › Fleet says so.
+    projectScope: { mine: myProjectIds, onlyMine: fleet.employeeProjectsOnly },
     departments,
     odometer,
   };

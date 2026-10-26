@@ -306,6 +306,8 @@ export function DataList<T extends { id: string }>({
       {/* Desktop: the full table. */}
       {!cardsOnly && (
         <div
+          // Lets a frame that scrolls the list itself (`TableCard scroll="fill"`) switch this off.
+          data-slot="data-list-table"
           className={cn(
             'hidden overflow-x-auto',
             !frameless && 'rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm',
