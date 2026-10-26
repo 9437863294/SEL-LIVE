@@ -3,9 +3,10 @@
 /**
  * Recording a claimable trip by driving it.
  *
- * Mounted on Fleet Trip's Own vehicle tab (fleet-home.tsx, locked to own vehicles there): Fleet Trip
- * is the one place a trip is recorded, and My Trips only lists and claims what this saves. A
- * company vehicle is recorded on the same screen as a fleet trip — a separate calculation.
+ * Mounted on Fleet Trip (fleet-home.tsx) for the "Own vehicle" answer to "Which vehicle are you
+ * using?": Fleet Trip is the one place a trip is recorded, and My Trips only lists and claims what
+ * this saves. A company vehicle is recorded on the same screen as a fleet trip — a separate
+ * calculation.
  *
  * ── Why this replaced the separate GPS page ─────────────────────────────────────────────────────
  *
@@ -22,16 +23,17 @@
  * it is a line somebody has to go back and complete. The starting place is reverse-geocoded, so
  * the driver types the things only they know.
  *
- * Own vehicles are first-class: the ownership choice is in the start sheet, so an employee using
- * their own car gets a measured distance exactly as a company driver does.
+ * The start is own-start-dialog.tsx — the same shape as a company-vehicle trip's start: today's
+ * date, the starting place from the phone, the vehicle (one tap on a vehicle from earlier trips),
+ * purpose, project, and the opening reading when Trip rules require one.
  *
- * ── Stopping opens the ordinary form ────────────────────────────────────────────────────────────
+ * ── Stop & review, then save ────────────────────────────────────────────────────────────────────
  *
- * The measured figures are handed to `TripFormDialog` as a prefill rather than written straight to
- * a draft. That reuses the validation, the rate preview and the project pickers that already
- * exist — a second form would drift from them — and it means a human sees the distance before it
- * becomes money. What was measured is saved alongside as `gps`, so an approver can tell a measured
- * trip from a typed one.
+ * Stopping opens own-review-dialog.tsx rather than writing a draft straight away: a human sees the
+ * distance before it becomes money. It runs the same rules the server does (`validateTrip`,
+ * `priceTrip`), shows the amount, and saves the measurement alongside as `gps`, so an approver can
+ * tell a measured trip from a typed one. (These replaced the full trip form's old GPS modes; that
+ * form now only edits a recorded trip.)
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -56,7 +58,8 @@ import {
 import { normaliseVehicleNumber, type TripGpsEvidence, type TripRecord, type VehicleOwnership } from '@/lib/employee-trips/types';
 import { LiveRecordingCard } from '../live-recording-card';
 import { reverseGeocode, type Bootstrap } from './trip-api';
-import { TripFormDialog } from './trip-form-dialog';
+import { OwnReviewDialog, type OwnReview } from './own-review-dialog';
+import { OwnStartDialog } from './own-start-dialog';
 
 /** Survives a backgrounded tab or an accidental reload — losing a driven trip is unforgivable. */
 const STORAGE_KEY = 'driver-management.gps-trip.v1';
@@ -175,7 +178,7 @@ export function GpsTripProvider({
   const [starting, setStarting] = useState(false);
   const [inFlight, setInFlight] = useState<InFlight | null>(null);
   const [stopping, setStopping] = useState(false);
-  const [review, setReview] = useState<{ prefill: Record<string, unknown>; gps: TripGpsEvidence } | null>(null);
+  const [review, setReview] = useState<OwnReview | null>(null);
   const watchRef = useRef<DriverGeoWatchId | null>(null);
 
 
@@ -318,26 +321,20 @@ export function GpsTripProvider({
 
       setReview({
         gps,
-        prefill: {
-          ownership: inFlight.details.ownership,
-          vehicleType: inFlight.details.vehicleType,
-          vehicleNumber: inFlight.details.vehicleNumber,
-          vehicleId: inFlight.details.vehicleId,
-          tripDate: inFlight.tripDate,
-          startOdometer: inFlight.startOdometer,
-          notes: inFlight.notes,
-          fromPlace: inFlight.fromPlace,
-          toPlace,
-          purpose: inFlight.details.purpose,
-          projectId: inFlight.details.projectId,
-          departmentId: inFlight.details.departmentId,
-          // The measured figure, entered as the distance. When Settings require odometer readings
-          // the form asks for the closing one instead (the opening was taken at the start), and
-          // shows the GPS figure beside it: hiding the readings while the rule demands them made
-          // a GPS trip impossible to save.
-          distanceKm: String(measured.distanceKm),
-          useDistance: !rules.requireOdometer,
-        },
+        tripDate: inFlight.tripDate,
+        vehicleType: inFlight.details.vehicleType,
+        vehicleNumber: inFlight.details.vehicleNumber,
+        fromPlace: inFlight.fromPlace,
+        toPlace,
+        purpose: inFlight.details.purpose,
+        projectId: inFlight.details.projectId,
+        departmentId: inFlight.details.departmentId,
+        // Taken at the start when Trip rules require readings; the review then asks for the closing
+        // one and shows the GPS figure beside it. Otherwise it offers the measured distance.
+        startOdometer: rules.requireOdometer ? inFlight.startOdometer : null,
+        notes: inFlight.notes,
+        movingMinutes: measured.movingMinutes,
+        idleMinutes: measured.idleMinutes,
       });
     } finally {
       setStopping(false);
@@ -381,40 +378,22 @@ export function GpsTripProvider({
       {children}
 
       {/*
-        The same form as Record a trip, in `gps-start` mode. One form means the answer to "what
-        does a trip need" cannot differ depending on how the trip was started.
+        The own-vehicle start and review (own-start-dialog.tsx, own-review-dialog.tsx) — the same
+        shape as a company-vehicle trip's on Fleet Trip. The full trip form is for editing a trip
+        already recorded, on My Trips.
       */}
-      {startOpen && !inFlight && (
-        <TripFormDialog
-          open
-          onOpenChange={setStartOpen}
-          data={data}
-          trip={null}
-          myTrips={myTrips}
-          mode="gps-start"
-          ownershipLocked={ownership}
-          prefill={ownership ? { ownership } : undefined}
-          onStart={(values) => void beginTrip(values)}
-          onSaved={() => undefined}
-        />
-      )}
+      {startOpen && !inFlight && <OwnStartDialog open onOpenChange={setStartOpen} data={data} myTrips={myTrips} starting={starting} onStart={(values) => void beginTrip(values)} />}
 
       {review && (
-        <TripFormDialog
+        <OwnReviewDialog
           open
-          onOpenChange={(open) => {
-            if (open) return;
-            // Closing without saving keeps nothing: the recording is over, and a half-saved trip
-            // is worse than one the driver re-enters by hand.
+          data={data}
+          review={review}
+          onDiscard={() => {
+            // Discarded after a confirmation: the recording is over, and nothing else holds it.
             setReview(null);
             setInFlight(null);
           }}
-          data={data}
-          trip={null}
-          myTrips={myTrips}
-          prefill={review.prefill as never}
-          gps={review.gps}
-          ownershipLocked={ownership}
           onSaved={(trip) => {
             setReview(null);
             setInFlight(null);

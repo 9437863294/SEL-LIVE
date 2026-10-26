@@ -109,15 +109,14 @@ export function patchDeductionRow(row: DeductionRow, patch: Partial<DeductionRow
 
 /**
  * The retention slab a row counts in, in a few words — so whoever types 30% (or ₹30,000 on a
- * ₹1,00,000 taxable) sees it land in the 30% slab before saving. Null for other heads, and for an
- * amount row that is still empty or has no base to be read against.
+ * ₹1,00,000 taxable) sees it land in the 30% slab before saving. Null without `bases`, for other
+ * heads, and for a row of ₹0 (it holds nothing).
  */
-function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, percent: boolean, bases?: { taxable: number; gross: number }): string | null {
-  if (!line || !isRetentionKind(type.kind)) return null;
-  if (!percent && (!bases || line.amount === 0)) return null;
-  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases?.taxable ?? 0, grossAmount: bases?.gross ?? 0 }, type);
+function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, bases?: { taxable: number; gross: number }): string | null {
+  if (!line || !bases || !isRetentionKind(type.kind) || line.amount === 0) return null;
+  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases.taxable, grossAmount: bases.gross }, type);
   const baseWord = type.percentBase === 'gross' ? 'gross' : 'taxable';
-  if (rate === null) return `a fixed amount (no clean rate of ${baseWord})`;
+  if (rate === null) return basis === 'percent' ? 'a fixed amount (a rate must be above 0 and at most 100%)' : `a fixed amount (no clean rate of ${baseWord})`;
   return basis === 'percent' ? `counts as ${type.name} @ ${formatRate(rate)}%` : `reads as ${formatRate(rate)}% of ${baseWord} — counts in the ${formatRate(rate)}% slab`;
 }
 
@@ -152,6 +151,8 @@ export function DeductionEditor({
   /**
    * The bill's taxable and gross, so a retention row can say which rate slab it counts in — an amount
    * is read against one of them, exactly as the retention reports read it (see `retention.ts`).
+   * Leave it out where that hint would mislead: a note (it follows its invoice's slabs) or a
+   * certification (certified deductions are not in the slabs).
    */
   bases?: { taxable: number; gross: number };
 }) {
@@ -197,7 +198,7 @@ export function DeductionEditor({
           const baseValue = computed ? (computed.baseAmount ?? computed.amount) : 0;
           const referenceAmount = row.deductionTypeId ? reference?.byType.get(row.deductionTypeId) : undefined;
           const explain = type && (percent || gstApplicable);
-          const slabNote = type ? retentionSlabNote(computed, type, percent, bases) : null;
+          const slabNote = type ? retentionSlabNote(computed, type, bases) : null;
           return (
             <div key={row.id} className="space-y-1.5 p-2">
               <div className={cn('grid grid-cols-2 items-center gap-2', grid)}>

@@ -92,6 +92,7 @@ export default function CollectionForm() {
   useEffect(() => {
     const bill = preset?.bills.find((entry) => entry.id === preselected);
     if (bill && !bill.receiptBlock && lines.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time fill once the preselected bill has loaded
       setLines([{ bill, amount: String(bill.outstandingAmount) }]);
       setAmount(String(bill.outstandingAmount));
     }

@@ -24,7 +24,8 @@
  * same vehicle, purpose, project, reading and the photo already uploaded. While a request waits,
  * the screen asks the server every 30 seconds so the answer shows up on its own.
  *
- * `?kind=own|company` skips the prompt (My Trips' and the Overview's "Record a trip" mean own).
+ * `?kind=choose` opens the prompt (the Overview's Start a trip); `?kind=own|company` skips it (My
+ * Trips' "Record a trip" means own).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -60,7 +61,7 @@ const APPROVAL_POLL_MS = 30_000;
  * Opens the start the URL asked for, once, when it can (inside the recorder's provider, so an
  * own-vehicle start can wait for the trip-claims settings to arrive).
  */
-function StartFromUrl({ kind, enabled, onCompany }: { kind: string | null; enabled: boolean; onCompany: () => void }) {
+function StartFromUrl({ kind, enabled, onCompany, onChoose }: { kind: string | null; enabled: boolean; onCompany: () => void; onChoose: () => void }) {
   const gps = useGpsTripControls();
   const done = useRef(false);
   useEffect(() => {
@@ -71,10 +72,14 @@ function StartFromUrl({ kind, enabled, onCompany }: { kind: string | null; enabl
     } else if (kind === 'company') {
       done.current = true;
       onCompany();
+    } else if (kind === 'choose') {
+      // The Overview's Start a trip: ask which vehicle first.
+      done.current = true;
+      onChoose();
     } else return;
     // Once only: a reload of the page does not start another trip.
     window.history.replaceState(null, '', window.location.pathname);
-  }, [kind, enabled, gps, onCompany]);
+  }, [kind, enabled, gps, onCompany, onChoose]);
   return null;
 }
 
@@ -266,7 +271,7 @@ export default function FleetHome() {
       {!ownRecording && (data.canDrive || data.recentTrips.length > 0) && <MyFleetTrips recent={data.recentTrips} today={data.today} />}
 
       <VehicleChoiceDialog open={choosing} onOpenChange={setChoosing} ownBlocked={ownBlocked} companyBlocked={companyBlocked} onCompany={startCompany} />
-      <StartFromUrl kind={params.get('kind')} enabled={!busy} onCompany={companyBlocked ? () => setChoosing(true) : startCompany} />
+      <StartFromUrl kind={params.get('kind')} enabled={!busy} onCompany={companyBlocked ? () => setChoosing(true) : startCompany} onChoose={() => setChoosing(true)} />
 
       {start && (
         <StartTripDialog

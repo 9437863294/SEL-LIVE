@@ -163,24 +163,37 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
     30%.
   - A result within 0.05 of a half-percent snaps to it. Anything else stays a *fixed amount* under
     its head.
-- **Notes.** A credit or debit note is read against its own base, so a credit note reversing 30%
-  retention lands in the 30% slab, negative. The slabs always add up to the retention reported
-  everywhere else.
+  - Only a rate above 0 and up to 100% makes a slab. A typed 0 or negative percentage is an
+    adjustment and counts as a fixed amount. A ₹0 line is left out.
+- **Notes.** A credit or debit note adjusts its invoice's retention, so it lands in the invoice's
+  slabs, negative:
+  - a line whose own reading is a slab the invoice holds under that head goes there — a note
+    reversing just the 30% reads as 30%;
+  - otherwise the line is shared over the invoice's slabs of that head, in proportion to what each
+    holds. That covers a note reversing 10% and 30% in one line (it reads as 40%) and a note with
+    no taxable of its own;
+  - a note whose invoice holds nothing under that head is read on its own base.
+
+  The invoice decides this even when it is outside the filters (an earlier year). The slabs always
+  add up to the retention reported everywhere else.
 - **Releases.** A release can name the slab it releases (head and rate), and then reduces that
   slab's balance:
   - a release recorded by hand chooses its slab and, optionally, the bill;
   - a retention bill can say which retention it releases (*Releases retention* on the form), and
     receipts on it carry that slab.
 
-  Releases that name none count in the project's balance only. The Retention page shows them as
-  *not tied to a rate*.
+  A release that names a slab counts there even when no bill in view holds it — the slab then shows
+  as *released only*. Releases that name none count in the project's balance only. The Retention
+  page shows them as *not tied to a rate*.
 - **Where it shows.**
   - The Retention page's **By rate** tab shows each slab's held, released and balance, a project ×
     rate table and a bill × rate table, with exports.
-  - The bill page's Retention tab lists the bill's slabs.
-  - While a retention line is entered, the bill form says which slab it counts in.
+  - The bill page's Retention tab lists the bill's slabs (a note's, as placed on its invoice).
+  - While a retention line is entered on an invoice, the bill form says which slab it counts in.
+    Notes and certifications show no such hint: a note follows its invoice, and certified
+    deductions are not in the slabs.
 
-
+## Deployment checklist
 
 1. **Firestore rules (console).** Copy the "Bill Tracking & Collection Management" block from
    `firestore.rules` into the console ruleset. The repo file is not deployed. If the console ends

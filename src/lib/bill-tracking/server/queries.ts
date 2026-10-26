@@ -11,7 +11,7 @@ import 'server-only';
 
 import { billLedger, combinedLedger, financialYearOf, financialYearRange, isoWeekOf } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
-import { canBeCertified, certificationSummary, certificationTotals, compareCertification, notesByInvoice, receiptBlockReason, type CertificationSummary } from '../certification.ts';
+import { canBeCertified, certificationSummary, certificationTotals, compareCertification, isNoteType, notesByInvoice, receiptBlockReason, type CertificationSummary } from '../certification.ts';
 import { isInvolved, isMyTask, isNamedInWorkflow } from '../workflow.ts';
 import { sumBy } from '../money.ts';
 import {
@@ -64,7 +64,7 @@ import {
   type RetentionRelease,
 } from '../types.ts';
 import { BtError, db, type BtContext } from './context';
-import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
+import { BT_COLLECTIONS, loadBill, loadBillsById, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
 
 /* ── filters from the URL ────────────────────────────────────────────────── */
 
@@ -327,7 +327,9 @@ export async function billDetail(context: BtContext, billId: string) {
     context.require('Bills', 'View');
   }
   const rc = reportContext(config, context.today);
-  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes] = await related;
+  // A note's retention lands in its invoice's slabs; the invoice is read alongside the records.
+  const invoiceRead = bill.againstBillId && isNoteType(bill.transactionType) ? loadBillsById(context, [bill.againstBillId]) : Promise.resolve([]);
+  const [[collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes], [invoice]] = await Promise.all([related, invoiceRead]);
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
   const liveNotes = docs<Bill>(notes).filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId);
@@ -347,6 +349,8 @@ export async function billDetail(context: BtContext, billId: string) {
       .slice()
       .sort((a, b) => a.billDate.localeCompare(b.billDate))
       .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable })),
+    // For a note: just what decides which of its invoice's retention slabs the note lands in.
+    noteInvoice: invoice ? { deductions: invoice.deductions, taxableAmount: invoice.taxableAmount, grossAmount: invoice.grossAmount } : null,
   };
 }
 
@@ -499,12 +503,15 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     case 'deductions':
       return { ...base, dimension, ...deductionReport(bills, config.deductionTypes, dimension) };
     case 'retention': {
-      // One read of the releases: the report, the bifurcation by rate and the list share it.
-      const ledger = await releases();
+      // One read of the releases: the report, the bifurcation by rate and the list share it. A note's
+      // retention lands in its invoice's slabs, so invoices outside this year's slice are read too.
+      const loaded = new Set(all.map((bill) => bill.id));
+      const missing = bills.flatMap((bill) => (bill.againstBillId && !loaded.has(bill.againstBillId) ? [bill.againstBillId] : []));
+      const [ledger, earlier] = await Promise.all([releases(), missing.length ? loadBillsById(context, missing) : Promise.resolve([])]);
       return {
         ...base,
         ...retentionReport(bills, ledger, rc),
-        bifurcation: retentionBifurcation(bills, ledger, config.deductionTypes),
+        bifurcation: retentionBifurcation(bills, ledger, config.deductionTypes, [...all, ...earlier]),
         releases: [...ledger].sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
       };
     }

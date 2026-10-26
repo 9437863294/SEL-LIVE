@@ -56,7 +56,7 @@ import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { STEP_PERMISSION, availableActions, certificationBlocked, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
 import { formatINR, sumMoney } from '@/lib/bill-tracking/money';
-import { billRetentionSlabs, formatRate, releaseSlabKey, type BillSlab } from '@/lib/bill-tracking/retention';
+import { billRetentionSlabs, formatRate, releaseSlabKey, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
   AGEING_BASIS_LABELS,
   COMMITMENT_STATUS_LABELS,
@@ -91,6 +91,8 @@ interface Detail {
   certification: CertificationComparison | null;
   /** Credit / debit notes raised against this invoice. */
   notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number }[];
+  /** For a note: its invoice's retention, which decides the slabs the note's retention lands in. */
+  noteInvoice?: Pick<Bill, 'deductions' | 'taxableAmount' | 'grossAmount'> | null;
 }
 
 type WorkflowAction = WorkflowActionName;
@@ -368,7 +370,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           <CollectionsTab detail={detail} reload={reload} />
         </TabsContent>
         <TabsContent value="retention">
-          <RetentionTab bill={bill} releases={detail.retention} />
+          <RetentionTab bill={bill} releases={detail.retention} invoice={detail.noteInvoice} />
         </TabsContent>
         <TabsContent value="documents">
           <DocumentsTab bill={bill} documents={detail.documents} reload={reload} />
@@ -967,17 +969,17 @@ export function LedgerTable({ lines }: { lines: LedgerLine[] }) {
 /** "Retention Against Invoice @ 30%" / "… · fixed amount" — worded as `retention.ts` labels a slab. */
 const slabLabel = (name: string, rate: number | null) => (rate === null ? `${name} · fixed amount` : `${name} @ ${formatRate(rate)}%`);
 
-const SLAB_BASIS_LABELS: Record<BillSlab['basis'], string> = { percent: 'Typed %', amount: 'From amount', mixed: 'Typed % and amount' };
+const SLAB_BASIS_LABELS: Record<LineBasis, string> = { percent: 'Typed %', amount: 'From amount', invoice: 'From the invoice' };
 
 /**
  * Retention held on this bill slab by slab — head plus rate, since one invoice often deducts 10% and
  * 30% under the same head — and what has been released against it. A retention bill also says
- * which slab it releases.
+ * which slab it releases; a note's retention lands in its invoice's slabs.
  */
-function RetentionTab({ bill, releases }: { bill: BillRow; releases: RetentionRelease[] }) {
+function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: RetentionRelease[]; invoice?: Detail['noteInvoice'] }) {
   const { config } = useLookups();
   const { can } = useBt();
-  const slabs = billRetentionSlabs(bill, config.deductionTypes);
+  const slabs = billRetentionSlabs(bill, config.deductionTypes, invoice);
   const slabList = slabs.map((entry) => entry.slab);
   const typeOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
   const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
@@ -995,8 +997,12 @@ function RetentionTab({ bill, releases }: { bill: BillRow; releases: RetentionRe
   const basisTip = (entry: BillSlab) => {
     const base = typeOf(entry.slab.deductionTypeId)?.percentBase === 'gross' ? 'gross' : 'taxable';
     const fromAmount = `Worked out from the amount: read against the bill’s ${base} of ${formatINR(base === 'gross' ? bill.grossAmount : bill.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
-    if (entry.basis === 'percent') return 'The percentage typed on the deduction line.';
-    return entry.basis === 'amount' ? fromAmount : `Some lines were typed as a percentage, others as an amount. ${fromAmount}`;
+    const tips: Record<LineBasis, string> = {
+      percent: 'The percentage typed on the deduction line (0, a negative or over 100 counts as a fixed amount).',
+      amount: fromAmount,
+      invoice: 'This note’s retention did not read as a rate its invoice holds, so it is shared over the invoice’s rates under this head, in proportion to what each holds.',
+    };
+    return entry.bases.map((basis) => tips[basis]).join(' ');
   };
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
@@ -1042,7 +1048,7 @@ function RetentionTab({ bill, releases }: { bill: BillRow; releases: RetentionRe
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{entry.slab.rate === null ? <span className="text-slate-500">Fixed amount</span> : `${formatRate(entry.slab.rate)}%`}</td>
                       <td className="px-3 py-2 text-slate-600">
                         <span title={basisTip(entry)} className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-4">
-                          {SLAB_BASIS_LABELS[entry.basis]}
+                          {entry.bases.map((basis) => SLAB_BASIS_LABELS[basis]).join(' + ')}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-right">

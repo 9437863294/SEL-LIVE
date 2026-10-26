@@ -14,7 +14,7 @@
  * configured base (e.g. Income TDS on taxable less mobilisation advance) as the figures change.
  */
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Calculator, ClipboardCheck, Plus, ReceiptIndianRupee, RotateCcw, Save } from 'lucide-react';
@@ -326,11 +326,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   const deductionLines = computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
 
-  const totals = useMemo(
-    () => deriveBillTotals({ taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [] }, { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [taxable, gstTotal, JSON.stringify(deductionLines), existing, config.settings.tolerance, config.settings.roundNetToRupee],
-  );
+  const totals = deriveBillTotals({ taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [] }, { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee });
 
   const addDeduction = () => setForm((current) => ({ ...current, deductions: [...current.deductions, emptyDeductionRow()] }));
   const setDeductionRows = (update: (rows: DeductionRow[]) => DeductionRow[]) => setForm((current) => ({ ...current, deductions: update(current.deductions) }));
@@ -875,7 +871,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               gstType={deductionGstType}
               totalDeduction={totals.totalDeduction}
               defaultGstRate={config.settings.defaultGstRate}
-              bases={{ taxable, gross }}
+              bases={note ? undefined : { taxable, gross }}
             />
           </FormSection>
 

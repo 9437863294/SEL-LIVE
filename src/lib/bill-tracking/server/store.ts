@@ -224,6 +224,19 @@ export async function loadScopedBills(context: Pick<BtContext, 'scope' | 'organi
 }
 
 /**
+ * The live bills with these ids in the caller's organisation, any financial year — read for what
+ * they decide on the server (a note's invoice, say), not handed to the browser as they are.
+ */
+export async function loadBillsById(context: Pick<BtContext, 'organizationId'>, ids: readonly string[]): Promise<Bill[]> {
+  const firestore = db();
+  const unique = [...new Set(ids)];
+  const snapshots = (await Promise.all(chunk(unique, 100).map((group) => firestore.getAll(...group.map((id) => firestore.collection(BT_COLLECTIONS.bills).doc(id)))))).flat();
+  return snapshots
+    .filter((snapshot) => snapshot.exists && snapshot.data()?.organizationId === context.organizationId && !snapshot.data()?.isDeleted)
+    .map((snapshot) => ({ ...(snapshot.data() as Bill), id: snapshot.id }));
+}
+
+/**
  * Every live credit / debit note in the caller's scope, any financial year — a note raised next
  * year still adjusts this year's invoice, so certification comparisons cannot use the FY slice.
  */

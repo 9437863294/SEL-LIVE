@@ -12,7 +12,7 @@
  */
 
 import { useRouter } from 'next/navigation';
-import { Banknote, CalendarClock, CircleCheck, Clock, Gauge, Hourglass, Inbox, Plus, ReceiptText, Route, Undo2, Wallet } from 'lucide-react';
+import { Banknote, CalendarClock, CircleCheck, Clock, Gauge, Hourglass, Inbox, Navigation, ReceiptText, Route, Undo2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
@@ -81,9 +81,9 @@ export default function TripDashboard() {
       ]}
       actions={
         <>
-          <Button type="button" variant={data?.personal.unclaimed.trips ? 'outline' : 'default'} className={data?.personal.unclaimed.trips ? undefined : VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/fleet?kind=own')}>
-            <Plus className="mr-2 h-4 w-4" aria-hidden />
-            Record trip
+          <Button type="button" variant={data?.personal.unclaimed.trips ? 'outline' : 'default'} className={data?.personal.unclaimed.trips ? undefined : VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/fleet?kind=choose')}>
+            <Navigation className="mr-2 h-4 w-4" aria-hidden />
+            Start a trip
           </Button>
           {Boolean(data?.personal.unclaimed.trips) && (
             <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/my-trips?claim=1')}>

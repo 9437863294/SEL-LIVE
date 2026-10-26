@@ -101,7 +101,11 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
         <span className="block">
           {trip.purpose || '—'}
           {trip.projectName ? ` · ${trip.projectName}` : ''}
-          {trip.flags.length > 0 && <FlagChips flags={trip.flags} className="mt-1" />}
+          {trip.flags.length > 0 && (
+            <span className="mt-1 block">
+              <FlagChips flags={trip.flags} />
+            </span>
+          )}
         </span>
       ),
     },
@@ -138,9 +142,11 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
       header: 'Trip',
       mobile: 'omit',
       cell: (trip) => (
-        <span className="flex min-w-0 max-w-[26rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
+        // Short place names (the full addresses on hover): a reverse-geocoded address is a line on its
+        // own, and two of them pushed Status and the actions off the side of the table.
+        <span className="flex min-w-0 max-w-[24rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
           <span className="truncate font-medium text-slate-800">
-            {trip.fromPlace} → {trip.toPlace}
+            {shortPlace(trip.fromPlace) || trip.fromPlace} → {shortPlace(trip.toPlace) || trip.toPlace}
           </span>
           {trip.purpose && <span className="truncate text-xs text-muted-foreground">· {trip.purpose}</span>}
           {trip.status === 'draft' && trip.returnNote && (
@@ -236,13 +242,13 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
                 Claim
               </Button>
             )}
-            <Button type="button" variant="outline" size="sm" onClick={() => onEdit(trip)} aria-label="Edit trip">
-              <Pencil className="h-3.5 w-3.5 sm:mr-0" aria-hidden />
-              <span className="ml-1.5 sm:hidden">Edit</span>
+            {/* Icons only, phone and desktop alike: with Select and Claim beside them, labelled Edit and
+                Delete wrapped a phone card's actions onto a second row. */}
+            <Button type="button" variant="outline" size="sm" onClick={() => onEdit(trip)} aria-label="Edit trip" title="Edit trip">
+              <Pencil className="h-3.5 w-3.5" aria-hidden />
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => onDelete(trip)} aria-label="Delete trip" className="text-rose-600 hover:text-rose-700">
+            <Button type="button" variant="outline" size="sm" onClick={() => onDelete(trip)} aria-label="Delete trip" title="Delete trip" className="text-rose-600 hover:text-rose-700">
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
-              <span className="ml-1.5 sm:hidden">Delete</span>
             </Button>
           </div>
         ) : null,
