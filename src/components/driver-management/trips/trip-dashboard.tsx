@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import { Banknote, CalendarClock, CircleCheck, Clock, Gauge, Hourglass, Inbox, Navigation, ReceiptText, Route, Undo2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { SectionHeader } from '@/components/shared/page-header';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { DriverPanel } from '@/components/driver-management/driver-app/driver-panel';
 import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
@@ -23,11 +23,9 @@ import { formatINR, formatINRCompact } from '@/lib/employee-trips/rates';
 import { formatKm } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
 import type { ClaimRow, DashboardData } from './trip-api';
-import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { ChartCard, MonthlyAmountChart, OwnershipSplit, RankedAmounts } from './trip-charts';
 import { ClaimStatusBadge, ErrorBlock, LoadingBlock, Money, shortDate } from './trip-ui';
-import { moduleDisplayName } from '@/lib/module-display-names';
 
 function ClaimRows({ rows, showEmployee, empty }: { rows: ClaimRow[]; showEmployee?: boolean; empty: string }) {
   const router = useRouter();
@@ -63,37 +61,25 @@ function ClaimRows({ rows, showEmployee, empty }: { rows: ClaimRow[]; showEmploy
 
 export default function TripDashboard() {
   const router = useRouter();
-  const { data: boot } = useTripClaims();
   const { driver } = useCurrentDriverProfile();
   const { data, error, reload } = useTripQuery<DashboardData>('dashboard');
 
-  const assignedVehicle = driver?.assignedVehicleNumber ? String(driver.assignedVehicleNumber) : null;
-
+  // No page title, description or "signed in as" facts: the module header above already names the
+  // module, and the cards below say the rest. Only the actions remain — sized like a PageHeader's
+  // (`.page-header-actions`: shared width on a phone, natural width from sm up, right-aligned).
   const header = (
-    <PageHeader
-      title={moduleDisplayName('Driver Management')}
-      icon={Gauge}
-      description="Your official trips and claims, and anything waiting for you."
-      meta={[
-        { label: 'Signed in as', value: boot?.user.name ?? '—' },
-        ...(assignedVehicle ? [{ label: 'Assigned vehicle', value: assignedVehicle }] : []),
-        ...(data ? [{ label: 'Financial year', value: data.financialYear }] : []),
-      ]}
-      actions={
-        <>
-          <Button type="button" variant={data?.personal.unclaimed.trips ? 'outline' : 'default'} className={data?.personal.unclaimed.trips ? undefined : VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/fleet?kind=choose')}>
-            <Navigation className="mr-2 h-4 w-4" aria-hidden />
-            Start a trip
-          </Button>
-          {Boolean(data?.personal.unclaimed.trips) && (
-            <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/my-trips?claim=1')}>
-              <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
-              Create claim ({data?.personal.unclaimed.trips} unclaimed)
-            </Button>
-          )}
-        </>
-      }
-    />
+    <div className="page-header-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+      <Button type="button" variant={data?.personal.unclaimed.trips ? 'outline' : 'default'} className={data?.personal.unclaimed.trips ? undefined : VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/fleet?kind=choose')}>
+        <Navigation className="mr-2 h-4 w-4" aria-hidden />
+        Start a trip
+      </Button>
+      {Boolean(data?.personal.unclaimed.trips) && (
+        <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/my-trips?claim=1')}>
+          <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
+          Create claim ({data?.personal.unclaimed.trips} unclaimed)
+        </Button>
+      )}
+    </div>
   );
 
   if (error && !data) return <div className="space-y-4">{header}<ErrorBlock message={error} onRetry={reload} /></div>;
