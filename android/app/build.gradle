@@ -30,8 +30,8 @@ android {
         // and hands the string to versionCode, which failed the configuration ("Value is null").
         // Default versionCode is date-based (yyyymmddNN), so a build without overrides is never a
         // downgrade of an APK already on a phone. 1.2: the native background trip recorder.
-        versionCode = Integer.parseInt(String.valueOf(project.findProperty('versionCodeOverride') ?: '2026102601'))
-        versionName = String.valueOf(project.findProperty('versionNameOverride') ?: '1.2')
+        versionCode = Integer.parseInt(String.valueOf(project.findProperty('versionCodeOverride') ?: '2026102602'))
+        versionName = String.valueOf(project.findProperty('versionNameOverride') ?: '1.2.1')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
