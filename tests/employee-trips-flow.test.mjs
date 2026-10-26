@@ -19,6 +19,7 @@ const { dashboard, bootstrap } = await import('../src/lib/employee-trips/server/
 const { resolveTripAccess } = await import('../src/lib/employee-trips/access.ts');
 const { indiaToday, financialYearOf, ET_COLLECTIONS } = await import('../src/lib/employee-trips/types.ts');
 const { forgetFleetSettings } = await import('../src/lib/fleet/server/lookups.ts');
+const { forgetSettings } = await import('../src/lib/employee-trips/server/lookups.ts');
 
 const today = indiaToday();
 const daysAgo = (days) => {
@@ -71,7 +72,9 @@ db.seed('vehicleManagementVehicles', 'v1', { vehicleNumber: 'OD 02 X 9', vehicle
 db.seed('vehicleManagementVehicles', 'v9', { vehicleNumber: 'OD 02 OLD 1', vehicleType: 'Car', vehicleStatus: 'Sold' });
 // Company-vehicle trips stay on claims for these tests; the last test turns fleet routing (D1) on.
 db.seed('fleetSettings', 'default', { companyTripsInFleet: false });
+// Most tests type trips in; the GPS-only rule (the default) has its own test below.
 db.seed(ET_COLLECTIONS.settings, 'default', {
+  rules: { allowTypedTrips: true },
   rateRevisions: [
     { id: 'r1', effectiveFrom: daysAgo(200), rates: [{ vehicleType: 'Two Wheeler', own: 4, company: null }, { vehicleType: 'Car', own: 10, company: 2 }] },
     { id: 'r2', effectiveFrom: daysAgo(10), rates: [{ vehicleType: 'Two Wheeler', own: 4.5, company: null }, { vehicleType: 'Car', own: 10, company: 2 }] },
@@ -415,4 +418,26 @@ test('with fleet routing on, company vehicles leave My Trips but their drafts ca
 
   db.seed('fleetSettings', 'default', { companyTripsInFleet: false });
   forgetFleetSettings('default');
+});
+
+/* ── trips are recorded by GPS (Fleet Trip › Own vehicle) ──────────────── */
+
+test('with typed trips off (the default), a new trip needs its GPS recording; editing is unaffected', async () => {
+  const typed = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02GPS1', startOdometer: 12000, endOdometer: 12010 }))).trip;
+  const stored = db.read(ET_COLLECTIONS.settings, 'default');
+  db.seed(ET_COLLECTIONS.settings, 'default', { ...stored, rules: { ...(stored.rules ?? {}), allowTypedTrips: false } });
+  forgetSettings('default');
+  try {
+    await rejects(saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02GPS1', startOdometer: 12020, endOdometer: 12030 })), 400, /recorded by GPS/);
+    const gps = { measuredKm: 10.2, startedAtIso: `${daysAgo(3)}T04:00:00.000Z`, endedAtIso: `${daysAgo(3)}T04:30:00.000Z`, movingMinutes: 25, idleMinutes: 5, stopCount: 1, fixes: 120, droppedFixes: 2, path: [{ lat: 20.3, lng: 85.8 }, { lat: 20.35, lng: 85.8 }] };
+    const recorded = (await saveTrip(context('emp3'), { ...ownTrip({ vehicleNumber: 'OD02GPS1', startOdometer: 12020, endOdometer: 12030 }), gps })).trip;
+    assert.equal(recorded.source, 'gps');
+    // A trip already recorded (typed before the rule changed) can still be corrected.
+    const edited = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02GPS1', startOdometer: 12000, endOdometer: 12010, purpose: 'Inspection (corrected)' }), typed.id)).trip;
+    assert.equal(edited.purpose, 'Inspection (corrected)');
+    assert.equal(edited.source, 'manual');
+  } finally {
+    db.seed(ET_COLLECTIONS.settings, 'default', stored);
+    forgetSettings('default');
+  }
 });

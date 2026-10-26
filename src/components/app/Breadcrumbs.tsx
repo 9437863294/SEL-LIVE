@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 import { useAppearance } from '@/components/theme/ThemeProvider';
 import { cn } from '@/lib/utils';
+import { moduleDisplayName } from '@/lib/module-display-names';
 
 /**
  * The bar's element id. The header looks it up to include whatever of the bar is on screen in
@@ -106,7 +107,8 @@ export function buildCrumbs(pathname: string): Crumb[] {
       } catch {
         // A malformed escape: label the segment as it appears.
       }
-      const label = index === 0 ? MODULE_LABELS[segment] ?? segmentLabel(segment) : segmentLabel(segment);
+      // The module's on-screen name; MODULE_LABELS keeps the key, which the profile page links by.
+      const label = index === 0 ? (MODULE_LABELS[segment] ? moduleDisplayName(MODULE_LABELS[segment]) : segmentLabel(segment)) : segmentLabel(segment);
       crumbs.push({ href, label });
     });
   return crumbs;

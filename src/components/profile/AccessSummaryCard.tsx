@@ -53,6 +53,7 @@ import {
 import { db } from '@/lib/firebase';
 import { permissionModules } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { moduleDisplayName } from '@/lib/module-display-names';
 
 /* ------------------------------------------------------------------------------------------------
  * Module routes
@@ -497,11 +498,11 @@ export function AccessSummaryCard({ className }: { className?: string }) {
                             'transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                           )}
                         >
-                          <span className="truncate">{name}</span>
+                          <span className="truncate">{moduleDisplayName(name)}</span>
                         </Link>
                       ) : (
                         <span className={CHIP_CLASS}>
-                          <span className="truncate">{name}</span>
+                          <span className="truncate">{moduleDisplayName(name)}</span>
                         </span>
                       )}
                     </li>

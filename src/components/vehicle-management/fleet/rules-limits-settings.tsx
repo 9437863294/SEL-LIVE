@@ -242,7 +242,7 @@ export default function RulesLimitsSettings({ settings, canEdit, onSaved }: { se
         />
         <ToggleRow
           label="Company-vehicle trips are fleet trips"
-          hint="On: a run in a company vehicle is recorded here — started and ended with odometer photos, billed to a project — and leaves Driver Management › My Trips, which then takes own vehicles only (claims already made are not touched). Off: employees may log company-vehicle trips on My Trips and claim them as before."
+          hint="On: a run in a company vehicle is recorded here — started and ended with odometer photos, billed to a project — and leaves Fleet & Travel › My Trips, which then takes own vehicles only (claims already made are not touched). Off: employees may log company-vehicle trips on My Trips and claim them as before."
           checked={toggle('companyTripsInFleet')}
           onChange={(value) => setToggles((current) => ({ ...current, companyTripsInFleet: value }))}
           disabled={!canEdit || saving}

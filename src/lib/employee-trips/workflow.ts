@@ -32,6 +32,7 @@ export const DEFAULT_RULES: TripRules = {
   requireOdometer: true,
   allowTollParking: true,
   requireProject: false,
+  allowTypedTrips: false,
   maxKmPerTrip: 300,
   maxKmPerDay: 400,
   claimWindowDays: 60,

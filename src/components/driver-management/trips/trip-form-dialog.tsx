@@ -124,6 +124,7 @@ export function TripFormDialog({
   gps,
   mode = 'save',
   onStart,
+  ownershipLocked,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -159,6 +160,11 @@ export function TripFormDialog({
   }) => void;
   /** Measured evidence, saved beside the claimed figures so an approver can weigh them. */
   gps?: TripGpsEvidence;
+  /**
+   * Only this kind of vehicle is offered. Fleet Trip's "Own vehicle" records here: the company
+   * choice there is the fleet trip, a separate calculation, so it must not reappear as a claim.
+   */
+  ownershipLocked?: VehicleOwnership;
 }) {
   const { toast } = useToast();
   const rules = data.settings.rules;
@@ -422,11 +428,13 @@ export function TripFormDialog({
           <Input id="trip-date" type="date" value={form.tripDate} max={data.today} disabled={gpsDated} onChange={(event) => set('tripDate', event.target.value)} aria-invalid={Boolean(liveErrors.tripDate)} className="bg-white" />
         </Field>
         <Field label="Vehicle" required error={liveErrors.ownership}>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Vehicle ownership">
+          <div className={cn('grid gap-2', ownershipLocked ? 'grid-cols-1' : 'grid-cols-2')} role="radiogroup" aria-label="Vehicle ownership">
             {([
               { value: 'own', label: 'Own vehicle', icon: Car, allowed: rules.allowOwnVehicle },
               { value: 'company', label: 'Company vehicle', icon: Building2, allowed: rules.allowCompanyVehicle || trip?.ownership === 'company' },
-            ] as const).map((option) => (
+            ] as const)
+              .filter((option) => !ownershipLocked || option.value === ownershipLocked)
+              .map((option) => (
               <button
                 key={option.value}
                 type="button"

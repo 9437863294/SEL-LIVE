@@ -331,7 +331,7 @@ export default function ClaimsList({ mode, embedded = false }: { mode: ClaimsLis
             refresh();
             if (created.length === 1) router.push(`/driver-management/claims/${created[0].id}`);
           }}
-          onRecordTrip={() => router.push('/driver-management/my-trips?new=1')}
+          onRecordTrip={() => router.push('/driver-management/fleet?kind=own')}
         />
       )}
     </div>

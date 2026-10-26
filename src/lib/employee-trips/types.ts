@@ -110,6 +110,11 @@ export interface TripRules {
   requireOdometer: boolean;
   allowTollParking: boolean;
   requireProject: boolean;
+  /**
+   * A new trip may be typed in by hand. Off: every new trip is recorded by GPS (Fleet Trip › Own
+   * vehicle), and the form only edits trips already recorded.
+   */
+  allowTypedTrips: boolean;
   /** A trip longer than this is flagged for the approver (not blocked). */
   maxKmPerTrip: number | null;
   /** A day whose trips add up to more than this is flagged. */

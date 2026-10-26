@@ -130,8 +130,12 @@ Trips) see every fleet trip too, and
 3. **Geofences** — the office, yards, fuel stations and project sites (each project site linked to
    its project).
 4. **Settings › Fleet › Purposes** — the seven defaults are offered until the first save.
-5. Tell drivers: Driver Management › **Fleet Trip** replaces the GPS Trip Log and records like My
-   Trips › Drive & record; company-vehicle trips are not claimable and no longer go on My Trips
-   (existing company-vehicle drafts can still be claimed). Tell approvers: one **Approvals** page
+5. Tell everyone: the module is now called **Fleet & Travel** (same address, same permissions —
+   roles still read "Driver Management · …" in Access Management). Its **Fleet Trip** page is now
+   where every trip is recorded, by GPS: **Start a trip** asks which vehicle —
+   **Own vehicle** (saved to My Trips and claimed there, at the per-km rate) or **Company vehicle**
+   (a fleet trip, billed to the project, not claimable). My Trips no longer records trips; it lists
+   and claims them (existing company-vehicle drafts can still be claimed). It replaces the GPS
+   Trip Log. Tell approvers: one **Approvals** page
    now holds claims and company-vehicle requests. Tell the transport office: Trip Management is now
    Fleet Control › **Fleet Trips**.

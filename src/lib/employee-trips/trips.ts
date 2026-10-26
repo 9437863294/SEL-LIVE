@@ -136,7 +136,7 @@ export function validateTrip(
   if (ownership === 'own' && !rules.allowOwnVehicle) errors.ownership = 'Own-vehicle trips are switched off in Settings.';
   if (ownership === 'company' && !rules.allowCompanyVehicle && context.existingOwnership !== 'company') {
     errors.ownership = context.companyTripsInFleet
-      ? 'Company vehicles are recorded as fleet trips now — start one in Driver Management › Fleet Trip.'
+      ? 'Company vehicles are recorded as fleet trips now — start one in Fleet & Travel › Fleet Trip.'
       : 'Company-vehicle trips are switched off in Settings.';
   }
 

@@ -102,7 +102,7 @@ const moduleDescriptions: Record<string, string> = {
   Employee: "Manage employee information and records.",
   "Vehicle Management": "Manage fleet, trips, fuel usage, and maintenance.",
   "Driver Management":
-    "Record official trips on your own or a company vehicle, claim per-km reimbursement, and run the driver app.",
+    "Record every official trip by GPS — your own vehicle, claimed per km, or a company vehicle, billed to the project — with approvals, payments, fuel and the driver app.",
   "Site Account Statement":
     "Track project-wise payments, expenses, and budgets with forecasts and reports.",
   "Tour, Travel & Expense":

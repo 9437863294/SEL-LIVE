@@ -3,6 +3,11 @@
 /**
  * My Trips — every trip the employee has recorded, and the place to claim them.
  *
+ * Trips are recorded on Fleet Trip, by GPS: its Own vehicle tab drives & records a trip and saves it
+ * here (a company vehicle there is a fleet trip — a separate calculation, never claimed). This page
+ * records nothing itself unless Trip Settings › Rules allows trips to be typed in; it edits and
+ * deletes unclaimed trips and puts them on claims.
+ *
  * A trip is one journey; a claim is what gets approved and paid. "Create claim" puts one, several
  * or all unclaimed trips on a claim (the dialog picks them), a trip's own "Claim" button claims just
  * that one, and ticking rows first preselects them. Trips on a claim are locked and show where it
@@ -13,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, ListChecks, LocateFixed, Pencil, Plus, ReceiptText, Route, Trash2, Undo2 } from 'lucide-react';
+import { CalendarClock, ListChecks, LocateFixed, Navigation, Pencil, Plus, ReceiptText, Route, Trash2, Undo2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -32,7 +37,6 @@ import { errorMessage, tripFetch } from './trip-api';
 import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { CreateClaimDialog, type CreatedClaim } from './submit-claim-dialog';
-import { GpsTripButton, GpsTripPanel, GpsTripProvider } from './gps-trip-recorder';
 import { TripFormDialog } from './trip-form-dialog';
 import { ClaimSteps, EmptyBlock, ErrorBlock, FlagChips, Km, LoadingBlock, Money, SegmentTabs, TripStatusBadge, VehicleLabel, shortDate } from './trip-ui';
 
@@ -46,6 +50,9 @@ const VIEW_STATUSES: Record<View, TripStatus[] | null> = {
   all: null,
 };
 
+/** Where a trip is recorded: Fleet Trip, on its own-vehicle tab. */
+const RECORD_HREF = '/driver-management/fleet?kind=own';
+
 const monthLabel = (month: string) => new Date(`${month}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 
 export default function MyTrips() {
@@ -53,8 +60,6 @@ export default function MyTrips() {
   const { toast } = useToast();
   const { data, error: bootError, loading: bootLoading, reload: reloadBootstrap } = useTripClaims();
   const tripsQuery = useTripQuery<{ trips: TripRecord[] }>('trips');
-  /** Set by the GPS provider below, so the page can stand aside while a trip is being driven. */
-  const [gpsRecording, setGpsRecording] = useState(false);
   const trips = tripsQuery.data?.trips ?? null;
   const loadError = trips ? null : tripsQuery.error;
   const setTrips = (change: (current: TripRecord[]) => TripRecord[]) => tripsQuery.setData((current) => ({ trips: change(current?.trips ?? []) }));
@@ -68,19 +73,25 @@ export default function MyTrips() {
   const [claimPreselect, setClaimPreselect] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<TripRecord | null>(null);
 
-  // The dashboard's buttons land here with ?new=1 (record a trip) or ?claim=1 (create a claim): open
-  // that dialog once the trips are in (both read them), then drop the flag.
+  // Old links land here with ?new=1 (record a trip) or ?claim=1 (create a claim). A new trip is
+  // recorded on Fleet Trip by GPS (typed in here only when Trip rules allow it); a claim opens here
+  // once the trips are in, and the flag is dropped.
   const ready = Boolean(data) && trips !== null;
+  const typedAllowed = Boolean(data?.settings.rules.allowTypedTrips);
   useEffect(() => {
     if (!ready) return;
     const params = new URLSearchParams(window.location.search);
     const wanted = params.get('new') === '1' ? 'trip' : params.get('claim') === '1' ? 'claim' : null;
     if (!wanted) return;
     window.history.replaceState(null, '', window.location.pathname);
+    if (wanted === 'trip' && !typedAllowed) {
+      router.replace(RECORD_HREF);
+      return;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time open from the URL once the data has loaded
     if (wanted === 'trip') setFormOpen(true);
     else setClaimOpen(true);
-  }, [ready]);
+  }, [ready, typedAllowed, router]);
 
   const all = useMemo(() => trips ?? [], [trips]);
   const rules = data?.settings.rules;
@@ -291,36 +302,32 @@ export default function MyTrips() {
   if (!data) return <ErrorBlock message={bootError ?? 'Could not load trip claims.'} onRetry={() => void reloadBootstrap()} />;
 
   const noRates = data.settings.rateRevisions.length === 0;
-  // Company vehicles are not offered here (Settings › Fleet routes them to fleet trips, or the rules
-  // switched them off): say where such a trip goes, so nobody records it as a claim by mistake.
-  const companyElsewhere = !data.settings.rules.allowCompanyVehicle;
 
   return (
-    <GpsTripProvider data={data} myTrips={trips ?? []} onSaved={onSaved} onRecordingChange={setGpsRecording}>
       <div className="space-y-4">
       <PageHeader
         title="My Trips"
         icon={Route}
-        description="Record each official trip, then create a claim with one, several or all of your unclaimed trips."
+        description="Your own-vehicle trips, recorded by GPS on Fleet Trip. Create a claim with one, several or all of the unclaimed ones."
         meta={[
           { label: 'Unclaimed', value: <><Money value={sumMoney(drafts.map((trip) => trip.totalAmount))} /> · {formatKm(drafts.reduce((total, trip) => total + trip.distanceKm, 0))}</> },
           { label: 'In process', value: <Money value={sumMoney(all.filter((trip) => trip.status === 'submitted' || trip.status === 'approved').map((trip) => trip.decision?.approvedAmount ?? trip.totalAmount))} /> },
         ]}
         actions={
-          // Nothing to offer mid-drive: a second trip cannot be started, and a claim raised now
-          // would exclude the kilometres being driven.
-          gpsRecording ? null : (
           <>
             {/* The next step is the prominent one: claiming once there is something to claim. */}
-            <Button type="button" variant={candidates.length ? 'outline' : 'default'} className={candidates.length ? undefined : VM_PRIMARY_BUTTON} onClick={() => { setEditing(null); setFormOpen(true); }}>
-              <Plus className="mr-2 h-4 w-4" aria-hidden />
-              Type it in
+            <Button type="button" variant={candidates.length ? 'outline' : 'default'} className={candidates.length ? undefined : VM_PRIMARY_BUTTON} asChild>
+              <Link href={RECORD_HREF}>
+                <Navigation className="mr-2 h-4 w-4" aria-hidden />
+                Record a trip
+              </Link>
             </Button>
-            {/*
-              The GPS recorder sits beside the manual button because they produce the same thing:
-              a draft trip. The difference is only whether the distance is measured or typed.
-            */}
-            <GpsTripButton />
+            {typedAllowed && (
+              <Button type="button" variant="outline" onClick={() => { setEditing(null); setFormOpen(true); }}>
+                <Plus className="mr-2 h-4 w-4" aria-hidden />
+                Type it in
+              </Button>
+            )}
             <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={candidates.length ? VM_PRIMARY_BUTTON : undefined} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
               <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
               Create claim
@@ -329,30 +336,17 @@ export default function MyTrips() {
               </span>
             </Button>
           </>
-          )
         }
       />
 
-      {/* Full page width: a map and four figures do not fit a header actions row. */}
-      <GpsTripPanel />
+      <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+        Trips are recorded on{' '}
+        <Link href={RECORD_HREF} className="font-medium underline underline-offset-2">
+          Fleet Trip
+        </Link>
+        : choose <span className="font-medium">Own vehicle</span> and Drive &amp; record — the trip comes here when you stop. A company vehicle is a fleet trip there, billed to the project and not claimable.
+      </p>
 
-      {companyElsewhere && !gpsRecording && (
-        <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
-          Driving a company vehicle? Record it in{' '}
-          <Link href="/driver-management/fleet" className="font-medium underline underline-offset-2">
-            Fleet Trip
-          </Link>{' '}
-          — the same GPS recording, billed to the project and not claimable. My Trips is for your own vehicle.
-        </p>
-      )}
-
-      {/*
-        Hidden while recording, not disabled: a greyed-out filter bar and an empty trip list are
-        still a screenful of furniture around the one thing that matters. The list comes back the
-        moment the trip is saved or discarded.
-      */}
-      {!gpsRecording && (
-        <>
       <ClaimSteps approvalName={data.settings.stages.find((stage) => stage.kind === 'approval')?.name} paymentName={data.settings.stages.find((stage) => stage.kind === 'payment')?.name} />
 
       {noRates && (
@@ -443,7 +437,7 @@ export default function MyTrips() {
           rowClassName={(trip) => (selected.has(trip.id) && claimable(trip) ? 'bg-primary/5' : undefined)}
           empty={
             <EmptyBlock icon={Route} title={all.length ? 'No trips here' : 'No trips recorded yet'}>
-              {all.length ? 'Try another tab or clear the filters.' : 'Record your first official trip — the amount is worked out from the company rate for your vehicle.'}
+              {all.length ? 'Try another tab or clear the filters.' : 'Record your first trip on Fleet Trip › Own vehicle — the amount is worked out from the company rate for your vehicle.'}
             </EmptyBlock>
           }
         />
@@ -452,8 +446,6 @@ export default function MyTrips() {
         <p className="text-[11px] text-muted-foreground">
           {expired.length} unclaimed trip{expired.length === 1 ? ' is' : 's are'} past the {rules?.claimWindowDays}-day claim window and can only be deleted.
         </p>
-      )}
-        </>
       )}
 
       <TripFormDialog open={formOpen} onOpenChange={setFormOpen} data={data} trip={editing} myTrips={all} onSaved={onSaved} />
@@ -464,10 +456,7 @@ export default function MyTrips() {
         candidates={candidates}
         preselected={claimPreselect}
         onSubmitted={onClaimCreated}
-        onRecordTrip={() => {
-          setEditing(null);
-          setFormOpen(true);
-        }}
+        onRecordTrip={() => router.push(RECORD_HREF)}
       />
       <ConfirmDialog
         open={Boolean(deleting)}
@@ -478,6 +467,5 @@ export default function MyTrips() {
         onConfirm={confirmDelete}
       />
       </div>
-    </GpsTripProvider>
   );
 }

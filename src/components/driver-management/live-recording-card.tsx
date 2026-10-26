@@ -4,8 +4,8 @@
  * The card a trip shows while it is being driven — one card for both kinds of trip, so they cannot
  * drift apart:
  *
- * - **My Trips › Drive & record** (gps-trip-recorder.tsx): an employee's own-vehicle journey,
- *   reviewed and claimed when it stops.
+ * - **Fleet Trip › Own vehicle** (gps-trip-recorder.tsx): an employee's own-vehicle journey,
+ *   reviewed when it stops and claimed from My Trips.
  * - **Fleet Trip** (driver-management/fleet/active-trip.tsx): a company vehicle, billed to the
  *   project and not claimable, with the daily limit and the odometer photos on top.
  *

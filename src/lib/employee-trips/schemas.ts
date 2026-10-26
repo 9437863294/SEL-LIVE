@@ -123,6 +123,7 @@ export const rulesSchema = z.object({
   requireOdometer: z.boolean(),
   allowTollParking: z.boolean(),
   requireProject: z.boolean(),
+  allowTypedTrips: z.boolean().optional().default(false),
   maxKmPerTrip: z.number().nullable(),
   maxKmPerDay: z.number().nullable(),
   claimWindowDays: z.number().nullable(),

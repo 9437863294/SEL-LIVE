@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
+import { moduleDisplayName } from '@/lib/module-display-names';
 import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 import { FleetProvider, useFleet } from '@/components/fleet/fleet-provider';
 import { TripClaimsProvider, useTripClaims } from './trips/trip-claims-provider';
@@ -35,12 +36,14 @@ import { TripClaimsProvider, useTripClaims } from './trips/trip-claims-provider'
  * - `payer`: named on the payment stage in Settings › Workflow (or holding Override Workflow), or
  *   with a claim waiting to be paid.
  * - `viewAll` / `settings`: Trip Claims · View All / Trip Settings · View.
- * - `fleetDriver`: may drive company vehicles (a Driver Master driver, or anyone while Settings ›
- *   Fleet lets every employee drive), or has a fleet trip running.
  * - otherwise a Driver Management resource, as before (the driver app); `orFleetDriver` also opens
- *   it to everyone who may drive.
+ *   it to everyone who may drive company vehicles (a Driver Master driver, or anyone while Settings ›
+ *   Fleet lets every employee drive) or has a fleet trip running.
+ *
+ * Fleet Trip is open to everyone: it is where every trip is recorded, by GPS — an own vehicle (a
+ * claimable trip that lands in My Trips) or a company vehicle (a fleet trip, billed to the project).
  */
-type Access = 'everyone' | 'approver' | 'payer' | 'viewAll' | 'settings' | 'fleetDriver' | { resource: string; orFleetDriver?: boolean };
+type Access = 'everyone' | 'approver' | 'payer' | 'viewAll' | 'settings' | { resource: string; orFleetDriver?: boolean };
 type Section = { id: string; href: string; label: string; access: Access; icon: LucideIcon; tone: ModuleNavTone; group: string; match?: (pathname: string) => boolean };
 
 /** Fleet Trip covers the driver's home and trip pages. */
@@ -48,6 +51,9 @@ const isFleetTripPage = (pathname: string) => pathname === '/driver-management/f
 
 const sections: Section[] = [
   { id: 'overview',        href: '/driver-management',                 label: 'Overview',         access: 'everyone', icon: Gauge,       tone: 'cyan',    group: 'core' },
+  // The one place a trip is recorded. Its trip list replaced the old GPS Trip Log, and My Trips no
+  // longer records (both old addresses lead here or to My Trips — next.config.ts).
+  { id: 'fleet',           href: '/driver-management/fleet',           label: 'Fleet Trip',       access: 'everyone', icon: Navigation, tone: 'sky', group: 'mine', match: isFleetTripPage },
   { id: 'my-trips',        href: '/driver-management/my-trips',        label: 'My Trips',         access: 'everyone', icon: Route,       tone: 'teal',    group: 'mine' },
   { id: 'my-claims',       href: '/driver-management/my-claims',       label: 'My Claims',        access: 'everyone', icon: ReceiptText, tone: 'indigo',  group: 'mine' },
   { id: 'approvals',       href: '/driver-management/approvals',       label: 'Approvals',        access: 'approver', icon: Inbox,       tone: 'amber',   group: 'workflow' },
@@ -56,13 +62,9 @@ const sections: Section[] = [
   // without this nobody but the employee who recorded it can see it.
   { id: 'all-trips',       href: '/driver-management/all-trips',       label: 'All Trips',        access: 'viewAll',  icon: Users,       tone: 'cyan',    group: 'workflow' },
   { id: 'claims',          href: '/driver-management/claims',          label: 'All Claims',       access: 'viewAll',  icon: ReceiptText, tone: 'blue',    group: 'workflow' },
-  // The driver app, for company vehicles. A company-vehicle run is a fleet trip (docs/fleet/PLAN.md):
-  // started and ended with odometer photos, tracked in the background, held to the vehicle's daily
-  // km limit. Its trip list replaced the old GPS Trip Log, whose address now leads here. Personal
-  // vehicles stay on My Trips and claims. The old Driver Mobile hub is the Overview's driver panel,
+  // The driver app, for company vehicles. The old Driver Mobile hub is the Overview's driver panel,
   // and Trip Management lives in Vehicle Management only (every old address redirects —
   // next.config.ts).
-  { id: 'fleet',           href: '/driver-management/fleet',           label: 'Fleet Trip',       access: 'fleetDriver', icon: Navigation, tone: 'sky', group: 'driver', match: isFleetTripPage },
   { id: 'vehicle-details', href: '/driver-management/vehicle-details', label: 'My Vehicle',       access: { resource: 'Assigned Vehicle Details' }, icon: CarFront, tone: 'blue', group: 'driver' },
   { id: 'fuel',            href: '/driver-management/fuel',            label: 'Fuel Entries',     access: { resource: 'Driver Fuel', orFleetDriver: true }, icon: Fuel, tone: 'amber', group: 'driver' },
   { id: 'settings',        href: '/driver-management/settings',        label: 'Settings',         access: 'settings', icon: Settings,    tone: 'slate',   group: 'admin' },
@@ -71,7 +73,7 @@ const sections: Section[] = [
 // Group headings in the sidebar and the phone's "More" pop-up.
 const groupLabels: Record<string, string> = {
   core: 'Control Center',
-  mine: 'My Trips & Claims',
+  mine: 'Trips & Claims',
   workflow: 'Approvals & Payments',
   driver: 'Company Vehicle Driver',
   admin: 'Administration',
@@ -94,11 +96,11 @@ const driverSelfResources = new Set(['Assigned Vehicle Details', 'Driver Fuel', 
 // phone header card is the driver app's only title bar.
 const bottomTabPriority: ModuleNavTab[] = [
   { href: '/driver-management',              label: 'Home',     icon: Gauge, exact: true, ariaLabel: 'Overview' },
+  { href: '/driver-management/fleet',        label: 'Fleet',    icon: Navigation, match: isFleetTripPage, ariaLabel: 'Fleet trip — record a trip' },
   { href: '/driver-management/my-trips',     label: 'My trips', icon: Route, ariaLabel: 'My trips' },
   { href: '/driver-management/approvals',    label: 'Approve',  icon: Inbox, ariaLabel: 'Approvals' },
   { href: '/driver-management/payments',     label: 'Pay',      icon: Banknote, ariaLabel: 'Payments' },
   { href: '/driver-management/my-claims',    label: 'Claims',   icon: ReceiptText, ariaLabel: 'My claims' },
-  { href: '/driver-management/fleet',        label: 'Fleet',    icon: Navigation, match: isFleetTripPage, ariaLabel: 'Fleet trip' },
   { href: '/driver-management/fuel',         label: 'Fuel',     icon: Fuel, ariaLabel: 'Fuel entries' },
 ];
 
@@ -136,8 +138,6 @@ function Shell({ children }: { children: ReactNode }) {
           return Boolean(access?.viewAll);
         case 'settings':
           return Boolean(access?.settingsView);
-        case 'fleetDriver':
-          return fleetDriver;
         default:
           return canResource(section.access.resource) || Boolean(section.access.orFleetDriver && fleetDriver);
       }
@@ -162,8 +162,8 @@ function Shell({ children }: { children: ReactNode }) {
 
   return (
     <ModuleShell
-      title="Driver Management"
-      subtitle="Trips, Claims & Driver App"
+      title={moduleDisplayName('Driver Management')}
+      subtitle="Trips, Claims & Fleet"
       icon={Truck}
       groups={groups}
       mobileTabs={mobileTabs}

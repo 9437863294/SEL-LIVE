@@ -305,7 +305,7 @@ export default function FleetTripsRegister() {
             empty={
               <FleetEmpty
                 title={all.length ? 'No trip matches these filters' : 'No trips in this period'}
-                description={all.length ? 'Clear a filter or widen the dates.' : 'Company-vehicle trips appear here as soon as a driver starts one in Driver Management › Fleet Trip.'}
+                description={all.length ? 'Clear a filter or widen the dates.' : 'Company-vehicle trips appear here as soon as a driver starts one in Fleet & Travel › Fleet Trip.'}
               />
             }
           />

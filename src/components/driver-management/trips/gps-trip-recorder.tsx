@@ -3,6 +3,10 @@
 /**
  * Recording a claimable trip by driving it.
  *
+ * Mounted on Fleet Trip's Own vehicle tab (fleet-home.tsx, locked to own vehicles there): Fleet Trip
+ * is the one place a trip is recorded, and My Trips only lists and claims what this saves. A
+ * company vehicle is recorded on the same screen as a fleet trip — a separate calculation.
+ *
  * ── Why this replaced the separate GPS page ─────────────────────────────────────────────────────
  *
  * There were two screens recording the same journey. `/driver-management/trips` measured a route
@@ -110,6 +114,19 @@ interface GpsTripContextValue {
 
 const GpsTripContext = createContext<GpsTripContextValue | null>(null);
 
+/**
+ * Start a recording from elsewhere on the page — Fleet Trip's "Which vehicle?" prompt. `available`
+ * is false outside the provider (the trip-claims settings have not loaded yet).
+ */
+export function useGpsTripControls(): { available: boolean; recording: boolean; start: () => void } {
+  const context = useContext(GpsTripContext);
+  return {
+    available: Boolean(context),
+    recording: Boolean(context?.recording),
+    start: () => context?.setStartOpen(true),
+  };
+}
+
 /** The button for the page header. Never renders anything but a button. */
 export function GpsTripButton() {
   const context = useContext(GpsTripContext);
@@ -133,9 +150,12 @@ export function GpsTripProvider({
   myTrips,
   onSaved,
   onRecordingChange,
+  ownership,
   children,
 }: {
   data: Bootstrap;
+  /** Record only this kind of vehicle (Fleet Trip's own-vehicle mode passes 'own'). */
+  ownership?: VehicleOwnership;
   myTrips: TripRecord[];
   onSaved: (trip: TripRecord) => void;
   /**
@@ -372,6 +392,8 @@ export function GpsTripProvider({
           trip={null}
           myTrips={myTrips}
           mode="gps-start"
+          ownershipLocked={ownership}
+          prefill={ownership ? { ownership } : undefined}
           onStart={(values) => void beginTrip(values)}
           onSaved={() => undefined}
         />
@@ -392,6 +414,7 @@ export function GpsTripProvider({
           myTrips={myTrips}
           prefill={review.prefill as never}
           gps={review.gps}
+          ownershipLocked={ownership}
           onSaved={(trip) => {
             setReview(null);
             setInFlight(null);

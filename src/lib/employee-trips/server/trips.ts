@@ -131,6 +131,11 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
   const existing = tripId ? mine.find((trip) => trip.id === tripId) : undefined;
   if (tripId && !existing) throw new TripError('That trip was not found among yours.', 404);
   if (existing && existing.status !== 'draft') throw new TripError('This trip is on a claim and can no longer be changed.', 409);
+  // Trips are recorded by GPS on Fleet Trip (own vehicle) unless Trip rules allow typing one in.
+  // Editing a trip already recorded is always allowed.
+  if (!existing && !input.gps && !settings.rules.allowTypedTrips) {
+    throw new TripError('Trips are recorded by GPS: open Fleet Trip, choose Own vehicle and Drive & record.', 400, { code: 'gps_required' });
+  }
 
   const companyVehicle = input.ownership === 'company' && input.vehicleId ? vehicles.find((vehicle) => vehicle.id === input.vehicleId) ?? null : null;
   // Company-vehicle running is a fleet trip once Settings › Fleet says so (decision D1); a company

@@ -37,6 +37,7 @@ import {
   type NormalizedNotification,
 } from '@/lib/notifications';
 import { moduleBadgeClass } from '@/lib/activity-modules';
+import { moduleDisplayName } from '@/lib/module-display-names';
 import { useAppearance } from '@/components/theme/ThemeProvider';
 import { BREADCRUMBS_BAR_ID } from '@/components/app/Breadcrumbs';
 
@@ -722,7 +723,7 @@ export default function Header() {
                                 'mt-0.5 w-fit rounded border px-1 text-[10px] leading-4',
                                 moduleBadgeClass(alert.module),
                               )}>
-                                {alert.module}
+                                {moduleDisplayName(alert.module)}
                               </span>
                             )}
                           </div>

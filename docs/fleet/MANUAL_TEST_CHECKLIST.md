@@ -10,8 +10,21 @@ Set up first: one test vehicle with a low daily limit (say 10 km), an approver w
 driver, a backup approver, yourself on the escalation list, one office geofence and one project
 site geofence around places you can drive to.
 
-## Phase 0 — My Trips fixes
+## Phase 0 — recording trips (Fleet Trip › Own vehicle) and My Trips
 
+- [ ] My Trips has no "Type it in" and no "Drive & record"; its "Record a trip" opens Fleet Trip on
+      the Own vehicle tab. Fleet Trip is in the menu for every user.
+- [ ] Fleet Trip has one **Start a trip** button; it asks "Which vehicle are you using?" — Own
+      vehicle (claimable) or Company vehicle (fleet). A choice not open to you says why (company
+      vehicles for non-drivers, own vehicles switched off in Trip rules).
+- [ ] The module reads **Fleet & Travel** on the Module Hub card, its header, breadcrumbs and
+      notifications; its address and every role's permissions are unchanged.
+- [ ] Own vehicle offers own vehicles only; the saved trip appears in My Trips,
+      unclaimed, priced at the rate card's per-km rate, and "Create claim" claims it.
+- [ ] While an own-vehicle trip records, Fleet Trip shows only it (no company start), and while a
+      company trip runs, no own-vehicle start.
+- [ ] Trip Settings › Rules "Trips may be typed in" off (default): an old `/driver-management/my-trips?new=1`
+      link lands on Fleet Trip. Turn it on: "Type it in" comes back on My Trips.
 - [ ] Phone: with Trip rules › "Odometer readings required" on, Drive & record an **own-vehicle**
       trip; on stop, the review asks for the closing reading (opening prefilled), shows "GPS
       measured … km — about …", and saves.

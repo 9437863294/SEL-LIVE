@@ -21,7 +21,7 @@ import { ErrorBlock, LoadingBlock } from './trip-ui';
 import { useTripSettings } from './use-trip-settings';
 import { useFleet } from '@/components/fleet/fleet-provider';
 
-type Toggle = { key: 'allowOwnVehicle' | 'allowCompanyVehicle' | 'requireOdometer' | 'allowTollParking' | 'requireProject'; label: string; hint: string };
+type Toggle = { key: 'allowOwnVehicle' | 'allowCompanyVehicle' | 'requireOdometer' | 'allowTollParking' | 'requireProject' | 'allowTypedTrips'; label: string; hint: string };
 type Limit = { key: 'maxKmPerTrip' | 'maxKmPerDay' | 'claimWindowDays'; label: string; hint: string; unit: string };
 
 const TOGGLES: Toggle[] = [
@@ -30,6 +30,7 @@ const TOGGLES: Toggle[] = [
   { key: 'requireOdometer', label: 'Odometer readings required', hint: 'Off: an employee may type the distance instead.' },
   { key: 'allowTollParking', label: 'Toll and parking', hint: 'Paid at cost on top of the per-km amount.' },
   { key: 'requireProject', label: 'Project required', hint: 'Every trip must name the project it was for.' },
+  { key: 'allowTypedTrips', label: 'Trips may be typed in', hint: 'Off (the default): every trip is recorded by GPS on Fleet Trip › Own vehicle; My Trips only lists, edits and claims them.' },
 ];
 
 const LIMITS: Limit[] = [

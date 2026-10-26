@@ -27,6 +27,7 @@ import { useState } from "react";
 import { EditModuleDialog } from "./EditModuleDialog";
 import Link from "next/link";
 import { useAuthorization } from "@/hooks/useAuthorization";
+import { moduleDisplayName } from "@/lib/module-display-names";
 import type { Density } from "@/lib/appearance/model";
 
 interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -215,7 +216,7 @@ export default function ModuleCard({
           draggable={false}
           className="absolute inset-0 rounded-xl ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
-          <span className="sr-only">Open {module.title}</span>
+          <span className="sr-only">Open {moduleDisplayName(module.title)}</span>
         </Link>
         <CardHeader
           className={cn(
@@ -234,7 +235,7 @@ export default function ModuleCard({
             </div>
             <div className="flex-1 min-w-0 sm:hidden">
               <CardTitle className="text-xs font-bold leading-tight truncate">
-                {module.title}
+                {moduleDisplayName(module.title)}
               </CardTitle>
             </div>
             {reorderable && (
@@ -249,7 +250,7 @@ export default function ModuleCard({
           <div className="hidden sm:flex sm:flex-1 sm:min-w-0">
             <div className="flex-1 min-w-0">
               <CardTitle className="text-base font-bold">
-                {module.title}
+                {moduleDisplayName(module.title)}
               </CardTitle>
               <p
                 className={cn(
@@ -287,7 +288,7 @@ export default function ModuleCard({
                       size="icon"
                       // One fixed name, with `aria-pressed` carrying the state — a label that
                       // flipped to "Unpin" would be read as "Unpin, pressed".
-                      aria-label={`Pin ${module.title}`}
+                      aria-label={`Pin ${moduleDisplayName(module.title)}`}
                       aria-pressed={pinned}
                       data-module-control="pin"
                       data-module-title={module.title}
@@ -317,7 +318,7 @@ export default function ModuleCard({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label={`Hide ${module.title} from the launcher`}
+                      aria-label={`Hide ${moduleDisplayName(module.title)} from the launcher`}
                       data-module-control="hide"
                       data-module-title={module.title}
                       className={styles.button}

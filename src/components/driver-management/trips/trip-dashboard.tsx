@@ -27,6 +27,7 @@ import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { ChartCard, MonthlyAmountChart, OwnershipSplit, RankedAmounts } from './trip-charts';
 import { ClaimStatusBadge, ErrorBlock, LoadingBlock, Money, shortDate } from './trip-ui';
+import { moduleDisplayName } from '@/lib/module-display-names';
 
 function ClaimRows({ rows, showEmployee, empty }: { rows: ClaimRow[]; showEmployee?: boolean; empty: string }) {
   const router = useRouter();
@@ -70,7 +71,7 @@ export default function TripDashboard() {
 
   const header = (
     <PageHeader
-      title="Driver Management"
+      title={moduleDisplayName('Driver Management')}
       icon={Gauge}
       description="Your official trips and claims, and anything waiting for you."
       meta={[
@@ -80,7 +81,7 @@ export default function TripDashboard() {
       ]}
       actions={
         <>
-          <Button type="button" variant={data?.personal.unclaimed.trips ? 'outline' : 'default'} className={data?.personal.unclaimed.trips ? undefined : VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/my-trips?new=1')}>
+          <Button type="button" variant={data?.personal.unclaimed.trips ? 'outline' : 'default'} className={data?.personal.unclaimed.trips ? undefined : VM_PRIMARY_BUTTON} onClick={() => router.push('/driver-management/fleet?kind=own')}>
             <Plus className="mr-2 h-4 w-4" aria-hidden />
             Record trip
           </Button>

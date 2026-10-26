@@ -165,7 +165,7 @@ export default function TripDetailView({ tripId }: { tripId: string }) {
         />
       </div>
 
-      <p className="text-xs text-muted-foreground">Company vehicle trip — billed to {trip.projectName || 'the project'}, not claimable. Own-vehicle travel is claimed from My Trips.</p>
+      <p className="text-xs text-muted-foreground">Company vehicle trip — billed to {trip.projectName || 'the project'}, not claimable. An own-vehicle trip is recorded on Fleet Trip&apos;s Own vehicle tab and claimed from My Trips.</p>
 
       <Section title="Route" icon={MapPin}>
         {routeLabel && <p className="mb-2 min-w-0 break-words text-sm font-medium text-slate-800">{routeLabel}</p>}

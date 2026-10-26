@@ -299,7 +299,7 @@ export function EndTripDialog({
       {failure && <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{failure}</p>}
       <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
         <Building2 className="mt-px h-3 w-3 shrink-0" aria-hidden />
-        A company-vehicle trip is not claimable: it is billed to {trip.projectName || 'the project'}, not paid to the driver. Own-vehicle travel goes in My Trips.
+        A company-vehicle trip is not claimable: it is billed to {trip.projectName || 'the project'}, not paid to the driver. Own-vehicle travel is recorded on the Own vehicle tab and claimed.
       </p>
       <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <CloudUpload className="h-3 w-3 shrink-0" aria-hidden />

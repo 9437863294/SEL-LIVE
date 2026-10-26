@@ -184,3 +184,21 @@ setting or a small change if the owner wants it otherwise.
     place), one shared component for both. On top of it the fleet adds what a company vehicle
     needs: the limit, approvals, odometer photos, purposes and projects, offline sync, geofences.
     A fleet trip is **not claimable** — it is billed to the project; the screens say so.
+42. **Fleet Trip is the one place a trip is recorded** (owner's request, 2026-10-26). My Trips no
+    longer has "Type it in" or "Drive & record"; Fleet Trip has one **Start a trip** button that asks
+    "Which vehicle are you using?" (a prompt, not tabs left selected on the page), because the two
+    are separate calculations:
+    - **Own vehicle** — the GPS trip recorder (locked to own vehicles there) drives & records the
+      trip and saves it to My Trips as an unclaimed trip, priced per km from the trip-claims rate
+      card; My Trips lists, edits and claims it.
+    - **Company vehicle** — the fleet trip (limit, approvals, odometer photos, project billing).
+    Only one trip runs at a time on the screen. Fleet Trip is in everyone's menu (and the phone's
+    second tab). The server holds the same line: a new trip without GPS evidence is refused unless
+    Trip Settings › Rules "Trips may be typed in" is on (off by default — `allowTypedTrips`);
+    editing a trip already recorded is always allowed.
+43. **The module is shown as "Fleet & Travel"** (owner's request, 2026-10-26; it was "Driver
+    Management"). Only the on-screen name changed (`src/lib/module-display-names.ts`): the Module
+    Hub card, the module header, breadcrumbs, the Overview, notification chips and the profile's
+    module chips. The key stays `Driver Management` — it names the permissions roles hold, the
+    activity log and notification rows, and each user's saved Module Hub layout — and the address
+    stays `/driver-management`, which the SEL Driver Android app opens.
