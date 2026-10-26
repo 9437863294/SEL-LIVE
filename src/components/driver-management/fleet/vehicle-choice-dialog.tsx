@@ -9,17 +9,27 @@
  * - Company vehicle: the fleet trip — the vehicle's daily km limit, odometer photos, billed to the
  *   project, never claimable.
  *
- * A prompt rather than tabs on the page: nobody should have to notice which tab was left selected
- * before setting off, and a choice that is not open to the person (own vehicles switched off in Trip
- * rules, or company vehicles for non-drivers) says why instead of disappearing.
+ * Just the question and two big tiles, side by side even on a phone — a driver answers it standing
+ * beside the vehicle, with one thumb. What each choice means is said on the screen it leads to. A
+ * choice not open to the person (own vehicles switched off in Trip rules, company vehicles for
+ * non-drivers) stays visible, greyed, with one line saying why, rather than disappearing.
  *
  * Rendered inside the GPS recorder's provider so "Own vehicle" can open its start directly.
  */
 
-import { Building2, Car, ChevronRight } from 'lucide-react';
-import { FormDialog } from '@/components/shared/form-dialog';
+import { Building2, Car, type LucideIcon } from 'lucide-react';
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useGpsTripControls } from '@/components/driver-management/trips/gps-trip-recorder';
 import { cn } from '@/lib/utils';
+
+interface Choice {
+  key: 'own' | 'company';
+  icon: LucideIcon;
+  label: string;
+  blocked: string | null;
+  tone: string;
+  choose: () => void;
+}
 
 export function VehicleChoiceDialog({
   open,
@@ -37,16 +47,14 @@ export function VehicleChoiceDialog({
   onCompany: () => void;
 }) {
   const gps = useGpsTripControls();
-  const ownReason = ownBlocked ?? (gps.available ? null : 'Trip claims are still loading — try again in a moment.');
 
-  const options = [
+  const choices: Choice[] = [
     {
       key: 'own',
       icon: Car,
-      title: 'Own vehicle',
-      tag: 'Claimable',
-      text: "Your own car or bike. The trip goes to My Trips at the company's per-km rate for your vehicle, and you claim it from there.",
-      blocked: ownReason,
+      label: 'Own vehicle',
+      blocked: ownBlocked ?? (gps.available ? null : 'Own vehicle: still loading — try again in a moment.'),
+      tone: 'bg-teal-50 text-teal-700',
       choose: () => {
         onOpenChange(false);
         gps.start();
@@ -55,46 +63,52 @@ export function VehicleChoiceDialog({
     {
       key: 'company',
       icon: Building2,
-      title: 'Company vehicle',
-      tag: 'Fleet · not claimable',
-      text: "A vehicle from Vehicle Master. Billed to the project, held to the vehicle's daily km limit, with an odometer photo at the start and the end.",
+      label: 'Company vehicle',
       blocked: companyBlocked,
+      tone: 'bg-sky-50 text-sky-700',
       choose: () => {
         onOpenChange(false);
         onCompany();
       },
     },
   ];
+  const reasons = choices.filter((choice) => choice.blocked).map((choice) => choice.blocked as string);
 
   return (
-    <FormDialog open={open} onOpenChange={onOpenChange} size="md" title="Which vehicle are you using?" description="The trip is recorded by GPS either way; the vehicle decides how it is paid.">
-      <div className="grid grid-cols-1 gap-3" role="list">
-        {options.map((option) => (
-          <button
-            key={option.key}
-            type="button"
-            role="listitem"
-            onClick={option.choose}
-            disabled={Boolean(option.blocked)}
-            className={cn(
-              'group flex w-full min-w-0 items-start gap-3 rounded-xl border bg-white p-4 text-left transition-colors',
-              option.blocked ? 'cursor-not-allowed border-slate-200 opacity-60' : 'border-slate-200 hover:border-primary/50 hover:bg-primary/5 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
-            )}
-          >
-            <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', option.key === 'own' ? 'bg-teal-50 text-teal-700' : 'bg-sky-50 text-sky-700')}>
-              <option.icon className="h-5 w-5" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-sm font-semibold text-slate-800">{option.title}</span>
-                <span className={cn('rounded-md px-1.5 py-0.5 text-[10px] font-semibold', option.key === 'own' ? 'bg-teal-50 text-teal-700' : 'bg-sky-50 text-sky-700')}>{option.tag}</span>
-              </span>
-              <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{option.blocked ?? option.text}</span>
-            </span>
-            {!option.blocked && <ChevronRight className="mt-2.5 h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-primary" aria-hidden />}
-          </button>
-        ))}
-      </div>
-    </FormDialog>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent size="sm" windowControls={false} aria-describedby={undefined} className="gap-0 rounded-2xl sm:rounded-2xl">
+        {/* Even padding both sides, so the title sits in the middle despite the close button. */}
+        <DialogHeader className="shrink-0 px-8 text-center sm:text-center">
+          <DialogTitle className="text-lg">Which vehicle are you using?</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="space-y-3 pt-4">
+          <div className="grid grid-cols-2 gap-3">
+            {choices.map((choice) => (
+              <button
+                key={choice.key}
+                type="button"
+                onClick={choice.choose}
+                disabled={Boolean(choice.blocked)}
+                className={cn(
+                  'flex min-h-[8.5rem] min-w-0 flex-col items-center justify-center gap-3 rounded-2xl border-2 bg-white p-3 text-center transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                  choice.blocked ? 'cursor-not-allowed border-slate-100 opacity-50' : 'border-slate-200 hover:border-primary hover:bg-primary/5 active:scale-[0.98]',
+                )}
+              >
+                <span className={cn('flex h-14 w-14 items-center justify-center rounded-2xl', choice.tone)}>
+                  <choice.icon className="h-7 w-7" aria-hidden />
+                </span>
+                <span className="text-sm font-semibold leading-tight text-slate-800">{choice.label}</span>
+              </button>
+            ))}
+          </div>
+          {reasons.map((reason) => (
+            <p key={reason} className="text-center text-xs text-muted-foreground">
+              {reason}
+            </p>
+          ))}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   );
 }

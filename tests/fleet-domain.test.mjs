@@ -15,6 +15,7 @@ import { dayAllowance, kmUsedOn, startLimitCheck, tripKmOn } from '../src/lib/fl
 import { buildChain, cancelApproval, createApproval, decideApproval, tickApproval, useApproval, ApprovalError } from '../src/lib/fleet/approvals.ts';
 import { checkFuel, fuelRowFrom, fullToFullMileage } from '../src/lib/fleet/fuel.ts';
 import { pickOdometer } from '../src/lib/fleet/ocr.ts';
+import { shortPlace } from '../src/lib/fleet/places.ts';
 import { buildPaymentReport } from '../src/lib/fleet/reports.ts';
 import { DEFAULT_FLEET_SETTINGS, categoryFromType, normaliseFleetSettings, normaliseVehicle, serviceDueInKm } from '../src/lib/fleet/settings.ts';
 import { legacyTripStatus, stripUndefined } from '../src/lib/fleet/types.ts';
@@ -419,4 +420,14 @@ test('legacy status and undefined stripping', () => {
   assert.equal(legacyTripStatus('paused'), 'In Progress');
   assert.equal(legacyTripStatus('pending_review'), 'Completed');
   assert.deepEqual(stripUndefined({ a: 1, b: undefined, c: [{ d: undefined, e: 2 }] }), { a: 1, c: [{ e: 2 }] });
+});
+
+/* ── places ────────────────────────────────────────────────────────────── */
+
+test('a list shows the locality, not the whole reverse-geocoded address', () => {
+  assert.equal(shortPlace('7RM5+R46, Gopabandhu Nagar, Bhubaneswar, Odisha 751003, India'), 'Gopabandhu Nagar, Bhubaneswar');
+  assert.equal(shortPlace('1015/433, Nilakantha Nagar, Nayapalli, Bhubaneswar, Odisha 751012, India'), 'Nilakantha Nagar, Nayapalli');
+  assert.equal(shortPlace('Head office'), 'Head office');
+  assert.equal(shortPlace('Odisha 751003, India'), 'Odisha 751003, India', 'nothing left: keep the original');
+  assert.equal(shortPlace(''), '');
 });

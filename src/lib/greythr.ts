@@ -4226,6 +4226,63 @@ export function buildCategoryIdMaps(lov: GreytHRLovResponse | null | undefined):
   return { categoryIdByName, categoryNameById, valueNamesByCategory, valueIdsByCategory };
 }
 
+/** One category value recovered from the employees who hold it. */
+export interface DerivedCategoryValue {
+  type: string;
+  id: string;
+  name: string;
+  /** How many employees hold it — a value on nobody is not evidence of a master entry. */
+  employees: number;
+}
+
+/**
+ * The category masters greytHR will not publish, rebuilt from employees’ own assignments.
+ *
+ * `/hr/v2/lov` answers for five categories on this tenant — Designation, Department, Location,
+ * Grade and Shift — and simply omits the rest. Measured, not assumed: asking it for all eleven
+ * names in `GREYTHR_CATEGORY` returns five keys and no error for the six missing ones, and the
+ * counts it does return match greytHR’s own screen exactly (Designation 140, Department 10,
+ * Location 54, Grade 20, Shift 7).
+ *
+ * Those six are not absent from greytHR, though — Project Name, Cost Center and the others appear
+ * on every employee’s position history, which this integration already fetches. So the values are
+ * recoverable from the people who hold them, which is what this does.
+ *
+ * ── What a derived master is not ───────────────────────────────────────────────────────────────
+ *
+ * It holds only values somebody is assigned to. A project with no staff on it, or a cost centre
+ * created last week, will not appear until it has an employee — so this is ‘in use’, not ‘defined
+ * in greytHR’. The two are different claims and the screen must not present the second.
+ *
+ * A type the LOV does publish is skipped entirely: there the LOV is authoritative precisely
+ * because it includes values nobody holds yet.
+ */
+export function deriveCategoryValuesFromEmployees(
+  rows: GreytHRCategoryRow[],
+  publishedTypes: Iterable<string>,
+): DerivedCategoryValue[] {
+  const published = new Set([...publishedTypes]);
+  const found = new Map<string, DerivedCategoryValue>();
+
+  for (const row of rows ?? []) {
+    for (const entry of row?.categoryList ?? []) {
+      const type = text(entry?.categoryDesc);
+      const name = text(entry?.valueDesc);
+      const id = text(entry?.value);
+      // Every part is needed: an entry naming a category but no value describes nothing, and one
+      // with no id cannot be given the deterministic document id the masters are keyed by.
+      if (!type || !name || !id || published.has(type)) continue;
+
+      const key = `${type}::${id}`;
+      const existing = found.get(key);
+      if (existing) existing.employees += 1;
+      else found.set(key, { type, id, name, employees: 1 });
+    }
+  }
+
+  return [...found.values()];
+}
+
 /**
  * The document id for one value of the category master — `Designation_47`.
  *

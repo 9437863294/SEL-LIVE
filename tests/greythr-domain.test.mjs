@@ -77,6 +77,7 @@ import {
   normalizeSyncSettings,
   observedTickGapMinutes,
   tickCadenceWarning,
+  deriveCategoryValuesFromEmployees,
   describeRefreshPlan,
   effectiveRefreshPlan,
   hasOwnRefreshPlan,
@@ -2993,4 +2994,69 @@ test('no warning when the caller keeps up, or for an hourly schedule', () => {
   assert.equal(tickCadenceWarning('Daily', 60), null);
   // And nothing is claimed when the history is too thin to measure.
   assert.equal(tickCadenceWarning('Every 5 minutes', null), null);
+});
+
+
+/* ------------------------------------------------------------------------------------------------
+ * Category masters the LOV will not publish
+ * ---------------------------------------------------------------------------------------------- */
+
+const categoryRow = (employeeId, entries) => ({ employeeId, categoryList: entries });
+const entry = (categoryDesc, value, valueDesc) => ({ categoryDesc, value, valueDesc });
+
+test('a category the LOV omits is rebuilt from the employees holding it', () => {
+  // Measured against the live tenant: /hr/v2/lov answers for five categories and omits
+  // Project Name, Cost Center and the rest — which every employee’s position history carries.
+  const rows = [
+    categoryRow(1, [entry('Project Name', 11, 'HEAD OFFICE')]),
+    categoryRow(2, [entry('Project Name', 12, 'TOWER II')]),
+  ];
+  const derived = deriveCategoryValuesFromEmployees(rows, ['Department']);
+  assert.deepEqual(derived.map((value) => value.name).sort(), ['HEAD OFFICE', 'TOWER II']);
+  assert.equal(derived[0].type, 'Project Name');
+});
+
+test('a published category is left to the LOV, which knows the unused values too', () => {
+  const rows = [categoryRow(1, [entry('Department', 3, 'FINANCE')])];
+  assert.deepEqual(deriveCategoryValuesFromEmployees(rows, ['Department']), []);
+});
+
+test('the same value held by several people is one master entry, counted', () => {
+  const rows = [
+    categoryRow(1, [entry('Cost Center', 7, 'HO')]),
+    categoryRow(2, [entry('Cost Center', 7, 'HO')]),
+    categoryRow(3, [entry('Cost Center', 7, 'HO')]),
+  ];
+  const derived = deriveCategoryValuesFromEmployees(rows, []);
+  assert.equal(derived.length, 1);
+  assert.equal(derived[0].employees, 3);
+});
+
+test('two categories sharing a value id stay separate', () => {
+  // Ids are only unique within a category, so keying on the id alone would merge them.
+  const rows = [
+    categoryRow(1, [entry('Cost Center', 1, 'HO'), entry('COST CENTER CODE', 1, 'HEAD OFFICE')]),
+  ];
+  const derived = deriveCategoryValuesFromEmployees(rows, []);
+  assert.equal(derived.length, 2);
+  assert.deepEqual(derived.map((value) => value.type).sort(), ['COST CENTER CODE', 'Cost Center']);
+});
+
+test('an entry missing a name, an id or a category is skipped', () => {
+  // Each part is needed: no id means no deterministic document id to key the master by.
+  const rows = [
+    categoryRow(1, [
+      entry('Project Name', 11, null),
+      entry('Project Name', null, 'NO ID'),
+      entry(null, 12, 'NO CATEGORY'),
+      entry('Project Name', 13, 'GOOD'),
+    ]),
+  ];
+  const derived = deriveCategoryValuesFromEmployees(rows, []);
+  assert.deepEqual(derived.map((value) => value.name), ['GOOD']);
+});
+
+test('no employees means no derived masters, not a throw', () => {
+  assert.deepEqual(deriveCategoryValuesFromEmployees([], []), []);
+  assert.deepEqual(deriveCategoryValuesFromEmployees([categoryRow(1, null)], []), []);
 });

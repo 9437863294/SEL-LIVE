@@ -41,6 +41,15 @@ interface Category {
   id: number;
   name: string;
   type: string;
+  /**
+   * Where the value came from.
+   *
+   * `lov` is a master greytHR publishes, so it includes values nobody holds yet. `employees` is
+   * rebuilt from the people assigned to it, because `/hr/v2/lov` answers for only five of this
+   * tenant’s eleven categories — see `deriveCategoryValuesFromEmployees`. Absent on anything
+   * written before the distinction existed, which the screen reads as `lov`.
+   */
+  source?: 'lov' | 'employees';
 }
 
 /** One value of a category type. */
@@ -68,12 +77,25 @@ export default function ManageCategoryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const [categoriesByType, setCategoriesByType] = useState<Record<string, Category[]>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  /** Types greytHR will not publish a master for, rebuilt from who holds them. */
+  const [derivedTypes, setDerivedTypes] = useState<ReadonlySet<string>>(new Set());
+  /**
+   * Whether the first read has come back — not whether anything is loading.
+   *
+   * `isLoading` below is derived from it. Storing the loading flag meant the effect had to set
+   * it on both paths — `setIsLoading(true)` at the top of the fetch and `setIsLoading(false)`
+   * for a viewer without permission — and both ran synchronously inside the effect body, which
+   * is the cascading render React warns about. Derived, there is nothing to set: no permission
+   * means nothing to wait for.
+   */
+  const [hasLoaded, setHasLoaded] = useState(false);
+  /** A reload the user asked for. Separate, so it spins the button without blanking the list. */
+  const [isReloading, setIsReloading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  /** Which type's values are on the right. Falls back to the first available — see the effect below. */
-  const [selectedType, setSelectedType] = useState<string>('');
+  /** What the user last clicked. The type actually shown is resolved from it — see below. */
+  const [chosenType, setChosenType] = useState<string>('');
   /** When the mirror was last written, and by which flow — see the file header. */
   const [lastSynced, setLastSynced] = useState<{ at: Date; successful: boolean } | null>(null);
 
@@ -81,7 +103,6 @@ export default function ManageCategoryPage() {
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
 
   const fetchCategories = useCallback(async () => {
-    setIsLoading(true);
     setLoadError(null);
     try {
       const q = query(collection(db, 'categories'), orderBy('type'));
@@ -122,6 +143,14 @@ export default function ManageCategoryPage() {
       }
 
       setCategoriesByType(grouped);
+      // A type is derived when nothing in it came from the published master.
+      setDerivedTypes(
+        new Set(
+          Object.entries(grouped)
+            .filter(([, list]) => list.length > 0 && list.every((item) => item.source === 'employees'))
+            .map(([type]) => type),
+        ),
+      );
 
       if (syncDoc?.exists()) {
         const data = syncDoc.data();
@@ -143,17 +172,19 @@ export default function ManageCategoryPage() {
           : error?.message || 'Failed to fetch categories.',
       );
     }
-    setIsLoading(false);
+    setHasLoaded(true);
+    setIsReloading(false);
   }, []);
 
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (canView) {
-      void fetchCategories();
-    } else {
-      setIsLoading(false);
-    }
+    // Only the fetch, and only when there is one to do. The no-permission case needs no state
+    // change at all now that loading is derived.
+    if (isAuthLoading || !canView) return;
+    void fetchCategories();
   }, [isAuthLoading, canView, fetchCategories]);
+
+  // Nothing to wait for without permission, and nothing to wait for once the read has returned.
+  const isLoading = isAuthLoading || (canView && !hasLoaded);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -167,6 +198,7 @@ export default function ManageCategoryPage() {
           title: 'Sync Successful',
           description: `Synced: ${countSummary || 'No new data.'}`,
         });
+        setIsReloading(true);
         void fetchCategories(); // Refresh the list
       } else {
         throw new Error(result.message);
@@ -235,13 +267,15 @@ export default function ManageCategoryPage() {
    * shows values for a type the reader can no longer see. Falls forward to the first type that does
    * match, which is also what makes a search land on its own first result.
    */
-  useEffect(() => {
-    if (!railTypes.length) {
-      if (selectedType) setSelectedType('');
-      return;
-    }
-    if (!railTypes.includes(selectedType)) setSelectedType(railTypes[0]);
-  }, [railTypes, selectedType]);
+  /*
+    Resolved, not synchronised.
+
+    This was an effect writing `setSelectedType` — a synchronous setState in an effect body, the
+    cascading render React warns about, and it rendered one frame with a stale selection before
+    correcting itself. Derived, the right type is correct on the first render and the state holds
+    only what the user actually clicked.
+  */
+  const selectedType = railTypes.includes(chosenType) ? chosenType : railTypes[0] ?? '';
 
   const selectedValues = visibleRowsByType[selectedType] ?? [];
   const selectedTotal = categoriesByType[selectedType]?.length ?? 0;
@@ -319,7 +353,7 @@ export default function ManageCategoryPage() {
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Tags className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{loadError}</p>
-            <Button size="sm" onClick={() => void fetchCategories()}>Try again</Button>
+            <Button size="sm" disabled={isReloading} onClick={() => { setIsReloading(true); void fetchCategories(); }}>Try again</Button>
           </CardContent>
         </Card>
       ) : types.length === 0 ? (
@@ -386,7 +420,7 @@ export default function ManageCategoryPage() {
                       <button
                         key={type}
                         type="button"
-                        onClick={() => setSelectedType(type)}
+                        onClick={() => setChosenType(type)}
                         aria-current={isActive ? 'true' : undefined}
                         className={cn(
                           'group flex shrink-0 items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition-colors lg:w-full',
@@ -396,6 +430,20 @@ export default function ManageCategoryPage() {
                         )}
                       >
                         <span className="min-w-0 flex-1 truncate font-medium">{type}</span>
+                        {derivedTypes.has(type) && (
+                          // Not the same claim as the published lists beside it: this one holds
+                          // only values somebody is assigned to, so a project with no staff is
+                          // missing rather than absent from greytHR.
+                          <span
+                            className={cn(
+                              'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                              isActive ? 'bg-white/20 text-white' : 'bg-amber-50 text-amber-700',
+                            )}
+                            title="greytHR does not publish a master list for this category, so it is built from the employees assigned to each value — values nobody holds will not appear."
+                          >
+                            in use
+                          </span>
+                        )}
                         <span
                           className={cn(
                             'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',

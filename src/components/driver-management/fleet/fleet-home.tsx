@@ -123,8 +123,8 @@ export default function FleetHome() {
   const today = claims.data?.today ?? data.today;
   const rules = claims.data?.settings.rules;
   const unclaimed = rules ? myTrips.filter((trip) => isClaimable(trip, today, rules)) : [];
-  const ownBlocked = rules && !rules.allowOwnVehicle ? 'Own-vehicle trips are switched off in Trip Settings › Rules.' : null;
-  const companyBlocked = !data.canDrive ? 'Company vehicles are driven by Driver Master drivers — ask the fleet office to add you.' : !data.vehicles.length ? 'Vehicle Master has no active vehicles yet.' : null;
+  const ownBlocked = rules && !rules.allowOwnVehicle ? 'Own vehicle: switched off in Trip Settings.' : null;
+  const companyBlocked = !data.canDrive ? 'Company vehicle: for Driver Master drivers — ask the fleet office.' : !data.vehicles.length ? 'Company vehicle: none in Vehicle Master yet.' : null;
 
   const openStart = (initial: Partial<StartValues>) => {
     openings.current += 1;
@@ -164,18 +164,18 @@ export default function FleetHome() {
   const header = (
     <PageHeader
       title="Fleet Trip"
-      description="Record every official trip by GPS — in your own vehicle (claimed at the per-km rate) or a company vehicle (billed to the project)."
+      description="Record every official trip by GPS — your own vehicle or a company vehicle."
       icon={Truck}
       actions={
         <>
-          <Button type="button" variant="outline" onClick={() => reload()} disabled={loading}>
-            <RefreshCw className={cn('mr-2 h-4 w-4', loading && 'animate-spin')} aria-hidden />
-            Refresh
+          {/* Square on a phone too (`size="icon"` keeps its width in the header's action row). */}
+          <Button type="button" variant="outline" size="icon" onClick={() => reload()} disabled={loading} aria-label="Refresh" title="Refresh">
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
           </Button>
           <Button type="button" variant="outline" asChild>
             <Link href="/driver-management/my-trips">
               <Route className="mr-2 h-4 w-4" aria-hidden />
-              My Trips &amp; claims
+              My Trips
             </Link>
           </Button>
         </>
@@ -204,18 +204,20 @@ export default function FleetHome() {
         />
       ) : ownRecording ? null : (
         <>
-          <Card className="w-full overflow-hidden border-primary/20 bg-gradient-to-br from-white to-primary/5">
-            <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-              <div className="flex min-w-0 items-start gap-3">
+          {/* A phone gets the one thing it is opened for: a big Start button, thumb-high. */}
+          <Button type="button" className={cn(VM_PRIMARY_BUTTON, 'h-14 w-full rounded-2xl text-base font-semibold shadow-sm sm:hidden')} onClick={() => setChoosing(true)}>
+            <Navigation className="mr-2 h-5 w-5" aria-hidden />
+            Start a trip
+          </Button>
+          <Card className="hidden w-full overflow-hidden border-primary/20 bg-gradient-to-br from-white to-primary/5 sm:block">
+            <CardContent className="flex items-center justify-between gap-4 p-5">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Navigation className="h-5 w-5" aria-hidden />
                 </span>
-                <div className="min-w-0">
-                  <p className="text-base font-semibold text-slate-800">Record a trip</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Drive &amp; record by GPS. You&apos;ll be asked whether it&apos;s your own vehicle or a company vehicle.</p>
-                </div>
+                <p className="text-base font-semibold text-slate-800">Record a trip</p>
               </div>
-              <Button type="button" size="lg" className={cn(VM_PRIMARY_BUTTON, 'w-full shrink-0 sm:w-auto')} onClick={() => setChoosing(true)}>
+              <Button type="button" size="lg" className={cn(VM_PRIMARY_BUTTON, 'shrink-0')} onClick={() => setChoosing(true)}>
                 <Navigation className="mr-2 h-4 w-4" aria-hidden />
                 Start a trip
               </Button>

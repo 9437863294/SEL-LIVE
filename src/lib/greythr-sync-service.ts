@@ -34,6 +34,7 @@ import {
   GREYTHR_MIRROR_VERSION,
   buildAttendanceSummary,
   buildCategoryIdMaps,
+  deriveCategoryValuesFromEmployees,
   buildLeaveBalance,
   categoryDocId,
   currentAttendancePeriod,
@@ -982,9 +983,46 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
         for (const [valueId, valueName] of Object.entries(valuesById)) {
           categoryWrites.push({
             id: categoryDocId(categoryName, valueId),
-            data: { id: Number(valueId), name: valueName, type: categoryName, syncedAt: startedAt },
+            data: {
+              id: Number(valueId),
+              name: valueName,
+              type: categoryName,
+              // Published by the LOV, so this list includes values nobody holds yet.
+              source: 'lov',
+              syncedAt: startedAt,
+            },
           });
         }
+      }
+
+      /*
+        The six categories the LOV will not answer for.
+
+        Project Name, Project Division, Cost Center, COST CENTER CODE, EMPLOYEE TYPE and Company
+        are absent from `/hr/v2/lov` on this tenant — it returns five keys and no error for the
+        rest — yet every one of them appears on employees’ position history, which this run has
+        already fetched. Rebuilding them from there is the only way the Category screen can show
+        what greytHR plainly holds.
+
+        Marked `employees` so the screen can say what it is: values in use, not a defined master.
+        A project with nobody on it cannot appear, and presenting it as the full list would be a
+        claim this data cannot support.
+      */
+      for (const derived of deriveCategoryValuesFromEmployees(
+        categoryResult.rows,
+        Object.keys(maps.valueNamesByCategory),
+      )) {
+        categoryWrites.push({
+          id: categoryDocId(derived.type, derived.id),
+          data: {
+            id: Number(derived.id),
+            name: derived.name,
+            type: derived.type,
+            source: 'employees',
+            employeesHolding: derived.employees,
+            syncedAt: startedAt,
+          },
+        });
       }
     }
 
