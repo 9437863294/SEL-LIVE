@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Link2, Loader2, Users, X } from 'lucide-react';
+import { AlertTriangle, Link2, Loader2, Sparkles, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/shared/filter-bar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +35,8 @@ interface LinkRow {
   name: string;
   employees: number;
   projectIds: string[];
+  /** Projects the value's name plainly matches, while it is unlinked: one tap to accept. */
+  suggestedIds?: string[];
   updatedAt: string | null;
   updatedByName: string | null;
 }
@@ -129,18 +131,45 @@ export function ProjectLinksPanel({
   );
   const unlinkedWithStaff = (data?.rows ?? []).filter((row) => row.projectIds.length === 0 && row.employees > 0).length;
   const linked = (data?.rows ?? []).filter((row) => row.projectIds.length > 0).length;
+  const suggested = (data?.rows ?? []).filter((row) => row.projectIds.length === 0 && row.suggestedIds?.length);
+
+  /** One row's link, saved; the error is the caller's to report. */
+  async function persist(row: LinkRow, projectIds: string[]) {
+    const result = await call<{ row: Pick<LinkRow, 'id' | 'projectIds' | 'updatedAt' | 'updatedByName'> }>(`project-links/${encodeURIComponent(row.id)}`, { method: 'PUT', body: { projectIds } });
+    setData((current) => (current ? { ...current, rows: current.rows.map((entry) => (entry.id === row.id ? { ...entry, ...result.row } : entry)) } : current));
+  }
 
   async function save(row: LinkRow, projectIds: string[]) {
     setSaving(row.id);
     try {
-      const result = await call<{ row: Pick<LinkRow, 'id' | 'projectIds' | 'updatedAt' | 'updatedByName'> }>(`project-links/${encodeURIComponent(row.id)}`, { method: 'PUT', body: { projectIds } });
-      setData((current) => (current ? { ...current, rows: current.rows.map((entry) => (entry.id === row.id ? { ...entry, ...result.row } : entry)) } : current));
+      await persist(row, projectIds);
       toast({ title: projectIds.length ? 'Project linked' : 'Link removed', description: row.name });
     } catch (failure) {
       toast({ variant: 'destructive', title: 'Not saved', description: failure instanceof Error ? failure.message : 'Try again.' });
     } finally {
       setSaving(null);
     }
+  }
+
+  /** Accept every name-match suggestion — one save per value, as if each were tapped, with one toast. */
+  async function linkAllSuggested() {
+    setSaving('__all__');
+    let done = 0;
+    let failed = 0;
+    for (const row of suggested) {
+      try {
+        await persist(row, row.suggestedIds ?? []);
+        done += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setSaving(null);
+    toast({
+      variant: failed ? 'destructive' : undefined,
+      title: `${done} ${done === 1 ? 'value' : 'values'} linked by name`,
+      description: failed ? `${failed} could not be saved — try them one by one.` : 'The rest need linking by hand.',
+    });
   }
 
   if (error) {
@@ -200,6 +229,12 @@ export function ProjectLinksPanel({
           </Link>
           . An employee&apos;s trips then start from their own project. {linked} of {data.rows.length} linked.
         </p>
+        {data.canEdit && suggested.length > 0 && (
+          <button type="button" onClick={() => void linkAllSuggested()} disabled={saving !== null} className="inline-flex items-center gap-1 rounded-md bg-teal-600 px-2 py-1 font-medium text-white hover:bg-teal-700 disabled:opacity-60">
+            {saving === '__all__' ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Sparkles className="h-3.5 w-3.5" aria-hidden />}
+            Link {suggested.length} matching {suggested.length === 1 ? 'name' : 'names'}
+          </button>
+        )}
         {unlinkedWithStaff > 0 && (
           <button type="button" onClick={() => setOnlyUnlinked((current) => !current)} className={cn('inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium', onlyUnlinked ? 'bg-amber-600 text-white' : 'bg-amber-100 text-amber-800 hover:bg-amber-200')}>
             <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
@@ -243,6 +278,20 @@ export function ProjectLinksPanel({
                     </span>
                   ))}
                   {!chosen.length && !data.canEdit && <span className="text-xs text-muted-foreground">Not linked</span>}
+                  {/* Same name as a project: offered, never linked by itself. */}
+                  {!chosen.length && data.canEdit && (row.suggestedIds ?? []).map((id) => projectsById.get(id)).filter((project): project is ProjectOption => Boolean(project)).map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => void save(row, [project.id])}
+                      disabled={busy || saving !== null}
+                      className="inline-flex max-w-full items-center gap-1 rounded-full border border-dashed border-teal-300 bg-white py-0.5 pl-2 pr-2.5 text-xs text-teal-800 hover:bg-teal-50 disabled:opacity-50"
+                      title="Same name as this project — tap to link"
+                    >
+                      <Sparkles className="h-3 w-3 shrink-0" aria-hidden />
+                      <span className="truncate">Link {project.code ? `${project.code} · ${project.name}` : project.name}?</span>
+                    </button>
+                  ))}
                   {data.canEdit && (
                     <div className="w-full min-w-0 sm:w-64">
                       <SearchSelect options={available} value={null} onChange={(projectId) => projectId && void save(row, [...row.projectIds, projectId])} placeholder={chosen.length ? 'Add another project' : 'Link a project…'} disabled={busy || !available.length} emptyText="No project matches." />

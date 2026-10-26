@@ -110,6 +110,7 @@ export function OverLimitDialog({
       open={open}
       onOpenChange={(next) => !submitting && onOpenChange(next)}
       size="md"
+      sheet
       title={`${state.vehicleNumber || 'This vehicle'} is over its limit`}
       description={`${formatKm(limit.remainingKm)} left today — this trip needs approval first.`}
       onSubmit={submit}

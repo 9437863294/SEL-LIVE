@@ -6,10 +6,11 @@
  *
  * The date is today and not editable (a trip is dated by when it is driven), and the starting place
  * fills itself from the phone and stays editable. The vehicle is the employee's own: one tap on a
- * vehicle from their earlier trips, or its type (with the rate card's per-km rate beside it) and
- * registration. Then what the trip is for, the project (their own first — Employee › Category), and
- * the opening odometer when Trip rules require readings. The route records as they drive; Stop &
- * review (own-review-dialog.tsx) prices it and saves it to My Trips, ready to claim.
+ * vehicle from their earlier trips, or its type and registration. Then what the trip is for, the
+ * project (their own first — Employee › Category), and the opening odometer when Trip rules require
+ * readings. No price is shown here — the rate is not what a vehicle is chosen for. The route records
+ * as they drive; Stop & review (own-review-dialog.tsx) prices it and saves it to My Trips, ready to
+ * claim.
  *
  * It replaced the old "Start a GPS trip" mode of the full trip form, which asked for a trip the way
  * an office form does — every field of a finished trip, most of them disabled.
@@ -23,8 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { FormDialog } from '@/components/shared/form-dialog';
 import { placeName } from '@/components/driver-management/fleet/start-helpers';
 import { shortDateLabel } from '@/lib/fleet/dates';
-import { projectChoices } from '@/lib/employee-projects/links';
-import { ownVehicleTypes, rateFor } from '@/lib/employee-trips/rates';
+import { projectChoices, projectGroup } from '@/lib/employee-projects/links';
+import { ownVehicleTypes } from '@/lib/employee-trips/rates';
 import { normaliseVehicleNumber, type TripRecord } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
 import type { Bootstrap } from './trip-api';
@@ -111,7 +112,6 @@ export function OwnStartDialog({
   }
 
   const types = useMemo(() => ownVehicleTypes(data.settings.rateRevisions, today, data.vehicleTypes), [data.settings.rateRevisions, data.vehicleTypes, today]);
-  const rate = vehicleType ? rateFor(data.settings.rateRevisions, today, vehicleType, 'own').ratePerKm : null;
   const number = normaliseVehicleNumber(vehicleNumber);
   // The vehicle's last closing reading, offered as this trip's opening one.
   const lastReading = number ? myTrips.find((trip) => trip.vehicleNumber === number && trip.endOdometer !== null)?.endOdometer ?? null : null;
@@ -149,8 +149,10 @@ export function OwnStartDialog({
       open={open}
       onOpenChange={(next) => !starting && onOpenChange(next)}
       size="lg"
-      title="Start a GPS trip"
-      description="Own vehicle: say what the trip is for. The route records as you drive — claimed at the per-km rate."
+      sheet
+      title="Start a trip"
+      // The date is today and not editable — said here rather than in a disabled field.
+      description={`Own vehicle · Today, ${shortDateLabel(today, today)} · claimed per km`}
       onSubmit={() => submit()}
       submitting={starting}
       submitLabel={starting ? 'Finding you…' : 'Start recording'}
@@ -190,7 +192,6 @@ export function OwnStartDialog({
               {types.map((option) => (
                 <SelectItem key={option.type} value={option.type}>
                   {option.type}
-                  {option.rate !== null ? ` — ₹${option.rate}/km` : ' — no rate set'}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -200,10 +201,7 @@ export function OwnStartDialog({
           <Input id="own-start-number" value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value.toUpperCase())} maxLength={15} placeholder="e.g. OD02AB1234" autoCapitalize="characters" className="bg-white" />
         </Field>
 
-        <Field label="Date" htmlFor="own-start-date" hint="A GPS trip is dated by when it is driven.">
-          <Input id="own-start-date" value={`Today, ${shortDateLabel(today, today)}`} disabled readOnly className="bg-white" />
-        </Field>
-        <Field label="Starting from" htmlFor="own-start-place" hint={locating ? 'Finding where you are…' : 'Filled from your location — change it if it is wrong.'}>
+        <Field label="Starting from" htmlFor="own-start-place" className="sm:col-span-2" hint={locating ? 'Finding where you are…' : 'From your location — change it if it is wrong.'}>
           <div className="flex min-w-0 gap-2">
             <Input id="own-start-place" value={fromPlace} onChange={(event) => setFromPlace(event.target.value)} maxLength={200} placeholder={locating ? 'Locating…' : 'Where the trip starts'} className="min-w-0 flex-1 bg-white" />
             <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => void locateHere()} disabled={locating || starting} aria-label="Use my current location" title="Use my current location">
@@ -218,7 +216,7 @@ export function OwnStartDialog({
 
         <Field label="Project" required={rules.requireProject} error={shown.projectId}>
           <SearchSelect
-            options={projectPick.options.map((project) => ({ value: project.id, label: project.name, hint: project.mine ? 'Your project' : undefined }))}
+            options={projectPick.options.map((project, _, all) => ({ value: project.id, label: project.name, group: projectGroup(project.mine, all.some((entry) => entry.mine)) }))}
             value={projectId}
             onChange={setProjectId}
             placeholder={rules.requireProject ? 'Choose project' : 'Head office / none'}
@@ -247,9 +245,9 @@ export function OwnStartDialog({
         )}
       </div>
 
-      <p className="rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-900">
-        {rate !== null ? `₹${rate} per km for a ${vehicleType.toLowerCase()} — ` : vehicleType ? 'No per-km rate is set for this vehicle type yet — ' : ''}
-        the amount is worked out from the distance when you stop, and the trip goes to My Trips to claim.
+      {/* No money at the start: the amount is worked out, and shown, at Stop & review. */}
+      <p className="rounded-xl border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-900">
+        The amount is worked out from the distance when you stop, and the trip goes to My Trips to claim.
       </p>
     </FormDialog>
   );

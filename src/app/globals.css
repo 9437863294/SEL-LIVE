@@ -2319,3 +2319,103 @@ html[data-contrast='high'] .tabs-indicator {
     animation: none;
   }
 }
+
+/* ── Sheet dialogs (FormDialog `sheet`, the trip start / stop screens) ─────────────────────────
+   On a phone the dialog rises from the bottom as a sheet: full width, a rounded top, a grab handle,
+   and fields and buttons a thumb can hit — the look of the bottom bar's More sheet. From sm up it
+   stays the centred dialog, with rounder corners. The [data-window] attribute (always present)
+   lifts these above ui-design.css's maximised window, so a phone sheet stays a sheet. */
+/* Above the dialog's own sm:rounded-lg. */
+[data-slot='dialog-content'].sel-sheet-dialog {
+  border-radius: 1.25rem;
+}
+.sel-sheet-handle {
+  display: none;
+}
+.sel-sheet-dialog :is(input:not([type='checkbox']):not([type='radio']):not([type='file']), textarea, [role='combobox']) {
+  border-radius: 0.75rem;
+}
+.sel-sheet-dialog [data-slot='dialog-footer'] button {
+  border-radius: 0.75rem;
+}
+
+@media (max-width: 639.98px) {
+  [data-slot='dialog-content'].sel-sheet-dialog[data-window] {
+    inset: auto 0 0 0;
+    --tw-translate-x: 0;
+    --tw-translate-y: 0;
+    translate: none;
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    border-width: 1px 0 0;
+    border-radius: 1.75rem 1.75rem 0 0;
+    padding: 0.5rem 1rem calc(env(safe-area-inset-bottom) + 0.875rem);
+    box-shadow: 0 -12px 40px -16px rgb(15 23 42 / 0.45);
+  }
+  [data-slot='dialog-content'].sel-sheet-dialog[data-state='open'] {
+    animation: sel-sheet-up 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  [data-slot='dialog-content'].sel-sheet-dialog[data-state='closed'] {
+    animation: sel-sheet-down 180ms ease-in forwards;
+  }
+  .sel-sheet-handle {
+    display: block;
+    flex-shrink: 0;
+    width: 2.5rem;
+    height: 0.375rem;
+    margin: 0 auto 0.75rem;
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.25);
+  }
+  /* In a FormDialog the content's gap-4 follows the handle; pull the header back up under it. */
+  .sel-sheet-dialog:not(.gap-0) .sel-sheet-handle {
+    margin-bottom: -0.5rem;
+  }
+  .sel-sheet-dialog [data-slot='dialog-header'] h2 {
+    font-size: 1.125rem;
+  }
+  .sel-sheet-dialog :is(input:not([type='checkbox']):not([type='radio']):not([type='file']), [role='combobox']) {
+    min-height: 2.75rem;
+  }
+  .sel-sheet-dialog [data-slot='dialog-footer'] {
+    gap: 0.5rem;
+  }
+  .sel-sheet-dialog [data-slot='dialog-footer'] button {
+    min-height: 3rem;
+    margin: 0;
+  }
+  .sel-sheet-dialog > [data-slot='dialog-close'] {
+    top: 0.875rem;
+    right: 0.875rem;
+    display: inline-flex;
+    width: 2.25rem;
+    height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background: hsl(var(--muted));
+    opacity: 1;
+  }
+}
+@keyframes sel-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes sel-sheet-down {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='dialog-content'].sel-sheet-dialog[data-state] {
+    animation-duration: 1ms;
+  }
+}

@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { FakeFirestore } from './helpers/fake-firestore.mjs';
-import { employeeCategoryValue, linkedProjectIds, normaliseProjectName, projectAllowed, projectChoices } from '../src/lib/employee-projects/links.ts';
+import { employeeCategoryValue, linkedProjectIds, normaliseProjectName, projectAllowed, projectChoices, projectGroup, suggestedProjectIds } from '../src/lib/employee-projects/links.ts';
 
 globalThis.__db = new FakeFirestore();
 const db = globalThis.__db;
@@ -63,6 +63,24 @@ test("the picker lists the employee's projects first, or only; never leaves some
   assert.equal(projectAllowed(null, ['b'], true), true);
 });
 
+test('a value that plainly names a project is suggested, by name or site code — and nothing looser', () => {
+  const projects = [
+    { id: 'p1', name: 'BOUDH-PHULBANI', code: '' },
+    { id: 'p2', name: 'Head Office', code: 'HO' },
+    { id: 'p3', name: 'Mancheswar', code: 'MCW' },
+  ];
+  assert.deepEqual(suggestedProjectIds('Boudh Phulbani', projects), ['p1']);
+  assert.deepEqual(suggestedProjectIds('ho', projects), ['p2']);
+  assert.deepEqual(suggestedProjectIds('HEAD OFFICE', projects), ['p2']);
+  // A person knows "Head Office Annexe" is Head Office; a comparison does not, so the admin links it.
+  assert.deepEqual(suggestedProjectIds('Head Office Annexe', projects), []);
+  assert.deepEqual(suggestedProjectIds('', projects), []);
+  // The picker groups the employee's own projects only when they have any.
+  assert.equal(projectGroup(true, true), 'Your projects');
+  assert.equal(projectGroup(false, true), 'Other projects');
+  assert.equal(projectGroup(false, false), undefined);
+});
+
 /* ── server ────────────────────────────────────────────────────────────── */
 
 db.seed('categories', 'Project_Name_12', { id: 12, name: 'Infocity Tower', type: 'Project Name' });
@@ -86,6 +104,8 @@ const viewer = actor({ 'Settings.Employee Management': ['View'] });
 test('the category screen lists the greytHR projects with their staff and links', async () => {
   const overview = await projectLinksOverview(viewer);
   assert.deepEqual(overview.rows.map((row) => [row.name, row.employees, row.projectIds.length]), [['HO', 0, 0], ['Infocity Tower', 2, 0]]);
+  // Unlinked, each is offered the project its name (or site code) matches — "Infocity Tower — Block B" is not.
+  assert.deepEqual(overview.rows.map((row) => [row.name, row.suggestedIds]), [['HO', ['p9']], ['Infocity Tower', ['p1']]]);
   assert.equal(overview.canEdit, false);
   assert.equal(overview.projects.length, 3);
   await assert.rejects(projectLinksOverview(actor({})), /Employee Management/);

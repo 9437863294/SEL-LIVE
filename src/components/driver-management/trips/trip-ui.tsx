@@ -117,12 +117,29 @@ export interface PickOption {
   value: string;
   label: string;
   hint?: string;
+  /** A heading the option is listed under ("Your projects"), in the order groups first appear. */
+  group?: string;
 }
 
 /** One value from a long list, searchable — company vehicles, projects. */
 export function SearchSelect({ options, value, onChange, placeholder = 'Choose…', emptyText = 'Nothing matches.', disabled, invalid, allowClear, id }: { options: PickOption[]; value: string | null; onChange: (next: string | null) => void; placeholder?: string; emptyText?: string; disabled?: boolean; invalid?: boolean; allowClear?: boolean; id?: string }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
+  const groups: Array<{ heading: string | undefined; options: PickOption[] }> = [];
+  for (const option of options) {
+    const last = groups[groups.length - 1];
+    if (last && last.heading === option.group) last.options.push(option);
+    else groups.push({ heading: option.group, options: [option] });
+  }
+  const item = (option: PickOption) => (
+    <CommandItem key={option.value} value={`${option.label} ${option.hint ?? ''}`} onSelect={() => { onChange(option.value); setOpen(false); }}>
+      <Check className={cn('mr-2 h-4 w-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')} aria-hidden />
+      <span className="min-w-0">
+        <span className="block truncate text-sm">{option.label}</span>
+        {option.hint && <span className="block truncate text-[11px] text-muted-foreground">{option.hint}</span>}
+      </span>
+    </CommandItem>
+  );
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -131,28 +148,24 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Choose�
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[min(26rem,92vw)] p-0" align="start">
+      <PopoverContent className="w-[min(26rem,92vw)] overflow-hidden rounded-xl p-0 shadow-lg" align="start">
         <Command>
           <CommandInput placeholder="Search…" />
           <CommandList>
             <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {allowClear && value && (
+            {allowClear && value && (
+              <CommandGroup>
                 <CommandItem value="__clear__" onSelect={() => { onChange(null); setOpen(false); }}>
                   <X className="mr-2 h-4 w-4 text-muted-foreground" aria-hidden />
                   Clear
                 </CommandItem>
-              )}
-              {options.map((option) => (
-                <CommandItem key={option.value} value={`${option.label} ${option.hint ?? ''}`} onSelect={() => { onChange(option.value); setOpen(false); }}>
-                  <Check className={cn('mr-2 h-4 w-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')} aria-hidden />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm">{option.label}</span>
-                    {option.hint && <span className="block truncate text-[11px] text-muted-foreground">{option.hint}</span>}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+              </CommandGroup>
+            )}
+            {groups.map((group, index) => (
+              <CommandGroup key={group.heading ?? `group-${index}`} heading={group.heading}>
+                {group.options.map(item)}
+              </CommandGroup>
+            ))}
           </CommandList>
         </Command>
       </PopoverContent>

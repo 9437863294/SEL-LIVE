@@ -31,7 +31,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { CheckCircle2, Navigation, ReceiptText, RefreshCw, Route, Truck } from 'lucide-react';
+import { CheckCircle2, Navigation, ReceiptText, RefreshCw, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
@@ -171,19 +171,12 @@ export default function FleetHome() {
       title="Fleet Trip"
       description="Record every official trip by GPS — your own vehicle or a company vehicle."
       icon={Truck}
+      // My Trips is on the module's own navigation; no second way there from the header.
       actions={
-        <>
-          {/* Square on a phone too (`size="icon"` keeps its width in the header's action row). */}
-          <Button type="button" variant="outline" size="icon" onClick={() => reload()} disabled={loading} aria-label="Refresh" title="Refresh">
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
-          </Button>
-          <Button type="button" variant="outline" asChild>
-            <Link href="/driver-management/my-trips">
-              <Route className="mr-2 h-4 w-4" aria-hidden />
-              My Trips
-            </Link>
-          </Button>
-        </>
+        // Square on a phone too (`size="icon"` keeps its width in the header's action row).
+        <Button type="button" variant="outline" size="icon" onClick={() => reload()} disabled={loading} aria-label="Refresh" title="Refresh">
+          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
+        </Button>
       }
     />
   );

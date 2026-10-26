@@ -150,8 +150,9 @@ export function OwnReviewDialog({
           setConfirmDiscard(true);
         }}
         size="md"
+        sheet
         title={`Stop & review — ${review.vehicleNumber}`}
-        description="Check what was measured, add where it ended, and save it to My Trips to claim."
+        description="Check what was measured and where it ended, then save it to claim."
         onSubmit={() => save()}
         submitting={saving}
         submitLabel="Save trip"

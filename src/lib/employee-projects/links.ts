@@ -98,6 +98,21 @@ export function projectChoices<T extends { id: string }>(projects: readonly T[],
   return { options: [...ownOptions, ...rest], preselect: ownOptions.length === 1 ? ownOptions[0].id : null, restricted };
 }
 
+/** A picker's heading for an option from `projectChoices`: the employee's own listed apart, when they have any. */
+export const projectGroup = (mine: boolean, anyMine: boolean): string | undefined => (anyMine ? (mine ? 'Your projects' : 'Other projects') : undefined);
+
+/**
+ * The app projects a greytHR value plainly names — the same name or site code once case, spacing
+ * and punctuation are ignored ("BOUDH-PHULBANI" and "Boudh Phulbani"). Offered on Employee ›
+ * Category as a link to accept, never applied by itself: "Head Office" and "HO" are the same place
+ * to a person and nothing alike to a comparison, so the admin decides.
+ */
+export function suggestedProjectIds(valueName: string, projects: readonly { id: string; name: string; code?: string }[]): string[] {
+  const wanted = normaliseProjectName(valueName);
+  if (!wanted) return [];
+  return projects.filter((project) => normaliseProjectName(project.name) === wanted || (project.code && normaliseProjectName(project.code) === wanted)).map((project) => project.id);
+}
+
 /** May this employee pick this project? Always, unless their choice is limited and it is not theirs. */
 export function projectAllowed(projectId: string | null, mine: readonly string[], onlyMine: boolean): boolean {
   if (!projectId || !onlyMine || !mine.length) return true;

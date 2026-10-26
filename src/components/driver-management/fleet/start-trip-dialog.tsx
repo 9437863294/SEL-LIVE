@@ -4,10 +4,11 @@
  * Starting a fleet trip: which vehicle, what for, which project, how far, and the odometer — read
  * and photographed.
  *
- * It starts the way a My Trips GPS trip starts ("Drive & record"): the date is today and not
- * editable (a trip is dated by when it is driven), the starting place fills itself from the phone's
- * position and stays editable, and once started the route records live on the same card. Unlike a
- * GPS trip, a company-vehicle trip is not claimable — it is billed to the project.
+ * It starts the way an own-vehicle trip starts (own-start-dialog.tsx), and on a phone it is the same
+ * bottom sheet: the date is today and not editable (a trip is dated by when it is driven, so it is
+ * said in the description, not asked), the starting place fills itself from the phone's position
+ * and stays editable, and once started the route records live on the same card. Unlike an
+ * own-vehicle trip, a company-vehicle trip is not claimable — it is billed to the project.
  *
  * The server decides everything that matters (the vehicle's lock, the odometer against its last
  * reading, the day's km against the limit), so this dialog asks for what only the driver knows and
@@ -25,7 +26,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Camera, Gauge, Loader2, LocateFixed, ScanLine, WifiOff } from 'lucide-react';
+import { Loader2, LocateFixed, ScanLine, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FormDialog } from '@/components/shared/form-dialog';
@@ -36,7 +37,7 @@ import type { FleetBootstrap } from '@/lib/fleet/server/overview';
 import { fleetErrorMessage, newClientId } from '@/components/fleet/fleet-api';
 import { KmLimitMeter, PhotoCapture } from '@/components/fleet/fleet-ui';
 import { Field, SearchSelect } from '@/components/driver-management/trips/trip-ui';
-import { projectChoices } from '@/lib/employee-projects/links';
+import { projectChoices, projectGroup } from '@/lib/employee-projects/links';
 import {
   emptyStartValues,
   ensureUploaded,
@@ -171,7 +172,8 @@ export function StartTripDialog({
     [bootstrap.vehicles, values.vehicleId],
   );
   const purposeOptions = bootstrap.purposes.map((entry) => ({ value: entry.id, label: entry.name, hint: entry.requiresProject ? 'Billed to a project' : undefined }));
-  const projectOptions = projectPick.options.map((project) => ({ value: project.id, label: project.code ? `${project.code} · ${project.name}` : project.name, hint: project.mine ? 'Your project' : undefined }));
+  const anyMine = projectPick.options.some((project) => project.mine);
+  const projectOptions = projectPick.options.map((project) => ({ value: project.id, label: project.code ? `${project.code} · ${project.name}` : project.name, group: projectGroup(project.mine, anyMine) }));
 
   async function submit(choice?: { useOcr?: boolean }) {
     setAttempted(true);
@@ -246,8 +248,10 @@ export function StartTripDialog({
       open={open}
       onOpenChange={(next) => !submitting && onOpenChange(next)}
       size="lg"
-      title="Start a GPS trip"
-      description="Company vehicle: choose it, say what the trip is for and photograph the odometer. The route records as you drive — billed to the project, not claimable."
+      sheet
+      title="Start a trip"
+      // The date is today and not editable — said here rather than in a disabled field.
+      description={`Company vehicle · Today, ${shortDateLabel(bootstrap.today, bootstrap.today)} · billed to the project`}
       onSubmit={() => submit()}
       submitting={submitting}
       submitLabel={step ?? 'Start recording'}
@@ -257,15 +261,12 @@ export function StartTripDialog({
           <SearchSelect options={vehicleOptions} value={values.vehicleId || null} onChange={(value) => set('vehicleId', value ?? '')} placeholder="Choose the vehicle" invalid={Boolean(fieldError('vehicleId'))} />
         </Field>
         {vehicle && (
-          <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+          <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
             <KmLimitMeter usedKm={vehicle.usedTodayKm} allowedKm={vehicle.allowedTodayKm} limitKm={vehicle.dailyKmLimit} expectedKm={toNumber(values.expectedKm) ?? undefined} compact />
           </div>
         )}
 
-        <Field label="Date" htmlFor="fleet-start-date" hint="A GPS trip is dated by when it is driven.">
-          <Input id="fleet-start-date" value={`Today, ${shortDateLabel(bootstrap.today, bootstrap.today)}`} disabled readOnly className="bg-white" />
-        </Field>
-        <Field label="Starting from" htmlFor="fleet-start-place" hint={locatingPlace ? 'Finding where you are…' : 'Filled from your location — change it if it is wrong.'}>
+        <Field label="Starting from" htmlFor="fleet-start-place" className="sm:col-span-2" hint={locatingPlace ? 'Finding where you are…' : 'From your location — change it if it is wrong.'}>
           <div className="flex min-w-0 gap-2">
             <Input id="fleet-start-place" value={values.startPlace} onChange={(event) => set('startPlace', event.target.value)} maxLength={200} placeholder={locatingPlace ? 'Locating…' : 'Where the trip starts'} className="min-w-0 flex-1 bg-white" />
             <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => void locateHere()} disabled={locatingPlace || submitting} aria-label="Use my current location" title="Use my current location">
@@ -286,18 +287,21 @@ export function StartTripDialog({
           </Field>
         )}
 
-        <Field label="Expected distance (km)" required error={fieldError('expectedKm')} htmlFor="fleet-start-expected" hint="There and back, roughly — the daily limit is checked against it.">
-          <Input id="fleet-start-expected" type="number" inputMode="decimal" min="0" step="1" value={values.expectedKm} onChange={(event) => set('expectedKm', event.target.value)} className="bg-white" />
-        </Field>
-        <Field
-          label="Odometer now (km)"
-          required
-          error={fieldError('startOdometerKm')}
-          htmlFor="fleet-start-odometer"
-          hint={vehicle?.currentOdometerKm ? `Last recorded ${Math.round(vehicle.currentOdometerKm).toLocaleString('en-IN')} km` : 'Read it off the dashboard.'}
-        >
-          <Input id="fleet-start-odometer" type="number" inputMode="decimal" min="0" step="0.1" value={values.startOdometerKm} onChange={(event) => set('startOdometerKm', event.target.value)} className="bg-white" />
-        </Field>
+        {/* Two short numbers: side by side even on a phone. */}
+        <div className="grid min-w-0 grid-cols-2 gap-3 sm:col-span-2 sm:gap-4">
+          <Field label="Expected km" required error={fieldError('expectedKm')} htmlFor="fleet-start-expected" hint="There and back, roughly">
+            <Input id="fleet-start-expected" type="number" inputMode="decimal" min="0" step="1" value={values.expectedKm} onChange={(event) => set('expectedKm', event.target.value)} placeholder="e.g. 40" className="bg-white" />
+          </Field>
+          <Field
+            label="Odometer now"
+            required
+            error={fieldError('startOdometerKm')}
+            htmlFor="fleet-start-odometer"
+            hint={vehicle?.currentOdometerKm ? `Last ${Math.round(vehicle.currentOdometerKm).toLocaleString('en-IN')} km` : 'From the dashboard'}
+          >
+            <Input id="fleet-start-odometer" type="number" inputMode="decimal" min="0" step="0.1" value={values.startOdometerKm} onChange={(event) => set('startOdometerKm', event.target.value)} placeholder="km" className="bg-white" />
+          </Field>
+        </div>
 
         <div className="min-w-0 sm:col-span-2">
           <PhotoCapture
@@ -330,24 +334,13 @@ export function StartTripDialog({
         </div>
       )}
 
-      {failure && <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{failure}</p>}
+      {failure && <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">{failure}</p>}
 
-      <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <Camera className="h-3 w-3 shrink-0" aria-hidden />
-          The photo is kept with the trip; the reading is checked against GPS at the end.
-        </span>
-        <span className="flex items-center gap-1.5">
-          <WifiOff className="h-3 w-3 shrink-0" aria-hidden />
-          Starting needs a connection. After that the route records offline and syncs later.
-        </span>
-        {vehicle && (
-          <span className="flex items-center gap-1.5">
-            <Gauge className="h-3 w-3 shrink-0" aria-hidden />
-            {vehicle.vehicleNumber}: {formatKm(Math.max(0, vehicle.allowedTodayKm - vehicle.usedTodayKm))} left today.
-          </span>
-        )}
-      </div>
+      {/* The km left today is on the meter above; the photo's use is in its hint. */}
+      <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+        <WifiOff className="mt-px h-3 w-3 shrink-0" aria-hidden />
+        Starting needs a connection. After that the route records offline and syncs later.
+      </p>
     </FormDialog>
   );
 }

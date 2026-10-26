@@ -23,7 +23,7 @@ import { formatINR, odometerDistance, ownVehicleTypes, priceTrip, rateFor } from
 import { daysLeftToClaim, validateTrip, type TripErrors, type TripInput } from '@/lib/employee-trips/trips';
 import { formatKm, normaliseVehicleNumber, type TripRecord, type VehicleOwnership } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
-import { projectChoices } from '@/lib/employee-projects/links';
+import { projectChoices, projectGroup } from '@/lib/employee-projects/links';
 import { getCurrentDriverPosition } from '@/lib/driver-mobile-geolocation';
 import { TripApiError, errorMessage, reverseGeocode, tripFetch, type Bootstrap } from './trip-api';
 import { Field, Money, SearchSelect } from './trip-ui';
@@ -320,6 +320,7 @@ export function TripFormDialog({
       open={open}
       onOpenChange={onOpenChange}
       size="lg"
+      sheet
       // Wider than `lg` (672px) so the paired fields and both vehicle buttons sit on one line each.
       className="sm:max-w-[min(56rem,95vw)]"
       title={trip ? 'Edit trip' : 'Record a trip'}
@@ -493,7 +494,7 @@ export function TripFormDialog({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Project" required={rules.requireProject} error={liveErrors.projectId}>
-          <SearchSelect options={ownProjects(data).options.map((project) => ({ value: project.id, label: project.name, hint: project.mine ? 'Your project' : undefined }))} value={form.projectId} onChange={(value) => set('projectId', value)} placeholder={rules.requireProject ? 'Choose project' : 'Head office / none'} allowClear invalid={Boolean(liveErrors.projectId)} />
+          <SearchSelect options={ownProjects(data).options.map((project, _, all) => ({ value: project.id, label: project.name, group: projectGroup(project.mine, all.some((entry) => entry.mine)) }))} value={form.projectId} onChange={(value) => set('projectId', value)} placeholder={rules.requireProject ? 'Choose project' : 'Head office / none'} allowClear invalid={Boolean(liveErrors.projectId)} />
         </Field>
         <Field label="Department" error={liveErrors.departmentId}>
           <SearchSelect options={data.departments.map((department) => ({ value: department.id, label: department.name }))} value={form.departmentId} onChange={(value) => set('departmentId', value)} placeholder="Optional" allowClear />

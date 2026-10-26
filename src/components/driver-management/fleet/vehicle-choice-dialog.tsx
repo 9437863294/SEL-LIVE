@@ -76,7 +76,9 @@ export function VehicleChoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="sm" windowControls={false} aria-describedby={undefined} className="gap-0 rounded-2xl sm:rounded-2xl">
+      {/* A bottom sheet on a phone, like the start that follows it (FormDialog `sheet`, globals.css). */}
+      <DialogContent size="sm" windowControls={false} aria-describedby={undefined} className="sel-sheet-dialog gap-0">
+        <div className="sel-sheet-handle" aria-hidden="true" />
         {/* Even padding both sides, so the title sits in the middle despite the close button. */}
         <DialogHeader className="shrink-0 px-8 text-center sm:text-center">
           <DialogTitle className="text-lg">Which vehicle are you using?</DialogTitle>

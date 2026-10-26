@@ -37,6 +37,13 @@ export interface FormDialogProps {
   submitDisabled?: boolean;
   className?: string;
   bodyClassName?: string;
+  /**
+   * On a phone, a sheet that rises from the bottom — rounded top, grab handle, thumb-sized fields
+   * and buttons — instead of a box across the screen; from `sm` up, the centred dialog with rounder
+   * corners. For dialogs used on the move (a trip's start and stop). Styles: `.sel-sheet-dialog`
+   * in globals.css.
+   */
+  sheet?: boolean;
 }
 
 /**
@@ -58,6 +65,7 @@ export function FormDialog({
   submitDisabled = false,
   className,
   bodyClassName,
+  sheet = false,
 }: FormDialogProps) {
   const t = useUiText();
   const design = useCompanyDesign();
@@ -84,6 +92,7 @@ export function FormDialog({
 
   const inner = (
     <>
+      {sheet ? <div className="sel-sheet-handle" aria-hidden="true" /> : null}
       <DialogHeader className="shrink-0 pr-6">
         <DialogTitle>{title}</DialogTitle>
         {description ? <DialogDescription>{description}</DialogDescription> : null}
@@ -95,7 +104,7 @@ export function FormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (submitting && !next ? undefined : onOpenChange(next))}>
-      <DialogContent size={resolvedSize} className={cn('gap-4', className)}>
+      <DialogContent size={resolvedSize} className={cn('gap-4', sheet && 'sel-sheet-dialog', className)}>
         {onSubmit ? (
           <form
             className="flex min-h-0 flex-1 flex-col gap-4"

@@ -28,6 +28,7 @@ import {
   linkCategory,
   linkedProjectIds,
   normaliseProjectName,
+  suggestedProjectIds,
   type EmployeeProjectLink,
 } from './links.ts';
 
@@ -141,6 +142,8 @@ export interface ProjectLinkRow {
   /** Current employees holding this value. */
   employees: number;
   projectIds: string[];
+  /** For an unlinked value: the projects its name plainly matches, offered as a link to accept. */
+  suggestedIds: string[];
   updatedAt: string | null;
   updatedByName: string | null;
 }
@@ -173,12 +176,14 @@ export async function projectLinksOverview(actor: ProjectLinkActor, requested?: 
       const data = doc.data() as Record<string, unknown>;
       const link = byId.get(doc.id);
       const name = String(data.name ?? '').trim();
+      const projectIds = (link?.projectIds ?? []).filter((id) => existing.has(id));
       return {
         id: doc.id,
         valueId: String(data.id ?? ''),
         name,
         employees: counts.get(normaliseProjectName(name)) ?? 0,
-        projectIds: (link?.projectIds ?? []).filter((id) => existing.has(id)),
+        projectIds,
+        suggestedIds: projectIds.length ? [] : suggestedProjectIds(name, projects),
         updatedAt: link?.updatedAt ?? null,
         updatedByName: link?.updatedByName ?? null,
       };

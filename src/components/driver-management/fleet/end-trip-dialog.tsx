@@ -203,8 +203,9 @@ export function EndTripDialog({
       open={open}
       onOpenChange={(next) => !submitting && onOpenChange(next)}
       size="md"
+      sheet
       title={`Stop & review — ${trip.vehicleNumber}`}
-      description="Check what was measured, then read and photograph the odometer as the vehicle stands now."
+      description="Check what was measured, then read and photograph the odometer."
       onSubmit={() => submit()}
       submitting={submitting}
       submitLabel={step ?? 'End trip'}
