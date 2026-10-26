@@ -116,11 +116,12 @@ export function KpiCard({
           )}
         />
       )}
-      <CardContent className="flex items-start gap-3 p-4">
+      {/* The kpi-card-* names are hooks for KpiGrid's narrow layout (globals.css); they style nothing alone. */}
+      <CardContent className="kpi-card-content flex items-start gap-3 p-4">
         {Icon && (
           <span
             className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4',
+              'kpi-card-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4',
               palette.bg,
               palette.ring,
             )}
@@ -129,9 +130,9 @@ export function KpiCard({
           </span>
         )}
         <div className="min-w-0">
-          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="mt-0.5 truncate text-lg font-semibold leading-tight text-slate-800">{value}</p>
-          {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
+          <p className="kpi-card-label truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="kpi-card-value mt-0.5 truncate text-lg font-semibold leading-tight text-slate-800">{value}</p>
+          {hint && <p className="kpi-card-hint mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
         </div>
       </CardContent>
     </Card>
@@ -144,5 +145,18 @@ export function KpiCard({
   ) : (
     body
   );
+}
+
+/**
+ * A row of KPI cards that fits as many to a line as the width allows — three or four on a phone,
+ * the whole group on a desktop — instead of one card per line below `sm`.
+ *
+ * Each card is a size container (`.kpi-grid` in globals.css): one narrower than 11rem turns into a
+ * tile — icon above the text, the label on up to two lines, the figure sized to the card — so four
+ * across a 360px phone still read. A KpiCard anywhere else is unchanged; the narrow layout applies
+ * only inside this grid.
+ */
+export function KpiGrid({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn('kpi-grid grid gap-2 sm:gap-3', className)}>{children}</div>;
 }
 

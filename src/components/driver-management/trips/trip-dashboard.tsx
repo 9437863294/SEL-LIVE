@@ -14,7 +14,7 @@
 import { useRouter } from 'next/navigation';
 import { Banknote, CalendarClock, CircleCheck, Clock, Gauge, Hourglass, Inbox, Navigation, ReceiptText, Route, Undo2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { KpiCard } from '@/components/shared/kpi-card';
+import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { DriverPanel } from '@/components/driver-management/driver-app/driver-panel';
@@ -109,12 +109,12 @@ export default function TripDashboard() {
 
       <section className="space-y-3">
         <SectionHeader title="My trips" icon={Route} />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiGrid>
           <KpiCard label="Unclaimed" value={<Money value={personal.unclaimed.amount} />} hint={`${personal.unclaimed.trips} trips · ${formatKm(personal.unclaimed.km)}`} icon={Wallet} tone={personal.unclaimed.expiringSoon ? 'amber' : 'slate'} accent />
           <KpiCard label="In approval" value={<Money value={personal.inApproval.amount} />} hint={`${personal.inApproval.claims} claim${personal.inApproval.claims === 1 ? '' : 's'}`} icon={Hourglass} tone="amber" accent />
           <KpiCard label="Awaiting payment" value={<Money value={personal.awaitingPayment.amount} />} hint={`${personal.awaitingPayment.claims} claim${personal.awaitingPayment.claims === 1 ? '' : 's'} approved`} icon={CircleCheck} tone="violet" accent />
           <KpiCard label={`Paid in FY ${data.financialYear}`} value={<Money value={personal.paidThisYear.amount} />} hint={`${personal.paidThisYear.claims} claim${personal.paidThisYear.claims === 1 ? '' : 's'} · this month ${formatKm(personal.thisMonth.km)}`} icon={Banknote} tone="emerald" accent />
-        </div>
+        </KpiGrid>
         {(personal.unclaimed.expiringSoon > 0 || personal.unclaimed.sentBack > 0) && (
           <div className="flex flex-col gap-2 sm:flex-row">
             {personal.unclaimed.expiringSoon > 0 && (
@@ -151,11 +151,11 @@ export default function TripDashboard() {
       {workflow && (
         <section className="space-y-3">
           <SectionHeader title="Waiting for you" icon={Inbox} description="Claims at a stage you are named on. Oldest first." />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <KpiGrid>
             <KpiCard label="To approve" value={workflow.approvals} hint={formatINR(workflow.approvalsAmount)} icon={Inbox} tone="amber" accent />
             <KpiCard label="To pay" value={workflow.payments} hint={formatINR(workflow.paymentsAmount)} icon={Banknote} tone="violet" accent />
             <KpiCard label="Past their time" value={workflow.overdue} hint="Waiting longer than the stage allows" icon={Clock} tone={workflow.overdue ? 'rose' : 'slate'} accent />
-          </div>
+          </KpiGrid>
           <ChartCard title="Oldest waiting">
             <ClaimRows rows={workflow.oldest} showEmployee empty="Nothing is waiting for you." />
           </ChartCard>
@@ -165,12 +165,12 @@ export default function TripDashboard() {
       {organisation && (
         <section className="space-y-3">
           <SectionHeader title={`Organisation · FY ${organisation.financialYear}`} icon={Gauge} description="Every employee's claims this financial year." />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiGrid>
             <KpiCard label="In approval" value={formatINRCompact(organisation.inApproval.amount)} hint={`${organisation.inApproval.claims} claims${organisation.overdue ? ` · ${organisation.overdue} overdue` : ''}`} icon={Hourglass} tone="amber" accent />
             <KpiCard label="Awaiting payment" value={formatINRCompact(organisation.awaitingPayment.amount)} hint={`${organisation.awaitingPayment.claims} claims`} icon={CircleCheck} tone="violet" accent />
             <KpiCard label="Paid" value={formatINRCompact(organisation.paid.amount)} hint={`${organisation.paid.claims} claims`} icon={Banknote} tone="emerald" accent />
             <KpiCard label="Not yet claimed" value={formatINRCompact(organisation.unclaimed.amount)} hint={`${organisation.unclaimed.trips} trips recorded, last 6 months`} icon={Wallet} tone="slate" accent />
-          </div>
+          </KpiGrid>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2">
               <ChartCard title="Claimed trips by month" description="Last six months, by trip date, every employee.">

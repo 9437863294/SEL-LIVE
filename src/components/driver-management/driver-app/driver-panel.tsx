@@ -18,7 +18,7 @@ import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
 import { CarFront, Fuel, LocateFixed, RefreshCw, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { KpiCard } from '@/components/shared/kpi-card';
+import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
 import { SectionHeader } from '@/components/shared/page-header';
 import { useFleet } from '@/components/fleet/fleet-provider';
 import { useFleetQuery } from '@/components/fleet/use-fleet-query';
@@ -82,7 +82,7 @@ export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
   return (
     <section className="space-y-3">
       <SectionHeader title="My vehicle & driving" icon={CarFront} description={`${String(driver.driverName || driver.name || 'Driver')} · ${String(driver.mobileNumber || 'no mobile on record')}`} />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <KpiGrid>
         <KpiCard label="Assigned vehicle" value={String(driver.assignedVehicleNumber || 'Not assigned')} icon={CarFront} tone="blue" accent />
         <KpiCard
           label="Fleet trip"
@@ -94,7 +94,7 @@ export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
           accent
         />
         <KpiCard label="Fuel entries" value={fuelLoading ? '…' : String(fuelThisMonth)} hint="This month" icon={Fuel} tone="amber" href="/driver-management/fuel" accent />
-      </div>
+      </KpiGrid>
       {failed && <p className="text-xs text-amber-700">Your driving records could not be loaded just now.</p>}
       {native && (
         <details className="rounded-xl border border-slate-200 bg-white p-3 text-sm">

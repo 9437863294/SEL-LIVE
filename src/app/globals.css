@@ -2419,3 +2419,47 @@ html[data-contrast='high'] .tabs-indicator {
     animation-duration: 1ms;
   }
 }
+
+/* ── KpiGrid (shared/kpi-card.tsx) ─────────────────────────────────────────────────────────────
+   As many KPI cards to a row as fit — a 4.5rem minimum puts four across a 360px phone — and each
+   card a size container, so one narrower than 11rem becomes a tile: icon above the text, the label
+   and hint on up to two lines, the figure shrunk to the card (cqi) so "₹1,23,456" stays on one line. Two-class selectors, because
+   Tailwind's utilities come later in the cascade than this file. Container queries need Chrome 105+
+   (the Windows 7 PCs run 109; the Android WebView updates itself); without them a card keeps its
+   side-by-side layout, only narrower. */
+.kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 4.5rem), 1fr));
+}
+.kpi-grid > * {
+  min-width: 0;
+  container-type: inline-size;
+}
+@container (max-width: 11rem) {
+  .kpi-grid .kpi-card-content {
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.625rem 0.5rem;
+  }
+  .kpi-grid .kpi-card-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+  .kpi-grid .kpi-card-label,
+  .kpi-grid .kpi-card-hint {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    font-size: 0.625rem;
+    line-height: 1.25;
+  }
+  .kpi-grid .kpi-card-label {
+    letter-spacing: 0.02em;
+  }
+  .kpi-grid .kpi-card-value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-size: clamp(0.6875rem, 12.5cqi, 1.125rem);
+    line-height: 1.2;
+  }
+}
