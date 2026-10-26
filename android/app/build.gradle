@@ -28,8 +28,10 @@ android {
         // cut without a commit, while a local build keeps the checked-in values.
         // Assignments, not command calls: `versionCode (x) as Integer` parses as `(versionCode(x)) as Integer`
         // and hands the string to versionCode, which failed the configuration ("Value is null").
-        versionCode = Integer.parseInt(String.valueOf(project.findProperty('versionCodeOverride') ?: '2'))
-        versionName = String.valueOf(project.findProperty('versionNameOverride') ?: '1.1')
+        // Default versionCode is date-based (yyyymmddNN), so a build without overrides is never a
+        // downgrade of an APK already on a phone. 1.2: the native background trip recorder.
+        versionCode = Integer.parseInt(String.valueOf(project.findProperty('versionCodeOverride') ?: '2026102601'))
+        versionName = String.valueOf(project.findProperty('versionNameOverride') ?: '1.2')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
