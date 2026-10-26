@@ -103,6 +103,17 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    // SEL Fleet photos and files: fleet/{odometer|fuel_bill|baseline}/… and fleet/reports/…
+    //
+    // Written and read only by the server (Admin SDK): photos are uploaded through
+    // POST /api/fleet/uploads and shown through GET /api/fleet/uploads/[id], which checks who is
+    // asking (the driver, the record's managers, fleet grants); payment reports download through
+    // /api/fleet/reports. Odometer and bill photos and payment reports are not for any signed-in
+    // user who guesses a path, so the prefix is closed and kept out of the catch-all below.
+    match /fleet/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     // Profile photos: profile-photos/{uid}/{file}, written by Settings → Profile.
     //
     // Only the owner writes their own folder (keyed by auth uid), and only a JPEG, PNG or WebP under
@@ -138,6 +149,7 @@ service firebase.storage {
         && !allPaths.matches('office-hub/.*')
         && !allPaths.matches('mail-hub/.*')
         && !allPaths.matches('bill-tracking/.*')
+        && !allPaths.matches('fleet/.*')
         && !allPaths.matches('branding/.*')
         && !allPaths.matches('profile-photos/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')

@@ -175,7 +175,8 @@ export function VehicleDetailsDialog({
     },
     access.trips && {
       title: 'Trip Logs',
-      href: '/vehicle-management/trips',
+      // The fleet trip register, opened on this vehicle (Trip Management's old page redirects there).
+      href: `/vehicle-management/fleet/trips?vehicleId=${encodeURIComponent(String(vehicle?.id || ''))}`,
       rows: records[VEHICLE_COLLECTIONS.trips] || [],
       dateKeys: ['startTimeIso', 'startDate'],
       detail: (row: Row) => `${row.driverName || '-'} · ${row.startAddress || '-'} → ${row.endAddress || '-'}`,
@@ -200,7 +201,7 @@ export function VehicleDetailsDialog({
       metrics: (row: Row) => `${Number(row.quantityLiters || 0).toFixed(2)} L · ₹${Number(row.totalAmount || 0).toLocaleString('en-IN')} · ${row.mileageKmPerLiter || '-'} km/L`,
       statusKeys: ['fuelStatus'],
     },
-  ].filter(Boolean) as ActivitySection[], [access, records]);
+  ].filter(Boolean) as ActivitySection[], [access, records, vehicle?.id]);
 
   const sectionButtons = useMemo(() => [
     { title: 'All', count: sections.reduce((total, section) => total + section.rows.length, 0) + activitySections.reduce((total, section) => total + section.rows.length, 0) },

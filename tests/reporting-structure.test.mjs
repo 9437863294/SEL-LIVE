@@ -265,3 +265,58 @@ test('a thousand-deep chain does not blow the stack', () => {
   assert.equal(nodeOf(structure, '999').depth, 999);
   assert.equal(nodeOf(structure, '0').totalReportees, 999);
 });
+
+
+/* ------------------------------------------------------------------------------------------------
+ * Branch guides
+ * ---------------------------------------------------------------------------------------------- */
+
+test('the last sibling is marked, so its elbow can close the branch', () => {
+  const structure = buildReportingStructure([person('1'), person('2', '1'), person('3', '1')]);
+  const rows = flattenReportingTree(structure, new Set(['1']));
+  // Children are sorted by name, so 2 then 3.
+  assert.equal(rows[1].isLast, false);
+  assert.equal(rows[2].isLast, true);
+});
+
+test('a column keeps its line while an ancestor still has siblings below', () => {
+  /*
+    1
+    ├─ 2        (not last)
+    │  └─ 4     <- column 0 must still draw a line, because 3 comes after 2
+    └─ 3
+  */
+  const structure = buildReportingStructure([person('1'), person('2', '1'), person('3', '1'), person('4', '2')]);
+  const rows = flattenReportingTree(structure, new Set(['1', '2']));
+  const four = rows.find((row) => row.node.employeeId === '4');
+  assert.equal(four.indent, 2);
+  // `false` means 'that ancestor was not last', i.e. keep drawing the vertical.
+  assert.equal(four.ancestorIsLast[1], false);
+});
+
+test('a column goes blank once its branch is finished', () => {
+  /*
+    1
+    ├─ 2
+    └─ 3        (last)
+       └─ 4     <- column 1 must be blank: nothing follows 3
+  */
+  const structure = buildReportingStructure([person('1'), person('2', '1'), person('3', '1'), person('4', '3')]);
+  const rows = flattenReportingTree(structure, new Set(['1', '3']));
+  const four = rows.find((row) => row.node.employeeId === '4');
+  assert.equal(four.ancestorIsLast[1], true);
+});
+
+test('a guide array is exactly as long as the indent', () => {
+  // One column to draw per level: a mismatch shifts every line sideways.
+  const structure = buildReportingStructure([person('1'), person('2', '1'), person('3', '2'), person('4', '3')]);
+  const rows = flattenReportingTree(structure, new Set(['1', '2', '3']));
+  for (const row of rows) assert.equal(row.ancestorIsLast.length, row.indent, row.node.employeeId);
+});
+
+test('a root has no guides and a lone root is last', () => {
+  const structure = buildReportingStructure([person('1'), person('2', '1')]);
+  const rows = flattenReportingTree(structure, new Set());
+  assert.deepEqual(rows[0].ancestorIsLast, []);
+  assert.equal(rows[0].isLast, true);
+});

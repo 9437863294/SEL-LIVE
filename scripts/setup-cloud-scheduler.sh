@@ -122,6 +122,18 @@ JOBS=(
   # Mail Hub: sync, scheduled sends, reminders, watch renewal, retention (docs/mail-hub.md).
   # Every minute; each tick drains a queue and is safe to overlap.
   "mail-hub-worker|/api/mail-hub/worker|* * * * *"
+  # SEL Fleet (docs/fleet/PLAN.md): one route, /api/fleet/cron/<job>; every job is safe to re-run.
+  # Over-limit approvals escalate and expire (two hours).
+  "fleet-approvals|/api/fleet/cron/approvals|*/5 * * * *"
+  # Remind silent trips; close those silent too long or running past the maximum, for review.
+  "fleet-idle|/api/fleet/cron/idle|*/15 * * * *"
+  # Split open trips' km by day just before midnight, for the next day's limit.
+  "fleet-midnight|/api/fleet/cron/midnight|58 23 * * *"
+  "fleet-daily-summary|/api/fleet/cron/daily-summary|30 0 * * *"
+  "fleet-service-due|/api/fleet/cron/service-due|0 7 * * *"
+  "fleet-digest|/api/fleet/cron/digest|0 8 * * *"
+  # Last month's payment report, emailed (also accepted on the 2nd and 3rd as a retry).
+  "fleet-monthly-report|/api/fleet/cron/monthly-report|0 6 1 * *"
 )
 
 echo

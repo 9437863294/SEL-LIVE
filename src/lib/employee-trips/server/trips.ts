@@ -8,11 +8,12 @@ import 'server-only';
 
 import { priceTrip, rateFor } from '../rates.ts';
 import { tripInputSchema } from '../schemas.ts';
-import { tripFlags, validateTrip } from '../trips.ts';
+import { claimRules, tripFlags, validateTrip } from '../trips.ts';
 import { ET_COLLECTIONS, type TripClaimSettings, type TripRecord } from '../types.ts';
 import { TripError, db, nowIso, type TripContext } from './context';
 import { companyVehicles, departmentOptions, loadSettings, odometerDocId, projectOptions } from './lookups';
 import { afterAudit } from './notify';
+import { loadFleetSettings } from '@/lib/fleet/server/lookups';
 
 const tripsCollection = () => db().collection(ET_COLLECTIONS.trips);
 
@@ -118,8 +119,9 @@ export function priceAndFlag(
 
 export async function saveTrip(context: TripContext, body: unknown, tripId?: string): Promise<{ trip: TripRecord }> {
   const input = tripInputSchema.parse(body);
-  const [settings, vehicles, projects, departments, mine] = await Promise.all([
+  const [settings, fleet, vehicles, projects, departments, mine] = await Promise.all([
     loadSettings(context.organizationId),
+    loadFleetSettings(context.organizationId),
     companyVehicles(),
     projectOptions(),
     departmentOptions(),
@@ -131,7 +133,15 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
   if (existing && existing.status !== 'draft') throw new TripError('This trip is on a claim and can no longer be changed.', 409);
 
   const companyVehicle = input.ownership === 'company' && input.vehicleId ? vehicles.find((vehicle) => vehicle.id === input.vehicleId) ?? null : null;
-  const result = validateTrip(input, { rules: settings.rules, today: context.today, companyVehicle });
+  // Company-vehicle running is a fleet trip once Settings › Fleet says so (decision D1); a company
+  // draft recorded before that stays editable, claimable and deletable.
+  const result = validateTrip(input, {
+    rules: claimRules(settings.rules, fleet.companyTripsInFleet),
+    today: context.today,
+    companyVehicle,
+    existingOwnership: existing?.ownership ?? null,
+    companyTripsInFleet: fleet.companyTripsInFleet,
+  });
   if (!result.ok) throw new TripError('Check the highlighted fields.', 400, { fields: result.errors });
   const value = result.value;
 

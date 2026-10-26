@@ -10,13 +10,14 @@ import 'server-only';
  */
 
 import { sumMoney } from '../rates.ts';
-import { daysLeftToClaim } from '../trips.ts';
+import { claimRules, daysLeftToClaim } from '../trips.ts';
 import { ET_COLLECTIONS, financialYearOf, type TripClaim, type TripRecord } from '../types.ts';
 import { namedStageKinds, stageAge, stageAssignees } from '../workflow.ts';
 import { db, type TripContext } from './context';
 import { listClaims, toClaim } from './claims';
 import { companyVehicles, departmentOptions, hasReportees, lastOdometerReadings, loadSettings, nameResolver, projectOptions, reportingAuthorityOf, vehicleTypeOptions } from './lookups';
 import { listMyTrips, toTrip } from './trips';
+import { loadFleetSettings } from '@/lib/fleet/server/lookups';
 
 async function waitingForMe(context: TripContext): Promise<TripClaim[]> {
   return (await listClaims(context, 'inbox')).claims;
@@ -35,8 +36,9 @@ function inboxCounts(waiting: TripClaim[], now = new Date()) {
 }
 
 export async function bootstrap(context: TripContext) {
-  const [settings, vehicles, projects, departments, vehicleTypes, odometer, waiting, authority, nameOf] = await Promise.all([
+  const [settings, fleet, vehicles, projects, departments, vehicleTypes, odometer, waiting, authority, nameOf] = await Promise.all([
     loadSettings(context.organizationId),
+    loadFleetSettings(context.organizationId),
     companyVehicles(),
     projectOptions(),
     departmentOptions(),
@@ -73,7 +75,9 @@ export async function bootstrap(context: TripContext) {
     },
     settings: {
       rateRevisions: settings.rateRevisions,
-      rules: settings.rules,
+      // The rules as My Trips applies them: with company-vehicle trips routed to fleet trips, the
+      // form offers own vehicles only (the server refuses a new company trip either way).
+      rules: claimRules(settings.rules, fleet.companyTripsInFleet),
       stages: settings.stages.map(({ id, name, kind, routing, minAmount, tatHours }) => ({ id, name, kind, routing, minAmount, tatHours })),
     },
     vehicleTypes,

@@ -5,10 +5,10 @@ import {
   ChevronRight,
   GitBranch,
   Loader2,
-  Radio,
   Settings,
   SlidersHorizontal,
   Tag,
+  Truck,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent } from '@/components/ui/card';
@@ -18,20 +18,27 @@ import { vmToneChip, type VmTone } from './vm-ui';
 
 const MODULE = 'Vehicle Management';
 
+/**
+ * The cards, each opened by its own permission: the module's own settings need Vehicle Management ·
+ * Settings · View; Fleet opens for Fleet Settings · View too, so a fleet admin who holds only that
+ * still reaches the hub — and sees only the card they can use.
+ */
 const SETTINGS_ITEMS = [
+  {
+    icon: Truck,
+    text: 'Fleet',
+    href: '/vehicle-management/settings/fleet',
+    description: "Daily km limits, the GPS-against-odometer rule, over-limit approvals, trip purposes, each vehicle's rate and approver, and project sites.",
+    tone: 'emerald' as VmTone,
+    resource: 'Fleet Settings',
+  },
   {
     icon: Tag,
     text: 'Vehicle Types',
     href: '/vehicle-management/settings/vehicle-types',
     description: 'Manage the list of vehicle types offered in Vehicle Master.',
     tone: 'violet' as VmTone,
-  },
-  {
-    icon: Radio,
-    text: 'Trip Tracking',
-    href: '/vehicle-management/settings/trip-tracking',
-    description: 'Location update interval and background tracking behaviour for the driver app.',
-    tone: 'teal' as VmTone,
+    resource: 'Settings',
   },
   {
     icon: GitBranch,
@@ -39,6 +46,7 @@ const SETTINGS_ITEMS = [
     href: '/vehicle-management/settings/insurance-workflow',
     description: 'Configure dynamic stages, assignment, premium-based approvals, TAT and escalation.',
     tone: 'amber' as VmTone,
+    resource: 'Settings',
   },
   {
     icon: SlidersHorizontal,
@@ -46,12 +54,16 @@ const SETTINGS_ITEMS = [
     href: '/vehicle-management/settings/field-control',
     description: 'Show, hide, require or relabel any field on every form in the module.',
     tone: 'slate' as VmTone,
+    resource: 'Settings',
   },
 ] as const;
 
 export default function VehicleManagementSettingsHub() {
   const { can, isLoading } = useAuthorization();
-  const canView = can('View', `${MODULE}.Settings`);
+  const canSettings = can('View', `${MODULE}.Settings`) || can('Edit', `${MODULE}.Settings`);
+  const canFleet = canSettings || can('View', `${MODULE}.Fleet Settings`) || can('Edit', `${MODULE}.Fleet Settings`);
+  const items = SETTINGS_ITEMS.filter((item) => (item.resource === 'Fleet Settings' ? canFleet : canSettings));
+  const canView = items.length > 0;
 
   if (isLoading) {
     return (
@@ -76,12 +88,12 @@ export default function VehicleManagementSettingsHub() {
     <div className="space-y-5">
       <PageHeader
         title="Vehicle Management Settings"
-        description="Vehicle types, trip tracking, insurance workflow and field control — each in its own place."
+        description="The fleet, vehicle types, trip tracking, insurance workflow and field control — each in its own place."
         icon={Settings}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {SETTINGS_ITEMS.map((item) => (
+        {items.map((item) => (
           <Link key={item.text} href={item.href} className="no-underline">
             <div className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-slate-300 hover:bg-slate-50">
               <div className="flex items-center gap-3 p-4">

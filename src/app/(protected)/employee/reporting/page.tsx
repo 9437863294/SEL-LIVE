@@ -418,18 +418,40 @@ export default function ReportingStructurePage() {
                   const node = 'node' in entry ? entry.node : entry;
                   const indent = 'indent' in entry ? entry.indent : 0;
                   const hasChildren = 'hasChildren' in entry ? entry.hasChildren : false;
+                  const isLast = 'isLast' in entry ? entry.isLast : true;
+                  const ancestorIsLast = 'ancestorIsLast' in entry ? entry.ancestorIsLast : [];
                   const issueKey = primaryIssue(node);
                   const managerName = managerNameOf(node);
 
                   return (
                     <tr key={node.employeeId} className="align-top hover:bg-slate-50/70">
-                      <td className="max-w-[18rem] px-2 py-2">
-                        <div
-                          className="flex items-start gap-1"
-                          // Indent by depth in the tree view. Inline because the depth is data, and
-                          // Tailwind cannot generate a class per level.
-                          style={view === 'tree' ? { paddingLeft: `${indent * 1.1}rem` } : undefined}
-                        >
+                      {/*
+                        `py-0` with the inner row padding instead: the guide columns are
+                        `self-stretch`, and a vertical line has to reach the cell edges to meet
+                        the one in the row above and below. Padding on the cell would break it
+                        into dashes.
+                      */}
+                      <td className={cn('max-w-[22rem] px-2', view === 'tree' ? 'py-0' : 'py-2')}>
+                        <div className={cn('flex items-stretch gap-1', view === 'tree' && 'min-h-[3.25rem]')}>
+                          {view === 'tree' &&
+                            ancestorIsLast.map((finished, column) => (
+                              // One column per ancestor. A finished branch leaves it blank; an
+                              // unfinished one keeps the line running past this row to the
+                              // sibling further down.
+                              <span key={column} className="relative w-4 shrink-0 self-stretch" aria-hidden>
+                                {!finished && <span className="absolute left-1/2 top-0 h-full w-px bg-slate-300" />}
+                              </span>
+                            ))}
+
+                          {view === 'tree' && indent > 0 && (
+                            // The elbow. Its vertical half stops at the middle for a last child
+                            // (└) and runs the full height for any other (├).
+                            <span className="relative w-4 shrink-0 self-stretch" aria-hidden>
+                              <span className={cn('absolute left-1/2 top-0 w-px bg-slate-300', isLast ? 'h-1/2' : 'h-full')} />
+                              <span className="absolute left-1/2 top-1/2 h-px w-[calc(50%+0.25rem)] bg-slate-300" />
+                            </span>
+                          )}
+
                           {view === 'tree' && (
                             <button
                               type="button"
@@ -438,8 +460,10 @@ export default function ReportingStructurePage() {
                               aria-expanded={hasChildren ? expanded.has(node.employeeId) : undefined}
                               disabled={!hasChildren}
                               className={cn(
-                                'mt-0.5 rounded p-0.5',
-                                hasChildren ? 'text-slate-400 hover:text-slate-700' : 'invisible',
+                                // Self-centred rather than top-aligned so the caret sits on the
+                                // elbow it belongs to.
+                                'my-auto flex h-6 w-6 shrink-0 items-center justify-center rounded',
+                                hasChildren ? 'text-slate-400 hover:bg-slate-100 hover:text-slate-700' : 'invisible',
                               )}
                             >
                               <ChevronRight
@@ -450,7 +474,7 @@ export default function ReportingStructurePage() {
                               />
                             </button>
                           )}
-                          <div className="min-w-0">
+                          <div className={cn('min-w-0', view === 'tree' ? 'my-auto py-1.5' : '')}>
                             <p className="truncate font-medium text-slate-800">{node.name || node.employeeNo}</p>
                             <p className="truncate text-[11px] text-muted-foreground">
                               {[node.employeeNo, node.designation].filter(Boolean).join(' · ')}

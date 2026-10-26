@@ -14,18 +14,28 @@ const nextConfig: NextConfig = {
       //  - The driver app's screens were served twice, here and under Vehicle Management.
       //  - The Driver Mobile hub was a second dashboard; its figures are on the Overview, and driver
       //    APKs built before 2026-10-23 still start at it.
-      //  - Trip Management was Vehicle Management's page shown in both modules.
+      //  - Trip Management was Vehicle Management's page shown in both modules (now Fleet Trips).
       //  - Employee Trips was the reimbursement register that My Trips and claims replaced.
       //  - Daily Status was retired (2026-10-24); its old logs stay in the database.
       { source: '/vehicle-management/driver-mobile', destination: '/driver-management', permanent: false },
       { source: '/vehicle-management/driver-mobile/:path*', destination: '/driver-management/:path*', permanent: false },
       { source: '/driver-management/mobile-hub', destination: '/driver-management', permanent: false },
-      { source: '/driver-management/trip-management', destination: '/vehicle-management/trips', permanent: false },
+      { source: '/driver-management/trip-management', destination: '/vehicle-management/fleet/trips', permanent: false },
       { source: '/driver-management/employee-trips', destination: '/driver-management/my-trips', permanent: false },
       // GPS recording moved onto My Trips: the trip you drive is the trip you claim, so there is no
       // longer a separate screen that measures a journey no claim can reach.
       { source: '/driver-management/trips', destination: '/driver-management/my-trips', permanent: false },
       { source: '/driver-management/daily-status', destination: '/driver-management', permanent: false },
+      // SEL Fleet (2026-10-25) left four more duplicates; each now lives in one place (docs/fleet,
+      // ASSUMPTIONS.md 38). Query strings pass through, so an old `?open=<request>` link still opens it.
+      //  - The GPS Trip Log listed company-vehicle trips; Fleet Trip records and lists them.
+      //  - Fleet Approvals was a second approvals inbox; Approvals holds claims and fleet requests.
+      //  - Trip Management was the old trip register; Fleet Control › Fleet Trips is the register.
+      //  - Trip Tracking settings were read only by the retired browser tracker.
+      { source: '/driver-management/trip-log', destination: '/driver-management/fleet', permanent: false },
+      { source: '/driver-management/fleet/approvals', destination: '/driver-management/approvals?tab=fleet', permanent: false },
+      { source: '/vehicle-management/trips', destination: '/vehicle-management/fleet/trips', permanent: false },
+      { source: '/vehicle-management/settings/trip-tracking', destination: '/vehicle-management/settings/fleet', permanent: false },
       // The Expenses settings screens used to live under /settings as well as inside the module,
       // and the /settings copies had drifted — one of them lost its permission check entirely.
       // They are gone; these keep old links and bookmarks landing on the guarded module pages.

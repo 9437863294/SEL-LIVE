@@ -18,6 +18,7 @@ const { saveSettings } = await import('../src/lib/employee-trips/server/settings
 const { dashboard, bootstrap } = await import('../src/lib/employee-trips/server/overview.ts');
 const { resolveTripAccess } = await import('../src/lib/employee-trips/access.ts');
 const { indiaToday, financialYearOf, ET_COLLECTIONS } = await import('../src/lib/employee-trips/types.ts');
+const { forgetFleetSettings } = await import('../src/lib/fleet/server/lookups.ts');
 
 const today = indiaToday();
 const daysAgo = (days) => {
@@ -68,6 +69,8 @@ db.seed('projects', 'p2', { projectName: 'Site B' });
 db.seed('departments', 'd1', { name: 'Civil' });
 db.seed('vehicleManagementVehicles', 'v1', { vehicleNumber: 'OD 02 X 9', vehicleType: 'Two Wheeler', fuelType: 'Petrol', vehicleStatus: 'Active' });
 db.seed('vehicleManagementVehicles', 'v9', { vehicleNumber: 'OD 02 OLD 1', vehicleType: 'Car', vehicleStatus: 'Sold' });
+// Company-vehicle trips stay on claims for these tests; the last test turns fleet routing (D1) on.
+db.seed('fleetSettings', 'default', { companyTripsInFleet: false });
 db.seed(ET_COLLECTIONS.settings, 'default', {
   rateRevisions: [
     { id: 'r1', effectiveFrom: daysAgo(200), rates: [{ vehicleType: 'Two Wheeler', own: 4, company: null }, { vehicleType: 'Car', own: 10, company: 2 }] },
@@ -378,4 +381,38 @@ test("each employee's claim goes to their own reporting authority", async () => 
   const { claim } = await actOnClaim(context('mgr9'), ravi.id, { action: 'approve', decisions: [] });
   assert.equal(claim.status, 'approved');
   assert.deepEqual(claim.currentAssigneeIds, ['pay1']);
+});
+
+/* ── company vehicles are fleet trips (SEL Fleet, decision D1) ─────────── */
+
+test('with fleet routing on, company vehicles leave My Trips but their drafts can still be finished', async () => {
+  const company = { tripDate: daysAgo(1), ownership: 'company', vehicleId: 'v1', fromPlace: 'Office', toPlace: 'Store', purpose: 'Stores run', startOdometer: 4000, endOdometer: 4012 };
+  const draft = (await saveTrip(context('emp3'), company)).trip;
+
+  db.seed('fleetSettings', 'default', { companyTripsInFleet: true });
+  forgetFleetSettings('default');
+  const boot = await bootstrap(context('emp3'));
+  assert.equal(boot.settings.rules.allowCompanyVehicle, false, 'the form offers own vehicles only');
+  assert.equal(boot.settings.rules.allowOwnVehicle, true);
+
+  // A new company-vehicle trip is refused, pointing to Fleet Trip.
+  try {
+    await saveTrip(context('emp3'), { ...company, startOdometer: 4100, endOdometer: 4110 });
+    assert.fail('a new company-vehicle trip should be refused');
+  } catch (error) {
+    assert.equal(error.status, 400);
+    assert.match(error.details.fields.ownership, /fleet trips/i);
+  }
+
+  // The draft recorded before stays editable, claimable and deletable; own vehicles are unaffected.
+  const edited = (await saveTrip(context('emp3'), { ...company, purpose: 'Stores run (cement)' }, draft.id)).trip;
+  assert.equal(edited.ownership, 'company');
+  assert.equal(edited.purpose, 'Stores run (cement)');
+  await deleteTrip(context('emp3'), draft.id);
+  assert.equal(db.read(ET_COLLECTIONS.trips, draft.id), undefined);
+  const own = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02EMP3', startOdometer: 9000, endOdometer: 9010 }))).trip;
+  assert.equal(own.ownership, 'own');
+
+  db.seed('fleetSettings', 'default', { companyTripsInFleet: false });
+  forgetFleetSettings('default');
 });

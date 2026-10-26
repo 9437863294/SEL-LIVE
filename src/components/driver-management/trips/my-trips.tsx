@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CalendarClock, ListChecks, LocateFixed, Pencil, Plus, ReceiptText, Route, Trash2, Undo2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -290,6 +291,9 @@ export default function MyTrips() {
   if (!data) return <ErrorBlock message={bootError ?? 'Could not load trip claims.'} onRetry={() => void reloadBootstrap()} />;
 
   const noRates = data.settings.rateRevisions.length === 0;
+  // Company vehicles are not offered here (Settings › Fleet routes them to fleet trips, or the rules
+  // switched them off): say where such a trip goes, so nobody records it as a claim by mistake.
+  const companyElsewhere = !data.settings.rules.allowCompanyVehicle;
 
   return (
     <GpsTripProvider data={data} myTrips={trips ?? []} onSaved={onSaved} onRecordingChange={setGpsRecording}>
@@ -331,6 +335,16 @@ export default function MyTrips() {
 
       {/* Full page width: a map and four figures do not fit a header actions row. */}
       <GpsTripPanel />
+
+      {companyElsewhere && !gpsRecording && (
+        <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+          Driving a company vehicle? Record it in{' '}
+          <Link href="/driver-management/fleet" className="font-medium underline underline-offset-2">
+            Fleet Trip
+          </Link>{' '}
+          — the same GPS recording, billed to the project and not claimable. My Trips is for your own vehicle.
+        </p>
+      )}
 
       {/*
         Hidden while recording, not disabled: a greyed-out filter bar and an empty trip list are

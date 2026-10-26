@@ -9,6 +9,9 @@
  * - `payments` — approved claims waiting for this person to pay, ticked and paid together, and the
  *   payments they recorded.
  * - `all` — every claim of a financial year (Trip Claims · View All), with a CSV export.
+ *
+ * `embedded` drops the page header: the approvals view is a tab of Driver Management › Approvals
+ * (approvals-hub.tsx), which has its own.
  */
 
 import { useMemo, useState } from 'react';
@@ -83,7 +86,7 @@ const previousYears = (financialYear: string, count = 3) => {
   return Array.from({ length: count }, (_, index) => `${start - index}-${String((start - index + 1) % 100).padStart(2, '0')}`);
 };
 
-export default function ClaimsList({ mode }: { mode: ClaimsListMode }) {
+export default function ClaimsList({ mode, embedded = false }: { mode: ClaimsListMode; embedded?: boolean }) {
   const router = useRouter();
   const { data, error: bootError, loading: bootLoading, reload: reloadBootstrap } = useTripClaims();
   const wide = Boolean(data?.access.override || data?.access.viewAll);
@@ -230,34 +233,36 @@ export default function ClaimsList({ mode }: { mode: ClaimsListMode }) {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title={heading.title}
-        icon={heading.icon}
-        description={heading.description}
-        meta={claims ? [{ label: 'Claims', value: String(visible.length) }, { label: mode === 'payments' ? 'To pay' : 'Claimed', value: <Money value={sumMoney(visible.map((claim) => (mode === 'payments' ? claim.totals.approvedAmount : claim.totals.claimedAmount)))} /> }] : undefined}
-        actions={
-          <>
-            {mode === 'mine' && (
-              <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => setClaimOpen(true)}>
-                <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
-                {candidates.length ? `Create claim (${candidates.length} unclaimed trip${candidates.length === 1 ? '' : 's'})` : 'Create claim'}
-              </Button>
-            )}
-            {mode === 'all' && data.access.exportAll && (
-              <Button type="button" variant="outline" onClick={exportCsv} disabled={!visible.length}>
-                <Download className="mr-2 h-4 w-4" aria-hidden />
-                Export CSV
-              </Button>
-            )}
-            {selectable && chosen.length > 0 && (
-              <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => setPayOpen(true)}>
-                <Banknote className="mr-2 h-4 w-4" aria-hidden />
-                Pay {chosen.length} · <Money value={sumMoney(chosen.map((claim) => claim.totals.approvedAmount))} className="ml-1" />
-              </Button>
-            )}
-          </>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title={heading.title}
+          icon={heading.icon}
+          description={heading.description}
+          meta={claims ? [{ label: 'Claims', value: String(visible.length) }, { label: mode === 'payments' ? 'To pay' : 'Claimed', value: <Money value={sumMoney(visible.map((claim) => (mode === 'payments' ? claim.totals.approvedAmount : claim.totals.claimedAmount)))} /> }] : undefined}
+          actions={
+            <>
+              {mode === 'mine' && (
+                <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => setClaimOpen(true)}>
+                  <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
+                  {candidates.length ? `Create claim (${candidates.length} unclaimed trip${candidates.length === 1 ? '' : 's'})` : 'Create claim'}
+                </Button>
+              )}
+              {mode === 'all' && data.access.exportAll && (
+                <Button type="button" variant="outline" onClick={exportCsv} disabled={!visible.length}>
+                  <Download className="mr-2 h-4 w-4" aria-hidden />
+                  Export CSV
+                </Button>
+              )}
+              {selectable && chosen.length > 0 && (
+                <Button type="button" className={VM_PRIMARY_BUTTON} onClick={() => setPayOpen(true)}>
+                  <Banknote className="mr-2 h-4 w-4" aria-hidden />
+                  Pay {chosen.length} · <Money value={sumMoney(chosen.map((claim) => claim.totals.approvedAmount))} className="ml-1" />
+                </Button>
+              )}
+            </>
+          }
+        />
+      )}
 
       {mode === 'mine' && <ClaimSteps approvalName={data.settings.stages.find((stage) => stage.kind === 'approval')?.name} paymentName={data.settings.stages.find((stage) => stage.kind === 'payment')?.name} />}
 

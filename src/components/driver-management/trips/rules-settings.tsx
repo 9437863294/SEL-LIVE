@@ -3,6 +3,9 @@
 /**
  * Settings › Trip rules: what a trip must have to be recorded (blocking), and the limits that only
  * flag a trip for the approver's attention.
+ *
+ * When Settings › Fleet routes company-vehicle trips to fleet trips (decision D1, on by default),
+ * the Company vehicles switch here has no effect: the page says so beside it.
  */
 
 import { useState } from 'react';
@@ -16,6 +19,7 @@ import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import type { TripRules } from '@/lib/employee-trips/types';
 import { ErrorBlock, LoadingBlock } from './trip-ui';
 import { useTripSettings } from './use-trip-settings';
+import { useFleet } from '@/components/fleet/fleet-provider';
 
 type Toggle = { key: 'allowOwnVehicle' | 'allowCompanyVehicle' | 'requireOdometer' | 'allowTollParking' | 'requireProject'; label: string; hint: string };
 type Limit = { key: 'maxKmPerTrip' | 'maxKmPerDay' | 'claimWindowDays'; label: string; hint: string; unit: string };
@@ -36,6 +40,7 @@ const LIMITS: Limit[] = [
 
 export default function RulesSettings() {
   const { payload, error, saving, load, save } = useTripSettings();
+  const fleetRouting = Boolean(useFleet().data?.settings.companyTripsInFleet);
   // The edits, or null while the saved rules are shown unchanged.
   const [draft, setDraft] = useState<TripRules | null>(null);
 
@@ -70,6 +75,9 @@ export default function RulesSettings() {
         }
       />
       {noVehicle && <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">Allow own vehicles, company vehicles or both.</p>}
+      {fleetRouting && !rules.allowOwnVehicle && !noVehicle && (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">Company vehicles are fleet trips, so with own vehicles off My Trips has nothing to record. Turn own vehicles on.</p>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -82,6 +90,11 @@ export default function RulesSettings() {
                 <span className="min-w-0">
                   <span className="block text-sm font-medium text-slate-800">{toggle.label}</span>
                   <span className="block text-xs text-muted-foreground">{toggle.hint}</span>
+                  {fleetRouting && toggle.key === 'allowCompanyVehicle' && (
+                    <span className="mt-1 block rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900">
+                      Company-vehicle trips are recorded as fleet trips (Vehicle Management › Settings › Fleet), so My Trips offers own vehicles only and this switch has no effect. Company-vehicle drafts already recorded can still be edited and claimed.
+                    </span>
+                  )}
                 </span>
                 <Switch checked={rules[toggle.key]} onCheckedChange={(value) => set({ [toggle.key]: value })} disabled={!canEdit} aria-label={toggle.label} />
               </label>

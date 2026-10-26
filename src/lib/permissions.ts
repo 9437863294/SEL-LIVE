@@ -679,6 +679,13 @@ export const permissionModules = {
     // "Driver Daily Status" was retired with the driver app's Daily Status page (2026-10-24).
     Settings: ["View", "Edit", "Manage Field Control"],
     Reports: ["View", "Export"],
+    // SEL Fleet (docs/fleet). Driving a company vehicle needs none of these (a Driver Master driver,
+    // or any employee when Settings › Fleet allows it), and neither does approving over-limit
+    // running: being the vehicle's approver, its backup, the driver's reporting authority or on the
+    // escalation list is the authority (src/lib/fleet/access.ts). These are the wider grants.
+    "Fleet Trips": ["View", "Review", "Force Close", "Export"],
+    "Fleet Reports": ["View", "Generate", "Approve for Payment"],
+    "Fleet Settings": ["View", "Edit"],
   },
   "Driver Management": {
     "View Module": [],

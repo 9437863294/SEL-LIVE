@@ -106,9 +106,6 @@
   .dark :where(.bg-stone-200:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--dc-200) / 1);
   }
-  .dark :where(.bg-slate-100\/90:not(.keep-light, .keep-light *)) {
-    background-color: hsl(var(--dc-100) / 0.9);
-  }
   .dark :where(.hover\:bg-slate-200:not(.keep-light, .keep-light *)):hover,
   .dark :where(.bg-slate-300:not(.keep-light, .keep-light *)),
   .dark :where(.bg-gray-300:not(.keep-light, .keep-light *)),
@@ -962,8 +959,7 @@
   .dark :where(.bg-cyan-100\/70:not(.keep-light, .keep-light *)) {
     background-color: rgb(6 182 212 / 0.126);
   }
-  .dark :where(.border-cyan-100:not(.keep-light, .keep-light *)),
-  .dark :where(.border-cyan-100\/70:not(.keep-light, .keep-light *)) {
+  .dark :where(.border-cyan-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(6 182 212 / 0.320);
   }
   .dark :where(.ring-cyan-100:not(.keep-light, .keep-light *)) {

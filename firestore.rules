@@ -54,6 +54,14 @@ service cloud.firestore {
         // Employee trip claims (Driver Management): every read and write goes through
         // /api/driver-management on the Admin SDK (src/lib/employee-trips).
         'employeeTripClaims', 'employeeTripCounters', 'employeeTripRecords', 'employeeTripSettings',
+        // SEL Fleet (docs/fleet): every read and write goes through /api/fleet on the Admin SDK
+        // (src/lib/fleet/server) — approvals, daily summaries, geofences, payment reports, purposes,
+        // settings, photo records, and the geofence arrivals synced from a trip. The photos
+        // themselves are in Storage under fleet/, closed in storage.rules.
+        'fleetApprovals', 'fleetDailySummary', 'fleetGeofences', 'fleetPaymentReports', 'fleetPurposes',
+        'fleetSettings', 'fleetUploads', 'vehicleManagementTripGeofenceEvents',
+        // Once-only markers the scheduled jobs (digest, service due) write.
+        'fleetJobRuns',
         // Only ever used to mint ids: doc(collection(db, 'contraIds')).id — nothing is read or written.
         'contraIds',
         'employeeAttendance', 'employeeLeaveBalance', 'employeeSensitive', 'employeeSwipes',
@@ -3172,25 +3180,21 @@ service cloud.firestore {
       allow read: if vmTripManager() || vmHolds(vmPage('Vehicle Master'), ['Delete'])
         || vmHolds(vmPage('Driver Management'), ['Delete'])
         || vmIsDriver(resource.data.get('driverId', ''));
-      // Started by the driver, as themselves.
-      allow create: if request.resource.data.get('tripStatus', '') == 'In Progress'
-        && vmIsMe(request.resource.data.get('linkedUserId', ''))
-        && vmIsDriver(request.resource.data.get('driverId', ''));
-      // Tracked and stopped by its driver; viewing the route corrects its distance (trips/page.tsx,
-      // trip-log/page.tsx) for whoever may see it.
-      allow update: if (vmIsDriver(resource.data.get('driverId', ''))
-          && !vmChanged().hasAny(['driverId', 'linkedUserId', 'createdAt']))
-        || (vmTripManager() && vmChanged().hasOnly(['totalDistanceKm', 'totalPoints', 'updatedAt']));
+      // SEL Fleet: trips are started, tracked, ended and reviewed through /api/fleet on the Admin
+      // SDK, which owns the vehicle lock, the odometer and every figure that is billed. No browser
+      // writes a trip: the old browser tracker is gone, and so is Trip Management's route-distance
+      // correction (that page became Fleet Control › Fleet Trips, which reads through the API).
+      // Reading is unchanged — the overview's month figures and the delete checks still read here.
+      allow create, update: if false;
     }
 
-    /** Append-only: one point per location tick, on the driver's own trip. */
+    /**
+     * A trip's GPS track. Written only by /api/fleet (batches of up to 200, idempotent on the
+     * phone's point id), so no browser creates a point; reading the route stays as it was.
+     */
     match /vehicleManagementTripLocations/{pointId} {
       allow read: if vmTripManager() || vmOwnTrip(resource.data.get('tripId', ''));
-      allow create: if vmIsDriver(request.resource.data.get('driverId', ''))
-        && request.resource.data.get('tripId', '') is string && request.resource.data.get('tripId', '') != ''
-        && exists(vmTripPath(request.resource.data.tripId))
-        && get(vmTripPath(request.resource.data.tripId)).data.get('driverId', '')
-          == request.resource.data.driverId;
+      allow create: if false;
     }
 
     /* ── Employee trip reimbursement, retired (the old driver-management/employee-trips page; the

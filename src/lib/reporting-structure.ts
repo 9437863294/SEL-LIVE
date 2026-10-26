@@ -326,25 +326,52 @@ export const primaryIssue = (node: ReportingNode): ReportingIssue | null =>
  * belong to no tree by definition, and dropping them would hide exactly the people who need looking
  * at.
  */
+export interface ReportingTreeRow {
+  node: ReportingNode;
+  indent: number;
+  hasChildren: boolean;
+  /**
+   * Whether this row is the last of its siblings.
+   *
+   * Decides the elbow: the last child gets `└` and the line stops, everyone else gets `├` and
+   * it carries on to the next sibling.
+   */
+  isLast: boolean;
+  /**
+   * For each column left of this row, whether the ancestor occupying it was its own last child.
+   *
+   * `true` means that branch is finished and the column stays blank; `false` means a sibling is
+   * still to come further down and the vertical line must run through this row to reach it.
+   * Without it a deep subtree draws as floating indentation with no visible parent.
+   */
+  ancestorIsLast: boolean[];
+}
+
 export function flattenReportingTree(
   structure: ReportingStructure,
   expanded: ReadonlySet<string>,
-): Array<{ node: ReportingNode; indent: number; hasChildren: boolean }> {
+): ReportingTreeRow[] {
   const byId = new Map(structure.nodes.map((node) => [node.employeeId, node]));
-  const out: Array<{ node: ReportingNode; indent: number; hasChildren: boolean }> = [];
+  const out: ReportingTreeRow[] = [];
 
   const sortByName = (ids: string[]) =>
     [...ids].sort((a, b) => (byId.get(a)?.name ?? '').localeCompare(byId.get(b)?.name ?? ''));
 
-  const walk = (id: string, indent: number) => {
+  const walk = (id: string, indent: number, ancestorIsLast: boolean[], isLast: boolean) => {
     const node = byId.get(id);
     if (!node) return;
-    out.push({ node, indent, hasChildren: node.children.length > 0 });
+    out.push({ node, indent, hasChildren: node.children.length > 0, isLast, ancestorIsLast });
     if (!expanded.has(id)) return;
-    for (const child of sortByName(node.children)) walk(child, indent + 1);
+    const children = sortByName(node.children);
+    children.forEach((child, index) => {
+      // This node now occupies the column its children sit beside, so whether it was last is
+      // what decides if that column keeps a line for them.
+      walk(child, indent + 1, [...ancestorIsLast, isLast], index === children.length - 1);
+    });
   };
 
-  for (const root of sortByName(structure.roots)) walk(root, 0);
+  const roots = sortByName(structure.roots);
+  roots.forEach((root, index) => walk(root, 0, [], index === roots.length - 1));
 
   /*
     Everything a root cannot reach *at all*, so a cycle cannot make people vanish from the view.
@@ -364,7 +391,10 @@ export function flattenReportingTree(
   }
 
   for (const node of structure.nodes) {
-    if (!reachable.has(node.employeeId)) out.push({ node, indent: 0, hasChildren: false });
+    if (!reachable.has(node.employeeId)) {
+      // Outside every tree by definition, so it gets no connectors to draw.
+      out.push({ node, indent: 0, hasChildren: false, isLast: true, ancestorIsLast: [] });
+    }
   }
 
   return out;

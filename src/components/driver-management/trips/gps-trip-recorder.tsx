@@ -33,10 +33,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LocateFixed, Loader2, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import TripMapView from '@/components/vehicle-management/trip-map-view';
 import {
   clearDriverPositionWatch,
   ensureDriverGeolocation,
@@ -52,6 +50,7 @@ import {
   type TripLocationPoint,
 } from '@/lib/vehicle-management';
 import { normaliseVehicleNumber, type TripGpsEvidence, type TripRecord, type VehicleOwnership } from '@/lib/employee-trips/types';
+import { LiveRecordingCard } from '../live-recording-card';
 import { reverseGeocode, type Bootstrap } from './trip-api';
 import { TripFormDialog } from './trip-form-dialog';
 
@@ -237,8 +236,10 @@ export function GpsTripProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording]);
 
+  // Measured on the cleaned path, as the saved figure is: one wild fix must not cost the legs
+  // either side of it (tests/trip-path.test.mjs).
   const summary = useMemo(
-    () => (inFlight ? summariseTrip(inFlight.points) : null),
+    () => (inFlight ? summariseTrip(cleanTripPath(inFlight.points).points) : null),
     [inFlight],
   );
 
@@ -277,7 +278,9 @@ export function GpsTripProvider({
     setStopping(true);
     try {
       const cleaned = cleanTripPath(inFlight.points);
-      const measured = summariseTrip(inFlight.points);
+      // The cleaned path, not the raw one: an outlier fix rejects the real legs on both sides of
+      // it, so raw points under-measure a trip with a single bad reading.
+      const measured = summariseTrip(cleaned.points);
       const last = cleaned.points[cleaned.points.length - 1] ?? inFlight.points[inFlight.points.length - 1];
       const toPlace = last ? await reverseGeocode(last.lat, last.lng) : '';
 
@@ -308,16 +311,18 @@ export function GpsTripProvider({
           purpose: inFlight.details.purpose,
           projectId: inFlight.details.projectId,
           departmentId: inFlight.details.departmentId,
-          // The measured figure, entered as the distance — and `useDistance` so the form takes it
-          // rather than deriving one from odometer readings nobody took.
+          // The measured figure, entered as the distance. When Settings require odometer readings
+          // the form asks for the closing one instead (the opening was taken at the start), and
+          // shows the GPS figure beside it: hiding the readings while the rule demands them made
+          // a GPS trip impossible to save.
           distanceKm: String(measured.distanceKm),
-          useDistance: true,
+          useDistance: !rules.requireOdometer,
         },
       });
     } finally {
       setStopping(false);
     }
-  }, [inFlight]);
+  }, [inFlight, rules.requireOdometer]);
 
   /* ── Idle ── */
   /*
@@ -328,57 +333,25 @@ export function GpsTripProvider({
     buttons is unreadable on a desktop and unusable on a phone.
   */
   const panel = inFlight ? (
-    <Card className="w-full">
-      <CardHeader className="gap-2 pb-2 sm:flex sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <CardTitle className="flex items-center gap-1.5 text-base">
-            <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            </span>
-            Recording a trip
-          </CardTitle>
-          <CardDescription className="break-words">{inFlight.details.purpose}</CardDescription>
-        </div>
-        {/* Full width on a phone, where a button beside the title leaves neither room. */}
-        <Button
-          variant="destructive"
-          className="w-full sm:w-auto"
-          onClick={() => void finishTrip()}
-          disabled={stopping}
-        >
+    <LiveRecordingCard
+      description={inFlight.details.purpose}
+      action={
+        // Full width on a phone, where a button beside the title leaves neither room.
+        <Button variant="destructive" className="w-full sm:w-auto" onClick={() => void finishTrip()} disabled={stopping}>
           {stopping ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Square className="mr-1.5 h-4 w-4" />}
           Stop &amp; review
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Two across on a phone rather than four: four columns of 90px wrap every number. */}
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          {[
-            { label: 'Distance', value: `${(summary?.distanceKm ?? 0).toFixed(1)} km` },
-            { label: 'Moving', value: `${Math.round(summary?.movingMinutes ?? 0)} min` },
-            { label: 'Stopped', value: `${Math.round(summary?.idleMinutes ?? 0)} min` },
-            { label: 'Fixes', value: String(inFlight.points.length) },
-          ].map((tile) => (
-            <div key={tile.label} className="rounded-xl border border-white/70 bg-white/80 p-2.5">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tile.label}</p>
-              <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-800">{tile.value}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-start gap-1.5 text-xs text-muted-foreground">
-          <Badge variant="outline">{inFlight.details.ownership === 'own' ? 'Own vehicle' : 'Company vehicle'}</Badge>
-          {inFlight.fromPlace && (
-            // `min-w-0` with the wrap above: a full street address is long, and without it the
-            // address forced the card wider than the phone.
-            <span className="min-w-0 break-words">from {inFlight.fromPlace}</span>
-          )}
-        </div>
-
-        <TripMapView points={inFlight.points} title="Live route" heightClassName="h-[260px] sm:h-[300px]" live />
-      </CardContent>
-    </Card>
+      }
+      figures={{
+        distanceKm: summary?.distanceKm ?? 0,
+        movingMinutes: summary?.movingMinutes ?? 0,
+        idleMinutes: summary?.idleMinutes ?? 0,
+        fixes: inFlight.points.length,
+      }}
+      badges={<Badge variant="outline">{inFlight.details.ownership === 'own' ? 'Own vehicle' : 'Company vehicle'}</Badge>}
+      fromPlace={inFlight.fromPlace}
+      points={inFlight.points}
+    />
   ) : null;
 
   return (

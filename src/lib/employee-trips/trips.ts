@@ -89,6 +89,15 @@ export function isClaimable(trip: Pick<TripRecord, 'status' | 'tripDate'>, today
   return trip.status === 'draft' && withinClaimWindow(trip.tripDate, today, rules);
 }
 
+/**
+ * The rules the claim screens apply once Settings › Fleet routes company-vehicle trips to fleet
+ * trips (SEL Fleet, decision D1): company vehicles are off here, whatever Trip rules say, because
+ * that running is recorded — and billed to a project — as a fleet trip instead.
+ */
+export function claimRules(rules: TripRules, companyTripsInFleet: boolean): TripRules {
+  return companyTripsInFleet && rules.allowCompanyVehicle ? { ...rules, allowCompanyVehicle: false } : rules;
+}
+
 /** Days left to claim a trip of this date (negative once past); null when there is no window. */
 export function daysLeftToClaim(tripDate: string, today: string, rules: Pick<TripRules, 'claimWindowDays'>): number | null {
   if (rules.claimWindowDays === null || rules.claimWindowDays === undefined) return null;
@@ -101,7 +110,19 @@ export function daysLeftToClaim(tripDate: string, today: string, rules: Pick<Tri
  */
 export function validateTrip(
   input: Partial<TripInput>,
-  context: { rules: TripRules; today: string; companyVehicle: CompanyVehicle | null },
+  context: {
+    rules: TripRules;
+    today: string;
+    companyVehicle: CompanyVehicle | null;
+    /**
+     * The ownership of the trip being edited. A company-vehicle draft recorded while company
+     * vehicles were allowed stays editable after they are switched off (or routed to fleet trips):
+     * it can still be corrected, claimed or deleted, just not created anew.
+     */
+    existingOwnership?: VehicleOwnership | null;
+    /** Company vehicles are off because they are fleet trips now — said so, with where to go. */
+    companyTripsInFleet?: boolean;
+  },
 ): { ok: true; value: ValidatedTrip } | { ok: false; errors: TripErrors } {
   const { rules, today } = context;
   const errors: TripErrors = {};
@@ -113,7 +134,11 @@ export function validateTrip(
 
   const ownership: VehicleOwnership = input.ownership === 'company' ? 'company' : 'own';
   if (ownership === 'own' && !rules.allowOwnVehicle) errors.ownership = 'Own-vehicle trips are switched off in Settings.';
-  if (ownership === 'company' && !rules.allowCompanyVehicle) errors.ownership = 'Company-vehicle trips are switched off in Settings.';
+  if (ownership === 'company' && !rules.allowCompanyVehicle && context.existingOwnership !== 'company') {
+    errors.ownership = context.companyTripsInFleet
+      ? 'Company vehicles are recorded as fleet trips now — start one in Driver Management › Fleet Trip.'
+      : 'Company-vehicle trips are switched off in Settings.';
+  }
 
   let vehicleType = text(input.vehicleType, 40);
   let vehicleNumber = normaliseVehicleNumber(input.vehicleNumber).slice(0, 15);

@@ -11,7 +11,17 @@
     "src/app/(protected)/driver-management/**/*.ts",
     "src/app/(protected)/driver-management/**/*.tsx",
     "src/components/driver-management/**/*.ts",
-    "src/components/driver-management/**/*.tsx"
+    "src/components/driver-management/**/*.tsx",
+    "src/lib/fleet/**/*.ts",
+    "src/app/api/fleet/**/*.ts",
+    "src/components/fleet/**/*.ts",
+    "src/components/fleet/**/*.tsx",
+    "src/app/(protected)/vehicle-management/fleet/**/*.ts",
+    "src/app/(protected)/vehicle-management/fleet/**/*.tsx",
+    "src/app/(protected)/vehicle-management/settings/fleet/**/*.ts",
+    "src/app/(protected)/vehicle-management/settings/fleet/**/*.tsx",
+    "src/components/vehicle-management/fleet/**/*.ts",
+    "src/components/vehicle-management/fleet/**/*.tsx"
   ],
   "exclude": ["node_modules"]
 }

@@ -98,6 +98,8 @@ before(async () => {
 
     'vehicleManagementTrips/t1': { driverId: 'd1', linkedUserId: 'uDrv', vehicleId: 'v1', vehicleNumber: 'KA01', tripStatus: 'In Progress', startTimeIso: '2026-10-05T08:00:00.000Z', totalPoints: 1, totalDistanceKm: 0 },
     'vehicleManagementTrips/t9': { driverId: 'd9', linkedUserId: 'uOther', vehicleId: 'v9', tripStatus: 'Completed', startTimeIso: '2026-10-04T08:00:00.000Z', totalPoints: 4, totalDistanceKm: 3 },
+    // A fleet trip (SEL Fleet): written by /api/fleet, its figures the server's.
+    'vehicleManagementTrips/tF': { fleet: true, status: 'completed', driverId: 'd1', driverUserId: 'uDrv', linkedUserId: 'uDrv', vehicleId: 'v1', vehicleNumber: 'KA01', tripStatus: 'Completed', startTimeIso: '2026-10-07T08:00:00.000Z', totalPoints: 12, totalDistanceKm: 5, billableDistanceKm: 5 },
     'vehicleManagementTripLocations/l1': { tripId: 't1', driverId: 'd1', lat: 1, lng: 2 },
     'vehicleManagementTripLocations/l9': { tripId: 't9', driverId: 'd9', lat: 1, lng: 2 },
 
@@ -432,30 +434,27 @@ test('trips: trip managers read every trip; a driver reads their own, as the pag
   }
 });
 
-test('trips: the driver starts, tracks and stops their own; viewing the route corrects its distance', async () => {
+test('trips: no browser starts, tracks, stops or corrects a trip — /api/fleet does', async () => {
+  // Trips and their track are written through /api/fleet on the Admin SDK (SEL Fleet).
   const start = { tripStatus: 'In Progress', driverId: 'd1', driverName: 'One', linkedUserId: 'uDrv', vehicleId: 'v1', startTimeIso: '2026-10-06T08:00:00Z', totalPoints: 0, totalDistanceKm: 0, sourceApp: 'Driver Mobile', createdAt: serverTimestamp() };
-  const trip = await assertSucceeds(addDoc(col('drv', 'vehicleManagementTrips'), start));
-  await assertSucceeds(addDoc(col('drv', 'vehicleManagementTripLocations'), { tripId: trip.id, driverId: 'd1', vehicleId: 'v1', lat: 1, lng: 2, recordedAtIso: 'x', createdAt: serverTimestamp() }));
-  await assertSucceeds(updateDoc(ref('drv', trip.path), { lastLocationLat: 1, lastLocationLng: 2, totalPoints: increment(1), totalDistanceKm: increment(0.2), updatedAt: serverTimestamp() }));
-  await assertSucceeds(updateDoc(ref('drv', trip.path), { tripStatus: 'Completed', endTimeIso: 'y', endLat: 1, endLng: 2, updatedAt: serverTimestamp() }));
-  await assertFails(updateDoc(ref('drv', trip.path), { driverId: 'd9' }));
-  await assertSucceeds(addDoc(col('mob', 'vehicleManagementTrips'), { ...start, driverId: 'd2', linkedUserId: 'uMob', vehicleId: 'v2' }));
-  // Not as someone else, not for someone else's driver record, not on someone else's trip.
-  await assertFails(addDoc(col('drv', 'vehicleManagementTrips'), { ...start, driverId: 'd9' }));
-  await assertFails(addDoc(col('drv', 'vehicleManagementTrips'), { ...start, linkedUserId: 'uOther' }));
-  await assertFails(addDoc(col('drv', 'vehicleManagementTrips'), { ...start, tripStatus: 'Completed' }));
-  await assertFails(addDoc(col('stranger', 'vehicleManagementTrips'), { ...start, linkedUserId: 'uX' }));
-  await assertFails(updateDoc(ref('drv', 'vehicleManagementTrips/t9'), { totalPoints: 1 }));
-  await assertFails(addDoc(col('drv', 'vehicleManagementTripLocations'), { tripId: 't9', driverId: 'd1', lat: 1, lng: 2 }));
-  await assertFails(addDoc(col('drv', 'vehicleManagementTripLocations'), { tripId: 't9', driverId: 'd9', lat: 1, lng: 2 }));
-  await assertFails(addDoc(col('drv', 'vehicleManagementTripLocations'), { tripId: 'nope', driverId: 'd1', lat: 1, lng: 2 }));
-  // Trip Management corrects the distance, and nothing else.
-  await assertSucceeds(updateDoc(ref('tripMgr', 'vehicleManagementTrips/t9'), { totalDistanceKm: 3.4, totalPoints: 4, updatedAt: serverTimestamp() }));
+  await assertFails(addDoc(col('drv', 'vehicleManagementTrips'), start));
+  await assertFails(addDoc(col('mob', 'vehicleManagementTrips'), { ...start, driverId: 'd2', linkedUserId: 'uMob', vehicleId: 'v2' }));
+  await assertFails(addDoc(col('tripMgr', 'vehicleManagementTrips'), start));
+  await assertFails(addDoc(col('drv', 'vehicleManagementTripLocations'), { tripId: 't1', driverId: 'd1', vehicleId: 'v1', lat: 1, lng: 2, recordedAtIso: 'x', createdAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref('drv', 'vehicleManagementTrips/t1'), { lastLocationLat: 1, lastLocationLng: 2, totalPoints: increment(1), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref('drv', 'vehicleManagementTrips/t1'), { tripStatus: 'Completed', endTimeIso: 'y', updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref('drv', 'vehicleManagementTrips/tF'), { billableDistanceKm: 50 }));
+  // Not even the old Trip Management distance correction (that page is now Fleet Trips, API-only).
+  await assertFails(updateDoc(ref('tripMgr', 'vehicleManagementTrips/t9'), { totalDistanceKm: 3.4, totalPoints: 4, updatedAt: serverTimestamp() }));
   await assertFails(updateDoc(ref('tripMgr', 'vehicleManagementTrips/t9'), { tripStatus: 'In Progress' }));
+  await assertFails(updateDoc(ref('tripMgr', 'vehicleManagementTrips/tF'), { totalDistanceKm: 9, totalPoints: 12, updatedAt: serverTimestamp() }));
   await assertFails(deleteDoc(ref('tripMgr', 'vehicleManagementTrips/t9')));
+  // Reading is unchanged: the trip's driver and Trip Management see a fleet trip too.
+  await assertSucceeds(getDocs(query(col('drv', 'vehicleManagementTrips'), where('driverId', '==', 'd1'))));
+  await assertSucceeds(getDocs(col('tripMgr', 'vehicleManagementTrips')));
 });
 
-test('trip track: trip managers and the trip\'s own driver read it; append-only', async () => {
+test('trip track: trip managers and the trip\'s own driver read it; nobody writes it from a browser', async () => {
   await assertSucceeds(getDocs(query(col('drv', 'vehicleManagementTripLocations'), where('tripId', '==', 't1'))));
   await assertFails(getDocs(query(col('drv', 'vehicleManagementTripLocations'), where('tripId', '==', 't9'))));
   await assertFails(getDocs(col('drv', 'vehicleManagementTripLocations')));

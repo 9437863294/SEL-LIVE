@@ -3,32 +3,26 @@
 /**
  * The driver's own figures on the Driver Management dashboard — what the separate "Driver Mobile"
  * hub page used to show, minus its cards of links (the sidebar and the phone bar navigate): the
- * assigned vehicle, whether a GPS trip is running, this month's GPS trips and fuel entries, and —
- * on the Android app — this phone's diagnostics, which support asks for when tracking misbehaves.
+ * assigned vehicle, whether a fleet trip is running, this month's fleet trips and fuel entries, and
+ * — on the Android app — this phone's diagnostics, which support asks for when tracking misbehaves.
  * (Daily Status was retired on 2026-10-24; its old logs stay in the database.)
  *
- * Shown only to a login linked to a Vehicle Management driver record. Reads the driver's own
- * records with the client SDK, as the hub did (the rules let a driver read their own).
+ * Shown only to a login linked to a Vehicle Management driver record. The trip and fuel figures
+ * come from the fleet API — the Fleet Trip bootstrap already loaded by the shell, and the driver's
+ * fuel entries — so nothing here reads the trip or fuel collections with the client SDK any more.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import { CarFront, Fuel, LocateFixed, RefreshCw, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { SectionHeader } from '@/components/shared/page-header';
-import { db } from '@/lib/firebase';
-import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
-
-interface DriverSummary {
-  tripsThisMonth: number;
-  fuelThisMonth: number;
-  tripInProgress: boolean;
-  failed: boolean;
-}
+import { useFleet } from '@/components/fleet/fleet-provider';
+import { useFleetQuery } from '@/components/fleet/use-fleet-query';
+import type { FuelEntryView } from '@/lib/fleet/server/fuel';
 
 type DeviceInfo = Record<'Device' | 'Model' | 'Manufacturer' | 'OS' | 'Battery' | 'Charging' | 'Network' | 'Connected', string>;
 
@@ -46,42 +40,12 @@ async function readDevice(): Promise<DeviceInfo> {
   };
 }
 
-async function loadSummary(driverId: string): Promise<DriverSummary> {
-  const [fuel, trips] = await Promise.all([
-    getDocs(query(collection(db, VEHICLE_COLLECTIONS.fuel), where('driverId', '==', driverId))),
-    getDocs(query(collection(db, VEHICLE_COLLECTIONS.trips), where('driverId', '==', driverId))),
-  ]);
-  const month = new Date().toISOString().slice(0, 7);
-  return {
-    tripsThisMonth: trips.docs.filter((doc) => String(doc.data().startDate || '').startsWith(month)).length,
-    fuelThisMonth: fuel.docs.filter((doc) => String(doc.data().fuelDate || '').startsWith(month)).length,
-    tripInProgress: trips.docs.some((doc) => doc.data().tripStatus === 'In Progress'),
-    failed: false,
-  };
-}
-
-const EMPTY: DriverSummary = { tripsThisMonth: 0, fuelThisMonth: 0, tripInProgress: false, failed: true };
-
 export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
-  const driverId = String(driver.id ?? '');
-  const [summary, setSummary] = useState<{ driverId: string; value: DriverSummary } | null>(null);
+  const fleet = useFleet();
+  const fuel = useFleetQuery<{ entries: FuelEntryView[] }>('fuel');
   const [device, setDevice] = useState<DeviceInfo | null>(null);
   const [deviceBusy, setDeviceBusy] = useState(false);
   const native = Capacitor.isNativePlatform();
-
-  useEffect(() => {
-    if (!driverId) return;
-    let cancelled = false;
-    loadSummary(driverId)
-      .then((value) => !cancelled && setSummary({ driverId, value }))
-      .catch((error) => {
-        console.error('Failed to load the driver summary', error);
-        if (!cancelled) setSummary({ driverId, value: EMPTY });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [driverId]);
 
   const refreshDevice = useCallback(() => {
     if (!native) return;
@@ -103,19 +67,35 @@ export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
     };
   }, [native]);
 
-  const value = summary?.driverId === driverId ? summary.value : null;
-  const loading = value === null;
-  const figure = (count: number | undefined) => (loading ? '…' : String(count ?? 0));
+  const bootstrap = fleet.data;
+  const month = (bootstrap?.today ?? new Date().toISOString().slice(0, 10)).slice(0, 7);
+  const openTrip = bootstrap?.openTrip ?? null;
+  // The bootstrap carries the last ten ended trips; a full ten this month reads "10+".
+  const recentThisMonth = (bootstrap?.recentTrips ?? []).filter((trip) => trip.monthKey === month && trip.status !== 'cancelled');
+  const tripsThisMonth = recentThisMonth.length + (openTrip && openTrip.monthKey === month ? 1 : 0);
+  const tripsLabel = bootstrap && recentThisMonth.length >= 10 ? `${tripsThisMonth}+` : String(tripsThisMonth);
+  const fuelThisMonth = (fuel.data?.entries ?? []).filter((entry) => entry.fuelDate.startsWith(month)).length;
+  const tripsLoading = fleet.loading && !bootstrap;
+  const fuelLoading = fuel.loading && !fuel.data;
+  const failed = Boolean((!bootstrap && fleet.error) || (!fuel.data && fuel.error));
 
   return (
     <section className="space-y-3">
       <SectionHeader title="My vehicle & driving" icon={CarFront} description={`${String(driver.driverName || driver.name || 'Driver')} · ${String(driver.mobileNumber || 'no mobile on record')}`} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiCard label="Assigned vehicle" value={String(driver.assignedVehicleNumber || 'Not assigned')} icon={CarFront} tone="blue" accent />
-        <KpiCard label="GPS trip" value={loading ? '…' : value.tripInProgress ? 'In progress' : 'Not running'} hint={`${figure(value?.tripsThisMonth)} trips this month`} icon={LocateFixed} tone={value?.tripInProgress ? 'emerald' : 'slate'} accent />
-        <KpiCard label="Fuel entries" value={figure(value?.fuelThisMonth)} hint="This month" icon={Fuel} tone="amber" accent />
+        <KpiCard
+          label="Fleet trip"
+          value={tripsLoading ? '…' : openTrip ? `On a trip · ${openTrip.vehicleNumber}` : 'Not running'}
+          hint={tripsLoading ? 'Loading…' : `${tripsLabel} trip${tripsThisMonth === 1 ? '' : 's'} this month`}
+          icon={LocateFixed}
+          tone={openTrip ? 'emerald' : 'slate'}
+          href="/driver-management/fleet"
+          accent
+        />
+        <KpiCard label="Fuel entries" value={fuelLoading ? '…' : String(fuelThisMonth)} hint="This month" icon={Fuel} tone="amber" href="/driver-management/fuel" accent />
       </div>
-      {value?.failed && <p className="text-xs text-amber-700">Your driving records could not be loaded just now.</p>}
+      {failed && <p className="text-xs text-amber-700">Your driving records could not be loaded just now.</p>}
       {native && (
         <details className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
           <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-slate-700">

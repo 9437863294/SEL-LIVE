@@ -25,6 +25,16 @@ before(async () => {
     'userLogs/x1': { userId: 'u1' },
     'reportingCopy/config': { enabled: true },
     'reportingCopy/state': { lastRun: null },
+    // SEL Fleet: written and read through /api/fleet only.
+    'fleetApprovals/x1': { organizationId: 'default' },
+    'fleetDailySummary/x1': { organizationId: 'default' },
+    'fleetGeofences/x1': { organizationId: 'default' },
+    'fleetPaymentReports/x1': { organizationId: 'default' },
+    'fleetPurposes/x1': { organizationId: 'default' },
+    'fleetSettings/x1': { organizationId: 'default' },
+    'fleetUploads/x1': { organizationId: 'default' },
+    'fleetJobRuns/x1': { organizationId: 'default' },
+    'vehicleManagementTripGeofenceEvents/x1': { organizationId: 'default' },
   });
 });
 after(async () => env?.cleanup());
@@ -38,6 +48,14 @@ test('server-only collections refuse a signed-in browser, read and write', async
   }
   await assertFails(signedIn().collection('employeeSensitive').get());
   await assertFails(signedIn().collection('mailHubThreads').limit(1).get());
+});
+
+test('SEL Fleet collections refuse a signed-in browser, read and write', async () => {
+  for (const name of ["fleetApprovals","fleetDailySummary","fleetGeofences","fleetPaymentReports","fleetPurposes","fleetSettings","fleetUploads","fleetJobRuns","vehicleManagementTripGeofenceEvents"]) {
+    await assertFails(signedIn().doc(`${name}/x1`).get());
+    await assertFails(signedIn().doc(`${name}/x1`).set({ x: 1 }));
+    await assertFails(signedIn().collection(name).limit(1).get());
+  }
 });
 
 test("the reporting copy's schedule and run state are server-only", async () => {

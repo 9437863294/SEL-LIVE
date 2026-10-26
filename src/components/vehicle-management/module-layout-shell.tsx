@@ -14,10 +14,14 @@ import {
   LocateFixed,
   Landmark,
   Leaf,
+  MapPinned,
+  Radar,
+  ReceiptText,
   RefreshCw,
   Settings,
   ScrollText,
   Shield,
+  TriangleAlert,
   Truck,
   User,
   Wrench,
@@ -31,7 +35,11 @@ const MODULE = 'Vehicle Management';
 
 // ─── Sections ─────────────────────────────────────────────────────────────────
 
-type Section = { id: string; href: string; label: string; resource: string; icon: LucideIcon; tone: VmTone; group: string };
+/**
+ * `resource` opens the section; `alsoResources` are further grants that open it too — Settings is
+ * the one entry for every settings page, Fleet Settings' included (settings-cards-not-in-sidebar).
+ */
+type Section = { id: string; href: string; label: string; resource: string; alsoResources?: string[]; icon: LucideIcon; tone: VmTone; group: string };
 
 const sections: Section[] = [
   { id: 'overview',           href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       tone: 'emerald', group: 'core' },
@@ -39,6 +47,14 @@ const sections: Section[] = [
   { id: 'renewal-history',    href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     tone: 'slate', group: 'core' },
   { id: 'vehicle-health',     href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    tone: 'emerald', group: 'core' },
   { id: 'vehicle-master',     href: '/vehicle-management/vehicle-master', label: 'Vehicle Master',  resource: 'Vehicle Master',            icon: CarFront,    tone: 'blue', group: 'fleet' },
+  // SEL Fleet (docs/fleet/PLAN.md): the control dashboard, the trip register, its exceptions, the
+  // payment report and the geofence register. Each page asks the API, which is the real check.
+  { id: 'fleet',              href: '/vehicle-management/fleet',          label: 'Fleet Control',   resource: 'Fleet Trips',               icon: Radar,       tone: 'cyan', group: 'fleetops' },
+  // Replaces Trip Management (its old address redirects — next.config.ts); the old grant still opens it.
+  { id: 'fleet-trips',        href: '/vehicle-management/fleet/trips',    label: 'Fleet Trips',     resource: 'Fleet Trips', alsoResources: ['Trip Management'], icon: LocateFixed, tone: 'blue', group: 'fleetops' },
+  { id: 'fleet-exceptions',   href: '/vehicle-management/fleet/exceptions', label: 'Exceptions',    resource: 'Fleet Trips',               icon: TriangleAlert, tone: 'amber', group: 'fleetops' },
+  { id: 'fleet-reports',      href: '/vehicle-management/fleet/reports',  label: 'Payment Reports', resource: 'Fleet Reports',             icon: ReceiptText, tone: 'emerald', group: 'fleetops' },
+  { id: 'geofences',          href: '/vehicle-management/fleet/geofences', label: 'Geofences',      resource: 'Fleet Settings',            icon: MapPinned,   tone: 'teal', group: 'fleetops' },
   { id: 'insurance-workflow', href: '/vehicle-management/insurance/workflow', label: 'Insurance Workflow', resource: 'Insurance Management', icon: GitBranch, tone: 'violet', group: 'compliance' },
   { id: 'insurance',          href: '/vehicle-management/insurance',      label: 'Insurance',       resource: 'Insurance Management',     icon: Shield,      tone: 'violet', group: 'compliance' },
   { id: 'puc',                href: '/vehicle-management/puc',            label: 'PUC',             resource: 'PUC Management',            icon: Leaf,        tone: 'green', group: 'compliance' },
@@ -48,15 +64,15 @@ const sections: Section[] = [
   { id: 'maintenance',        href: '/vehicle-management/maintenance',    label: 'Maintenance',     resource: 'Maintenance Management',    icon: Wrench,      tone: 'red', group: 'ops' },
   { id: 'fuel',               href: '/vehicle-management/fuel',           label: 'Fuel',            resource: 'Fuel Management',           icon: Fuel,        tone: 'sky', group: 'ops' },
   { id: 'driver',             href: '/vehicle-management/driver',         label: 'Driver Master',   resource: 'Driver Management',         icon: User,        tone: 'teal', group: 'ops' },
-  { id: 'trips',              href: '/vehicle-management/trips',          label: 'Trip Management', resource: 'Trip Management',           icon: LocateFixed, tone: 'blue', group: 'ops' },
   { id: 'documents',          href: '/vehicle-management/documents',      label: 'Documents',       resource: 'Document Management',       icon: FileArchive, tone: 'slate', group: 'ops' },
   { id: 'reports',            href: '/vehicle-management/reports',        label: 'Reports',         resource: 'Reports',                   icon: BarChart3,   tone: 'indigo', group: 'ops' },
-  { id: 'settings',           href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings',                  icon: Settings,    tone: 'slate', group: 'ops' },
+  { id: 'settings',           href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings', alsoResources: ['Fleet Settings'], icon: Settings, tone: 'slate', group: 'ops' },
 ];
 
 const groupLabels: Record<string, string> = {
   core: 'Command Center',
   fleet: 'Fleet',
+  fleetops: 'Fleet Control',
   compliance: 'Compliance',
   ops: 'Operations & Reports',
 };
@@ -68,7 +84,7 @@ const bottomTabPriority: ModuleNavTab[] = [
   { href: '/vehicle-management',              label: 'Home',     icon: Gauge, exact: true, ariaLabel: 'Overview' },
   { href: '/vehicle-management/renewals',     label: 'Renewals', icon: RefreshCw, ariaLabel: 'Renewals hub' },
   { href: '/vehicle-management/vehicle-master', label: 'Vehicles', icon: CarFront, ariaLabel: 'Vehicle master' },
-  { href: '/vehicle-management/trips',        label: 'Trips',    icon: LocateFixed, ariaLabel: 'Trip management' },
+  { href: '/vehicle-management/fleet/trips',  label: 'Trips',    icon: LocateFixed, ariaLabel: 'Fleet trips' },
   { href: '/vehicle-management/fuel',         label: 'Fuel',     icon: Fuel },
   { href: '/vehicle-management/maintenance',  label: 'Service',  icon: Wrench, ariaLabel: 'Maintenance' },
   { href: '/vehicle-management/reports',      label: 'Reports',  icon: BarChart3 },
@@ -80,11 +96,13 @@ type Can = ReturnType<typeof useAuthorization>['can'];
 const canResource = (can: Can, resource: string) =>
   can('View', `${MODULE}.${resource}`) || can('Add', `${MODULE}.${resource}`) || can('Edit', `${MODULE}.${resource}`);
 
+const sectionResources = (item: Section) => [item.resource, ...(item.alsoResources ?? [])].filter(Boolean);
+
 const canViewModuleWith = (can: Can) =>
-  can('View Module', MODULE) || sections.some((item) => Boolean(item.resource) && canResource(can, item.resource));
+  can('View Module', MODULE) || sections.some((item) => sectionResources(item).some((resource) => canResource(can, resource)));
 
 /** A section without a resource is open to anyone in the module. */
-const canSee = (can: Can, item: Section) => (item.resource ? canResource(can, item.resource) : canViewModuleWith(can));
+const canSee = (can: Can, item: Section) => (item.resource ? sectionResources(item).some((resource) => canResource(can, resource)) : canViewModuleWith(can));
 
 export default function VehicleManagementLayoutShell({ children }: { children: ReactNode }) {
   const { can, isLoading } = useAuthorization();

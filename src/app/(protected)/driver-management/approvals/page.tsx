@@ -1,7 +1,14 @@
-'use client';
+import { Suspense } from 'react';
 
-import ClaimsList from '@/components/driver-management/trips/claims-list';
+import ApprovalsHub from '@/components/driver-management/approvals-hub';
+import { LoadingBlock } from '@/components/driver-management/trips/trip-ui';
 
+// Trip claims and company-vehicle approvals in one inbox. `?tab=` and `?open=` are read with
+// useSearchParams, which needs a Suspense boundary.
 export default function ApprovalsPage() {
-  return <ClaimsList mode="approvals" />;
+  return (
+    <Suspense fallback={<LoadingBlock />}>
+      <ApprovalsHub />
+    </Suspense>
+  );
 }

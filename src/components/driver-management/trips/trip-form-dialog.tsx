@@ -292,7 +292,8 @@ export function TripFormDialog({
   }, [myTrips]);
   const daysLeft = daysLeftToClaim(form.tripDate, data.today, rules);
 
-  const check = validateTrip(input, { rules, today: data.today, companyVehicle });
+  // An existing company-vehicle draft stays editable when company vehicles are off (or fleet trips).
+  const check = validateTrip(input, { rules, today: data.today, companyVehicle, existingOwnership: trip?.ownership ?? null });
   // Errors show once the employee has tried to save, then update as they fix them.
   const liveErrors: TripErrors = attempted ? { ...errors, ...(check.ok ? {} : check.errors) } : {};
 
@@ -424,7 +425,7 @@ export function TripFormDialog({
           <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Vehicle ownership">
             {([
               { value: 'own', label: 'Own vehicle', icon: Car, allowed: rules.allowOwnVehicle },
-              { value: 'company', label: 'Company vehicle', icon: Building2, allowed: rules.allowCompanyVehicle },
+              { value: 'company', label: 'Company vehicle', icon: Building2, allowed: rules.allowCompanyVehicle || trip?.ownership === 'company' },
             ] as const).map((option) => (
               <button
                 key={option.value}
@@ -542,7 +543,13 @@ export function TripFormDialog({
             <Field label="Opening reading (km)" required error={liveErrors.startOdometer} htmlFor="trip-start" hint={lastReading !== null && !trip ? `Last logged: ${lastReading.toLocaleString('en-IN')}` : undefined}>
               <Input id="trip-start" type="number" inputMode="decimal" step="0.1" min="0" value={startText} onChange={(event) => set('startOdometer', event.target.value)} className="bg-white" aria-invalid={Boolean(liveErrors.startOdometer)} />
             </Field>
-            <Field label="Closing reading (km)" required={mode === 'save'} error={mode === 'save' ? liveErrors.endOdometer ?? liveErrors.distance : undefined} htmlFor="trip-end">
+            <Field
+              label="Closing reading (km)"
+              required={mode === 'save'}
+              error={mode === 'save' ? liveErrors.endOdometer ?? liveErrors.distance : undefined}
+              htmlFor="trip-end"
+              hint={gps ? `GPS measured ${formatKm(gps.measuredKm)}${toNumber(startText) !== null ? ` — about ${Math.round((toNumber(startText) as number) + gps.measuredKm).toLocaleString('en-IN')}` : ''}` : undefined}
+            >
               <Input id="trip-end" type="number" inputMode="decimal" step="0.1" min="0" value={form.endOdometer} onChange={(event) => set('endOdometer', event.target.value)} disabled={mode === 'gps-start'} placeholder={mode === 'gps-start' ? 'Measured' : undefined} className="bg-white" aria-invalid={Boolean(mode === 'save' && (liveErrors.endOdometer || liveErrors.distance))} />
             </Field>
           </div>
