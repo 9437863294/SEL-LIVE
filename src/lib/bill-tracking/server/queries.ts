@@ -13,8 +13,7 @@ import { billLedger, combinedLedger, financialYearOf, financialYearRange, isoWee
 import { isEnabledForProject } from '../categories.ts';
 import { canBeCertified, certificationSummary, certificationTotals, compareCertification, notesByInvoice, receiptBlockReason, type CertificationSummary } from '../certification.ts';
 import { isInvolved, isMyTask, isNamedInWorkflow } from '../workflow.ts';
-import { billRetention, canHoldRetention, retentionIndex, retentionTotals } from '../retention.ts';
-import { sumBy, toPaise } from '../money.ts';
+import { sumBy } from '../money.ts';
 import {
   ageingReport,
   billAgeingBucket,
@@ -64,7 +63,7 @@ import {
   type RetentionRelease,
 } from '../types.ts';
 import { BtError, db, type BtContext } from './context';
-import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadGstSetup, loadProjectRetention, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
+import { BT_COLLECTIONS, loadBill, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
 
 /* ── filters from the URL ────────────────────────────────────────────────── */
 
@@ -301,26 +300,6 @@ export async function invoicesForNote(context: BtContext, params: URLSearchParam
     .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, description: bill.description, billTypeId: bill.billTypeId, billTypeName: bill.billTypeName, billCategory: bill.billCategory, taxableAmount: bill.taxableAmount, gstAmount: bill.gstAmount, gstType: bill.gstType, gstPercent: bill.gstPercent, cgstAmount: bill.cgstAmount, sgstAmount: bill.sgstAmount, igstAmount: bill.igstAmount, grossAmount: bill.grossAmount, netReceivable: bill.netReceivable, certified: Boolean(bill.certification) }));
 }
 
-/**
- * Bills of one project with retention still to raise, head by head — what a retention bill can
- * claim. `exclude` is the retention bill being edited: its own claims do not count against it.
- */
-export async function retentionCandidates(context: BtContext, params: URLSearchParams) {
-  const projectId = params.get('project');
-  if (!projectId) return [];
-  if (!context.can('Bills', 'Add', projectId) && !context.can('Bills', 'Edit', projectId)) context.require('Bills', 'Add', projectId);
-  const exclude = params.get('exclude') || undefined;
-  const [config, { bills, releases }] = await Promise.all([loadConfig(context.organizationId), loadProjectRetention(context, projectId)]);
-  const index = retentionIndex(bills, releases, { excludeRetentionBillId: exclude });
-  const own = new Set((bills.find((bill) => bill.id === exclude)?.retentionClaims ?? []).map((claim) => claim.billId));
-  return bills
-    .filter(canHoldRetention)
-    .map((bill) => ({ bill, position: billRetention(bill, index, config.settings.tolerance) }))
-    .filter(({ bill, position }) => toPaise(position.pendingToRaise) > 0 || own.has(bill.id))
-    .sort((a, b) => a.bill.billDate.localeCompare(b.bill.billDate))
-    .map(({ bill, position }) => ({ id: bill.id, gstInvoiceNumber: bill.gstInvoiceNumber, billSerialNumber: bill.billSerialNumber, billDate: bill.billDate, billTypeName: bill.billTypeName, state: position.state, heads: position.heads }));
-}
-
 /* ── bill detail ─────────────────────────────────────────────────────────── */
 
 export async function billDetail(context: BtContext, billId: string) {
@@ -337,8 +316,6 @@ export async function billDetail(context: BtContext, billId: string) {
     firestore.collection(BT_COLLECTIONS.retention).where('againstBillId', '==', billId).get(),
     firestore.collection(BT_COLLECTIONS.retention).where('retentionBillId', '==', billId).get(),
     firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', billId).get(),
-    // Retention bills claiming this bill's retention.
-    firestore.collection(BT_COLLECTIONS.bills).where('retentionClaimBillIds', 'array-contains', billId).get(),
   ]);
   related.catch(() => undefined);
   // Scope is checked here rather than in loadBill, because it needs the settings that load alongside.
@@ -349,7 +326,7 @@ export async function billDetail(context: BtContext, billId: string) {
     context.require('Bills', 'View');
   }
   const rc = reportContext(config, context.today);
-  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes, claimers] = await related;
+  const [collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes] = await related;
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
   const liveNotes = docs<Bill>(notes).filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId);
@@ -362,10 +339,6 @@ export async function billDetail(context: BtContext, billId: string) {
     documents: docs<BillDocument>(documents).filter((document) => !document.isDeleted).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
     activity: docs<BillActivity>(activity).sort((a, b) => b.at.localeCompare(a.at)),
     retention: releases.sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
-    // Held, raised by retention bills, received, still to raise — for a bill that can hold retention.
-    retentionPosition: canHoldRetention(bill)
-      ? billRetention(bill, retentionIndex([...docs<Bill>(claimers).filter((claimer) => (claimer as Bill & { organizationId?: string }).organizationId === context.organizationId), ...docs<Bill>(notes)], releases), config.settings.tolerance)
-      : null,
     // Raised vs notes vs the client's certification — null for a note (notes are not certified).
     certification: canBeCertified(bill) || bill.certification ? compareCertification(bill, liveNotes, config.settings.tolerance) : null,
     // Credit / debit notes raised against this invoice (live ones only).
@@ -524,19 +497,8 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     }
     case 'deductions':
       return { ...base, dimension, ...deductionReport(bills, config.deductionTypes, dimension) };
-    case 'retention': {
-      const ledger = await releases();
-      // Bill by bill: claims can sit on a retention bill of another year, so they come from every year.
-      const everything = filters.financialYear ? await loadScopedBills(context) : all;
-      const index = retentionIndex(everything, ledger);
-      const byBill = bills
-        .filter(canHoldRetention)
-        .map((bill) => ({ bill, position: billRetention(bill, index, config.settings.tolerance) }))
-        .filter(({ position }) => position.state !== 'none')
-        .sort((a, b) => b.position.pendingToRaise - a.position.pendingToRaise || a.bill.billDate.localeCompare(b.bill.billDate))
-        .map(({ bill, position }) => ({ id: bill.id, gstInvoiceNumber: bill.gstInvoiceNumber, billSerialNumber: bill.billSerialNumber, billDate: bill.billDate, projectId: bill.projectId, projectName: bill.projectNameSnapshot, billTypeName: bill.billTypeName, ...position }));
-      return { ...base, ...retentionReport(bills, ledger, rc), releases: ledger.sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)), byBill, byBillTotals: retentionTotals(byBill) };
-    }
+    case 'retention':
+      return { ...base, ...retentionReport(bills, await releases(), rc), releases: (await releases()).sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)) };
     case 'ageing':
       return { ...base, ...ageingReport(filters.financialYear ? bills : bills, rc, { basis: filters.ageingBasis, dimension }) };
     case 'not-received': {

@@ -149,43 +149,7 @@ Where it shows:
 - **Code.** Logic in `src/lib/bill-tracking/certification.ts`; tests in
   `tests/bill-tracking-certification.test.mjs`.
 
-### Retention: held, raised, received
-
-A bill (say SUPPLY-100%) has retention deducted under one or more heads, for example 10% against
-the CPBG and 30% against the invoice. SEL later raises a **retention bill** to claim it back, often
-for several bills at once.
-
-- **Claims.** A retention bill names whose retention it claims: which bill, which head, how much
-  (`bill.retentionClaims`).
-  - The bill form shows *Retention being claimed* for a retention bill, chosen either by the
-    *Retention bill* type or by a retention sub category.
-  - That section lists the project's bills with retention still to raise, head by head (held,
-    raised already, still to raise).
-  - Tick a head to claim what is left, or lower the amount for a part claim.
-  - The server refuses a claim above what is still to raise, or one on another project.
-- **Per bill.** Each bill shows its position, per head and in total (`retention.ts`):
-
-  | Measure | Meaning |
-  |---|---|
-  | held | Retention deducted on the bill (plus any note adjusting it) |
-  | raised | Claimed on retention bills |
-  | received | Paid against those retention bills, or released directly |
-  | still to raise | Held less raised and less released directly |
-  | awaiting payment | Raised but not yet paid |
-
-  The status is one of *not raised*, *partly raised*, *raised · awaiting payment* or *received*.
-- **Receipts.** A verified receipt on a retention bill is credited back to the bills it claimed, in
-  proportion to the claims. Each original bill then shows its retention as received. A retention
-  bill without claims (for example, imported) releases against the project, as before.
-- **Where it shows.**
-  - The bill page's *Retention* tab shows the position and the retention bills, with a *Raise
-    retention bill* button that opens the form with that bill's pending retention ticked. A
-    retention bill's tab lists the bills it claims.
-  - The Retention page has a *By bill* view of every bill with retention, its status and what is
-    still to raise. It also has *By project* and the *Release ledger*.
-  - A release recorded by hand now picks the bill and head from a list.
-
-
+## Deployment checklist
 
 1. **Firestore rules (console).** Copy the "Bill Tracking & Collection Management" block from
    `firestore.rules` into the console ruleset. The repo file is not deployed. If the console ends
@@ -245,6 +209,6 @@ The net and outstanding differences are exactly the 7 flagged rows.
 ## Tests
 
 ```
-npm run test:bill-tracking       # 110 tests: calculations, ageing, import, reports, GST, categories, certification, workflow, retention, permissions, reminders
+npm run test:bill-tracking       # 84 tests: calculations, ageing, import, reports, GST, categories, certification, permissions, reminders
 npm run typecheck:bill-tracking
 ```

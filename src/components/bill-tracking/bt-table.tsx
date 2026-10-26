@@ -97,7 +97,6 @@ export function BtTable<T extends { id: string }>({
   const [localSort, setLocalSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is read after mount, so the server render and the first client render agree
     setHidden(readHidden(storageKey, columns as BtColumn<unknown>[]));
     // Columns are static per table; only the storage key matters.
     // eslint-disable-next-line react-hooks/exhaustive-deps

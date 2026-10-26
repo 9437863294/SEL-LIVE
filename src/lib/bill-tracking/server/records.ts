@@ -210,7 +210,6 @@ export async function addRetentionRelease(context: BtContext, input: z.infer<typ
     againstBillId: against?.id,
     againstBillSerial: against ? against.gstInvoiceNumber || against.billSerialNumber : undefined,
     retentionBillId: input.retentionBillId,
-    deductionTypeId: against ? input.deductionTypeId : undefined,
     kind: input.kind,
     releaseDate: input.releaseDate,
     amount: input.amount,

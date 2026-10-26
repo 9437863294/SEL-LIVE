@@ -538,13 +538,6 @@ export interface Bill {
   deductions: BillDeduction[];
   /** The client's certified figures, once recorded (invoices and retention bills — never notes). */
   certification?: BillCertification;
-  /**
-   * On a retention bill: the retention it claims back — which bill, which retention head, how much.
-   * See `retention.ts`.
-   */
-  retentionClaims?: RetentionClaim[];
-  /** The bills those claims are against, for an array-contains lookup from the bill's side. */
-  retentionClaimBillIds?: string[];
 
   /* derived — written only by the server from the source values above */
   grossAmount: number;
@@ -664,20 +657,6 @@ export interface BillCollection {
   updatedAt: string;
 }
 
-/** One line of a retention bill: retention held on another bill, under one head, being claimed back. */
-export interface RetentionClaim {
-  /** The bill the retention was deducted on. */
-  billId: string;
-  /** Its GST invoice or bill number and date, as they were when claimed. */
-  billRef?: string;
-  billDate?: string;
-  /** The retention deduction head (deduction type) on that bill. */
-  deductionTypeId: string;
-  deductionTypeName: string;
-  kind: DeductionKind;
-  amount: number;
-}
-
 export interface RetentionRelease {
   id: string;
   projectId: string;
@@ -685,8 +664,6 @@ export interface RetentionRelease {
   /** Bill whose retention is being released, when known. */
   againstBillId?: string;
   againstBillSerial?: string;
-  /** The retention head released, when known (receipts on a retention bill with claims set it). */
-  deductionTypeId?: string;
   /** Retention bill or collection that carried the release, when there is one. */
   retentionBillId?: string;
   collectionId?: string;

@@ -14,7 +14,7 @@
  * configured base (e.g. Income TDS on taxable less mobilisation advance) as the figures change.
  */
 
-import { useCallback, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Calculator, ClipboardCheck, Plus, ReceiptIndianRupee, RotateCcw, Save } from 'lucide-react';
@@ -38,7 +38,6 @@ import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, WORKFLOW_S
 
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { Amount, BtError, BtLoading, FIELD_ROW, FormField, FormSection, Notice, Term, dateText, type FieldWidth } from './bt-ui';
-import { RetentionClaimsSection, type ClaimRow } from './retention-claims';
 import { DeductionEditor, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
 /** `legacy` = a bill imported with a single GST figure, not yet split. */
@@ -85,8 +84,6 @@ interface FormState {
   retentionExpectedReleaseDate: string;
   taxableOrAdvance: string;
   changeReason: string;
-  /** Retention bill only: whose retention it claims back. */
-  retentionClaims: ClaimRow[];
 }
 
 interface InvoiceOption {
@@ -156,7 +153,6 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
     retentionExpectedReleaseDate: bill.retentionExpectedReleaseDate ?? '',
     taxableOrAdvance: bill.taxableOrAdvance ?? '',
     changeReason: '',
-    retentionClaims: (bill.retentionClaims ?? []).map((claim) => ({ billId: claim.billId, deductionTypeId: claim.deductionTypeId, amount: String(claim.amount) })),
   };
 }
 
@@ -258,7 +254,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           retentionExpectedReleaseDate: '',
           taxableOrAdvance: '',
           changeReason: '',
-          retentionClaims: [],
         };
     return prefill ? withSuggestedNote(blank, prefill.note, prefill.invoice, config) : blank;
   });
@@ -273,9 +268,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   // A sub category already on the bill stays selectable on its own project even if since narrowed.
   const keepTypeFor = (projectId: string) => (existing && existing.projectId === projectId ? existing.billTypeId : undefined);
   const subCategories = subCategoriesFor(config.billTypes, form.categoryId, form.projectId, keepTypeFor(form.projectId));
-  // A retention bill (by type, or by its sub category) names whose retention it claims back.
-  const isRetentionBill = form.transactionType === 'retention_bill' || Boolean(config.billTypes.find((type) => type.id === form.billTypeId)?.isRetentionBill);
-  const setRetentionClaims = useCallback((retentionClaims: ClaimRow[]) => setForm((current) => ({ ...current, retentionClaims })), []);
   const clientId = form.clientId || project?.clientId || '';
   const client = lookups.clients.find((entry) => entry.id === clientId);
 
@@ -324,7 +316,11 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   const deductionLines = computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
 
-  const totals = deriveBillTotals({ taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [] }, { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee });
+  const totals = useMemo(
+    () => deriveBillTotals({ taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [] }, { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [taxable, gstTotal, JSON.stringify(deductionLines), existing, config.settings.tolerance, config.settings.roundNetToRupee],
+  );
 
   const addDeduction = () => setForm((current) => ({ ...current, deductions: [...current.deductions, emptyDeductionRow()] }));
   const setDeductionRows = (update: (rows: DeductionRow[]) => DeductionRow[]) => setForm((current) => ({ ...current, deductions: update(current.deductions) }));
@@ -419,8 +415,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       igstAmount: gstChoice === 'igst' ? components.igstAmount : undefined,
       gstRegistrationId: form.gstRegistrationId || undefined,
       deductions: deductionInputs,
-      // A retention bill always sends its claims (an edit without them would drop them).
-      retentionClaims: isRetentionBill ? form.retentionClaims.filter((claim) => num(claim.amount) > 0).map((claim) => ({ billId: claim.billId, deductionTypeId: claim.deductionTypeId, amount: num(claim.amount) })) : [],
       targetWeek: form.targetWeek,
       collectionOwnerId: form.collectionOwnerId || undefined,
       currentStage: form.currentStage,
@@ -673,17 +667,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 </div>
               ) : null}
           </FormSection>
-
-          {isRetentionBill ? (
-            <RetentionClaimsSection
-              projectId={form.projectId}
-              retentionBillId={existing?.id}
-              claims={form.retentionClaims}
-              onChange={setRetentionClaims}
-              preselectBillId={existing ? undefined : params.get('claim') ?? undefined}
-              onUseTotal={(total) => setForm((current) => ({ ...current, taxableAmount: String(total), gstManual: false }))}
-            />
-          ) : null}
 
           <FormSection step={3} title="Amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the invoice.">
               <div className={FIELD_ROW}>
