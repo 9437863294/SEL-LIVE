@@ -1,5 +1,7 @@
-import { btRoute } from '@/lib/bill-tracking/server/context';
-import { retentionCandidates } from '@/lib/bill-tracking/server/queries';
+import { NextResponse } from 'next/server';
 
-/** Bills of a project with retention still to raise — what a retention bill can claim. */
-export const GET = btRoute('retention.pending', async ({ context, url }) => ({ bills: await retentionCandidates(context, url.searchParams) }));
+/**
+ * Left over from the retention-claims screen, which was removed. Nothing calls it any more; it
+ * answers 410 so a stale browser tab gets a clear reply. Safe to delete (with the dev server stopped).
+ */
+export const GET = () => NextResponse.json({ error: 'This endpoint is no longer used.' }, { status: 410 });

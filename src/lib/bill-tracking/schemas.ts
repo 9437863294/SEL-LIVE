@@ -90,6 +90,11 @@ export const billInputSchema = z.object({
   remarks: optionalText(2000),
   retentionExpectedReleaseDate: optionalDate,
   retentionDisputed: z.boolean().optional(),
+  /**
+   * Retention bill only: the slab it releases (head + rate; rate null = the head's fixed amounts).
+   * Not coerced — `z.coerce.number()` would turn null into 0%.
+   */
+  releasesRetention: z.object({ deductionTypeId: z.string().min(1).max(64), rate: z.union([z.number().min(0).max(100), z.null()]) }).optional(),
   taxableOrAdvance: optionalText(20),
   /** Required when a protected field changes on an approved bill, or the change lands in a closed month. */
   changeReason: optionalText(1000),
@@ -205,6 +210,9 @@ export const retentionReleaseSchema = z.object({
   againstBillId: optionalText(128),
   retentionBillId: optionalText(128),
   kind: z.enum(DEDUCTION_KINDS).default('retention_invoice'),
+  /** The slab released: the retention head and its rate (null = the head's fixed amounts). Both optional. */
+  deductionTypeId: optionalText(64),
+  rate: z.union([z.number().min(0).max(100), z.null()]).optional(),
   releaseDate: dateKey,
   amount: money.refine((value) => value > 0, 'Release amount must be positive.'),
   remarks: optionalText(1000),

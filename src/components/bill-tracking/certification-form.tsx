@@ -400,6 +400,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               defaultGstRate={config.settings.defaultGstRate}
               emptyText="The client deducts nothing."
               reference={{ label: 'Raised', byType: raisedByType }}
+              bases={{ taxable, gross }}
             />
           </FormSection>
         </div>

@@ -46,6 +46,7 @@ import {
   type OutstandingChip,
   type ReportContext,
 } from '../reports.ts';
+import { retentionBifurcation } from '../retention.ts';
 import {
   AGEING_BASES,
   PAYMENT_STATUSES,
@@ -497,8 +498,16 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     }
     case 'deductions':
       return { ...base, dimension, ...deductionReport(bills, config.deductionTypes, dimension) };
-    case 'retention':
-      return { ...base, ...retentionReport(bills, await releases(), rc), releases: (await releases()).sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)) };
+    case 'retention': {
+      // One read of the releases: the report, the bifurcation by rate and the list share it.
+      const ledger = await releases();
+      return {
+        ...base,
+        ...retentionReport(bills, ledger, rc),
+        bifurcation: retentionBifurcation(bills, ledger, config.deductionTypes),
+        releases: [...ledger].sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
+      };
+    }
     case 'ageing':
       return { ...base, ...ageingReport(filters.financialYear ? bills : bills, rc, { basis: filters.ageingBasis, dimension }) };
     case 'not-received': {

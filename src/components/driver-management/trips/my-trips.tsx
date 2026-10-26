@@ -18,12 +18,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, ListChecks, LocateFixed, Navigation, Pencil, Plus, ReceiptText, Route, Trash2, Undo2 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { CalendarClock, ListChecks, Navigation, Plus, ReceiptText, Route, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CellLink, DataList, type ListColumn } from '@/components/shared/data-list';
+import { DataList } from '@/components/shared/data-list';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { PageHeader } from '@/components/shared/page-header';
@@ -31,6 +30,7 @@ import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { useToast } from '@/hooks/use-toast';
 import { sumMoney } from '@/lib/employee-trips/rates';
 import { daysLeftToClaim, isClaimable, withinClaimWindow } from '@/lib/employee-trips/trips';
+import { myTripColumns } from './my-trips-columns';
 import { formatKm, type TripRecord, type TripStatus } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
 import { errorMessage, tripFetch } from './trip-api';
@@ -38,7 +38,7 @@ import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { CreateClaimDialog, type CreatedClaim } from './submit-claim-dialog';
 import { TripFormDialog } from './trip-form-dialog';
-import { ClaimSteps, EmptyBlock, ErrorBlock, FlagChips, Km, LoadingBlock, Money, SegmentTabs, TripStatusBadge, VehicleLabel, shortDate } from './trip-ui';
+import { ClaimSteps, EmptyBlock, ErrorBlock, LoadingBlock, Money, SegmentTabs, shortDate } from './trip-ui';
 
 type View = 'unclaimed' | 'process' | 'paid' | 'rejected' | 'all';
 
@@ -174,129 +174,19 @@ export default function MyTrips() {
     }
   }
 
-  // One line per trip on a desktop: each cell's parts sit side by side, long text is truncated with
-  // the full value on hover. Phone cards still wrap them (`sm:` below), so nothing is cut off there.
-  const columns: ListColumn<TripRecord>[] = [
-    {
-      header: 'Select',
-      mobile: 'omit',
-      className: 'w-10',
-      cell: (trip) => (claimable(trip) ? <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} /> : null),
+  const columns = myTripColumns({
+    rules,
+    today,
+    claimable,
+    selected,
+    toggle,
+    openClaim,
+    onEdit: (trip) => {
+      setEditing(trip);
+      setFormOpen(true);
     },
-    {
-      header: 'Trip',
-      mobile: 'title',
-      cell: (trip) => (
-        <span className="flex min-w-0 max-w-[26rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
-          <span className="truncate font-medium text-slate-800">
-            {trip.fromPlace} → {trip.toPlace}
-          </span>
-          {trip.purpose && <span className="truncate text-xs text-muted-foreground">· {trip.purpose}</span>}
-          {trip.status === 'draft' && trip.returnNote && (
-            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-amber-700" title={`Sent back: ${trip.returnNote.remarks}`}>
-              <Undo2 className="h-3 w-3" aria-hidden />
-              Sent back
-            </span>
-          )}
-        </span>
-      ),
-    },
-    { header: 'Date', cell: (trip) => <span className="whitespace-nowrap">{shortDate(trip.tripDate)}</span> },
-    { header: 'Vehicle', cell: (trip) => <VehicleLabel inline ownership={trip.ownership} vehicleNumber={trip.vehicleNumber} vehicleType={trip.vehicleType} /> },
-    {
-      header: 'Distance',
-      align: 'right',
-      /*
-        A measured distance and a typed one are both just a number in this column, and they are
-        not the same evidence — which is the whole reason `source` and the GPS block are stored.
-        Shown here rather than only to the approver: the employee should see which of their trips
-        carry a measurement before they put them on a claim.
-      */
-      cell: (trip) => (
-        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
-          <Km value={trip.distanceKm} className="whitespace-nowrap" />
-          {trip.source === 'gps' && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-sky-200 bg-sky-50 text-[10px] text-sky-700"
-              title={
-                trip.gps
-                  ? `Measured by GPS: ${trip.gps.measuredKm} km from ${trip.gps.fixes} fixes.`
-                  : 'Measured by GPS.'
-              }
-            >
-              <LocateFixed className="h-3 w-3" aria-hidden />
-              GPS
-            </Badge>
-          )}
-        </span>
-      ),
-    },
-    {
-      header: 'Amount',
-      align: 'right',
-      cell: (trip) => {
-        const cut = trip.decision && trip.decision.approvedAmount !== trip.totalAmount;
-        return (
-          <span className="inline-flex items-baseline justify-end gap-1.5 whitespace-nowrap">
-            <Money value={trip.decision ? trip.decision.approvedAmount : trip.totalAmount} className="font-medium" />
-            <span className="text-[11px] text-muted-foreground">
-              {cut ? <>of <Money value={trip.totalAmount} /></> : trip.ratePerKm !== null ? `@ ₹${trip.ratePerKm}/km` : 'no rate'}
-            </span>
-          </span>
-        );
-      },
-    },
-    {
-      header: 'Status',
-      mobile: 'aside',
-      cell: (trip) => {
-        const left = rules && trip.status === 'draft' ? daysLeftToClaim(trip.tripDate, today, rules) : null;
-        return (
-          <div className="flex flex-wrap items-center justify-end gap-1.5 sm:flex-nowrap sm:justify-start sm:whitespace-nowrap">
-            <TripStatusBadge status={trip.status} />
-            {trip.claimId && trip.claimNumber && (
-              <CellLink href={`/driver-management/claims/${trip.claimId}`} className="text-[11px] font-medium text-primary hover:underline">
-                {trip.claimNumber}
-              </CellLink>
-            )}
-            {left !== null && left < 0 && <span className="text-[11px] font-medium text-rose-700">Claim window closed</span>}
-            {left !== null && left >= 0 && left <= 7 && <span className="text-[11px] font-medium text-amber-700">Claim within {left} day{left === 1 ? '' : 's'}</span>}
-            <FlagChips flags={trip.flags} className="sm:flex-nowrap" />
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Actions',
-      mobile: 'footer',
-      cell: (trip) =>
-        trip.status === 'draft' ? (
-          <div className="flex items-center gap-1.5">
-            {claimable(trip) && (
-              <label className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm sm:hidden">
-                <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} />
-                Select
-              </label>
-            )}
-            {claimable(trip) && (
-              <Button type="button" variant="outline" size="sm" onClick={() => openClaim([trip.id])} title="Create a claim for this trip" className="border-primary/40 text-primary hover:text-primary">
-                <ReceiptText className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-                Claim
-              </Button>
-            )}
-            <Button type="button" variant="outline" size="sm" onClick={() => { setEditing(trip); setFormOpen(true); }} aria-label="Edit trip">
-              <Pencil className="h-3.5 w-3.5 sm:mr-0" aria-hidden />
-              <span className="ml-1.5 sm:hidden">Edit</span>
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setDeleting(trip)} aria-label="Delete trip" className="text-rose-600 hover:text-rose-700">
-              <Trash2 className="h-3.5 w-3.5" aria-hidden />
-              <span className="ml-1.5 sm:hidden">Delete</span>
-            </Button>
-          </div>
-        ) : null,
-    },
-  ];
+    onDelete: setDeleting,
+  });
 
   if (bootLoading && !data) return <LoadingBlock />;
   if (!data) return <ErrorBlock message={bootError ?? 'Could not load trip claims.'} onRetry={() => void reloadBootstrap()} />;
@@ -308,7 +198,7 @@ export default function MyTrips() {
       <PageHeader
         title="My Trips"
         icon={Route}
-        description="Your own-vehicle trips, recorded by GPS on Fleet Trip. Create a claim with one, several or all of the unclaimed ones."
+        description="Your own-vehicle trips. Put one, several or all of the unclaimed ones on a claim."
         meta={[
           { label: 'Unclaimed', value: <><Money value={sumMoney(drafts.map((trip) => trip.totalAmount))} /> · {formatKm(drafts.reduce((total, trip) => total + trip.distanceKm, 0))}</> },
           { label: 'In process', value: <Money value={sumMoney(all.filter((trip) => trip.status === 'submitted' || trip.status === 'approved').map((trip) => trip.decision?.approvedAmount ?? trip.totalAmount))} /> },
@@ -339,15 +229,20 @@ export default function MyTrips() {
         }
       />
 
-      <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
-        Trips are recorded on{' '}
+      {/* One line on a phone; the company-vehicle half of the story only where there is room for it. */}
+      <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+        Record trips on{' '}
         <Link href={RECORD_HREF} className="font-medium underline underline-offset-2">
           Fleet Trip
-        </Link>
-        : choose <span className="font-medium">Own vehicle</span> and Drive &amp; record — the trip comes here when you stop. A company vehicle is a fleet trip there, billed to the project and not claimable.
+        </Link>{' '}
+        › Own vehicle — they land here when you stop.
+        <span className="hidden sm:inline"> A company vehicle is a fleet trip there, billed to the project and not claimable.</span>
       </p>
 
+      {/* The four steps are a desktop explainer; on a phone they pushed the trips below the fold. */}
+      <div className="hidden sm:block">
       <ClaimSteps approvalName={data.settings.stages.find((stage) => stage.kind === 'approval')?.name} paymentName={data.settings.stages.find((stage) => stage.kind === 'payment')?.name} />
+      </div>
 
       {noRates && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">

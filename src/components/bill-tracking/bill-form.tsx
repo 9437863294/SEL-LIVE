@@ -28,11 +28,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
-import { addDays, deriveBillTotals, financialYearOf, isPastApproval } from '@/lib/bill-tracking/calculations';
+import { addDays, deriveBillTotals, financialYearOf, isPastApproval, isRetentionKind } from '@/lib/bill-tracking/calculations';
 import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tracking/categories';
 import type { CertificationComparison, SuggestedNote } from '@/lib/bill-tracking/certification';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
 import { formatINR } from '@/lib/bill-tracking/money';
+import { formatRate } from '@/lib/bill-tracking/retention';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, WORKFLOW_STATUS_LABELS, type Bill, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
 
@@ -82,6 +83,10 @@ interface FormState {
   currentStage: string;
   remarks: string;
   retentionExpectedReleaseDate: string;
+  /** Retention bill only: the retention head it releases ('' = not tied to a rate)… */
+  releasesTypeId: string;
+  /** …and the rate it was held at; '' = the head's fixed amounts. */
+  releasesRate: string;
   taxableOrAdvance: string;
   changeReason: string;
 }
@@ -151,6 +156,9 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
     currentStage: bill.currentStage ?? '',
     remarks: bill.remarks ?? '',
     retentionExpectedReleaseDate: bill.retentionExpectedReleaseDate ?? '',
+    // Loaded so a save sends it back — an update rewrites the whole bill.
+    releasesTypeId: bill.releasesRetention?.deductionTypeId ?? '',
+    releasesRate: str(bill.releasesRetention?.rate ?? undefined),
     taxableOrAdvance: bill.taxableOrAdvance ?? '',
     changeReason: '',
   };
@@ -252,6 +260,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           currentStage: '',
           remarks: '',
           retentionExpectedReleaseDate: '',
+          releasesTypeId: '',
+          releasesRate: '',
           taxableOrAdvance: '',
           changeReason: '',
         };
@@ -368,6 +378,23 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
     }
   };
 
+  /* ── retention bill: the retention it releases ────────────────────────── */
+  // The server's own test: the sub category is a retention bill, or the bill is entered as one.
+  const billType = config.billTypes.find((type) => type.id === form.billTypeId);
+  const isRetention = form.transactionType === 'retention_bill' || Boolean(billType?.isRetentionBill);
+  const savedReleaseTypeId = existing?.releasesRetention?.deductionTypeId;
+  const retentionTypes = config.deductionTypes.filter((type) => isRetentionKind(type.kind) && (type.active || type.id === savedReleaseTypeId)).sort((a, b) => a.sequence - b.sequence);
+  const releaseType = config.deductionTypes.find((type) => type.id === form.releasesTypeId);
+  // "30" or "30%"; blank = the head's fixed amounts.
+  const releaseRate = form.releasesRate.trim() === '' ? null : Number(form.releasesRate.replace(/[%\s]/g, ''));
+  const releaseRateInvalid = isRetention && Boolean(form.releasesTypeId) && releaseRate !== null && !(Number.isFinite(releaseRate) && releaseRate > 0 && releaseRate <= 100);
+  const rateSuggestions = [...new Set([releaseType?.defaultPercent, 10, 30].filter((value): value is number => typeof value === 'number'))];
+  const releaseHint = !form.releasesTypeId
+    ? 'Which retention this bill recovers. Receipts on it then release that retention, rate by rate.'
+    : releaseRateInvalid
+      ? undefined
+      : `Receipts on this bill release ${releaseType?.name ?? 'this head'}${releaseRate === null ? ' · fixed amount' : ` @ ${formatRate(releaseRate)}%`}.`;
+
   /* ── dates ────────────────────────────────────────────────────────────── */
   const creditDays = project?.creditDays ?? client?.paymentTermsDays ?? config.settings.defaultCreditDays;
   const computedDue = form.billDate ? addDays(form.submissionDate || form.billDate, creditDays) : '';
@@ -386,6 +413,10 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (releaseRateInvalid) {
+      setSaveError('The retention rate this bill releases must be above 0 and up to 100 — or blank for the head’s fixed amounts.');
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     const body = {
@@ -420,6 +451,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       currentStage: form.currentStage,
       remarks: form.remarks,
       retentionExpectedReleaseDate: form.retentionExpectedReleaseDate,
+      // Always sent for a retention bill: an update rewrites the whole bill, so leaving it out drops it.
+      releasesRetention: isRetention && form.releasesTypeId ? { deductionTypeId: form.releasesTypeId, rate: releaseRate } : undefined,
       taxableOrAdvance: form.taxableOrAdvance,
       changeReason: form.changeReason,
       expectedVersion: existing?.version,
@@ -620,6 +653,47 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 {field('Description', <Input value={form.description} onChange={(event) => set('description', event.target.value)} placeholder="e.g. RA Bill 4 — civil works" />, undefined, undefined, 'grow')}
               </div>
 
+              {/* One invoice often holds retention at two rates (10% and 30%); a retention bill says which one it recovers. */}
+              {isRetention ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                  <div className={FIELD_ROW}>
+                    {field(
+                      'Releases retention',
+                      <Select value={form.releasesTypeId || 'none'} onValueChange={(value) => set('releasesTypeId', value === 'none' ? '' : value)}>
+                        <SelectTrigger id="releases-type" aria-label="Retention this bill releases">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-80">
+                          <SelectItem value="none">Not tied to a rate</SelectItem>
+                          {retentionTypes.map((type) => (
+                            <SelectItem key={type.id} value={type.id}>
+                              {type.name}
+                              {type.active ? '' : ' · inactive'}
+                            </SelectItem>
+                          ))}
+                          {form.releasesTypeId && !retentionTypes.some((type) => type.id === form.releasesTypeId) ? <SelectItem value={form.releasesTypeId}>{releaseType?.name ?? 'A removed head'} — choose another</SelectItem> : null}
+                        </SelectContent>
+                      </Select>,
+                      releaseHint,
+                      'releases-type',
+                      'wide',
+                    )}
+                    {field(
+                      'Rate %',
+                      <Input id="releases-rate" inputMode="decimal" list="bt-release-rates" placeholder="Fixed" disabled={!form.releasesTypeId} value={form.releasesRate} onChange={(event) => set('releasesRate', event.target.value)} />,
+                      releaseRateInvalid ? <span className="text-rose-700">Above 0 and up to 100.</span> : 'Blank = the head’s fixed amounts.',
+                      'releases-rate',
+                      'short',
+                    )}
+                    <datalist id="bt-release-rates">
+                      {rateSuggestions.map((value) => (
+                        <option key={value} value={String(value)} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+              ) : null}
+
               {note ? (
                 <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-3">
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
@@ -801,6 +875,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               gstType={deductionGstType}
               totalDeduction={totals.totalDeduction}
               defaultGstRate={config.settings.defaultGstRate}
+              bases={{ taxable, gross }}
             />
           </FormSection>
 
@@ -905,7 +980,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
             <Button asChild variant="outline" className="flex-1">
               <Link href={existing ? `/bill-tracking/bills/${existing.id}` : '/bill-tracking/bills'}>Cancel</Link>
             </Button>
-            <Button type="submit" className="flex-1 gap-1.5" disabled={saving || !canSave || !form.projectId || !form.categoryId || !form.billTypeId || (needsInvoice && !form.againstBillId)}>
+            <Button type="submit" className="flex-1 gap-1.5" disabled={saving || !canSave || !form.projectId || !form.categoryId || !form.billTypeId || (needsInvoice && !form.againstBillId) || releaseRateInvalid}>
               <Save className="h-4 w-4" />
               {saving ? 'Saving…' : existing ? 'Save changes' : 'Create'}
             </Button>

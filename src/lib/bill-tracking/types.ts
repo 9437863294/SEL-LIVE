@@ -536,6 +536,11 @@ export interface Bill {
   /** The client's GSTIN at the time of the bill. */
   clientGstin?: string;
   deductions: BillDeduction[];
+  /**
+   * Retention bill only: the retention slab it releases (head + rate, rate null = the head's fixed
+   * amounts). Receipts on the bill release that slab. Absent = not tied to a slab.
+   */
+  releasesRetention?: { deductionTypeId: string; rate: number | null };
   /** The client's certified figures, once recorded (invoices and retention bills — never notes). */
   certification?: BillCertification;
 
@@ -668,6 +673,12 @@ export interface RetentionRelease {
   retentionBillId?: string;
   collectionId?: string;
   kind: DeductionKind;
+  /**
+   * The slab released (see `retention.ts`): the retention head and its rate — null for the head's
+   * fixed amounts. Absent = not tied to a slab (counted at project level).
+   */
+  deductionTypeId?: string;
+  rate?: number | null;
   releaseDate: string;
   amount: number;
   remarks?: string;

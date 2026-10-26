@@ -55,7 +55,8 @@ import { daysBetween, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { STEP_PERMISSION, availableActions, certificationBlocked, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
-import { formatINR } from '@/lib/bill-tracking/money';
+import { formatINR, sumMoney } from '@/lib/bill-tracking/money';
+import { billRetentionSlabs, formatRate, releaseSlabKey, type BillSlab } from '@/lib/bill-tracking/retention';
 import {
   AGEING_BASIS_LABELS,
   COMMITMENT_STATUS_LABELS,
@@ -963,35 +964,123 @@ export function LedgerTable({ lines }: { lines: LedgerLine[] }) {
   );
 }
 
+/** "Retention Against Invoice @ 30%" / "… · fixed amount" — worded as `retention.ts` labels a slab. */
+const slabLabel = (name: string, rate: number | null) => (rate === null ? `${name} · fixed amount` : `${name} @ ${formatRate(rate)}%`);
+
+const SLAB_BASIS_LABELS: Record<BillSlab['basis'], string> = { percent: 'Typed %', amount: 'From amount', mixed: 'Typed % and amount' };
+
+/**
+ * Retention held on this bill slab by slab — head plus rate, since one invoice often deducts 10% and
+ * 30% under the same head — and what has been released against it. A retention bill also says
+ * which slab it releases.
+ */
 function RetentionTab({ bill, releases }: { bill: BillRow; releases: RetentionRelease[] }) {
-  const retentionLines = bill.deductions.filter((line) => line.kind.startsWith('retention'));
+  const { config } = useLookups();
+  const { can } = useBt();
+  const slabs = billRetentionSlabs(bill, config.deductionTypes);
+  const slabList = slabs.map((entry) => entry.slab);
+  const typeOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
+  const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
+  const released = bill.releasesRetention;
+  // The slab a release names: the matching row above, else its head and rate as recorded.
+  const releaseLabel = (release: RetentionRelease) => {
+    if (release.rate === undefined) return null;
+    const key = releaseSlabKey(release, slabList);
+    const match = key ? slabList.find((slab) => slab.key === key) : undefined;
+    if (match) return match.label;
+    const head = release.deductionTypeId ? typeOf(release.deductionTypeId)?.name : undefined;
+    if (head) return slabLabel(head, release.rate);
+    return release.rate === null ? 'Fixed amount' : `${formatRate(release.rate)}%`;
+  };
+  const basisTip = (entry: BillSlab) => {
+    const base = typeOf(entry.slab.deductionTypeId)?.percentBase === 'gross' ? 'gross' : 'taxable';
+    const fromAmount = `Worked out from the amount: read against the bill’s ${base} of ${formatINR(base === 'gross' ? bill.grossAmount : bill.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
+    if (entry.basis === 'percent') return 'The percentage typed on the deduction line.';
+    return entry.basis === 'amount' ? fromAmount : `Some lines were typed as a percentage, others as an amount. ${fromAmount}`;
+  };
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-4 p-4">
         <SectionHeader title="Retention on this bill" icon={PiggyBank} as="h3" />
-        {retentionLines.length === 0 && releases.length === 0 ? <p className="text-sm text-muted-foreground">No retention deducted on or released against this bill.</p> : null}
-        {retentionLines.length ? (
-          <ul className="space-y-1 text-sm">
-            {retentionLines.map((line) => (
-              <li key={line.id} className="flex justify-between gap-2">
-                <span>Held · {line.deductionTypeName}</span>
-                <Amount value={line.amount} />
-              </li>
-            ))}
-          </ul>
+        {isRetentionBill ? (
+          released ? (
+            <p className="text-sm text-slate-700">
+              Releases: <span className="font-medium text-slate-900">{slabLabel(typeOf(released.deductionTypeId)?.name ?? 'A retention head no longer in Settings', released.rate)}</span>
+              <span className="text-xs text-muted-foreground"> · receipts on this bill release that retention.</span>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Not tied to a retention rate — edit the bill to choose which retention it releases.
+              {can('Bills', 'Edit') && !bill.isDeleted ? (
+                <>
+                  {' '}
+                  <Link href={`/bill-tracking/bills/${bill.id}/edit`} className="text-emerald-700 hover:underline">
+                    Edit
+                  </Link>
+                </>
+              ) : null}
+            </p>
+          )
+        ) : null}
+        {slabs.length === 0 && releases.length === 0 ? <p className="text-sm text-muted-foreground">No retention deducted on or released against this bill.</p> : null}
+        {slabs.length ? (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] text-sm">
+                <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2.5 text-left">Head</th>
+                    <th className="px-3 py-2.5 text-right">Rate</th>
+                    <th className="px-3 py-2.5 text-left">Rate from</th>
+                    <th className="px-3 py-2.5 text-right">Held</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {slabs.map((entry) => (
+                    <tr key={entry.slab.key} className="border-t border-slate-100">
+                      <td className="px-3 py-2">{entry.slab.name}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{entry.slab.rate === null ? <span className="text-slate-500">Fixed amount</span> : `${formatRate(entry.slab.rate)}%`}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        <span title={basisTip(entry)} className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-4">
+                          {SLAB_BASIS_LABELS[entry.basis]}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Amount value={entry.held} signed />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 font-semibold text-slate-900">
+                  <tr className="border-t border-slate-200">
+                    <td className="px-3 py-2" colSpan={3}>
+                      Total retention held
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Amount value={sumMoney(slabs.map((entry) => entry.held))} signed />
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
         ) : null}
         {releases.length ? (
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Releases</p>
             <ul className="mt-1 space-y-1 text-sm">
-              {releases.map((release) => (
-                <li key={release.id} className={`flex justify-between gap-2 ${release.status === 'cancelled' ? 'text-muted-foreground line-through' : ''}`}>
-                  <span>
-                    {dateText(release.releaseDate)} · {release.remarks ?? 'Release'}
-                  </span>
-                  <Amount value={release.amount} />
-                </li>
-              ))}
+              {releases.map((release) => {
+                const label = releaseLabel(release);
+                return (
+                  <li key={release.id} className={`flex justify-between gap-2 ${release.status === 'cancelled' ? 'text-muted-foreground line-through' : ''}`}>
+                    <span className="min-w-0">
+                      {dateText(release.releaseDate)} · {release.remarks ?? 'Release'}
+                      {label ? <span className="text-xs text-slate-500"> · {label}</span> : null}
+                    </span>
+                    <Amount value={release.amount} />
+                  </li>
+                );
+              })}
             </ul>
           </div>
         ) : null}

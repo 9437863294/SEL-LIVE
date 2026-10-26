@@ -16,8 +16,10 @@ import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { isRetentionKind } from '@/lib/bill-tracking/calculations';
 import { splitInclusiveTotal, type DeductionLineInput } from '@/lib/bill-tracking/gst';
 import { formatINR } from '@/lib/bill-tracking/money';
+import { formatRate, retentionLineRate } from '@/lib/bill-tracking/retention';
 import type { BillDeduction, DeductionTypeMaster, GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
 
@@ -105,6 +107,20 @@ export function patchDeductionRow(row: DeductionRow, patch: Partial<DeductionRow
   return next;
 }
 
+/**
+ * The retention slab a row counts in, in a few words — so whoever types 30% (or ₹30,000 on a
+ * ₹1,00,000 taxable) sees it land in the 30% slab before saving. Null for other heads, and for an
+ * amount row that is still empty or has no base to be read against.
+ */
+function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, percent: boolean, bases?: { taxable: number; gross: number }): string | null {
+  if (!line || !isRetentionKind(type.kind)) return null;
+  if (!percent && (!bases || line.amount === 0)) return null;
+  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases?.taxable ?? 0, grossAmount: bases?.gross ?? 0 }, type);
+  const baseWord = type.percentBase === 'gross' ? 'gross' : 'taxable';
+  if (rate === null) return `a fixed amount (no clean rate of ${baseWord})`;
+  return basis === 'percent' ? `counts as ${type.name} @ ${formatRate(rate)}%` : `reads as ${formatRate(rate)}% of ${baseWord} — counts in the ${formatRate(rate)}% slab`;
+}
+
 export function DeductionEditor({
   rows,
   setRows,
@@ -116,6 +132,7 @@ export function DeductionEditor({
   defaultGstRate,
   emptyText = 'No deductions on this bill.',
   reference,
+  bases,
 }: {
   rows: readonly DeductionRow[];
   setRows: (update: (rows: DeductionRow[]) => DeductionRow[]) => void;
@@ -132,6 +149,11 @@ export function DeductionEditor({
   emptyText?: string;
   /** Shown under each row for comparison, by deduction type — e.g. what the raised bill deducted. */
   reference?: { label: string; byType: ReadonlyMap<string, number> };
+  /**
+   * The bill's taxable and gross, so a retention row can say which rate slab it counts in — an amount
+   * is read against one of them, exactly as the retention reports read it (see `retention.ts`).
+   */
+  bases?: { taxable: number; gross: number };
 }) {
   const lineById = new Map(lines.map((line) => [line.id, line]));
   const update = (id: string, patch: Partial<DeductionRow>) => setRows((current) => current.map((row) => (row.id === id ? patchDeductionRow(row, patch, activeTypes, defaultGstRate) : row)));
@@ -175,6 +197,7 @@ export function DeductionEditor({
           const baseValue = computed ? (computed.baseAmount ?? computed.amount) : 0;
           const referenceAmount = row.deductionTypeId ? reference?.byType.get(row.deductionTypeId) : undefined;
           const explain = type && (percent || gstApplicable);
+          const slabNote = type ? retentionSlabNote(computed, type, percent, bases) : null;
           return (
             <div key={row.id} className="space-y-1.5 p-2">
               <div className={cn('grid grid-cols-2 items-center gap-2', grid)}>
@@ -245,7 +268,7 @@ export function DeductionEditor({
                   </Button>
                 </div>
               </div>
-              {explain || referenceAmount !== undefined ? (
+              {explain || slabNote || referenceAmount !== undefined ? (
                 <p className="px-1 text-[11px] leading-snug text-slate-500">
                   {explain && percent ? `${row.percentage}% of ${formatINR(computed?.calculationBase ?? 0)} (${type.percentBase === 'gross' ? 'Gross' : 'Taxable'}${lessNames.length ? ` − ${lessNames.join(' − ')}` : ''}) = ${formatINR(baseValue)}` : null}
                   {explain && percent && gstApplicable ? ' · ' : null}
@@ -262,9 +285,15 @@ export function DeductionEditor({
                       </button>
                     </>
                   ) : null}
+                  {slabNote ? (
+                    <span title="Retention is reported by head and rate. A typed % counts at that rate; an amount is read against the bill’s taxable (gross for a head taken on gross) and counts at a rate only when it lands on a half-percent.">
+                      {explain ? ' · ' : ''}
+                      {slabNote}
+                    </span>
+                  ) : null}
                   {referenceAmount !== undefined && reference ? (
-                    <span className={cn(explain && 'ml-1', computed && Math.round(computed.amount * 100) !== Math.round(referenceAmount * 100) ? 'font-medium text-amber-700' : undefined)}>
-                      {explain ? '· ' : ''}
+                    <span className={cn((explain || slabNote) && 'ml-1', computed && Math.round(computed.amount * 100) !== Math.round(referenceAmount * 100) ? 'font-medium text-amber-700' : undefined)}>
+                      {explain || slabNote ? '· ' : ''}
                       {reference.label} {formatINR(referenceAmount)}
                     </span>
                   ) : null}

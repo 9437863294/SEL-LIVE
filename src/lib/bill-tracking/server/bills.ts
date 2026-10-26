@@ -38,6 +38,7 @@ import type {
   BillPaymentStatus,
   BillTrackingConfig,
   BillWorkflowStatus,
+  DeductionTypeMaster,
   DueDateRevision,
 } from '../types';
 import { BtError, db, type BtContext, type BtResource } from './context';
@@ -90,6 +91,7 @@ const AUDITED_FIELDS = [
   'remarks',
   'retentionExpectedReleaseDate',
   'retentionDisputed',
+  'releasesRetention',
 ] as const;
 
 /** Fields that, once a bill is approved, change only with `Edit After Approval` and a reason. */
@@ -172,6 +174,30 @@ function composeNoteLink(input: BillInput, against: StoredBill | undefined, exis
   return { againstBillId: against.id, againstBillRef: against.gstInvoiceNumber || against.billSerialNumber || against.id, againstBillDate: against.billDate };
 }
 
+/** A slab rate kept to 4 dp, as `retention.ts` reads it, so a stored rate always matches its slab key. */
+export const roundSlabRate = (rate: number | null): number | null => (rate === null ? null : Math.round(rate * 10000) / 10000);
+
+/**
+ * The retention head a bill or release names as the slab it releases. It has to be in the deduction
+ * master and be a retention kind; a head retired since stays valid, as retention may still be held under it.
+ */
+export function retentionHead(config: BillTrackingConfig, deductionTypeId: string): DeductionTypeMaster {
+  const type = config.deductionTypes.find((entry) => entry.id === deductionTypeId);
+  if (!type) throw new BtError('That retention head is no longer in Settings → Deduction type master. Choose another.');
+  if (!isRetentionKind(type.kind)) throw new BtError(`${type.name} is not a retention head. Only retention can be released.`);
+  return type;
+}
+
+/**
+ * The retention slab a retention bill releases; receipts on it release that slab. Any other bill
+ * drops it, so a bill changed into an invoice no longer claims to release retention.
+ */
+function composeReleasesRetention(input: BillInput, config: BillTrackingConfig, isRetentionBill: boolean): Bill['releasesRetention'] {
+  if (!isRetentionBill || !input.releasesRetention) return undefined;
+  const type = retentionHead(config, input.releasesRetention.deductionTypeId);
+  return { deductionTypeId: type.id, rate: roundSlabRate(input.releasesRetention.rate) };
+}
+
 interface ComposeArgs {
   context: BtContext;
   input: BillInput;
@@ -196,6 +222,8 @@ export function composeBill({ context, input, config, project, client, existing,
     throw new BtError(`Sub category ${billType.name} is not enabled for ${project.name}. Enable it in Settings → Bill categories, or choose another.`);
   }
   const category = config.billCategories.find((entry) => entry.id === billType.categoryId);
+  const isRetentionBill = billType.isRetentionBill || input.transactionType === 'retention_bill';
+  const releasesRetention = composeReleasesRetention(input, config, isRetentionBill);
 
   const derivedFy = financialYearOf(input.billDate);
   const financialYear = input.financialYear && input.financialYear !== derivedFy ? input.financialYear : derivedFy;
@@ -267,7 +295,7 @@ export function composeBill({ context, input, config, project, client, existing,
     billTypeName: billType.name,
     billCategory: billType.categoryId,
     billCategoryName: category?.name ?? existing?.billCategoryName,
-    isRetentionBill: billType.isRetentionBill || input.transactionType === 'retention_bill',
+    isRetentionBill,
     taxableAmount: roundMoney(input.taxableAmount),
     ...gst,
     gstRegistrationId: suggestion.registration?.id,
@@ -298,6 +326,8 @@ export function composeBill({ context, input, config, project, client, existing,
     collectionOwnerName: input.collectionOwnerId ? (ownerName ?? existing?.collectionOwnerName) : undefined,
     retentionExpectedReleaseDate: input.retentionExpectedReleaseDate,
     retentionDisputed: input.retentionDisputed,
+    // Always present (from the input): `updateBill` rewrites the whole document.
+    releasesRetention,
     lastFollowUpDate: existing?.lastFollowUpDate,
     nextFollowUpDate: existing?.nextFollowUpDate,
     nextCommitmentDate: existing?.nextCommitmentDate,

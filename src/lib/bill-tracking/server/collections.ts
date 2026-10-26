@@ -106,14 +106,24 @@ async function readBills(transaction: Transaction, context: BtContext, billIds: 
   return bills;
 }
 
-function retentionReleaseFor(context: BtContext, collection: StoredCollection, bill: StoredBill, amount: number): Omit<RetentionRelease, 'id'> & { organizationId: string } {
+/**
+ * The release written when a receipt on a retention bill is verified. A bill that names the slab it
+ * releases passes that slab (head, rate and the head's kind) on, so the release reduces that slab's
+ * balance; otherwise it stays a project-level release of invoice retention.
+ */
+function retentionReleaseFor(context: BtContext, collection: StoredCollection, bill: StoredBill, amount: number, config: BillTrackingConfig): Omit<RetentionRelease, 'id'> & { organizationId: string } {
+  const slab = bill.releasesRetention;
+  // A head deleted from Settings since keeps its id and rate; only its kind falls back.
+  const kind = (slab && config.deductionTypes.find((type) => type.id === slab.deductionTypeId)?.kind) || 'retention_invoice';
   return clean({
     organizationId: context.organizationId,
     projectId: bill.projectId,
     projectNameSnapshot: bill.projectNameSnapshot,
     retentionBillId: bill.id,
     collectionId: collection.id,
-    kind: 'retention_invoice',
+    kind,
+    deductionTypeId: slab?.deductionTypeId,
+    rate: slab?.rate,
     releaseDate: collection.receiptDate,
     amount,
     remarks: `Receipt against retention bill ${bill.gstInvoiceNumber || bill.billSerialNumber || bill.id}`,
@@ -194,7 +204,7 @@ export async function createCollection(context: BtContext, input: CollectionInpu
       const { ref: billRef, bill } = bills.get(entry.billId) as { ref: DocumentReference; bill: StoredBill };
       const mirror: BillCollectionRef = clean({ collectionId: ref.id, receiptDate: input.receiptDate, amount: entry.amount, status, utrNumber: input.utrNumber, paymentMode: input.paymentMode });
       transaction.update(billRef, billUpdateFor(bill, [...(bill.collections ?? []), mirror], config));
-      if (verify && bill.isRetentionBill) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), retentionReleaseFor(context, collection, bill, entry.amount));
+      if (verify && bill.isRetentionBill) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), retentionReleaseFor(context, collection, bill, entry.amount, config));
       logActivityTx(transaction, context, {
         entityType: 'collection',
         entityId: ref.id,
@@ -291,7 +301,7 @@ export async function changeCollectionStatus(context: BtContext, collectionId: s
       const { ref: billRef, bill } = entry;
       const collections = (bill.collections ?? []).map((mirror) => (mirror.collectionId === collectionId ? { ...mirror, status } : mirror));
       transaction.update(billRef, billUpdateFor(bill, collections, config));
-      if (action === 'verify' && bill.isRetentionBill) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), retentionReleaseFor(context, collection, bill, allocation.amount));
+      if (action === 'verify' && bill.isRetentionBill) transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(), retentionReleaseFor(context, collection, bill, allocation.amount, config));
       logActivityTx(transaction, context, {
         entityType: 'collection',
         entityId: collectionId,

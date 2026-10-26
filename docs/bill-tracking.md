@@ -149,7 +149,38 @@ Where it shows:
 - **Code.** Logic in `src/lib/bill-tracking/certification.ts`; tests in
   `tests/bill-tracking-certification.test.mjs`.
 
-## Deployment checklist
+### Retention by rate
+
+One invoice often deducts retention twice — for example 10% (released on commissioning) and 30%
+(released on erection). It may do so under the same head, with a percentage typed by hand, or as a
+plain amount. Every retention line is therefore placed in a **slab**: its head plus its rate
+(`src/lib/bill-tracking/retention.ts`).
+
+- **Rate.**
+  - A line entered as a percentage counts at that percentage, exactly as typed (10, 30, 7.5…).
+  - A line entered as an amount, and every line imported from the workbook, is read against the
+    bill's taxable, or its gross for a head taken on gross. ₹30,000 on a ₹1,00,000 taxable reads as
+    30%.
+  - A result within 0.05 of a half-percent snaps to it. Anything else stays a *fixed amount* under
+    its head.
+- **Notes.** A credit or debit note is read against its own base, so a credit note reversing 30%
+  retention lands in the 30% slab, negative. The slabs always add up to the retention reported
+  everywhere else.
+- **Releases.** A release can name the slab it releases (head and rate), and then reduces that
+  slab's balance:
+  - a release recorded by hand chooses its slab and, optionally, the bill;
+  - a retention bill can say which retention it releases (*Releases retention* on the form), and
+    receipts on it carry that slab.
+
+  Releases that name none count in the project's balance only. The Retention page shows them as
+  *not tied to a rate*.
+- **Where it shows.**
+  - The Retention page's **By rate** tab shows each slab's held, released and balance, a project ×
+    rate table and a bill × rate table, with exports.
+  - The bill page's Retention tab lists the bill's slabs.
+  - While a retention line is entered, the bill form says which slab it counts in.
+
+
 
 1. **Firestore rules (console).** Copy the "Bill Tracking & Collection Management" block from
    `firestore.rules` into the console ruleset. The repo file is not deployed. If the console ends
@@ -209,6 +240,6 @@ The net and outstanding differences are exactly the 7 flagged rows.
 ## Tests
 
 ```
-npm run test:bill-tracking       # 84 tests: calculations, ageing, import, reports, GST, categories, certification, permissions, reminders
+npm run test:bill-tracking       # tests: calculations, ageing, import, reports, GST, categories, certification, workflow, retention by rate, permissions, reminders
 npm run typecheck:bill-tracking
 ```

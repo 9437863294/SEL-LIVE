@@ -25,6 +25,7 @@ import { followUpRollup } from '../reports.ts';
 import type { BillComment, BillDocument, BillDocumentCategory, BillFollowUp, CollectionTarget, RetentionRelease } from '../types';
 import type { z } from 'zod';
 import type { commitmentUpdateSchema, followUpInputSchema, retentionReleaseSchema, targetInputSchema } from '../schemas';
+import { retentionHead, roundSlabRate } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadBill, loadProject, loadConfig, logActivity, logActivityTx, nowIso, userName } from './store';
 
@@ -202,6 +203,10 @@ export async function addRetentionRelease(context: BtContext, input: z.infer<typ
   const project = await loadProject(input.projectId, config.projectProfiles);
   const against = input.againstBillId ? await loadBill(context, input.againstBillId) : undefined;
   if (against && against.projectId !== input.projectId) throw new BtError('The bill belongs to a different project.');
+  // The slab released: a named head sets the kind; a rate alone keeps the chosen kind (the slab of
+  // that rate under a head of that kind). Neither = a project-level release, as before.
+  const head = input.deductionTypeId ? retentionHead(config, input.deductionTypeId) : undefined;
+  if (head && input.rate === undefined) throw new BtError(`Choose the rate of ${head.name} being released, or its fixed amounts.`);
   const ref = db().collection(BT_COLLECTIONS.retention).doc();
   const release: Omit<RetentionRelease, 'id'> & { organizationId: string } = clean({
     organizationId: context.organizationId,
@@ -210,7 +215,10 @@ export async function addRetentionRelease(context: BtContext, input: z.infer<typ
     againstBillId: against?.id,
     againstBillSerial: against ? against.gstInvoiceNumber || against.billSerialNumber : undefined,
     retentionBillId: input.retentionBillId,
-    kind: input.kind,
+    kind: head?.kind ?? input.kind,
+    deductionTypeId: head?.id,
+    // null (the head's fixed amounts) is kept; undefined is stripped by `clean`.
+    rate: input.rate === undefined ? undefined : roundSlabRate(input.rate),
     releaseDate: input.releaseDate,
     amount: input.amount,
     remarks: input.remarks,
