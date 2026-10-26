@@ -317,7 +317,46 @@ export default function DriverManagementPage() {
           });
         }
 
+        // One vehicle per driver, one driver per vehicle — every save checks both sides, so re-saving
+        // also clears a double assignment left from before. Vehicles (other than the one chosen, and
+        // the previous one handled above) that still name this driver let them go…
+        const stillNamingDriver = await getDocs(query(collection(db, VEHICLE_COLLECTIONS.vehicleMaster), where('assignedDriverId', '==', id)));
+        for (const other of stillNamingDriver.docs) {
+          if (other.id === nextVehicleId || other.id === previousVehicleId) continue;
+          await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, other.id), { assignedDriverId: '', assignedDriverName: '' });
+          await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+            vehicleId: other.id,
+            vehicleNumber: String(other.data().vehicleNumber || ''),
+            previousDriverId: id,
+            previousDriverName: driverName,
+            driverId: '',
+            driverName: '',
+            action: 'Unassigned',
+            source: 'Driver Master',
+            eventDate: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+          });
+        }
+
         if (nextVehicleId) {
+          // …and any other driver still holding the chosen vehicle gives it up.
+          const otherHolders = await getDocs(query(collection(db, VEHICLE_COLLECTIONS.driver), where('assignedVehicleId', '==', nextVehicleId)));
+          for (const holder of otherHolders.docs) {
+            if (holder.id === id) continue;
+            await updateDoc(doc(db, VEHICLE_COLLECTIONS.driver, holder.id), { assignedVehicleId: '', assignedVehicleNumber: '' });
+            await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+              vehicleId: nextVehicleId,
+              vehicleNumber: String(payload.assignedVehicleNumber || ''),
+              previousDriverId: holder.id,
+              previousDriverName: String(holder.data().driverName || ''),
+              driverId: id,
+              driverName,
+              action: 'Reassigned',
+              source: 'Driver Master',
+              eventDate: new Date().toISOString(),
+              createdAt: serverTimestamp(),
+            });
+          }
           await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, nextVehicleId), {
             assignedDriverId: id,
             assignedDriverName: driverName,

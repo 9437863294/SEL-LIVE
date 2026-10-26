@@ -16,16 +16,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, ListChecks, Navigation, Plus, ReceiptText, Route, Undo2 } from 'lucide-react';
+import { CalendarClock, ListChecks, Plus, ReceiptText, Route, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataList } from '@/components/shared/data-list';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { PageHeader } from '@/components/shared/page-header';
 import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { useToast } from '@/hooks/use-toast';
 import { sumMoney } from '@/lib/employee-trips/rates';
@@ -195,49 +193,19 @@ export default function MyTrips() {
 
   return (
       <div className="space-y-4">
-      <PageHeader
-        title="My Trips"
-        icon={Route}
-        description="Your own-vehicle trips. Put one, several or all of the unclaimed ones on a claim."
-        meta={[
-          { label: 'Unclaimed', value: <><Money value={sumMoney(drafts.map((trip) => trip.totalAmount))} /> · {formatKm(drafts.reduce((total, trip) => total + trip.distanceKm, 0))}</> },
-          { label: 'In process', value: <Money value={sumMoney(all.filter((trip) => trip.status === 'submitted' || trip.status === 'approved').map((trip) => trip.decision?.approvedAmount ?? trip.totalAmount))} /> },
-        ]}
-        actions={
-          <>
-            {/* The next step is the prominent one: claiming once there is something to claim. */}
-            <Button type="button" variant={candidates.length ? 'outline' : 'default'} className={candidates.length ? undefined : VM_PRIMARY_BUTTON} asChild>
-              <Link href={RECORD_HREF}>
-                <Navigation className="mr-2 h-4 w-4" aria-hidden />
-                Record a trip
-              </Link>
-            </Button>
-            {typedAllowed && (
-              <Button type="button" variant="outline" onClick={() => { setEditing(null); setFormOpen(true); }}>
-                <Plus className="mr-2 h-4 w-4" aria-hidden />
-                Type it in
-              </Button>
-            )}
-            <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={candidates.length ? VM_PRIMARY_BUTTON : undefined} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
-              <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
-              Create claim
-              <span className="hidden sm:inline">
-                {chosen.length ? ` (${chosen.length} selected)` : candidates.length ? ` (${candidates.length} unclaimed)` : ''}
-              </span>
-            </Button>
-          </>
-        }
-      />
-
-      {/* One line on a phone; the company-vehicle half of the story only where there is room for it. */}
-      <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-        Record trips on{' '}
-        <Link href={RECORD_HREF} className="font-medium underline underline-offset-2">
-          Fleet Trip
-        </Link>{' '}
-        › Own vehicle — they land here when you stop.
-        <span className="hidden sm:inline"> A company vehicle is a fleet trip there, billed to the project and not claimable.</span>
-      </p>
+      {/*
+        No page title, description or totals — the module header names the page and the list below
+        is the rest — and no Record a trip: trips are recorded on Fleet Trip. Create claim sits on the
+        search line below; only a typed trip, when Trip rules allow one, keeps a row up here.
+      */}
+      {typedAllowed && (
+        <div className="page-header-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+          <Button type="button" variant="outline" onClick={() => { setEditing(null); setFormOpen(true); }}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden />
+            Type it in
+          </Button>
+        </div>
+      )}
 
       {/* The four steps are a desktop explainer; on a phone they pushed the trips below the fold. */}
       <div className="hidden sm:block">
@@ -262,28 +230,47 @@ export default function MyTrips() {
         </p>
       )}
 
-      <FilterBar
-        search={{ value: search, onChange: setSearch, placeholder: 'Search place, purpose, vehicle, claim…', label: 'Search trips' }}
-        activeCount={month !== 'all' ? 1 : 0}
-        onClear={() => { setMonth('all'); setSearch(''); }}
-      >
-        <Select value={month} onValueChange={setMonth}>
-          <SelectTrigger className="w-full bg-white text-left sm:w-40" aria-label="Month">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All months</SelectItem>
-            {months.map((entry) => (
-              <SelectItem key={entry} value={entry}>
-                {monthLabel(entry)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </FilterBar>
+      {/*
+        Search, filters and Create claim on one line, a phone included: the button sits beside the
+        filter bar rather than in its `actions`, which a phone stacks on a row of their own. "Claim"
+        on a phone, so the search keeps room to type.
+      */}
+      <div className="flex min-w-0 items-start gap-2">
+        <FilterBar
+          className="min-w-0 flex-1"
+          search={{ value: search, onChange: setSearch, placeholder: 'Search trips…', label: 'Search trips by place, purpose, vehicle or claim' }}
+          activeCount={month !== 'all' ? 1 : 0}
+          onClear={() => { setMonth('all'); setSearch(''); }}
+        >
+          <Select value={month} onValueChange={setMonth}>
+            <SelectTrigger className="w-full bg-white text-left sm:w-40" aria-label="Month">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All months</SelectItem>
+              {months.map((entry) => (
+                <SelectItem key={entry} value={entry}>
+                  {monthLabel(entry)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterBar>
+        <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={cn('shrink-0', candidates.length && VM_PRIMARY_BUTTON)} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
+          <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
+          <span className="sm:hidden">Claim</span>
+          <span className="hidden sm:inline">
+            Create claim
+            {chosen.length ? ` (${chosen.length} selected)` : candidates.length ? ` (${candidates.length} unclaimed)` : ''}
+          </span>
+        </Button>
+      </div>
 
+      {/* The tabs fill the line (all of it on a phone; beside Select all from sm up). */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SegmentTabs
+          fill
+          className="sm:w-auto sm:flex-1"
           label="Trip status"
           value={view}
           onChange={setView}
@@ -351,7 +338,6 @@ export default function MyTrips() {
         candidates={candidates}
         preselected={claimPreselect}
         onSubmitted={onClaimCreated}
-        onRecordTrip={() => router.push(RECORD_HREF)}
       />
       <ConfirmDialog
         open={Boolean(deleting)}

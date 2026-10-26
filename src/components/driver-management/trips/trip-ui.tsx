@@ -87,11 +87,23 @@ export function VehicleLabel({ ownership, vehicleNumber, vehicleType, inline = f
 }
 
 /** One label per short filter; the chosen one in the user's accent. */
-export function SegmentTabs<T extends string>({ value, onChange, options, label }: { value: T; onChange: (next: T) => void; options: { value: T; label: string; count?: number }[]; label: string }) {
+/**
+ * `fill` stretches the track to its container and shares it out equally between the tabs. On a
+ * phone each count then sits under its label, so five tabs fit across 360px without scrolling;
+ * from `sm` up they sit side by side again.
+ */
+export function SegmentTabs<T extends string>({ value, onChange, options, label, fill = false, className }: { value: T; onChange: (next: T) => void; options: { value: T; label: string; count?: number }[]; label: string; fill?: boolean; className?: string }) {
   return (
-    <div role="tablist" aria-label={label} className={VM_SEGMENT_TRACK}>
+    <div role="tablist" aria-label={label} className={cn(VM_SEGMENT_TRACK, fill && 'flex w-full', className)}>
       {options.map((option) => (
-        <button key={option.value} type="button" role="tab" aria-selected={value === option.value} onClick={() => onChange(option.value)} className={vmSegmentItem(value === option.value)}>
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={cn(vmSegmentItem(value === option.value), fill && 'flex-1 flex-col gap-0.5 whitespace-nowrap px-1 py-1 text-[11px] leading-tight sm:flex-row sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs')}
+        >
           {option.label}
           {option.count !== undefined && <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', value === option.value ? 'bg-white/25' : 'bg-slate-200 text-slate-600')}>{option.count}</span>}
         </button>

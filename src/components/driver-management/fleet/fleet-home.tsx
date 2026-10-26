@@ -31,7 +31,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { CheckCircle2, Navigation, ReceiptText, RefreshCw, Truck } from 'lucide-react';
+import { CheckCircle2, Navigation, ReceiptText, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
@@ -171,13 +171,8 @@ export default function FleetHome() {
       title="Fleet Trip"
       description="Record every official trip by GPS — your own vehicle or a company vehicle."
       icon={Truck}
-      // My Trips is on the module's own navigation; no second way there from the header.
-      actions={
-        // Square on a phone too (`size="icon"` keeps its width in the header's action row).
-        <Button type="button" variant="outline" size="icon" onClick={() => reload()} disabled={loading} aria-label="Refresh" title="Refresh">
-          <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} aria-hidden />
-        </Button>
-      }
+      // No actions: My Trips is on the module's own navigation, and Refresh sits on the Recent
+      // trips card — a lone button here took a row of its own on a phone.
     />
   );
 
@@ -261,7 +256,7 @@ export default function FleetHome() {
         </>
       )}
 
-      {!ownRecording && (data.canDrive || data.recentTrips.length > 0) && <MyFleetTrips recent={data.recentTrips} today={data.today} />}
+      {!ownRecording && (data.canDrive || data.recentTrips.length > 0) && <MyFleetTrips recent={data.recentTrips} today={data.today} onRefresh={() => void reload()} refreshing={loading} />}
 
       <VehicleChoiceDialog open={choosing} onOpenChange={setChoosing} ownBlocked={ownBlocked} companyBlocked={companyBlocked} onCompany={startCompany} />
       <StartFromUrl kind={params.get('kind')} enabled={!busy} onCompany={companyBlocked ? () => setChoosing(true) : startCompany} onChoose={() => setChoosing(true)} />

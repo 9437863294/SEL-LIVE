@@ -681,12 +681,49 @@ export default function VehicleMasterPage() {
           ...withUpdateAudit(actor),
         });
       }
+      // One driver per vehicle: any other driver record still holding this vehicle lets it go.
+      if (savedId) {
+        const holders = await getDocs(firestoreQuery(collection(db, VEHICLE_COLLECTIONS.driver), where('assignedVehicleId', '==', savedId)));
+        for (const holder of holders.docs) {
+          if (holder.id === nextDriverId || holder.id === previousDriverId) continue;
+          await updateDoc(doc(db, VEHICLE_COLLECTIONS.driver, holder.id), {
+            assignedVehicleId: '',
+            assignedVehicleNumber: '',
+            ...withUpdateAudit(actor),
+          });
+        }
+      }
       if (nextDriverId) {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.driver, nextDriverId), {
           assignedVehicleId: savedId,
           assignedVehicleNumber: String(basePayload.vehicleNumber || ''),
           ...withUpdateAudit(actor),
         });
+        // One vehicle per driver: the driver leaves any other vehicle that still names them. Without
+        // this the vehicle they had kept its assignedDriverId, so two vehicles claimed one driver and
+        // Fleet Trip counted both as "assigned to you". Every save checks, so re-saving a vehicle
+        // also clears a double assignment left from before.
+        const stillNamed = await getDocs(firestoreQuery(collection(db, VEHICLE_COLLECTIONS.vehicleMaster), where('assignedDriverId', '==', nextDriverId)));
+        for (const other of stillNamed.docs) {
+          if (other.id === savedId) continue;
+          await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, other.id), {
+            assignedDriverId: '',
+            assignedDriverName: '',
+            ...withUpdateAudit(actor),
+          });
+          await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+            vehicleId: other.id,
+            vehicleNumber: String(other.data().vehicleNumber || ''),
+            previousDriverId: nextDriverId,
+            previousDriverName: String(basePayload.assignedDriverName || ''),
+            driverId: '',
+            driverName: '',
+            action: 'Unassigned',
+            source: 'Vehicle Master',
+            eventDate: new Date().toISOString(),
+            ...withCreateAudit(actor),
+          });
+        }
       }
       if (previousDriverId !== nextDriverId) {
         await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {

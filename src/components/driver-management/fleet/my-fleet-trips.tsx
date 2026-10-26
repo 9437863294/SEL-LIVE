@@ -16,7 +16,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, History, Loader2, Route } from 'lucide-react';
+import { AlertTriangle, History, Loader2, RefreshCw, Route } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
@@ -26,6 +26,7 @@ import { useFleetQuery } from '@/components/fleet/use-fleet-query';
 import { TripFlagChips, TripStatusBadge } from '@/components/fleet/fleet-ui';
 import { EmptyBlock } from '@/components/driver-management/trips/trip-ui';
 import { shortPlace } from '@/lib/fleet/places';
+import { cn } from '@/lib/utils';
 
 const detailHref = (trip: FleetTrip) => `/driver-management/fleet/trips/${trip.id}`;
 const fromOf = (trip: FleetTrip) => trip.startPlace || trip.startGeofenceName || '—';
@@ -61,11 +62,23 @@ function Distance({ km, strong }: { km: number | null; strong?: boolean }) {
   return <span className={strong ? 'whitespace-nowrap font-semibold tabular-nums text-slate-800' : 'whitespace-nowrap tabular-nums text-slate-600'}>{km === null || km === undefined ? '—' : formatKm(km)}</span>;
 }
 
-export function MyFleetTrips({ recent, today }: { recent: FleetTrip[]; today: string }) {
+export function MyFleetTrips({
+  recent,
+  today,
+  onRefresh,
+  refreshing = false,
+}: {
+  recent: FleetTrip[];
+  today: string;
+  /** Reloads the Fleet Trip screen — its refresh lives here, beside the trips it updates. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   const router = useRouter();
   const [showAll, setShowAll] = useState(false);
   const all = useFleetQuery<{ trips: FleetTrip[] }>(showAll ? 'trips?scope=mine' : null);
   const trips = showAll && all.data ? all.data.trips : recent;
+  const busy = refreshing || (showAll && all.loading);
 
   const columns: ListColumn<FleetTrip>[] = [
     // The phone card, in columns of its own that the table hides: the route, then when and on
@@ -173,11 +186,30 @@ export function MyFleetTrips({ recent, today }: { recent: FleetTrip[]; today: st
           {showAll ? 'All my fleet trips' : 'Recent trips'}
           {trips.length > 0 && <span className="text-xs font-normal text-muted-foreground">({trips.length})</span>}
         </CardTitle>
-        {recent.length > 0 && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => setShowAll((current) => !current)}>
-            {showAll ? 'Show recent' : 'Show all'}
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {onRefresh && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                onRefresh();
+                if (showAll) void all.reload();
+              }}
+              disabled={busy}
+              aria-label="Refresh"
+              title="Refresh"
+            >
+              <RefreshCw className={cn('h-4 w-4', busy && 'animate-spin')} aria-hidden />
+            </Button>
+          )}
+          {recent.length > 0 && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowAll((current) => !current)}>
+              {showAll ? 'Show recent' : 'Show all'}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="px-3 pb-3 pt-0 sm:px-4">
         {showAll && all.loading && !all.data ? (
