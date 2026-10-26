@@ -29,7 +29,7 @@ import { FormDialog } from '@/components/shared/form-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { formatKm, type FleetTrip } from '@/lib/fleet/types';
 import { fleetErrorMessage, fleetFetch, newClientId } from '@/components/fleet/fleet-api';
-import { enqueueEnd, flushQueue } from '@/components/fleet/offline-queue';
+import { enqueueEnd, flushQueue, pendingPointsFor } from '@/components/fleet/offline-queue';
 import { PhotoCapture } from '@/components/fleet/fleet-ui';
 import { Field } from '@/components/driver-management/trips/trip-ui';
 import type { LiveRecordingFigures } from '../live-recording-card';
@@ -44,6 +44,7 @@ export function EndTripDialog({
   trip,
   figures,
   lastPoint,
+  prepareEnd,
   onEnded,
 }: {
   open: boolean;
@@ -53,6 +54,8 @@ export function EndTripDialog({
   figures: LiveRecordingFigures;
   /** The last fix, to name where the trip ended. */
   lastPoint: { lat: number; lng: number } | null;
+  /** Moves the native recorder's buffer into the outbox, so the end goes after every point. */
+  prepareEnd?: () => Promise<void>;
   onEnded: (outcome: EndOutcome) => void;
 }) {
   const liveKm = figures.distanceKm;
@@ -108,9 +111,9 @@ export function EndTripDialog({
   const photoError = attempted && !photo ? 'Photograph the odometer.' : undefined;
   const about = liveKm !== null && liveKm > 0 ? Math.round(opening + liveKm) : null;
 
-  const queueIt = async (closing: number, at: string, position: TripPosition | null, ocrKm: number | null) => {
-    await enqueueEnd(trip.id, { clientEndId, endOdometerKm: closing, photo: photo as Blob, ocrKm, position, endedAt: at, remark: remark.trim(), endPlace: endPlace.trim() });
-    toast({ title: 'Saved on this phone', description: 'The trip end will sync as soon as there is a connection. You can close the app.' });
+  const queueIt = async (closing: number, at: string, position: TripPosition | null, ocrKm: number | null, photoUp?: UploadedPhoto) => {
+    await enqueueEnd(trip.id, { clientEndId, endOdometerKm: closing, photo: photo as Blob, ocrKm, position, endedAt: at, remark: remark.trim(), endPlace: endPlace.trim(), uploadId: photoUp?.uploadId ?? null, uploadOcrKm: photoUp?.ocrKm ?? null });
+    toast({ title: 'Finishing trip — waiting for network', description: 'The end is saved on this phone and goes once the route has reached the server. You can close the app.' });
     onEnded({ kind: 'queued' });
   };
 
@@ -128,6 +131,11 @@ export function EndTripDialog({
     if (!endedAt) setEndedAt(at);
     let position: TripPosition | null = null;
     try {
+      if (prepareEnd) {
+        setStep('Saving the route…');
+        // A failure leaves the points on the phone; they still go, after the end.
+        await prepareEnd().catch(() => undefined);
+      }
       setStep('Reading location…');
       position = await quickPosition();
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -160,6 +168,12 @@ export function EndTripDialog({
         await flushQueue();
       } catch {
         // Points that cannot go yet go later; the server re-measures when they arrive.
+      }
+      // Points of this trip still on the phone: the end waits behind them in the queue rather than
+      // overtaking them, and goes when they have.
+      if ((await pendingPointsFor(trip.id).catch(() => 0)) > 0) {
+        await queueIt(closing, at, position, photoUp.ocrKm, photoUp);
+        return;
       }
 
       setStep('Ending…');

@@ -35,6 +35,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NativeSettingsPlugin.class);
         registerPlugin(NativeUserLocationPlugin.class);
+        registerPlugin(TripRecorderPlugin.class);
+        registerPlugin(BatteryOptimizationPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
@@ -43,16 +45,37 @@ public class MainActivity extends BridgeActivity {
         super.onStart();
         if (!permissionFlowRunning && !isPermissionOnboardingComplete()) {
             permissionFlowRunning = true;
-            requestInitialPermissions();
+            showLocationDisclosure();
         }
+    }
+
+    // Prominent disclosure (Google Play User Data policy): explain background location use before
+    // the first system location prompt. "Not now" skips location; the rest of onboarding continues.
+    private void showLocationDisclosure() {
+        if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            requestInitialPermissions(true);
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+            .setTitle("Location for trip tracking")
+            .setMessage(
+                "SEL Fleet collects location data to record your trip route even when the app is " +
+                "closed or not in use. This is used for trip kilometres, geofence events and " +
+                "vehicle payment reports."
+            )
+            .setCancelable(false)
+            .setNegativeButton("Not now", (dialog, which) -> requestInitialPermissions(false))
+            .setPositiveButton("Continue", (dialog, which) -> requestInitialPermissions(true))
+            .show();
     }
 
     // Step 1: request every dangerous permission used by the installed app.
     // Permissions that do not exist on the device's Android version are omitted.
-    private void requestInitialPermissions() {
+    private void requestInitialPermissions(boolean includeLocation) {
         List<String> needed = new ArrayList<>();
 
-        if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
+        if (includeLocation && !hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
             needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
             needed.add(Manifest.permission.ACCESS_COARSE_LOCATION);
         }

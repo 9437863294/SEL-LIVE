@@ -1,37 +1,52 @@
 'use client';
 
 /**
- * Tracks a running fleet trip on the phone: watches the position (in the Android app through the
- * background-geolocation foreground service, so a locked screen keeps tracking), stamps every fix
- * with a `clientPointId`, and hands the fixes to the outbox (`offline-queue.ts`) in small batches —
- * every ten fixes or thirty seconds — which sends them when it can.
+ * Tracks a running fleet trip on the phone and hands its fixes to the outbox (`offline-queue.ts`),
+ * which sends them when it can.
  *
- * It also keeps the driver's own view of the trip, the same one a My Trips GPS trip shows: the route
- * as driven (`path`, drawn fix by fix) and its summary — distance, moving and stopped minutes —
- * worked out exactly as the GPS recorder works out its tiles (`summariseTrip` on the cleaned path).
- * Arrivals and departures at geofences run through the same two-fix hysteresis the server uses
- * (`stepGeofences`). All of it is the phone's estimate for the screen; the server re-measures the
- * synced track at the end, and its figures are the record.
+ * Two ways to get the fixes:
+ *
+ * - **The native recorder** (an SEL Driver APK that carries it — `nativeTrackingAvailable()`): a
+ *   foreground service records into SQLite on the phone whether or not this WebView is alive, so a
+ *   locked screen, a swipe from Recents or a phone that kills the app costs no points
+ *   (docs/BACKGROUND-TRACKING-PLAN.md). This hook starts it and *drains* it — on each new fix, every
+ *   15 s, and when the app comes back — into the outbox, keyed by the recorder's own `clientPointId`.
+ *   Leaving the page does not stop it; pausing or ending the trip does (and `settleFleetRecording`
+ *   stops one the server has closed meanwhile).
+ * - **The in-app watcher** otherwise (an older APK, the browser): `watchDriverPosition`, batched
+ *   every ten fixes or thirty seconds. Watching stops when the trip is paused or ends, and on unmount
+ *   (the buffer is queued first).
+ *
+ * Either way it keeps the driver's own view of the trip, the same one an own-vehicle GPS trip shows:
+ * the route as driven (`path`, drawn fix by fix) and its summary — distance, moving and stopped
+ * minutes — worked out exactly as the GPS recorder works out its tiles (`summariseTrip` on the
+ * cleaned path). Arrivals and departures at geofences run through the same two-fix hysteresis the
+ * server uses (`stepGeofences`). All of it is the phone's estimate for the screen; the server
+ * re-measures the synced track at the end, and its figures are the record.
  *
  * The state is kept per trip in localStorage, so a reload, a WebView restart or a phone that killed
  * the app mid-trip resumes the route, the distance and the geofence state instead of starting from
  * zero. The saved route is thinned evenly to `MAX_SAVED_PATH` points, keeping both ends, so a long
  * day's drive stays well inside the browser's storage.
- * Watching stops when the trip is paused or ends, and on unmount (the buffer is queued first).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { App } from '@capacitor/app';
 import { clearDriverPositionWatch, watchDriverPosition, type DriverGeoPosition, type DriverGeoWatchId } from '@/lib/driver-mobile-geolocation';
 import { emptyGeofenceState, stepGeofences, type GeofenceState } from '@/lib/fleet/geo';
 import type { ClientPoint, FleetTrip, GeofenceEvent } from '@/lib/fleet/types';
 import type { FleetBootstrap } from '@/lib/fleet/server/overview';
 import { cleanTripPath, computeTripDistanceDeltaKm, summariseTrip, type TripLocationPoint, type TripSummary } from '@/lib/vehicle-management';
+import { gapsNeedGuide, toClientPoint, toGapRecord, toRoutePoint, type NativeGap, type NativePoint } from '@/lib/trip-tracking/rules';
+import { drainTrip, getStatus, nativeTrackingAvailable, onTrackingEvent, resumeIfActive, startTracking, stopTracking, trackingErrorMessage } from '@/lib/trip-tracking/tracking';
 import { newClientId } from './fleet-api';
 import { enqueueGeofenceEvents, enqueuePoints, flushQueue } from './offline-queue';
 
 const STORAGE_PREFIX = 'sel-fleet-tracker:';
 const BATCH_FIXES = 10;
 const BATCH_MS = 30_000;
+/** How often the native buffer is drained while the app is open (a new fix drains sooner). */
+const DRAIN_MS = 15_000;
 /** Fixes worse than this neither move the distance anchor nor count toward geofences. */
 const MAX_ACCURACY_M = 120;
 const MAX_ARRIVALS = 50;
@@ -98,6 +113,72 @@ function forget(tripId: string) {
 
 const finite = (value: number | null | undefined): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
+/** One fix into the trip's running state: the distance, the geofences, the route. */
+function advance(track: TrackerState, point: TripLocationPoint, fences: FleetBootstrap['geofences']): { track: TrackerState; events: GeofenceEvent[] } {
+  const at = point.recordedAtIso ?? new Date().toISOString();
+  const accuracyM = point.accuracyMeters ?? null;
+  const fix = { lat: point.lat, lng: point.lng, accuracyMeters: point.accuracyMeters, recordedAtIso: at };
+  let { liveKm, anchor } = track;
+  const usable = accuracyM === null || accuracyM <= MAX_ACCURACY_M;
+  if (usable) {
+    if (!anchor) anchor = fix;
+    else {
+      const delta = computeTripDistanceDeltaKm(anchor, fix);
+      if (delta > 0) {
+        liveKm += delta;
+        anchor = fix;
+      }
+    }
+  }
+  const step = stepGeofences(track.geo, { lat: point.lat, lng: point.lng, accuracyM, at }, fences);
+  return {
+    track: {
+      liveKm: Math.round(liveKm * 1000) / 1000,
+      fixes: track.fixes + 1,
+      lastFixAt: at,
+      accuracyM,
+      anchor,
+      geo: step.state,
+      arrivals: step.events.length ? [...track.arrivals, ...step.events].slice(-MAX_ARRIVALS) : track.arrivals,
+      path: thin([...track.path, point], MAX_SAVED_PATH),
+    },
+    events: step.events,
+  };
+}
+
+const queueArrivals = (tripId: string, events: GeofenceEvent[]) =>
+  events.length
+    ? enqueueGeofenceEvents(
+        tripId,
+        events.map((event) => ({ clientEventId: newClientId('gf'), geofenceId: event.geofenceId, type: event.type, at: event.at, lat: event.lat, lng: event.lng })),
+      )
+    : Promise.resolve();
+
+/** Drained points that only need to reach the server (the trip is paused, ended or not on screen). */
+const toOutbox = (tripId: string) => async (points: NativePoint[], gaps: NativeGap[]) => {
+  await enqueuePoints(tripId, points.map(toClientPoint), gaps.map(toGapRecord));
+  void flushQueue();
+};
+
+/**
+ * The native recorder should hold only a trip that is still running. Called with the bootstrap's
+ * running trip (or null): a fleet recording the server has since closed or paused — ended from the
+ * web, force-closed by a manager — is stopped, and what it buffered goes to the outbox (the server
+ * takes late points for 48 hours).
+ */
+export async function settleFleetRecording(runningTripId: string | null): Promise<void> {
+  if (!nativeTrackingAvailable()) return;
+  try {
+    const status = await getStatus();
+    if (!status.activeTripId || status.kind !== 'fleet' || status.activeTripId === runningTripId) return;
+    const tripId = status.activeTripId;
+    await stopTracking(tripId);
+    await drainTrip(tripId, toOutbox(tripId));
+  } catch {
+    // The next bootstrap tries again.
+  }
+}
+
 export interface TripTracker {
   /** The route as driven on this phone, for the live map. Empty when this phone joined late. */
   path: TripLocationPoint[];
@@ -111,12 +192,28 @@ export interface TripTracker {
   insideNames: string[];
   error: string | null;
   tracking: boolean;
+  /** Recording through the native recorder (an APK that has it). */
+  native: boolean;
+  /** Moves everything the native recorder buffered into the outbox (no-op without it). */
+  flush: () => Promise<void>;
+  /** Stops the native recorder and flushes it — for the end of the trip (no-op without it). */
+  finish: () => Promise<void>;
 }
 
-export function useTripTracker(trip: FleetTrip | null, geofences: FleetBootstrap['geofences']): TripTracker {
+export function useTripTracker(
+  trip: FleetTrip | null,
+  geofences: FleetBootstrap['geofences'],
+  /** `onLongGap`: the native recorder was down for over ten minutes (the phone stopped it). */
+  options: { onLongGap?: () => void } = {},
+): TripTracker {
   const tripId = trip?.id ?? null;
+  const onLongGapRef = useRef(options.onLongGap);
+  useEffect(() => {
+    onLongGapRef.current = options.onLongGap;
+  });
   const running = trip?.status === 'running';
   const open = trip?.status === 'running' || trip?.status === 'paused';
+  const [native] = useState(nativeTrackingAvailable);
 
   // The saved state of this trip, reloaded when the trip changes (during render, not in an effect).
   const [state, setState] = useState<TrackerState>(() => load(tripId));
@@ -127,6 +224,8 @@ export function useTripTracker(trip: FleetTrip | null, geofences: FleetBootstrap
   }
   const [error, setError] = useState<string | null>(null);
   const [watchingFor, setWatchingFor] = useState<string | null>(null);
+  /** The running effect's drain (it also updates the live route); null when none is running. */
+  const drainRef = useRef<(() => Promise<unknown>) | null>(null);
 
   // The fences change identity on every bootstrap reload; the watch must not restart for that.
   const fencesRef = useRef(geofences);
@@ -139,8 +238,96 @@ export function useTripTracker(trip: FleetTrip | null, geofences: FleetBootstrap
     if (tripId && trip && !open) forget(tripId);
   }, [tripId, trip, open]);
 
+  /* ── the native recorder ── */
   useEffect(() => {
-    if (!tripId || !running) return undefined;
+    if (!native || !tripId || !running) return undefined;
+    let cancelled = false;
+    let track = load(tripId);
+
+    const consume = async (points: NativePoint[], gaps: NativeGap[]) => {
+      // Into the outbox first: once it holds them, the recorder may mark them synced.
+      await enqueuePoints(tripId, points.map(toClientPoint), gaps.map(toGapRecord));
+      const events: GeofenceEvent[] = [];
+      for (const point of points) {
+        const step = advance(track, toRoutePoint(point), fencesRef.current);
+        track = step.track;
+        events.push(...step.events);
+      }
+      if (points.length) {
+        save(tripId, track);
+        if (!cancelled) {
+          setState(track);
+          setError(null);
+        }
+      }
+      await queueArrivals(tripId, events);
+      if (gapsNeedGuide(gaps)) onLongGapRef.current?.();
+      void flushQueue();
+    };
+    const drain = () => drainTrip(tripId, consume).catch(() => 0);
+    drainRef.current = drain;
+
+    // A burst of fixes drains once.
+    let soon: ReturnType<typeof setTimeout> | null = null;
+    const drainSoon = () => {
+      if (soon) return;
+      soon = setTimeout(() => {
+        soon = null;
+        void drain();
+      }, 1_500);
+    };
+
+    void (async () => {
+      try {
+        await startTracking(tripId, {
+          kind: 'fleet',
+          title: 'Trip running',
+          message: `SEL Fleet is recording ${trip?.vehicleNumber ?? 'the vehicle'}'s route. Do not close this notification.`,
+        });
+        if (cancelled) return;
+        setWatchingFor(tripId);
+        setError(null);
+        void drain();
+      } catch (caught) {
+        if (!cancelled) setError(trackingErrorMessage(caught));
+      }
+    })();
+
+    const off = onTrackingEvent((event) => {
+      if (event.type === 'fix' && event.tripId === tripId) drainSoon();
+      if (event.type === 'trackingError' && event.tripId === tripId && !cancelled) setError(event.message || 'Trip tracking stopped.');
+    });
+    const timer = setInterval(() => void drain(), DRAIN_MS);
+    // Back in the foreground: restart a recorder the phone stopped, then collect what it kept.
+    const appState = App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void resumeIfActive().catch(() => null).then(() => drain());
+    });
+
+    return () => {
+      cancelled = true;
+      off();
+      clearInterval(timer);
+      if (soon) clearTimeout(soon);
+      void appState.then((handle) => handle.remove()).catch(() => undefined);
+      if (drainRef.current === drain) drainRef.current = null;
+      // Not stopped: the recording carries on without this page. What it has so far goes now.
+      void drain();
+    };
+    // `trip.vehicleNumber` only labels the notification; restarting for it would be pointless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [native, tripId, running]);
+
+  // Paused: the recorder stops until the trip is resumed (the effect above starts it again).
+  useEffect(() => {
+    if (!native || !tripId || trip?.status !== 'paused') return;
+    void stopTracking(tripId)
+      .then(() => drainTrip(tripId, toOutbox(tripId)))
+      .catch(() => undefined);
+  }, [native, tripId, trip?.status]);
+
+  /* ── the in-app watcher (no native recorder) ── */
+  useEffect(() => {
+    if (native || !tripId || !running) return undefined;
     let cancelled = false;
     let watchId: DriverGeoWatchId | null = null;
     let track = load(tripId);
@@ -163,57 +350,16 @@ export function useTripTracker(trip: FleetTrip | null, geofences: FleetBootstrap
       const accuracyM = finite(position.coords.accuracy);
       const heading = finite(position.coords.heading);
       const speed = finite(position.coords.speed);
-      buffer.push({
-        clientPointId: newClientId('pt'),
-        lat,
-        lng,
-        accuracyM,
-        speedKmph: speed === null || speed < 0 ? null : Math.round(speed * 3.6 * 10) / 10,
-        headingDeg: heading === null || heading < 0 || heading > 360 ? null : heading,
-        recordedAt: at,
-      });
+      const speedKmph = speed === null || speed < 0 ? null : Math.round(speed * 3.6 * 10) / 10;
+      const headingDeg = heading === null || heading < 0 || heading > 360 ? null : heading;
+      buffer.push({ clientPointId: newClientId('pt'), lat, lng, accuracyM, speedKmph, headingDeg, recordedAt: at });
 
-      const fix = { lat, lng, accuracyMeters: accuracyM ?? undefined, recordedAtIso: at };
-      let { liveKm, anchor } = track;
-      const usable = accuracyM === null || accuracyM <= MAX_ACCURACY_M;
-      if (usable) {
-        if (!anchor) anchor = fix;
-        else {
-          const delta = computeTripDistanceDeltaKm(anchor, fix);
-          if (delta > 0) {
-            liveKm += delta;
-            anchor = fix;
-          }
-        }
-      }
-      const step = stepGeofences(track.geo, { lat, lng, accuracyM, at }, fencesRef.current);
-      const point: TripLocationPoint = {
-        lat,
-        lng,
-        accuracyMeters: accuracyM ?? undefined,
-        speedKmph: speed === null || speed < 0 ? undefined : Math.round(speed * 3.6 * 10) / 10,
-        headingDeg: heading === null || heading < 0 || heading > 360 ? undefined : heading,
-        recordedAtIso: at,
-      };
-      track = {
-        liveKm: Math.round(liveKm * 1000) / 1000,
-        fixes: track.fixes + 1,
-        lastFixAt: at,
-        accuracyM,
-        anchor,
-        geo: step.state,
-        arrivals: step.events.length ? [...track.arrivals, ...step.events].slice(-MAX_ARRIVALS) : track.arrivals,
-        path: thin([...track.path, point], MAX_SAVED_PATH),
-      };
+      const step = advance(track, { lat, lng, accuracyMeters: accuracyM ?? undefined, speedKmph: speedKmph ?? undefined, headingDeg: headingDeg ?? undefined, recordedAtIso: at }, fencesRef.current);
+      track = step.track;
       save(tripId, track);
       setState(track);
       setError(null);
-      if (step.events.length) {
-        void enqueueGeofenceEvents(
-          tripId,
-          step.events.map((event) => ({ clientEventId: newClientId('gf'), geofenceId: event.geofenceId, type: event.type, at: event.at, lat: event.lat, lng: event.lng })),
-        ).then(() => flushQueue());
-      }
+      if (step.events.length) void queueArrivals(tripId, step.events).then(() => flushQueue());
       if (buffer.length >= BATCH_FIXES) void queueBuffer();
     };
 
@@ -256,7 +402,18 @@ export function useTripTracker(trip: FleetTrip | null, geofences: FleetBootstrap
     };
     // `trip.vehicleNumber` only labels the notification; restarting the watch for it would drop fixes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tripId, running]);
+  }, [native, tripId, running]);
+
+  const flush = useCallback(async () => {
+    if (!native || !tripId) return;
+    await (drainRef.current ? drainRef.current() : drainTrip(tripId, toOutbox(tripId)));
+  }, [native, tripId]);
+
+  const finish = useCallback(async () => {
+    if (!native || !tripId) return;
+    await stopTracking(tripId).catch(() => undefined);
+    await drainTrip(tripId, toOutbox(tripId)).catch(() => 0);
+  }, [native, tripId]);
 
   // Measured on the cleaned path, as a GPS trip's tiles are: one wild fix must not cost the legs
   // either side of it.
@@ -279,5 +436,8 @@ export function useTripTracker(trip: FleetTrip | null, geofences: FleetBootstrap
     insideNames,
     error: running ? error : null,
     tracking: running && watchingFor === tripId,
+    native,
+    flush,
+    finish,
   };
 }

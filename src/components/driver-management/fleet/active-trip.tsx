@@ -36,6 +36,8 @@ import { fleetErrorMessage, fleetFetch } from '@/components/fleet/fleet-api';
 import { flushQueue, useQueueStatus } from '@/components/fleet/offline-queue';
 import { useFleetQuery } from '@/components/fleet/use-fleet-query';
 import { useTripTracker } from '@/components/fleet/use-trip-tracker';
+import { SyncingLabel, TripTrackingChip } from '@/components/driver-management/tracking/tracking-status-chip';
+import { useTrackingReadiness } from '@/components/driver-management/tracking/tracking-readiness';
 import { KmLimitMeter, TripFlagChips, TripStatusBadge } from '@/components/fleet/fleet-ui';
 import { cn } from '@/lib/utils';
 import { LiveRecordingCard, type LiveRecordingFigures } from '../live-recording-card';
@@ -61,8 +63,11 @@ export function ActiveTrip({
   onEnded: (outcome: EndOutcome) => void;
 }) {
   const { toast } = useToast();
-  const tracker = useTripTracker(endedLocally ? null : trip, bootstrap.geofences);
+  const readiness = useTrackingReadiness();
+  const tracker = useTripTracker(endedLocally ? null : trip, bootstrap.geofences, { onLongGap: readiness.showGuideAfterGap });
   const queue = useQueueStatus();
+  /** Stop & review was pressed: the native recorder's buffer is being moved to the outbox first. */
+  const [syncing, setSyncing] = useState(false);
   const hasLocalRoute = tracker.path.length > 0;
   // The server's copy of the route, only when this phone has none of its own.
   const route = useFleetQuery<TripDetail>(hasLocalRoute || endedLocally ? null : `trips/${trip.id}`);
@@ -116,6 +121,8 @@ export function ActiveTrip({
     setBusy(action);
     try {
       await fleetFetch<{ trip: FleetTrip }>(`trips/${trip.id}/state`, { method: 'POST', body: { action, reason: action === 'cancel' ? cancelReason.trim() || 'Started by mistake' : '', at: new Date().toISOString() } });
+      // A cancelled trip records nothing more (pausing stops the recorder in the tracker itself).
+      if (action === 'cancel') void tracker.finish();
       toast({ title: action === 'pause' ? 'Trip paused' : action === 'resume' ? 'Recording again' : 'Trip cancelled', description: action === 'cancel' ? 'The vehicle is free again.' : undefined });
       onChanged();
     } catch (error) {
@@ -124,6 +131,19 @@ export function ActiveTrip({
     } finally {
       setBusy(null);
     }
+  }
+
+  /** The end is reviewed only once everything the phone recorded is in the outbox. */
+  async function openEnd() {
+    if (tracker.native) {
+      setSyncing(true);
+      try {
+        await tracker.flush();
+      } finally {
+        setSyncing(false);
+      }
+    }
+    setEndOpen(true);
   }
 
   async function syncNow() {
@@ -144,7 +164,7 @@ export function ActiveTrip({
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base text-amber-900">
             <CloudUpload className="h-4 w-4" aria-hidden />
-            Trip ended — waiting to sync
+            Finishing trip — waiting for network
           </CardTitle>
           <CardDescription className="text-amber-900/80">
             {trip.vehicleNumber}: the end, its photo and {queue.pending ? `${queue.pending} queued item${queue.pending === 1 ? '' : 's'}` : 'the route'} are saved on this phone and go to the server when there is a connection.
@@ -181,9 +201,9 @@ export function ActiveTrip({
         }
         action={
           // Full width on a phone, where a button beside the title leaves neither room.
-          <Button type="button" variant="destructive" className="w-full sm:w-auto" onClick={() => setEndOpen(true)} disabled={Boolean(busy)}>
-            <Square className="mr-1.5 h-4 w-4" aria-hidden />
-            Stop &amp; review
+          <Button type="button" variant="destructive" className="w-full sm:w-auto" onClick={() => void openEnd()} disabled={Boolean(busy) || syncing}>
+            {syncing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <Square className="mr-1.5 h-4 w-4" aria-hidden />}
+            <SyncingLabel tripId={tracker.native ? trip.id : null} active={syncing} idle="Stop & review" />
           </Button>
         }
         figures={figures}
@@ -191,6 +211,13 @@ export function ActiveTrip({
           <>
             <Badge variant="outline">Company vehicle · not claimable</Badge>
             {paused && <TripStatusBadge status={trip.status} />}
+            <TripTrackingChip
+              tripId={tracker.native ? trip.id : null}
+              paused={paused}
+              outboxPending={queue.pending}
+              fallback={{ tracking: tracker.tracking, error: tracker.error, lastFixAt: tracker.lastFixAt ? Date.parse(tracker.lastFixAt) : null, accuracyM: tracker.accuracyM, startedAt: Date.parse(trip.startedAt) || null }}
+              onFix={readiness.openGate}
+            />
           </>
         }
         fromPlace={trip.startPlace || trip.startGeofenceName || null}
@@ -286,7 +313,11 @@ export function ActiveTrip({
           trip={trip}
           figures={figures}
           lastPoint={lastPoint}
+          // Before the end goes: everything the native recorder holds, into the outbox ahead of it.
+          prepareEnd={tracker.flush}
           onEnded={(outcome) => {
+            // Ended, queued or already over: the recorder stops (a refused end leaves it recording).
+            void tracker.finish();
             setEndOpen(false);
             onEnded(outcome);
           }}

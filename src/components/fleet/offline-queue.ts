@@ -22,6 +22,8 @@
  */
 
 import { useSyncExternalStore } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Network } from '@capacitor/network';
 import type { ClientPoint } from '@/lib/fleet/types';
 import { FleetApiError, fleetFetch } from './fleet-api';
 import { uploadFleetPhoto } from './photo';
@@ -30,7 +32,8 @@ const DB_NAME = 'sel-fleet-outbox';
 const STORE = 'items';
 const POINT_BATCH = 200;
 const EVENT_BATCH = 100;
-const RETRY_MS = 20_000;
+const RETRY_BASE_MS = 5_000;
+const RETRY_MAX_MS = 5 * 60_000;
 
 export interface QueuedGeofenceEvent {
   clientEventId: string;
@@ -51,6 +54,9 @@ export interface QueuedEnd {
   remark: string;
   /** Where the trip ended, as the driver confirmed it (reverse-geocoded, editable). */
   endPlace?: string;
+  /** The photo, when it was uploaded already (an end queued behind its points): not uploaded again. */
+  uploadId?: string | null;
+  uploadOcrKm?: number | null;
 }
 
 /** How an end is stored: the photo as bytes (Blobs in IndexedDB fail on some WebViews). */
@@ -61,8 +67,14 @@ interface StoredEnd extends Omit<QueuedEnd, 'photo'> {
   uploadOcrKm: number | null;
 }
 
+/** A stretch the phone's native recorder was not running, sent with the next points (`gaps`). */
+export interface QueuedGap {
+  fromAt: string;
+  toAt: string;
+}
+
 type Item =
-  | { seq?: number; tripId: string; kind: 'points'; points: ClientPoint[]; createdAt: string; attempts: number }
+  | { seq?: number; tripId: string; kind: 'points'; points: ClientPoint[]; gaps?: QueuedGap[]; createdAt: string; attempts: number }
   | { seq?: number; tripId: string; kind: 'events'; events: QueuedGeofenceEvent[]; createdAt: string; attempts: number }
   | { seq?: number; tripId: string; kind: 'end'; end: StoredEnd; createdAt: string; attempts: number };
 
@@ -147,7 +159,8 @@ async function putItem(item: Item): Promise<void> {
   if (db) await done(db.transaction(STORE, 'readwrite').objectStore(STORE).put(item)).catch(() => undefined);
 }
 
-const weight = (item: Item) => (item.kind === 'points' ? item.points.length : item.kind === 'events' ? item.events.length : 1);
+// A points item carrying only gap records still counts, so the retry keeps running for it.
+const weight = (item: Item) => (item.kind === 'points' ? item.points.length || 1 : item.kind === 'events' ? item.events.length : 1);
 
 /* ── status store (useSyncExternalStore) ── */
 
@@ -176,25 +189,45 @@ async function refreshPending() {
   setStatus({ pending: items.reduce((sum, item) => sum + weight(item), 0) });
 }
 
-let retryTimer: ReturnType<typeof setInterval> | null = null;
+/**
+ * The next try after a failed flush: 5 s, then doubling to at most 5 min, back to the start once
+ * a flush gets through (or the network comes back). A web timer, which only runs while the app is
+ * open — the recording itself is native and does not depend on it.
+ */
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let failures = 0;
+const retryDelay = () => Math.min(RETRY_BASE_MS * 2 ** Math.max(0, failures - 1), RETRY_MAX_MS);
 function scheduleRetry() {
   if (typeof window === 'undefined') return;
-  if (status.pending > 0 && !retryTimer) retryTimer = setInterval(() => void flushQueue(), RETRY_MS);
-  if (status.pending === 0 && retryTimer) {
-    clearInterval(retryTimer);
+  if (status.pending === 0) {
+    if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
+    failures = 0;
+    return;
   }
+  if (retryTimer || status.flushing) return;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void flushQueue();
+  }, retryDelay());
+}
+
+function backOnline() {
+  failures = 0;
+  setStatus({ online: true });
+  void flushQueue();
 }
 
 let started = false;
 function start() {
   if (started || typeof window === 'undefined') return;
   started = true;
-  window.addEventListener('online', () => {
-    setStatus({ online: true });
-    void flushQueue();
-  });
+  window.addEventListener('online', backOnline);
   window.addEventListener('offline', () => setStatus({ online: false }));
+  // In the app the WebView's online/offline events can lag the radio; Capacitor's own does not.
+  if (Capacitor.isNativePlatform()) {
+    void Network.addListener('networkStatusChange', (change) => (change.connected ? backOnline() : setStatus({ online: false }))).catch(() => undefined);
+  }
   void refreshPending().then(() => {
     if (status.pending) void flushQueue();
   });
@@ -214,9 +247,13 @@ export function useQueueStatus(): QueueStatus {
 
 /* ── enqueue ── */
 
-export async function enqueuePoints(tripId: string, points: ClientPoint[]): Promise<void> {
+/** Gap records, if any, ride on the first batch (or on an empty one when there are no points). */
+export async function enqueuePoints(tripId: string, points: ClientPoint[], gaps: QueuedGap[] = []): Promise<void> {
+  if (!points.length && gaps.length) {
+    await addItem({ tripId, kind: 'points', points: [], gaps, createdAt: new Date().toISOString(), attempts: 0 });
+  }
   for (let index = 0; index < points.length; index += POINT_BATCH) {
-    await addItem({ tripId, kind: 'points', points: points.slice(index, index + POINT_BATCH), createdAt: new Date().toISOString(), attempts: 0 });
+    await addItem({ tripId, kind: 'points', points: points.slice(index, index + POINT_BATCH), ...(index === 0 && gaps.length ? { gaps } : {}), createdAt: new Date().toISOString(), attempts: 0 });
   }
   await refreshPending();
 }
@@ -237,13 +274,19 @@ export async function enqueueEnd(tripId: string, end: QueuedEnd): Promise<void> 
   }
   const { photo: _blob, ...rest } = end;
   void _blob;
-  await addItem({ tripId, kind: 'end', end: { ...rest, photo, uploadId: null, uploadOcrKm: null }, createdAt: new Date().toISOString(), attempts: 0 });
+  await addItem({ tripId, kind: 'end', end: { ...rest, photo, uploadId: end.uploadId ?? null, uploadOcrKm: end.uploadOcrKm ?? null }, createdAt: new Date().toISOString(), attempts: 0 });
   await refreshPending();
 }
 
 export async function pendingCount(): Promise<number> {
   const items = await allItems();
   return items.reduce((sum, item) => sum + weight(item), 0);
+}
+
+/** Points (and gap records) of one trip still on the phone — the end must not overtake them. */
+export async function pendingPointsFor(tripId: string): Promise<number> {
+  const items = await allItems();
+  return items.filter((item) => item.tripId === tripId && item.kind === 'points').reduce((sum, item) => sum + weight(item), 0);
 }
 
 /* ── flush ── */
@@ -256,7 +299,7 @@ function retryable(error: unknown): boolean {
 
 async function send(item: Item): Promise<void> {
   if (item.kind === 'points') {
-    await fleetFetch(`trips/${encodeURIComponent(item.tripId)}/points`, { body: { points: item.points } });
+    await fleetFetch(`trips/${encodeURIComponent(item.tripId)}/points`, { body: { points: item.points, ...(item.gaps?.length ? { gaps: item.gaps } : {}) } });
     return;
   }
   if (item.kind === 'events') {
@@ -316,6 +359,8 @@ export function flushQueue(): Promise<{ sent: number; remaining: number }> {
           }
         }
       }
+      // Back off while something keeps failing; a clean pass starts the delays again.
+      failures = blocked.size ? failures + 1 : 0;
     } finally {
       await refreshPending();
       setStatus({ flushing: false });

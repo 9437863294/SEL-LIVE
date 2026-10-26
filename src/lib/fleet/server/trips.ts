@@ -61,6 +61,8 @@ const approvalsCol = () => db().collection(FLEET_COLLECTIONS.approvals);
 
 /** Points sent after a trip ended are still taken for this long (a phone flushing its queue late). */
 const LATE_POINTS_HOURS = 48;
+/** Recorder-down stretches kept on a trip (`trackingGaps`, sent by the app with its points). */
+const MAX_TRACKING_GAPS = 50;
 
 const tripLink = (id: string) => `/driver-management/fleet/trips/${id}`;
 
@@ -535,7 +537,8 @@ export async function addPoints(context: FleetContext, tripId: string, body: unk
     if (trip.driverUserId !== context.userId) throw new FleetError('That trip is not yours.', 403);
     if (!acceptsPoints(trip, context.now)) throw new FleetError('That trip is closed.', 409, { code: 'trip_closed' });
 
-    const existing = await transaction.getAll(...refs);
+    // A batch may carry only gap records; getAll() needs at least one reference.
+    const existing = refs.length ? await transaction.getAll(...refs) : [];
     const fresh = unique.filter((_, index) => !existing[index].exists);
     // Ignore fixes stamped before the trip began or impossibly far in the future.
     const startMs = toMs(trip.startedAt) - 5 * 60_000;
@@ -577,7 +580,13 @@ export async function addPoints(context: FleetContext, tripId: string, body: unk
       patch.totalDistanceKm = round1(gps);
       if (last) Object.assign(patch, { lastPointAt: last.recordedAtIso, lastPointLat: last.lat, lastPointLng: last.lng, lastLocationLat: last.lat, lastLocationLng: last.lng });
     }
-    if (usable.length) transaction.set(tripRef, patch, { merge: true });
+    // Where the phone's recorder was down (`gaps`): kept on the trip, the last 50, without repeats.
+    if (input.gaps?.length) {
+      const stored = Array.isArray(snapshot.data()?.trackingGaps) ? (snapshot.data()!.trackingGaps as Array<{ fromAt: string; toAt: string }>) : [];
+      const byKey = new Map([...stored, ...input.gaps].map((gap) => [`${gap.fromAt}|${gap.toAt}`, { fromAt: gap.fromAt, toAt: gap.toAt }]));
+      patch.trackingGaps = [...byKey.values()].sort((a, b) => a.fromAt.localeCompare(b.fromAt)).slice(-MAX_TRACKING_GAPS);
+    }
+    if (usable.length || input.gaps?.length) transaction.set(tripRef, patch, { merge: true });
     return { trip, accepted: usable.length, duplicates: input.points.length - usable.length, gps: open ? round1(gps) : trip.gpsDistanceKm, pointCount };
   });
 

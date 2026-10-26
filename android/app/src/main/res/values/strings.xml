@@ -7,4 +7,10 @@
     <string name="chat_notification_channel_id">sel_chat_messages</string>
     <string name="background_location_channel_name">Background location</string>
     <string name="background_location_notification_title">SEL location tracking active</string>
+    <string name="trip_recording_channel_name">Trip recording</string>
+    <string name="trip_recording_channel_description">Shows while a trip route is being recorded.</string>
+    <string name="trip_recording_default_title">Trip recording</string>
+    <string name="trip_alert_channel_name">Trip tracking alerts</string>
+    <string name="trip_alert_channel_description">Alerts when trip tracking stops and needs attention.</string>
+    <string name="trip_alert_title">Trip tracking stopped \u2014 tap to fix</string>
 </resources>

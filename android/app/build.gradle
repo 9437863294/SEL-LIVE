@@ -26,8 +26,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Overridable from CI (`-PversionCodeOverride=… -PversionNameOverride=…`) so a release can be
         // cut without a commit, while a local build keeps the checked-in values.
-        versionCode (project.findProperty('versionCodeOverride') ?: '2') as Integer
-        versionName project.findProperty('versionNameOverride') ?: "1.1"
+        // Assignments, not command calls: `versionCode (x) as Integer` parses as `(versionCode(x)) as Integer`
+        // and hands the string to versionCode, which failed the configuration ("Value is null").
+        versionCode = Integer.parseInt(String.valueOf(project.findProperty('versionCodeOverride') ?: '2'))
+        versionName = String.valueOf(project.findProperty('versionNameOverride') ?: '1.1')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

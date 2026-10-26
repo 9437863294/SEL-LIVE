@@ -34,10 +34,34 @@
  * `priceTrip`), shows the amount, and saves the measurement alongside as `gps`, so an approver can
  * tell a measured trip from a typed one. (These replaced the full trip form's old GPS modes; that
  * form now only edits a recorded trip.)
+ *
+ * ── Recording with the screen locked ────────────────────────────────────────────────────────────
+ *
+ * In an SEL Driver APK that carries the native recorder (src/lib/trip-tracking), the route is
+ * recorded by a foreground service into the phone's SQLite, under a local `recorderId`, whether or
+ * not this page is alive; the provider drains it into the trip's route (stored at once, before the
+ * recorder is told it may let the points go), and Stop & review stops it and collects the rest
+ * first. Without it (an older APK, the browser) the in-app watcher records, as before.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { App } from '@capacitor/app';
 import { LocateFixed, Loader2, Square } from 'lucide-react';
+import { SyncingLabel, TripTrackingChip } from '@/components/driver-management/tracking/tracking-status-chip';
+import { useTrackingReadiness } from '@/components/driver-management/tracking/tracking-readiness';
+import { gapsNeedGuide, toRoutePoint, type NativeGap, type NativePoint } from '@/lib/trip-tracking/rules';
+import {
+  TrackingPermissionError,
+  discardBuffered,
+  drainTrip,
+  getStatus,
+  nativeTrackingAvailable,
+  onTrackingEvent,
+  resumeIfActive,
+  startTracking,
+  stopTracking,
+  trackingErrorMessage,
+} from '@/lib/trip-tracking/tracking';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
@@ -86,6 +110,33 @@ interface InFlight {
   notes: string;
   fromPlace: string;
   points: TripLocationPoint[];
+  /**
+   * The native recorder's key for this recording (an own trip has no server id until it is saved).
+   * Absent on a trip recorded by the in-app watcher.
+   */
+  recorderId?: string;
+}
+
+/** What the native recorder's notification says while an own-vehicle trip records. */
+const OWN_RECORDING = { kind: 'own', title: 'Trip running', message: 'SEL Fleet is recording your route. Do not close this notification.' } as const;
+
+const newRecorderId = () => `own_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+/** The newest fix's time, for the status chip when there is no native recorder to ask. */
+const lastFixMs = (points: TripLocationPoint[]): number | null => {
+  const at = points[points.length - 1]?.recordedAtIso;
+  const ms = at ? Date.parse(at) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/** Written at once (not after the next render), so a drained batch is stored before it is acknowledged. */
+function persistInFlight(inFlight: InFlight | null) {
+  try {
+    if (inFlight) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(inFlight));
+    else window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Unavailable storage costs resilience, not the recording in progress.
+  }
 }
 
 /** Evenly spaced, keeping both ends — a route thinned in the middle still reads as the same route. */
@@ -180,30 +231,113 @@ export function GpsTripProvider({
   const [stopping, setStopping] = useState(false);
   const [review, setReview] = useState<OwnReview | null>(null);
   const watchRef = useRef<DriverGeoWatchId | null>(null);
-
+  const readiness = useTrackingReadiness();
+  /** Recording through the phone's native recorder (an APK that has it), not the in-app watcher. */
+  const [native] = useState(nativeTrackingAvailable);
+  /** The trip as last persisted — the native drain appends to it and writes it before acknowledging. */
+  const inFlightRef = useRef<InFlight | null>(null);
+  /** The running drain (null when none). */
+  const drainRef = useRef<(() => Promise<unknown>) | null>(null);
+  const [trackError, setTrackError] = useState<string | null>(null);
 
   /* ── Restore a trip left running ── */
   useEffect(() => {
+    let restored: InFlight | null = null;
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) setInFlight(JSON.parse(saved) as InFlight);
+      if (saved) {
+        restored = JSON.parse(saved) as InFlight;
+        // A trip begun by the in-app watcher continues on the native recorder under a new id.
+        if (native && !restored.recorderId) restored = { ...restored, recorderId: newRecorderId() };
+        setInFlight(restored);
+      }
     } catch {
       // Private browsing, or a shape from an older build. Starting fresh beats crashing.
     }
+    // The recorder holds only the trip this phone is recording; an own trip it still holds that is
+    // not ours any more (storage cleared, or a stale one) is stopped and dropped.
+    if (native) {
+      void getStatus()
+        .then(async (status) => {
+          if (!status.activeTripId || status.kind !== 'own' || status.activeTripId === restored?.recorderId) return;
+          await stopTracking(status.activeTripId);
+          await discardBuffered(status.activeTripId);
+        })
+        .catch(() => undefined);
+    }
+    // Once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    try {
-      if (inFlight) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(inFlight));
-      else window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // Unavailable storage costs resilience, not the recording in progress.
-    }
+    inFlightRef.current = inFlight;
+    persistInFlight(inFlight);
   }, [inFlight]);
 
-  /* ── Watch the position while a trip is running ── */
+  /* ── The native recorder: it records on its own; this collects what it buffered ── */
+  const recorderId = native ? inFlight?.recorderId ?? null : null;
   useEffect(() => {
-    if (!inFlight) return undefined;
+    if (!recorderId) return undefined;
+    let cancelled = false;
+
+    // Onto the trip's route, written to storage before the recorder is told it may let them go.
+    const consume = async (points: NativePoint[], gaps: NativeGap[]) => {
+      const base = inFlightRef.current;
+      if (base && base.recorderId === recorderId && points.length) {
+        const next = { ...base, points: [...base.points, ...points.map(toRoutePoint)] };
+        inFlightRef.current = next;
+        persistInFlight(next);
+        if (!cancelled) setInFlight(next);
+      }
+      // The phone stopped the recorder for a long stretch: show its maker's steps again.
+      if (gapsNeedGuide(gaps)) readiness.showGuideAfterGap();
+    };
+    const drain = () => drainTrip(recorderId, consume).catch(() => 0);
+    drainRef.current = drain;
+
+    let soon: ReturnType<typeof setTimeout> | null = null;
+    const drainSoon = () => {
+      if (soon) return;
+      soon = setTimeout(() => {
+        soon = null;
+        void drain();
+      }, 1_500);
+    };
+
+    // Started by beginTrip; this makes sure of it for a trip restored after a reload (idempotent).
+    void startTracking(recorderId, OWN_RECORDING)
+      .then(() => {
+        if (!cancelled) setTrackError(null);
+        return drain();
+      })
+      .catch((error) => {
+        if (!cancelled) setTrackError(trackingErrorMessage(error));
+      });
+
+    const off = onTrackingEvent((event) => {
+      if (event.type === 'fix' && event.tripId === recorderId) drainSoon();
+      if (event.type === 'trackingError' && event.tripId === recorderId && !cancelled) setTrackError(event.message || 'Trip tracking stopped.');
+    });
+    const timer = setInterval(() => void drain(), 15_000);
+    const appState = App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void resumeIfActive().catch(() => null).then(() => drain());
+    });
+    return () => {
+      cancelled = true;
+      off();
+      clearInterval(timer);
+      if (soon) clearTimeout(soon);
+      void appState.then((handle) => handle.remove()).catch(() => undefined);
+      if (drainRef.current === drain) drainRef.current = null;
+      void drain();
+    };
+    // `readiness` is stable (memoised in its provider).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorderId]);
+
+  /* ── The in-app watcher (no native recorder) ── */
+  useEffect(() => {
+    if (!inFlight || native) return undefined;
     let cancelled = false;
 
     const start = async () => {
@@ -268,7 +402,18 @@ export function GpsTripProvider({
 
   const beginTrip = async (values: StartDetails & { tripDate: string; fromPlace: string; startOdometer: string | null; notes: string }) => {
     setStarting(true);
+    // Started before the trip exists, so a refusal (a permission taken away since the gate) leaves
+    // nothing half-begun.
+    const recorderId = native ? newRecorderId() : undefined;
     try {
+      if (recorderId) {
+        try {
+          await startTracking(recorderId, OWN_RECORDING);
+        } catch (error) {
+          if (error instanceof TrackingPermissionError) readiness.openGate();
+          throw new Error(trackingErrorMessage(error));
+        }
+      }
       await ensureDriverGeolocation();
       const position = await getCurrentDriverPosition();
       const first: TripLocationPoint = {
@@ -282,10 +427,14 @@ export function GpsTripProvider({
       // The driver typed a starting place in the form; reverse-geocoding only fills a blank one.
       const fromPlace = values.fromPlace.trim() || (await reverseGeocode(first.lat, first.lng));
 
-      setInFlight({ startedAtIso: first.recordedAtIso!, details: values, tripDate: values.tripDate, startOdometer: values.startOdometer, notes: values.notes, fromPlace, points: [first] });
+      setInFlight({ startedAtIso: first.recordedAtIso!, details: values, tripDate: values.tripDate, startOdometer: values.startOdometer, notes: values.notes, fromPlace, points: [first], ...(recorderId ? { recorderId } : {}) });
       setStartOpen(false);
-      toast({ title: 'Recording', description: 'Keep this screen open while you drive.' });
+      toast({
+        title: 'Recording',
+        description: recorderId ? 'You can lock the phone — the route records in the background. Keep the “Trip running” notification.' : 'Keep this screen open while you drive.',
+      });
     } catch (error: any) {
+      if (recorderId) void stopTracking(recorderId).then(() => discardBuffered(recorderId)).catch(() => undefined);
       toast({
         title: 'Could not start',
         description: error?.message || 'Location permission is needed to record a trip.',
@@ -300,11 +449,18 @@ export function GpsTripProvider({
     if (!inFlight) return;
     setStopping(true);
     try {
-      const cleaned = cleanTripPath(inFlight.points);
+      // The recording ends here: stop the recorder, then collect everything it still holds, so the
+      // review measures the whole route.
+      if (native && inFlight.recorderId) {
+        await stopTracking(inFlight.recorderId).catch(() => undefined);
+        await (drainRef.current ? drainRef.current() : Promise.resolve());
+      }
+      const recorded = inFlightRef.current ?? inFlight;
+      const cleaned = cleanTripPath(recorded.points);
       // The cleaned path, not the raw one: an outlier fix rejects the real legs on both sides of
       // it, so raw points under-measure a trip with a single bad reading.
       const measured = summariseTrip(cleaned.points);
-      const last = cleaned.points[cleaned.points.length - 1] ?? inFlight.points[inFlight.points.length - 1];
+      const last = cleaned.points[cleaned.points.length - 1] ?? recorded.points[recorded.points.length - 1];
       const toPlace = last ? await reverseGeocode(last.lat, last.lng) : '';
 
       const gps: TripGpsEvidence = {
@@ -339,7 +495,7 @@ export function GpsTripProvider({
     } finally {
       setStopping(false);
     }
-  }, [inFlight, rules.requireOdometer]);
+  }, [inFlight, native, rules.requireOdometer]);
 
   /* ── Idle ── */
   /*
@@ -354,9 +510,10 @@ export function GpsTripProvider({
       description={inFlight.details.purpose}
       action={
         // Full width on a phone, where a button beside the title leaves neither room.
+        // Review waits until the recorder has handed over every fix ("Syncing N points…").
         <Button variant="destructive" className="w-full sm:w-auto" onClick={() => void finishTrip()} disabled={stopping}>
           {stopping ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Square className="mr-1.5 h-4 w-4" />}
-          Stop &amp; review
+          <SyncingLabel tripId={recorderId} active={stopping} idle="Stop & review" />
         </Button>
       }
       figures={{
@@ -365,15 +522,37 @@ export function GpsTripProvider({
         idleMinutes: summary?.idleMinutes ?? 0,
         fixes: inFlight.points.length,
       }}
-      badges={<Badge variant="outline">{inFlight.details.ownership === 'own' ? 'Own vehicle' : 'Company vehicle'}</Badge>}
+      badges={
+        <>
+          <Badge variant="outline">{inFlight.details.ownership === 'own' ? 'Own vehicle' : 'Company vehicle'}</Badge>
+          <TripTrackingChip
+            tripId={recorderId}
+            fallback={{
+              tracking: true,
+              error: trackError,
+              lastFixAt: lastFixMs(inFlight.points),
+              accuracyM: inFlight.points[inFlight.points.length - 1]?.accuracyMeters ?? null,
+              startedAt: Date.parse(inFlight.startedAtIso) || null,
+            }}
+            onFix={readiness.openGate}
+          />
+        </>
+      }
       fromPlace={inFlight.fromPlace}
       points={inFlight.points}
     />
   ) : null;
 
+  // Opening the start asks the phone first (permissions, the maker's steps) — every way in: the
+  // "Which vehicle?" prompt, a ?kind=own link, the header button.
+  const openStart = (open: boolean) => {
+    if (!open) return setStartOpen(false);
+    void readiness.ensureReady().then((ready) => ready && setStartOpen(true));
+  };
+
   return (
     <GpsTripContext.Provider
-      value={{ recording, startOpen, setStartOpen, panel }}
+      value={{ recording, startOpen, setStartOpen: openStart, panel }}
     >
       {children}
 
@@ -390,7 +569,12 @@ export function GpsTripProvider({
           data={data}
           review={review}
           onDiscard={() => {
-            // Discarded after a confirmation: the recording is over, and nothing else holds it.
+            // Discarded after a confirmation: the recording is over, and nothing else holds it —
+            // the native recorder's copy goes too.
+            if (inFlight?.recorderId) {
+              const id = inFlight.recorderId;
+              void stopTracking(id).then(() => discardBuffered(id)).catch(() => undefined);
+            }
             setReview(null);
             setInFlight(null);
           }}

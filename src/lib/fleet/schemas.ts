@@ -54,22 +54,29 @@ export const startTripSchema = z.object({
   chainPrevTripId: optionalId,
 });
 
-export const pointsSchema = z.object({
-  points: z
-    .array(
-      z.object({
-        clientPointId: clientId,
-        lat,
-        lng,
-        accuracyM: z.number().min(0).max(100000).nullish().transform((value) => value ?? null),
-        speedKmph: z.number().min(0).max(1000).nullish().transform((value) => value ?? null),
-        headingDeg: z.number().min(0).max(360).nullish().transform((value) => value ?? null),
-        recordedAt: iso,
-      }),
-    )
-    .min(1)
-    .max(200, 'Send at most 200 points at a time.'),
-});
+export const pointsSchema = z
+  .object({
+    points: z
+      .array(
+        z.object({
+          clientPointId: clientId,
+          lat,
+          lng,
+          accuracyM: z.number().min(0).max(100000).nullish().transform((value) => value ?? null),
+          speedKmph: z.number().min(0).max(1000).nullish().transform((value) => value ?? null),
+          headingDeg: z.number().min(0).max(360).nullish().transform((value) => value ?? null),
+          recordedAt: iso,
+        }),
+      )
+      .max(200, 'Send at most 200 points at a time.'),
+    /**
+     * Optional: stretches the phone's native recorder was not running (killed by the phone), so a
+     * gap in the track reads as "the phone stopped recording" rather than "the vehicle stood".
+     * Older apps never send it. A batch may carry gaps and no points.
+     */
+    gaps: z.array(z.object({ fromAt: iso, toAt: iso })).max(20).optional(),
+  })
+  .refine((value) => value.points.length > 0 || Boolean(value.gaps?.length), { message: 'Send at least one point.', path: ['points'] });
 
 export const geofenceEventsSchema = z.object({
   events: z

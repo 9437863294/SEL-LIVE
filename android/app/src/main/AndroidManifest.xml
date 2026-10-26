@@ -68,6 +68,13 @@
             android:exported="false"
             android:foregroundServiceType="location"
             android:stopWithTask="false" />
+
+        <service
+            android:name=".TripRecorderService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:stopWithTask="false" />
     </application>
 
 </manifest>

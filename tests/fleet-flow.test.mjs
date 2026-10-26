@@ -181,6 +181,24 @@ test('points: idempotent by client id, live GPS km, only the driver, at most 200
   assert.equal(events.accepted, 1);
 });
 
+test('points: the native recorder’s gap records ride on a batch — alone or with points, kept once, the track untouched', async () => {
+  const before = db.read('vehicleManagementTrips', trips.a.id);
+  const first = { fromAt: at(4), toAt: at(6) };
+  const second = { fromAt: at(7), toAt: at(8) };
+  // With points already sent (duplicates): the gap is kept, nothing else moves.
+  const withPoints = await addPoints(ctx('drv1', { now: at(12) }), trips.a.id, { points: track('a', 1, 10, 0), gaps: [first] });
+  assert.equal(withPoints.accepted, 0);
+  // Alone (the app restarted and no fix has come yet), and the first one again.
+  const alone = await addPoints(ctx('drv1', { now: at(12) }), trips.a.id, { points: [], gaps: [second, first] });
+  assert.equal(alone.accepted, 0);
+  const after = db.read('vehicleManagementTrips', trips.a.id);
+  assert.deepEqual(after.trackingGaps, [first, second]);
+  assert.equal(after.totalPoints, before.totalPoints);
+  assert.equal(after.gpsDistanceKm, before.gpsDistanceKm);
+  // Neither points nor gaps: refused, as an empty batch always was.
+  await rejects(addPoints(ctx('drv1', { now: at(12) }), trips.a.id, { points: [] }), 400, /at least one point/);
+});
+
 /* ── ending ───────────────────────────────────────────────────────────── */
 
 test('GPS agrees with the odometer: completed, billed on the odometer, lock released', async () => {

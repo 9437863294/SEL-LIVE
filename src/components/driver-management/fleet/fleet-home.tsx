@@ -40,6 +40,8 @@ import { isClaimable } from '@/lib/employee-trips/trips';
 import { formatKm, type TripRecord } from '@/lib/employee-trips/types';
 import { sumMoney } from '@/lib/employee-trips/rates';
 import { useFleet } from '@/components/fleet/fleet-provider';
+import { settleFleetRecording } from '@/components/fleet/use-trip-tracker';
+import { TrackingReadinessProvider, useTrackingReadiness } from '@/components/driver-management/tracking/tracking-readiness';
 import { GpsTripPanel, GpsTripProvider, useGpsTripControls } from '@/components/driver-management/trips/gps-trip-recorder';
 import { useTripClaims } from '@/components/driver-management/trips/trip-claims-provider';
 import { useTripQuery } from '@/components/driver-management/trips/use-trip-query';
@@ -83,8 +85,21 @@ function StartFromUrl({ kind, enabled, onCompany, onChoose }: { kind: string | n
   return null;
 }
 
+/**
+ * The readiness gate wraps the page, so both starts — the company one here and the own-vehicle one
+ * in the recorder's provider — ask the phone for what background tracking needs before a trip begins.
+ */
 export default function FleetHome() {
+  return (
+    <TrackingReadinessProvider>
+      <FleetHomeContent />
+    </TrackingReadinessProvider>
+  );
+}
+
+function FleetHomeContent() {
   const params = useSearchParams();
+  const readiness = useTrackingReadiness();
   const { data, loading, error, reload } = useFleet();
   const claims = useTripClaims();
   const tripsQuery = useTripQuery<{ trips: TripRecord[] }>('trips');
@@ -121,6 +136,13 @@ export default function FleetHome() {
 
   const assigned = useMemo(() => (data?.vehicles ?? []).find((vehicle) => vehicle.assignedToMe && !vehicle.busy) ?? null, [data?.vehicles]);
 
+  // The phone's native recorder holds only the trip that is running here; one the server has closed
+  // or paused meanwhile (from the web, by a manager) is stopped and its buffer sent.
+  const runningTripId = openTrip?.status === 'running' && !endedLocally.includes(openTrip.id) ? openTrip.id : null;
+  useEffect(() => {
+    if (data) void settleFleetRecording(runningTripId);
+  }, [data, runningTripId]);
+
   if ((loading && !data) || (claims.loading && !claims.data)) return <LoadingBlock />;
   if (!data) return <ErrorBlock message={error ?? 'Fleet Trip could not be loaded.'} onRetry={() => void reload()} />;
 
@@ -131,9 +153,14 @@ export default function FleetHome() {
   const ownBlocked = rules && !rules.allowOwnVehicle ? 'Own vehicle: switched off in Trip Settings.' : null;
   const companyBlocked = !data.canDrive ? 'Company vehicle: for Driver Master drivers — ask the fleet office.' : !data.vehicles.length ? 'Company vehicle: none in Vehicle Master yet.' : null;
 
+  // Every company start comes through here: the phone is checked first (permissions, the maker's
+  // steps), so the driver does not fill in a start the phone then cannot record.
   const openStart = (initial: Partial<StartValues>) => {
-    openings.current += 1;
-    setStart({ key: openings.current, initial });
+    void readiness.ensureReady().then((ready) => {
+      if (!ready) return;
+      openings.current += 1;
+      setStart({ key: openings.current, initial });
+    });
   };
   // A company start opens on the driver's own assigned vehicle when there is one free.
   const startCompany = () => openStart({ ...emptyStartValues(assigned?.id ?? '') });
