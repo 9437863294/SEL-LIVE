@@ -304,29 +304,34 @@ export function AccessControlCenter() {
   const canRoles = canManageRoles(can);
 
   return (
-    <AccessPageShell
-      fill
-      backHref={back.href}
-      backLabel={back.label}
-      onBackClick={back.onClick}
-      aside={
-        // Reassurance for somebody arriving on this screen, not something they act on — and on a
-        // phone it was a whole row of the little height there is. Desktop only.
-        <Badge variant="success" className="hidden gap-1 sm:inline-flex">
-          <ShieldCheck className="h-3 w-3" />
-          Additive only — existing permissions are never replaced
-        </Badge>
-      }
-    >
+    <AccessPageShell fill>
       {/* `shrink-0` on the two fixed rows: they are flex children of a height-bounded column, and
           without it the browser shrinks *them* to fit rather than scrolling the frame below. */}
       <div className="shrink-0">
+      {/* The back arrow sits beside the title rather than on a row of its own above it: on a phone
+          that row held nothing else, and this page does not scroll. */}
       <PageHeader
         className="mb-2 sm:mb-4"
         title="Access Control Center"
-        description="Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen."
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
+        badge={
+          // Reassurance for somebody arriving on this screen, not something they act on — and on a
+          // phone it was a whole row of the little height there is. Desktop only.
+          <Badge variant="success" className="hidden gap-1 sm:inline-flex">
+            <ShieldCheck className="h-3 w-3" />
+            Additive only — existing permissions are never replaced
+          </Badge>
+        }
         // The page does not scroll, so every row above the frame is a row taken off the list. On a
-        // phone that budget is small enough that a two-line subtitle costs a whole role card.
+        // phone that budget is small enough that a two-line subtitle costs a whole role card, so
+        // the subtitle is for wider screens only.
+        description={
+          <span className="hidden sm:inline">
+            Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen.
+          </span>
+        }
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void state.refresh()} disabled={state.isRefreshing}>
@@ -674,9 +679,17 @@ function UsersTab({
         count={filtered.length}
         total={directory.users.length}
         noun="user"
+        // Four labelled actions: an even 2 × 2 grid on a phone rather than three ragged rows, with
+        // the bulk actions' labels shortened there to fit half the width. The count stays in them —
+        // it is how many people the action reaches.
+        actionsGrid
         actions={
           <>
-            {selectedIds.length > 0 && <Badge variant="neutral">{selectedIds.length} selected</Badge>}
+            {selectedIds.length > 0 && (
+              <Badge variant="neutral" className="col-span-2 justify-self-start sm:col-auto">
+                {selectedIds.length} selected
+              </Badge>
+            )}
             <Button variant="outline" size="sm" disabled={!rows.length} onClick={() => void exportUsers()}>
               <Download className="mr-1.5 h-4 w-4" />
               Export ({rows.length})
@@ -708,7 +721,8 @@ function UsersTab({
                 onClick={() => setRemoveOpen(true)}
               >
                 <ShieldMinus className="mr-1.5 h-4 w-4" />
-                Remove access from {targets.length}
+                <span className="sm:hidden">Remove from {targets.length}</span>
+                <span className="hidden sm:inline">Remove access from {targets.length}</span>
               </Button>
             )}
             {canAssign && (
@@ -718,7 +732,8 @@ function UsersTab({
                 onClick={() => onAssign({ userIds: filtered.map((user) => user.id) })}
               >
                 <ShieldPlus className="mr-1.5 h-4 w-4" />
-                Assign access to {filtered.length} filtered
+                <span className="sm:hidden">Assign to {filtered.length}</span>
+                <span className="hidden sm:inline">Assign access to {filtered.length} filtered</span>
               </Button>
             )}
           </>
@@ -830,15 +845,19 @@ function PermissionRegistryTab({ state }: { state: ReturnType<typeof useAccessDi
         <CardHeader className="px-4 py-3">
           <CardTitle className="text-sm">Module, page &amp; action registry</CardTitle>
           <CardDescription className="text-xs">
-            {moduleCount} modules · {registry.length} pages · {total} grantable permissions. Derived from
-            the application itself, so a new module appears here as soon as it ships — there is nothing
-            to register by hand.
+            {moduleCount} modules · {registry.length} pages · {total} grantable permissions.
+            {/* Background, not instructions: on a phone it was two of the card's opening lines. */}
+            <span className="hidden sm:inline">
+              {' '}
+              Derived from the application itself, so a new module appears here as soon as it ships —
+              there is nothing to register by hand.
+            </span>
           </CardDescription>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="mb-2.5 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs text-sky-900">
-            Browse and search the whole registry below. Ticking boxes here is a scratchpad for working
-            out a permission set — nothing is saved. Use <span className="font-semibold">Roles</span> to
+            <span className="hidden sm:inline">Browse and search the whole registry below. </span>
+            Ticking boxes here is a scratchpad for working out a permission set — nothing is saved. Use <span className="font-semibold">Roles</span> to
             build a role or <span className="font-semibold">Assign Access</span> to grant permissions
             directly.
           </div>

@@ -90,8 +90,11 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
   return (
     // Full width, deliberately — same reasoning as the role builder: the permission tree and its
     // module chips are the content of this page, and a centred column would waste the room.
-    <AccessPageShell backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
+    <AccessPageShell>
       <PageHeader
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         title={editing ? `Edit ${editing.name}` : 'New access template'}
         description="A reusable bundle of roles, permissions and projects — applying one adds it on top of whatever the user already has."
       />

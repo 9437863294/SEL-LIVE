@@ -20,7 +20,7 @@ const AUTH_ONLY_ROUTES = ['/login', '/driver-login', '/print-auth'];
 // it public: that folder only groups files, while this guard runs on every page and knows
 // only the list above. Omitted from AUTH_ONLY_ROUTES too, because the moment the exchange
 // succeeds the user *is* logged in and a redirect from here would race the page's own.
-const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action', '/auth/agent', ...['', '/other', '/dept', '/access', '/access/users/U1', '/access/users/new', '/appearance', '/appearance/themes'].map((p) => `/back-probe${p}`)];
+const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action', '/auth/agent'];
 
 const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management';
 const WEB_DEFAULT_REDIRECT = '/';

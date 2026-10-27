@@ -11,12 +11,19 @@
  *     (Submitting a new request replaces the form with the request, and the request's back arrow
  *     must then lead to wherever the form was opened from — not to a blank form.)
  *   - **A browser Back or Forward.** Nothing new is learnt. Where the page was first opened from is
- *     still the entry behind it, so its recorded origin stands.
+ *     still the entry behind it, so its recorded origin stands. React renders a Back to a page it
+ *     already has *synchronously, inside the `popstate` event* — before this module's own
+ *     `popstate` listener, which Next.js's precedes, has run — so the event itself is checked too.
+ *     Missing that recorded every Back as a push from the page just left, and the page returned to
+ *     then pointed its arrow at that page.
  *
  * In memory only, on purpose. A reload or a new tab starts with nothing recorded, and every page
  * then falls back to its own default. Remembering an origin across a new tab would be worse than
  * forgetting it: there is no history entry behind the first page of a tab, and "go back" would
  * leave the app.
+ *
+ * Where the browser keeps a list of the tab's history itself (the Navigation API), that list
+ * answers instead — see `entryBehind`. The bookkeeping above is for the browsers that do not.
  */
 
 let currentPath: string | null = null;
@@ -33,6 +40,9 @@ function onPopState() {
   if (window.location.pathname !== currentPath) traversing = true;
 }
 
+/** Whether this runs inside a `popstate` event — a Back or Forward React is rendering right away. */
+const duringPopState = () => window.event?.type === 'popstate';
+
 /** Called by `AppShell` whenever the pathname changes. */
 export function noteNavigation(pathname: string): void {
   if (typeof window === 'undefined') return;
@@ -42,7 +52,7 @@ export function noteNavigation(pathname: string): void {
   }
   if (pathname === currentPath) return;
 
-  if (traversing) {
+  if (traversing || duringPopState()) {
     // Leave the destination's recorded origin alone (see the file comment).
   } else if (replacing) {
     const inherited = currentPath ? openedFrom.get(currentPath) : undefined;
@@ -74,6 +84,37 @@ export function noteAddressChange(): void {
   currentHref = `${currentPath}${window.location.search}`;
 }
 
+/** The sign-in pages: in the history behind the first page after signing in, never gone back to. */
+const SIGN_IN_PATHS = new Set(['/login', '/driver-login', '/print-auth']);
+
+interface NavigationApiEntry {
+  url: string | null;
+  index: number;
+}
+
+/**
+ * The history entry directly behind this one, from the browser's own list (the Navigation API —
+ * Chrome and Edge since 102, so the Windows 7 PCs' Chrome 109 too). `undefined` where the browser
+ * has no such list, and the map above answers instead.
+ *
+ * The map is keyed by page, so a page that appears twice in the history (the Control Center, left
+ * for a profile and reopened by its "Add access") remembers only its later visit. The browser's
+ * list does not forget, and it also survives a reload. It holds only same-site entries, so an
+ * arrow can never go back out of the app.
+ */
+function entryBehind(pathname: string): string | null | undefined {
+  const navigation = (window as unknown as { navigation?: { currentEntry?: NavigationApiEntry | null; entries?: () => NavigationApiEntry[] } })
+    .navigation;
+  const current = navigation?.currentEntry;
+  if (!current?.url || typeof navigation?.entries !== 'function') return undefined;
+  if (new URL(current.url).pathname !== pathname) return undefined;
+  const behind = navigation.entries().find((entry) => entry.index === current.index - 1);
+  if (!behind?.url) return null;
+  const url = new URL(behind.url);
+  if (url.origin !== window.location.origin || SIGN_IN_PATHS.has(url.pathname)) return null;
+  return `${url.pathname}${url.search}`;
+}
+
 /**
  * Where the page at `pathname` was opened from: an href that is also the history entry directly
  * behind it. `null` when that is not known — and always `null` for a page other than the current
@@ -81,7 +122,8 @@ export function noteAddressChange(): void {
  */
 export function navigationOrigin(pathname: string): string | null {
   if (pathname !== currentPath) return null;
-  return openedFrom.get(pathname) ?? null;
+  const behind = entryBehind(pathname);
+  return behind === undefined ? (openedFrom.get(pathname) ?? null) : behind;
 }
 
 /** For `useSyncExternalStore`: notified after each recorded page change. */

@@ -115,7 +115,9 @@ export function FilterBar({ search, children, activeCount = 0, onClear, actions,
       )}
       {(summary || actions) && (
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:ml-auto">
-          {summary && <span className="text-xs text-muted-foreground">{summary}</span>}
+          {/* On a phone the result line takes the row's start and the actions its end, rather than
+              both bunching up on the left. */}
+          {summary && <span className="mr-auto text-xs text-muted-foreground sm:mr-0">{summary}</span>}
           {actions}
         </div>
       )}

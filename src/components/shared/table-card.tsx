@@ -21,6 +21,12 @@ export interface TableCardProps {
   /** Singular noun for the count ("vehicle" → "12 vehicles"). */
   noun?: string;
   actions?: ReactNode;
+  /**
+   * On a phone, lay `actions` out as an even two-column grid across the card — for a register with
+   * several labelled actions, which otherwise wrap into rows of ragged widths. From `sm` they sit
+   * in one wrapping row as usual. Keep each label short enough for half a phone's width.
+   */
+  actionsGrid?: boolean;
   /** A row under the title for the list's `FilterBar`. */
   toolbar?: ReactNode;
   footer?: ReactNode;
@@ -51,6 +57,7 @@ export function TableCard({
   total,
   noun,
   actions,
+  actionsGrid = false,
   toolbar,
   footer,
   scroll = 'contained',
@@ -76,7 +83,18 @@ export function TableCard({
               {description && <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">{description}</div>}
             </div>
           </div>
-          {actions && <div className="flex flex-wrap items-center gap-2 print:hidden">{actions}</div>}
+          {actions && (
+            <div
+              className={cn(
+                'print:hidden',
+                actionsGrid
+                  ? 'grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center [&>*]:min-w-0'
+                  : 'flex flex-wrap items-center gap-2',
+              )}
+            >
+              {actions}
+            </div>
+          )}
         </div>
       )}
       {toolbar && <div className="border-b px-4 py-3 print:hidden sm:px-5">{toolbar}</div>}

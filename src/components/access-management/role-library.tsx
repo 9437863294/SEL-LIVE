@@ -156,7 +156,9 @@ export function RoleLibrary({
           search={{
             value: term,
             onChange: setTerm,
-            placeholder: 'Search roles, descriptions or the permissions they contain…',
+            // Short enough to read whole in the phone's box and the desktop's 16rem one; the
+            // descriptions are searched too, as before.
+            placeholder: 'Search roles or permissions…',
           }}
           activeCount={
             [statusFilter !== 'Active', typeFilter !== 'all', moduleFilter !== 'all'].filter(Boolean).length

@@ -376,8 +376,11 @@ export function GreytHRLinkingWorkspace() {
   ];
 
   return (
-    <AccessPageShell width="wide" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
+    <AccessPageShell width="wide">
       <PageHeader
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         title="greytHR linking"
         description="Match every platform login to its greytHR employee record. HR data flows in; roles and permissions stay here."
         actions={

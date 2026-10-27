@@ -225,9 +225,11 @@ export function PermissionTree({
         </div>
       </div>
 
-      {/* Cross-module action shortcuts. */}
-      <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-white/70 bg-white/70 px-2.5 py-2">
-        <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      {/* Cross-module action shortcuts. On a phone, the label on a line of its own and the actions
+          in an even two-column grid: wrapped at their own widths they left ragged rows. Two columns,
+          not three: a ticked action grows its undo button, and "+ Approve ×" needs half the width. */}
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-white/70 bg-white/70 px-2.5 py-2 sm:flex sm:flex-wrap sm:items-center">
+        <span className="col-span-2 mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Apply an action everywhere
         </span>
         {['View', 'Add', 'Edit', 'Delete', 'Approve', 'Export'].filter((action) => allActions.includes(action)).map(
@@ -236,13 +238,13 @@ export function PermissionTree({
             // modules should not have to be unpicked page by page.
             const heldSomewhere = Object.values(value).some((actions) => actions.includes(action));
             return (
-              <span key={action} className="flex items-center">
+              <span key={action} className="flex min-w-0 items-center">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   disabled={disabled}
-                  className={cn('h-7 px-2 text-xs', heldSomewhere && 'rounded-r-none border-r-0')}
+                  className={cn('h-7 min-w-0 flex-1 px-2 text-xs sm:flex-none', heldSomewhere && 'rounded-r-none border-r-0')}
                   onClick={() => setActionEverywhere(action, true)}
                 >
                   + {action}

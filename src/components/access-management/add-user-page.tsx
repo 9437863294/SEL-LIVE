@@ -101,8 +101,11 @@ export function AddUserPage() {
   return (
     // A 2 cm gutter each side rather than a centred column: the form's sections are wide grids and
     // a role picker, and a 1024px cap on a wide monitor left more empty margin than form.
-    <AccessPageShell width="inset" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
+    <AccessPageShell width="inset">
       <PageHeader
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         title="Add user"
         description="Creates the login and the profile, then returns you to the assignment step with this user selected. A welcome email with the credentials is sent automatically."
       />

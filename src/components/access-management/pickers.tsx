@@ -24,11 +24,11 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FilterBar, SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { HrDataList, type HrListColumn } from '@/components/hr/hr-ui';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import type { Department, Employee, Project, Role, User } from '@/lib/types';
 import {
@@ -194,8 +194,9 @@ export function UserFilterBar({
       search={{
         value: filter.term,
         onChange: (value) => set('term', value),
-        placeholder: 'Name, employee ID, email, phone, department, designation…',
-        label: 'Search users',
+        // Short enough to read whole in the box; department and designation are searched too.
+        placeholder: 'Name, ID, email, phone…',
+        label: 'Search users by name, employee ID, email, phone, department or designation',
       }}
       activeCount={activeCount}
       // Back to the resting state, not to empty: the Users tab rests on all statuses.
@@ -632,48 +633,80 @@ export function RolePicker({
         label="Search roles"
       />
 
-      <ScrollArea className={cn('h-auto rounded-xl border border-white/70 bg-white/60', heightClassName)}>
-        {filtered.length === 0 ? (
-          <p className="px-3 py-10 text-center text-sm text-muted-foreground">No roles match “{term}”.</p>
-        ) : (
-          // As many cards as fit a row, wrapping to the next one — not a single-column list of rows,
-          // which left most of a wide dialog empty next to a narrow strip of text.
-          <div className="grid grid-cols-1 gap-2 p-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((role) => {
+      {/*
+        A table, one role a row: the numbers line up in their own columns to be compared down the
+        list, where cards made them a line of small print under each name. A click anywhere on a row
+        selects it. On a phone the type moves under the name, so the name keeps the width to be read;
+        from `sm` it is a column of its own and the description joins the name.
+
+        `table-fixed` with set widths for the narrow columns, so the name takes what is left and a
+        long description is cut short instead of widening the table past a phone's screen.
+      */}
+      <Table
+        stickyHeader
+        className="table-fixed"
+        containerClassName={cn('h-auto rounded-xl border border-white/70 bg-white/60', heightClassName)}
+      >
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-9 px-2 sm:px-3">
+              <span className="sr-only">Select</span>
+            </TableHead>
+            <TableHead className="px-2 sm:px-3">Role</TableHead>
+            <TableHead className="hidden w-24 px-3 sm:table-cell">Type</TableHead>
+            <TableHead className="w-16 px-2 text-right sm:w-28 sm:px-3" title="Permissions">
+              <span className="sm:hidden">Perms</span>
+              <span className="hidden sm:inline">Permissions</span>
+            </TableHead>
+            {roleUsage && <TableHead className="w-16 px-2 text-right sm:w-20 sm:px-3">Users</TableHead>}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filtered.length === 0 ? (
+            <TableEmpty colSpan={roleUsage ? 5 : 4}>No roles match “{term}”.</TableEmpty>
+          ) : (
+            filtered.map((role) => {
               const isSelected = selected.has(role.id);
               const usage = roleUsage?.[role.name];
+              const type = role.type === 'Custom' ? 'Custom' : 'System';
               return (
-                <label
+                <TableRow
                   key={role.id}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2.5 shadow-sm transition-colors',
-                    isSelected
-                      ? 'border-indigo-300 bg-indigo-50/70'
-                      : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-slate-50/70',
-                  )}
+                  aria-selected={isSelected}
+                  // Forms dark-compat.css already remaps; a `data-[state=selected]:` one it does not.
+                  className={cn('cursor-pointer', isSelected && 'bg-indigo-50/70 hover:bg-indigo-50')}
+                  onClick={() => toggle(role.id)}
                 >
-                  <Checkbox checked={isSelected} onCheckedChange={() => toggle(role.id)} className="mt-0.5 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold text-slate-800">{role.name}</span>
+                  <TableCell className="px-2 sm:px-3">
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggle(role.id)}
+                      // The row's own click would toggle it a second time.
+                      onClick={(event) => event.stopPropagation()}
+                      aria-label={`Select ${role.name}`}
+                    />
+                  </TableCell>
+                  <TableCell className="px-2 sm:px-3">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="break-words font-semibold text-slate-800">{role.name}</span>
                       {isProtectedRole(role.name) && <Badge variant="danger">Protected</Badge>}
-                      <Badge variant="outline">{role.type === 'Custom' ? 'Custom' : 'System'}</Badge>
                     </div>
+                    <div className="text-[11px] text-muted-foreground sm:hidden">{type}</div>
                     {role.description && (
-                      <p className="truncate text-xs text-muted-foreground">{role.description}</p>
+                      <div className="hidden truncate text-xs text-muted-foreground sm:block">{role.description}</div>
                     )}
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {countPermissions(role.permissions)} permissions
-                      {usage ? ` · ${usage.total} user${usage.total === 1 ? '' : 's'}` : ''}
-                    </p>
-                  </div>
-                  {isSelected && <Check className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />}
-                </label>
+                  </TableCell>
+                  <TableCell className="hidden px-3 text-muted-foreground sm:table-cell">{type}</TableCell>
+                  <TableCell className="px-2 text-right tabular-nums sm:px-3">{countPermissions(role.permissions)}</TableCell>
+                  {roleUsage && (
+                    <TableCell className="px-2 text-right tabular-nums sm:px-3">{usage?.total ?? 0}</TableCell>
+                  )}
+                </TableRow>
               );
-            })}
-          </div>
-        )}
-      </ScrollArea>
+            })
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

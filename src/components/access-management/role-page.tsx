@@ -157,8 +157,11 @@ export function RolePage({ roleId }: { roleId?: string }) {
   return (
     // Full width, deliberately: the permission tree and its 27 module chips are the content of this
     // page, and a centred column on a wide monitor would just turn that room into two empty gutters.
-    <AccessPageShell backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
+    <AccessPageShell>
       <PageHeader
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         title={editing ? `Edit ${editing.name}` : duplicating ? `Duplicate ${duplicating.name}` : 'New role'}
         description={
           duplicating

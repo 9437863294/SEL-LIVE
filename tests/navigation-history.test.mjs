@@ -89,6 +89,20 @@ test('a query changed in place is what the next page records as its origin', () 
   assert.equal(navigationOrigin('/settings/access-management/users/U1'), '/settings/access-management?tab=users');
 });
 
+test('a Back rendered inside the popstate event, before this module hears of it, is still a Back', () => {
+  push('/settings/department');
+  push('/settings/access-management');
+  push('/settings/access-management/users/U2');
+  // React renders a Back to a cached page synchronously within the event, and Next's popstate
+  // listener runs before this module's — so the page change arrives first.
+  visit('/settings/access-management');
+  window.event = { type: 'popstate' };
+  noteNavigation(location.pathname);
+  handlers.get('popstate')?.();
+  window.event = undefined;
+  assert.equal(navigationOrigin('/settings/access-management'), '/settings/department');
+});
+
 test('subscribers hear about each page change, and only page changes', () => {
   let calls = 0;
   const stop = subscribeNavigation(() => {
