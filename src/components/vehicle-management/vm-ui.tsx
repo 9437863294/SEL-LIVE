@@ -34,6 +34,15 @@ export function vmSegmentItem(active: boolean) {
   );
 }
 
+/**
+ * A segment track that fills its row, the width shared equally between its items — for the tab bar
+ * that heads a list. Add `VM_SEGMENT_FILL` to the track and `VM_SEGMENT_FILL_ITEM` to each item. On a
+ * phone each item's count sits under its label, so five fit across 360px; from `sm` up they sit side
+ * by side. More than fit still scroll sideways (the track's own overflow).
+ */
+export const VM_SEGMENT_FILL = 'flex w-full';
+export const VM_SEGMENT_FILL_ITEM = 'flex-1 flex-col gap-0.5 whitespace-nowrap px-1 py-1 text-[11px] leading-tight sm:flex-row sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs';
+
 /** The icon tile at the head of a form or dialog, in the accent. */
 export const VM_ICON_CHIP = cn(VM_ACCENT_FILL, 'shadow-sm');
 

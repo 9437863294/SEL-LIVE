@@ -284,7 +284,7 @@ export default function ClaimsList({ mode, embedded = false }: { mode: ClaimsLis
       </FilterBar>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <SegmentTabs label="Claims" value={current.value} onChange={(value) => { setTab(value); setSelected(new Set()); }} options={tabs.map((entry) => ({ value: entry.value, label: entry.label, count: counts[entry.value] }))} />
+        <SegmentTabs className="sm:w-auto sm:flex-1" label="Claims" value={current.value} onChange={(value) => { setTab(value); setSelected(new Set()); }} options={tabs.map((entry) => ({ value: entry.value, label: entry.label, count: counts[entry.value] }))} />
         {selectable && visible.some(payable) && (
           <Button type="button" variant="ghost" size="sm" onClick={() => setSelected((existing) => (visible.filter(payable).every((claim) => existing.has(claim.id)) ? new Set() : new Set(visible.filter(payable).map((claim) => claim.id))))}>
             {visible.filter(payable).every((claim) => selected.has(claim.id)) ? 'Clear selection' : `Select all ${visible.filter(payable).length}`}

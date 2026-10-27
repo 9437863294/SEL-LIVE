@@ -76,7 +76,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
-import { VM_ACCENT_FILL, VM_DIALOG_HEADER, VM_PRIMARY_BUTTON, VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
+import { VM_ACCENT_FILL, VM_DIALOG_HEADER, VM_PRIMARY_BUTTON, VM_SEGMENT_FILL, VM_SEGMENT_FILL_ITEM, VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 
 type FilterTab = 'All' | 'My Tasks' | 'Overdue' | 'Unassigned' | 'Completed';
 const TERMINAL_STATUSES = ['Completed', 'Rejected', 'Cancelled'];
@@ -546,7 +546,7 @@ export default function InsuranceWorkflowPage() {
         noun="case"
         toolbar={
           <div className="space-y-2">
-            <div className={VM_SEGMENT_TRACK}>{(['All', 'My Tasks', 'Overdue', 'Unassigned', 'Completed'] as FilterTab[]).map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={vmSegmentItem(filter === item)}>{item}</button>)}</div>
+            <div className={cn(VM_SEGMENT_TRACK, VM_SEGMENT_FILL)}>{(['All', 'My Tasks', 'Overdue', 'Unassigned', 'Completed'] as FilterTab[]).map((item) => <button key={item} type="button" onClick={() => setFilter(item)} className={cn(vmSegmentItem(filter === item), VM_SEGMENT_FILL_ITEM)}>{item}</button>)}</div>
             <FilterBar
               search={{ value: queryText, onChange: setQueryText, placeholder: 'Search vehicle, policy, insurer, stage or status...' }}
               activeCount={filter !== 'All' ? 1 : 0}

@@ -19,7 +19,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { VM_SEGMENT_TRACK, VmStatStrip, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
+import { VM_SEGMENT_FILL, VM_SEGMENT_FILL_ITEM, VM_SEGMENT_TRACK, VmStatStrip, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
+import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -308,12 +309,12 @@ export default function ExpiryAlertsReportPage() {
         toolbar={
           <div className="space-y-2">
             {/* Module filter tabs */}
-            <div className={VM_SEGMENT_TRACK}>
+            <div className={cn(VM_SEGMENT_TRACK, VM_SEGMENT_FILL)}>
               {ALL_MODULES.map((m) => (
                 <button
                   key={m}
                   onClick={() => setModuleFilter(m)}
-                  className={vmSegmentItem(moduleFilter === m)}
+                  className={cn(vmSegmentItem(moduleFilter === m), VM_SEGMENT_FILL_ITEM)}
                 >
                   {m}
                   {m !== 'All' && (

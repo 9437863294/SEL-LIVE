@@ -168,6 +168,7 @@ export default function GeofencesPage() {
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <SegmentTabs<KindFilter>
+          className="lg:w-auto lg:flex-1"
           label="Kind"
           value={kind}
           onChange={setKind}
@@ -178,7 +179,7 @@ export default function GeofencesPage() {
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search places" className="bg-white pl-8" aria-label="Search geofences" />
           </div>
-          <SegmentTabs<'list' | 'map'> label="View" value={view} onChange={setView} options={[{ value: 'list', label: 'List' }, { value: 'map', label: 'Map' }]} />
+          <SegmentTabs<'list' | 'map'> fill={false} label="View" value={view} onChange={setView} options={[{ value: 'list', label: 'List' }, { value: 'map', label: 'Map' }]} />
         </div>
       </div>
 

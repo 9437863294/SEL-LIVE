@@ -159,14 +159,14 @@ export default function RenewalsHubPage() {
         noun="item"
         scroll="natural"
         actions={
-          <div className={VM_SEGMENT_TRACK} role="group" aria-label="Filter by status">
+          <div className={cn(VM_SEGMENT_TRACK, 'flex w-full sm:w-fit')} role="group" aria-label="Filter by status">
             {filterTabs.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setFilter(tab.key)}
                 aria-pressed={filter === tab.key}
-                className={cn(vmSegmentItem(filter === tab.key), 'min-h-8')}
+                className={cn(vmSegmentItem(filter === tab.key), 'min-h-8 flex-1 sm:flex-none')}
               >
                 {tab.label}
                 {/* The chosen tab sits on the accent, so its count takes the tab's own ink; the

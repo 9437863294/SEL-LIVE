@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
-import { VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
+import { VM_SEGMENT_FILL, VM_SEGMENT_FILL_ITEM, VM_SEGMENT_TRACK, vmSegmentItem } from '@/components/vehicle-management/vm-ui';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -276,12 +276,12 @@ export default function RenewalHistoryPage() {
         noun="record"
         toolbar={
           <div className="space-y-2">
-            <div className={VM_SEGMENT_TRACK}>
+            <div className={cn(VM_SEGMENT_TRACK, VM_SEGMENT_FILL)}>
               {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
-                  className={vmSegmentItem(categoryFilter === cat)}
+                  className={cn(vmSegmentItem(categoryFilter === cat), VM_SEGMENT_FILL_ITEM)}
                 >
                   {cat}
                   {cat !== 'All' && (
