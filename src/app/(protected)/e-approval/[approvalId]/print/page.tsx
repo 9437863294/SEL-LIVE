@@ -25,6 +25,8 @@ import {
   type EApprovalTimelineNode,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail } from '@/lib/e-approval-service';
+import { eApprovalBackButtonText, withEApprovalReturnTo } from '@/lib/e-approval-navigation';
+import { useEApprovalBack, useEApprovalReturnTo } from '@/components/e-approval/back-navigation';
 import {
   describeEApprovalPrintFit,
   E_APPROVAL_PAGE_MARGIN_CSS,
@@ -223,6 +225,21 @@ export default function EApprovalNotePage() {
   const params = useParams<{ approvalId: string }>();
   const approvalId = String(params?.approvalId ?? '');
   const permissions = useEApprovalPermissions();
+  // Back to the request, going back through the history when that is where the note was opened
+  // from. Pushing the request again — as the link used to — left request → note → request in the
+  // history, so the browser's Back from the request reopened the note instead of the list.
+  const returnTo = useEApprovalReturnTo();
+  const back = useEApprovalBack(withEApprovalReturnTo(`${E_APPROVAL_BASE_PATH}/${approvalId}`, returnTo), {
+    replace: true,
+    followReturnTo: false,
+  });
+  const backLink = (
+    <Button asChild size="sm" variant="outline">
+      <Link href={back.href} onClick={back.onClick}>
+        {eApprovalBackButtonText(back.label)}
+      </Link>
+    </Button>
+  );
   const [detail, setDetail] = useState<EApprovalDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
@@ -397,6 +414,8 @@ export default function EApprovalNotePage() {
           <CardTitle>Could not load this approval</CardTitle>
           <CardDescription>{loadError} Reload the page to try again.</CardDescription>
         </CardHeader>
+        {/* This route has no module menu around it, so each of these cards carries its own way out. */}
+        <CardContent>{backLink}</CardContent>
       </Card>
     );
   }
@@ -407,6 +426,7 @@ export default function EApprovalNotePage() {
         <CardHeader>
           <CardTitle>Approval not found</CardTitle>
         </CardHeader>
+        <CardContent>{backLink}</CardContent>
       </Card>
     );
   }
@@ -418,6 +438,7 @@ export default function EApprovalNotePage() {
           <CardTitle>Not permitted</CardTitle>
           <CardDescription>You do not have permission to print approval notes.</CardDescription>
         </CardHeader>
+        <CardContent>{backLink}</CardContent>
       </Card>
     );
   }
@@ -484,8 +505,8 @@ export default function EApprovalNotePage() {
       <Card className="print:hidden">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
           <Button asChild size="sm" variant="ghost" className="-ml-2 h-8 gap-1 px-1.5 text-xs">
-            <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}`}>
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to the approval
+            <Link href={back.href} onClick={back.onClick}>
+              <ArrowLeft className="h-3.5 w-3.5" /> {eApprovalBackButtonText(back.label)}
             </Link>
           </Button>
           <div className="flex flex-wrap items-center gap-2">

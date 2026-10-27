@@ -9,6 +9,7 @@ import { CompanyDesignProvider } from '@/components/shared/company-design-provid
 import { ActionAnimationProvider } from '@/components/shared/action-animations';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
+import { noteNavigation } from '@/lib/navigation-history';
 
 const SessionExpiryDialog = dynamic(
   () => import('@/components/auth/SessionExpiryDialog').then((m) => m.SessionExpiryDialog),
@@ -25,6 +26,11 @@ export default function AppShell({
     const safePathname = pathname || '';
     const isPrintPage = safePathname.includes('/print');
     const [hasDriverAppFlag, setHasDriverAppFlag] = useState(false);
+
+    // Lets a page's back arrow return to the page it was opened from (see navigation-history.ts).
+    useEffect(() => {
+        if (safePathname) noteNavigation(safePathname);
+    }, [safePathname]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;

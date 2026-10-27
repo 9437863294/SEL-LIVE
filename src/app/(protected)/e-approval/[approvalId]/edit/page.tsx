@@ -13,7 +13,15 @@ import {
   type EApprovalDetail,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail } from '@/lib/e-approval-service';
+import {
+  eApprovalBackButtonText,
+  eApprovalBackLabel,
+  eApprovalHomeList,
+  withEApprovalReturnTo,
+} from '@/lib/e-approval-navigation';
+import { markNextNavigationAsReplace } from '@/lib/navigation-history';
 import { ApprovalForm } from '@/components/e-approval/approval-form';
+import { useEApprovalBack, useEApprovalReturnTo } from '@/components/e-approval/back-navigation';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { DeleteApprovalButton } from '@/components/e-approval/delete-request-dialog';
 import { FormSection } from '@/components/e-approval/page-header';
@@ -32,10 +40,22 @@ export default function EditEApprovalPage() {
   const params = useParams<{ approvalId: string }>();
   const approvalId = String(params?.approvalId ?? '');
   const router = useRouter();
-  const { serviceActor } = useEApprovalActor();
+  const { serviceActor, engineActor } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
   const [detail, setDetail] = useState<EApprovalDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  /*
+   * Saving, cancelling and the back arrow all return to the request — by going back when the
+   * request is the page this screen was opened from, and otherwise by replacing this screen with
+   * it. Pushing the request, as saving used to, left request → edit → request in the history: the
+   * browser's Back from the saved request reopened the form, and the request's own arrow then
+   * went to My Inbox whatever list the file had come from.
+   */
+  const returnTo = useEApprovalReturnTo();
+  const back = useEApprovalBack(withEApprovalReturnTo(`${E_APPROVAL_BASE_PATH}/${approvalId}`, returnTo), {
+    replace: true,
+    followReturnTo: false,
+  });
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -105,13 +125,19 @@ export default function EditEApprovalPage() {
           <CardTitle>Approval not found</CardTitle>
           <CardDescription>It may have been deleted, or the link may be wrong.</CardDescription>
         </CardHeader>
+        <CardContent>
+          <Button asChild size="sm" variant="outline">
+            <Link href={returnTo ?? E_APPROVAL_BASE_PATH}>
+              {eApprovalBackButtonText(eApprovalBackLabel(returnTo ?? E_APPROVAL_BASE_PATH))}
+            </Link>
+          </Button>
+        </CardContent>
       </Card>
     );
   }
 
   const { request, attachments } = detail;
   const mine = request.requesterId === serviceActor?.userId;
-  const isDraft = request.status === 'Draft';
   // Your own draft and your own returned request both need no Edit grant — creating it, and being
   // sent it back, are each the authority to change it. See `canEditEApprovalRequest`.
   const editable = canEditEApprovalRequest(request, serviceActor, { canEdit: permissions.canEdit });
@@ -131,7 +157,9 @@ export default function EditEApprovalPage() {
         </CardHeader>
         <CardContent>
           <Button asChild size="sm" variant="outline">
-            <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}`}>Back to the approval</Link>
+            <Link href={back.href} onClick={back.onClick}>
+              {eApprovalBackButtonText(back.label)}
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -148,8 +176,9 @@ export default function EditEApprovalPage() {
             ? 'Make the correction, save, then resubmit from the approval screen. Changing the subject, proposal, amount, department, project or attachments supersedes the approvals already given.'
             : 'Saved changes stay a draft until you submit.'
         }
-        backHref={`${E_APPROVAL_BASE_PATH}/${request.id}`}
-        backLabel="Back to the approval"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         meta={[
           { label: 'Reference', value: request.referenceNo || 'not yet allotted' },
           {
@@ -172,7 +201,15 @@ export default function EditEApprovalPage() {
             serviceActor={serviceActor}
             canDeleteDraft={permissions.canDeleteDraft}
             canDeleteAny={permissions.canDeleteAnyRequest}
-            onDeleted={() => router.push(`${E_APPROVAL_BASE_PATH}/${isDraft ? 'drafts' : 'inbox'}`)}
+            // To the list, not to the request: there is no request to go back to. Replacing, so the
+            // browser's Back does not reopen this form on a deleted record.
+            onDeleted={() => {
+              markNextNavigationAsReplace();
+              router.replace(
+                returnTo ??
+                  eApprovalHomeList(request, detail.steps, { actor: engineActor, canViewAll: permissions.canViewAll }),
+              );
+            }}
           />
         }
       />
@@ -183,7 +220,13 @@ export default function EditEApprovalPage() {
         </div>
       )}
 
-      <ApprovalForm serviceActor={serviceActor} existing={request} onSaved={() => void load()} />
+      <ApprovalForm
+        serviceActor={serviceActor}
+        existing={request}
+        onSaved={() => void load()}
+        onFinished={() => back.go()}
+        onCancel={() => back.go()}
+      />
 
       <FormSection
         title="Attachments"

@@ -22,6 +22,7 @@ import {
 } from '@/lib/e-approval-analytics';
 import { ChartCard, compactRupees, eaTooltipStyle, EA_VIZ, HeroFigure } from '@/components/e-approval/dashboard-parts';
 import { ReportShell } from '@/components/e-approval/reports/report-shell';
+import { useEApprovalRequestHref } from '@/components/e-approval/back-navigation';
 import { formatEApprovalAmount } from '@/components/e-approval/hooks';
 
 const PERIODS: Array<{ value: ComparisonPeriod; label: string }> = [
@@ -94,6 +95,7 @@ function Kpi({
  * than a calendar boundary, so the comparison does not collapse on the 1st of the month.
  */
 export default function EApprovalExecutiveReportPage() {
+  const requestHref = useEApprovalRequestHref();
   const [period, setPeriod] = useState<ComparisonPeriod>('month');
 
   return (
@@ -260,7 +262,7 @@ export default function EApprovalExecutiveReportPage() {
                       {oldest.map((row) => (
                         <TableRow key={row.id} className={row.overdue ? 'bg-rose-50/60' : undefined}>
                           <TableCell className="whitespace-nowrap font-mono">
-                            <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
+                            <Link href={requestHref(row.id)} className="text-sky-700 hover:underline">
                               {row.referenceNo || 'Draft'}
                             </Link>
                           </TableCell>

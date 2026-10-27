@@ -32,6 +32,7 @@ import { EApprovalEmptyState } from '@/components/e-approval/shared';
 import { EApprovalSignaturePad } from '@/components/e-approval/signature-pad';
 import { StatTile } from '@/components/e-approval/dashboard-parts';
 import { formatEApprovalAmount, formatEApprovalDateTime, useEApprovalActor } from '@/components/e-approval/hooks';
+import { useEApprovalRequestHref } from '@/components/e-approval/back-navigation';
 import { PageHeader } from '@/components/shared/page-header';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
@@ -108,6 +109,7 @@ const PERIODS = [
 
 export default function EApprovalMyActivityPage() {
   const { serviceActor, isLoading: actorLoading } = useEApprovalActor();
+  const requestHref = useEApprovalRequestHref();
   const [entries, setEntries] = useState<EApprovalHistoryEntry[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -293,7 +295,7 @@ export default function EApprovalMyActivityPage() {
                       </div>
                       {entry.referenceNo || entry.subject ? (
                         <Link
-                          href={`${E_APPROVAL_BASE_PATH}/${entry.approvalId}`}
+                          href={requestHref(entry.approvalId)}
                           className="mt-0.5 block truncate text-sm font-medium text-sky-800 hover:underline"
                         >
                           {entry.subject || 'Untitled'}
@@ -305,7 +307,7 @@ export default function EApprovalMyActivityPage() {
                         </Link>
                       ) : (
                         <Link
-                          href={`${E_APPROVAL_BASE_PATH}/${entry.approvalId}`}
+                          href={requestHref(entry.approvalId)}
                           className="mt-0.5 block text-xs text-sky-800 hover:underline"
                         >
                           View approval

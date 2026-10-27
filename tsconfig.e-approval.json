@@ -13,6 +13,8 @@
     "src/lib/e-approval-policy.ts",
     "src/lib/e-approval-analytics.ts",
     "src/lib/e-approval-export.ts",
+    "src/lib/e-approval-navigation.ts",
+    "src/lib/navigation-history.ts",
     "src/lib/e-approval-link.ts",
     "src/lib/e-approval.ts",
     "src/lib/e-approval-service.ts",

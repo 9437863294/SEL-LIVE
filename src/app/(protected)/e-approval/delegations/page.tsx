@@ -30,6 +30,7 @@ import {
   useEApprovalDirectory,
   useEApprovalPermissions,
 } from '@/components/e-approval/hooks';
+import { useEApprovalBack } from '@/components/e-approval/back-navigation';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
@@ -45,6 +46,8 @@ export default function EApprovalDelegationsPage() {
   const { toast } = useToast();
   const { serviceActor } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
+  // Reached from the menu and from the Settings page alike, so back leads to whichever it was.
+  const back = useEApprovalBack(E_APPROVAL_BASE_PATH);
   const canManage = permissions.canManageDelegations;
   const canManageOthers = permissions.canManageOthersDelegations;
   const { directory } = useEApprovalDirectory();
@@ -174,8 +177,9 @@ export default function EApprovalDelegationsPage() {
       <PageHeader
         title="Delegations"
         description="While a delegation is in force the delegate can act on the delegator's steps. Every action is recorded as &quot;on behalf of&quot; — the authority is delegated, the accountability is not."
-        backHref={E_APPROVAL_BASE_PATH}
-        backLabel="Dashboard"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         actions={
           canManage ? (
             <Button size="sm" className="h-8 gap-1.5" onClick={() => setOpen(true)}>

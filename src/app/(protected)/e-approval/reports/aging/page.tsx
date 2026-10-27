@@ -7,10 +7,10 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
-import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { oldestPendingEApprovals, summarizeEApprovalAging } from '@/lib/e-approval-analytics';
 import { ChartCard, eaTooltipStyle, EA_VIZ } from '@/components/e-approval/dashboard-parts';
 import { ReportShell } from '@/components/e-approval/reports/report-shell';
+import { useEApprovalRequestHref } from '@/components/e-approval/back-navigation';
 import { eApprovalPriorityTone } from '@/components/e-approval/shared';
 import { formatEApprovalAmount, formatEApprovalDate } from '@/components/e-approval/hooks';
 
@@ -28,6 +28,7 @@ const ageLabel = (hours: number) =>
  * not: a missing bar in an ordered series reads as missing data, not as an empty bucket.
  */
 export default function EApprovalAgingReportPage() {
+  const requestHref = useEApprovalRequestHref();
   return (
     <ReportShell
       title="Approval Aging"
@@ -153,7 +154,7 @@ export default function EApprovalAgingReportPage() {
                           )}
                         >
                           <TableCell className="whitespace-nowrap font-mono">
-                            <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
+                            <Link href={requestHref(row.id)} className="text-sky-700 hover:underline">
                               {row.referenceNo || 'Draft'}
                             </Link>
                           </TableCell>

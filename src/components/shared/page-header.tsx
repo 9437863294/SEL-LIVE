@@ -18,7 +18,7 @@
  */
 
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import type { MouseEventHandler, ReactNode } from 'react';
 import { ArrowLeft, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -42,10 +42,10 @@ function isMetaList(meta: PageHeaderProps['meta']): meta is HeaderMeta[] {
 /** The app header's height, which a sticky page header sits beneath. */
 const BELOW_APP_HEADER = 'top-[var(--app-header-offset,4rem)]';
 
-function BackButton({ href, label }: { href: string; label: string }) {
+function BackButton({ href, label, onClick }: { href: string; label: string; onClick?: MouseEventHandler<HTMLAnchorElement> }) {
   return (
     <Button asChild variant="outline" size="icon" className="h-9 w-9 shrink-0 rounded-xl">
-      <Link href={href} aria-label={label} title={label}>
+      <Link href={href} aria-label={label} title={label} onClick={onClick}>
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
       </Link>
     </Button>
@@ -101,6 +101,12 @@ export interface PageHeaderProps {
   /** Adds a back button; leave it off a module's landing page. */
   backHref?: string;
   backLabel?: string;
+  /**
+   * Runs before the back link navigates. Call `event.preventDefault()` to navigate some other way —
+   * `router.back()` when `backHref` is the page this one was opened from. `backHref` stays the link
+   * target, so Ctrl- and middle-click still open it in a new tab.
+   */
+  onBackClick?: MouseEventHandler<HTMLAnchorElement>;
   /** A status chip or count beside the title. */
   badge?: ReactNode;
   /** Short facts under the title — a reference number, a status, a date — or chips of your own. */
@@ -124,6 +130,7 @@ export function PageHeader({
   breadcrumbs,
   backHref,
   backLabel = 'Back',
+  onBackClick,
   badge,
   meta,
   actions,
@@ -154,7 +161,7 @@ export function PageHeader({
         {/* `basis-[18rem]`: the title claims the first line, so on a phone the actions wrap beneath
             it instead of squeezing it to "Ind…". */}
         <div className="flex min-w-0 flex-1 basis-[18rem] items-start gap-3">
-          {backHref && <BackButton href={backHref} label={backLabel} />}
+          {backHref && <BackButton href={backHref} label={backLabel} onClick={onBackClick} />}
           {icon && <IconTile icon={icon} />}
           <div className="min-w-0 flex-1">
             {lead}

@@ -10,10 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { exportRowsToExcel } from '@/lib/report-excel';
-import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { rollupEApprovals, summarizeEApprovalStatuses, type EApprovalDimension } from '@/lib/e-approval-analytics';
 import { ChartCard, eaTooltipStyle, EA_VIZ } from '@/components/e-approval/dashboard-parts';
 import { ReportShell } from '@/components/e-approval/reports/report-shell';
+import { useEApprovalRequestHref } from '@/components/e-approval/back-navigation';
 import { formatEApprovalAmount, formatEApprovalDate } from '@/components/e-approval/hooks';
 
 const DIMENSIONS: Array<{ value: EApprovalDimension; label: string }> = [
@@ -35,6 +35,7 @@ const DIMENSIONS: Array<{ value: EApprovalDimension; label: string }> = [
  * navigating away, so the reader keeps the distribution on screen while reading the detail.
  */
 export default function EApprovalStatusReportPage() {
+  const requestHref = useEApprovalRequestHref();
   const [dimension, setDimension] = useState<EApprovalDimension>('department');
   const [drill, setDrill] = useState<string | null>(null);
 
@@ -131,7 +132,7 @@ export default function EApprovalStatusReportPage() {
                         {drilled.slice(0, 100).map((row) => (
                           <TableRow key={row.id}>
                             <TableCell className="whitespace-nowrap font-mono">
-                              <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
+                              <Link href={requestHref(row.id)} className="text-sky-700 hover:underline">
                                 {row.referenceNo || 'Draft'}
                               </Link>
                             </TableCell>

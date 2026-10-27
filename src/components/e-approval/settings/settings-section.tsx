@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { E_APPROVAL_BASE_PATH, E_APPROVAL_PERMISSION_RESOURCE } from '@/lib/e-approval';
+import { useEApprovalBack } from '../back-navigation';
 import { useEApprovalPermissions } from '../hooks';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -26,6 +27,8 @@ export function SettingsSection({
   children: (canEdit: boolean) => ReactNode;
 }) {
   const permissions = useEApprovalPermissions();
+  // To wherever the page was opened from; the Settings hub when that is not known.
+  const back = useEApprovalBack(`${E_APPROVAL_BASE_PATH}/settings`);
   const path = `${E_APPROVAL_PERMISSION_RESOURCE}.Settings.${node}`;
 
   const canView =
@@ -35,7 +38,7 @@ export function SettingsSection({
   if (!permissions.isLoading && !canView) {
     return (
       <div className="space-y-3">
-        <PageHeader title={title} backHref={`${E_APPROVAL_BASE_PATH}/settings`} backLabel="Settings" />
+        <PageHeader title={title} backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card>
           <CardHeader>
             <CardTitle>Not permitted</CardTitle>
@@ -54,8 +57,9 @@ export function SettingsSection({
       <PageHeader
         title={title}
         description={description}
-        backHref={`${E_APPROVAL_BASE_PATH}/settings`}
-        backLabel="Settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         meta={canView && !canEdit ? [{ label: 'Access', value: 'View only' }] : undefined}
       />
       {children(canEdit)}

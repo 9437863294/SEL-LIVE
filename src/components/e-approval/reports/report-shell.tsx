@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import type { EApprovalAnalyticsFilter } from '@/lib/e-approval-analytics';
+import { useEApprovalBack } from '../back-navigation';
 import { useEApprovalPermissions } from '../hooks';
 import { EApprovalFilterBar } from './filter-bar';
 import { useEApprovalAnalytics, type AnalyticsScope } from './use-analytics';
@@ -38,11 +39,13 @@ export function ReportShell({
   const [filter, setFilter] = useState<EApprovalAnalyticsFilter>(initialFilter ?? {});
   const scope = useEApprovalAnalytics(filter);
   const [exporting, setExporting] = useState(false);
+  // To wherever the report was opened from; the Reports page when that is not known.
+  const back = useEApprovalBack(`${E_APPROVAL_BASE_PATH}/reports`);
 
   if (!permissions.isLoading && !permissions.canViewReports) {
     return (
       <div className="space-y-3">
-        <PageHeader title={title} backHref={`${E_APPROVAL_BASE_PATH}/reports`} backLabel="Reports" />
+        <PageHeader title={title} backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card>
           <CardHeader>
             <CardTitle>Not permitted</CardTitle>
@@ -61,8 +64,9 @@ export function ReportShell({
       <PageHeader
         title={title}
         description={description}
-        backHref={`${E_APPROVAL_BASE_PATH}/reports`}
-        backLabel="Reports"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         meta={[
           { label: 'In scope', value: `${scope.requests.length} of ${scope.allRequests.length}` },
           ...(scope.loadedAt

@@ -95,10 +95,16 @@ export function ApprovalForm({
   serviceActor,
   existing,
   onSaved,
+  onFinished,
+  onCancel,
 }: {
   serviceActor: EApprovalServiceActor | null;
   existing?: EApprovalRequest;
   onSaved?: (approvalId: string) => void;
+  /** Leaves the form once it has saved or submitted. Without it the form opens the request. */
+  onFinished?: (approvalId: string) => void;
+  /** The Cancel button of an existing request. Without it Cancel opens the request. */
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -535,7 +541,8 @@ export function ApprovalForm({
         finished.current = true;
         savedSnapshot.current = snapshotRef.current;
         onSaved?.(approvalId);
-        router.push(`${E_APPROVAL_BASE_PATH}/${approvalId}`);
+        if (onFinished) onFinished(approvalId);
+        else router.push(`${E_APPROVAL_BASE_PATH}/${approvalId}`);
       } catch (error) {
         toast({
           variant: 'destructive',
@@ -546,7 +553,7 @@ export function ApprovalForm({
         setBusy(null);
       }
     },
-    [serviceActor, valid, amountMissing, hasRoute, selectedType, draft, pendingFiles, onSaved, router, toast],
+    [serviceActor, valid, amountMissing, hasRoute, selectedType, draft, pendingFiles, onSaved, onFinished, router, toast],
   );
 
   const moveChain = (index: number, delta: number) => {
@@ -1272,7 +1279,7 @@ export function ApprovalForm({
               type="button"
               variant="ghost"
               className="text-muted-foreground"
-              onClick={() => router.push(`${E_APPROVAL_BASE_PATH}/${existing.id}`)}
+              onClick={() => (onCancel ? onCancel() : router.push(`${E_APPROVAL_BASE_PATH}/${existing.id}`))}
             >
               Cancel
             </Button>

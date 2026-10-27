@@ -1,14 +1,36 @@
 'use client';
 
+import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ApprovalForm } from '@/components/e-approval/approval-form';
+import { useEApprovalBack } from '@/components/e-approval/back-navigation';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
+import { withEApprovalReturnTo } from '@/lib/e-approval-navigation';
+import { markNextNavigationAsReplace } from '@/lib/navigation-history';
 import { useEApprovalActor, useEApprovalPermissions } from '@/components/e-approval/hooks';
 import { PageHeader } from '@/components/shared/page-header';
 
 export default function CreateEApprovalPage() {
+  const router = useRouter();
   const { serviceActor, user } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
+  // Back to the page the form was opened from — the inbox, a register, a request — and the
+  // dashboard only when that is not known.
+  const back = useEApprovalBack(E_APPROVAL_BASE_PATH, { replace: true });
+
+  /*
+   * The new request takes the form's place in the history rather than being pushed after it. Pushed,
+   * the browser's Back from a request just submitted reopened an empty New Approval form, and the
+   * request's own arrow went to My Inbox. Replaced, both lead to wherever the form was opened from.
+   */
+  const openRequest = useCallback(
+    (approvalId: string) => {
+      markNextNavigationAsReplace();
+      router.replace(withEApprovalReturnTo(`${E_APPROVAL_BASE_PATH}/${approvalId}`, back.href));
+    },
+    [router, back.href],
+  );
 
   if (!permissions.isLoading && !permissions.canCreate) {
     return (
@@ -35,15 +57,16 @@ export default function CreateEApprovalPage() {
       <PageHeader
         title="New approval"
         description="A note-sheet, routed for approval. Only the first approver has to be named — the rest of the chain is built by whoever holds the file."
-        backHref={E_APPROVAL_BASE_PATH}
-        backLabel="Dashboard"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         meta={[
           { label: 'Raised by', value: user?.name || '—' },
           { label: 'Reference', value: <span className="text-muted-foreground">allotted on submission</span> },
           { label: 'Status', value: 'Draft' },
         ]}
       />
-      <ApprovalForm serviceActor={serviceActor} />
+      <ApprovalForm serviceActor={serviceActor} onFinished={openRequest} />
     </div>
   );
 }

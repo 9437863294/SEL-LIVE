@@ -12,7 +12,6 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import {
   eApprovalAgeingBucket,
-  E_APPROVAL_BASE_PATH,
   E_APPROVAL_STATUSES,
   type EApprovalRequest,
   type EApprovalStatus,
@@ -25,6 +24,7 @@ import {
   eApprovalPriorityTone,
 } from './shared';
 import { formatEApprovalAmount, formatEApprovalDate } from './hooks';
+import { useEApprovalRequestHref } from './back-navigation';
 
 type SortKey = 'created' | 'due' | 'amount' | 'reference';
 
@@ -70,6 +70,7 @@ export function EApprovalRequestTable({
    */
   onExport?: (rows: EApprovalRequest[], filterSummary: string) => Promise<void>;
 }) {
+  const requestHref = useEApprovalRequestHref();
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   /**
@@ -231,12 +232,12 @@ export function EApprovalRequestTable({
               {filtered.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="whitespace-nowrap font-mono">
-                    <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="text-sky-700 hover:underline">
+                    <Link href={requestHref(row.id)} className="text-sky-700 hover:underline">
                       {row.referenceNo || 'Draft'}
                     </Link>
                   </TableCell>
                   <TableCell className="min-w-[220px] max-w-[360px]">
-                    <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="block hover:underline">
+                    <Link href={requestHref(row.id)} className="block hover:underline">
                       <span className="line-clamp-1 font-medium">{row.subject}</span>
                     </Link>
                     <span className="mt-0.5 flex flex-wrap items-center gap-1">
@@ -314,6 +315,7 @@ export function EApprovalActionList({
   onQuickApprove?: (row: EApprovalRequest) => Promise<void>;
 }) {
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const requestHref = useEApprovalRequestHref();
 
   if (!rows.length) {
     return <EApprovalEmptyState icon={Inbox} title={emptyTitle} description="Approvals assigned to you appear here." />;
@@ -327,7 +329,7 @@ export function EApprovalActionList({
           // A plain row, not a <Link> — a Button nested inside an <a> is invalid HTML nesting (React
           // warns and can mis-hydrate), so the anchor covers only the content beside the button.
           <div key={row.id} className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40">
-            <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+            <Link href={requestHref(row.id)} className="flex min-w-0 flex-1 items-center gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="font-mono text-[11px] text-muted-foreground">{row.referenceNo}</span>

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -31,7 +31,9 @@ import {
   type EApprovalDetail,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail, subscribeEApprovalRequest } from '@/lib/e-approval-service';
+import { eApprovalBackButtonText, eApprovalHomeList, withEApprovalReturnTo } from '@/lib/e-approval-navigation';
 import { ActionPanel } from '@/components/e-approval/action-panel';
+import { useEApprovalBack } from '@/components/e-approval/back-navigation';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { CommentThread } from '@/components/e-approval/comment-thread';
 import { DeleteApprovalButton } from '@/components/e-approval/delete-request-dialog';
@@ -69,7 +71,6 @@ import { PageHeader } from '@/components/shared/page-header';
 export default function EApprovalDetailPage() {
   const params = useParams<{ approvalId: string }>();
   const approvalId = String(params?.approvalId ?? '');
-  const router = useRouter();
   const { toast } = useToast();
   const { serviceActor, engineActor, isLoading: actorLoading } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
@@ -144,6 +145,17 @@ export default function EApprovalDetailPage() {
     });
   }, [detail, engineActor, permissions.canViewAll, permissions.canViewDepartment, permissions.canViewConfidential]);
 
+  // Back to wherever the file was opened from. This used to be My Inbox for everybody, which sent
+  // a requester, a CC reader or someone browsing All Approvals to a list they had never been on.
+  const homeList = useMemo(
+    () =>
+      detail
+        ? eApprovalHomeList(detail.request, detail.steps, { actor: engineActor, canViewAll: permissions.canViewAll })
+        : E_APPROVAL_BASE_PATH,
+    [detail, engineActor, permissions.canViewAll],
+  );
+  const back = useEApprovalBack(homeList);
+
   if (isLoading || actorLoading) {
     return (
       <div className="space-y-3">
@@ -163,7 +175,9 @@ export default function EApprovalDetailPage() {
         </CardHeader>
         <CardContent>
           <Button asChild variant="outline" size="sm">
-            <Link href={E_APPROVAL_BASE_PATH}>Back to dashboard</Link>
+            <Link href={back.href} onClick={back.onClick}>
+              {eApprovalBackButtonText(back.label)}
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -181,8 +195,13 @@ export default function EApprovalDetailPage() {
               : 'You are not a participant in this approval, and you do not hold permission to view other people’s approvals.'}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex justify-center py-6">
+        <CardContent className="flex flex-col items-center gap-4 py-6">
           <ShieldAlert className="h-12 w-12 text-destructive" />
+          <Button asChild variant="outline" size="sm">
+            <Link href={back.href} onClick={back.onClick}>
+              {eApprovalBackButtonText(back.label)}
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     );
@@ -201,8 +220,9 @@ export default function EApprovalDetailPage() {
         description={`Raised by ${request.requesterName || 'a colleague'}${
           request.departmentName ? ` · ${request.departmentName}` : ''
         }${request.submittedAt ? ` · submitted ${formatEApprovalDateTime(request.submittedAt)}` : ''}`}
-        backHref={`${E_APPROVAL_BASE_PATH}/inbox`}
-        backLabel="Inbox"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         meta={[
           { label: 'Reference', value: <span className="font-mono">{request.referenceNo || 'Draft'}</span> },
           {
@@ -241,14 +261,16 @@ export default function EApprovalDetailPage() {
             </Button>
             {editable && (
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
-                <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/edit`}>
+                {/* Carrying where this screen's arrow leads, so it still leads there after the round
+                    trip — saving an edit or leaving the note comes back here by replacing the page. */}
+                <Link href={withEApprovalReturnTo(`${E_APPROVAL_BASE_PATH}/${request.id}/edit`, back.href)}>
                   <Pencil className="h-3.5 w-3.5" /> Edit
                 </Link>
               </Button>
             )}
             {permissions.canPrint && (
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
-                <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/print`}>
+                <Link href={withEApprovalReturnTo(`${E_APPROVAL_BASE_PATH}/${request.id}/print`, back.href)}>
                   <Printer className="h-3.5 w-3.5" /> Approval note
                 </Link>
               </Button>
@@ -260,7 +282,8 @@ export default function EApprovalDetailPage() {
               serviceActor={serviceActor}
               canDeleteDraft={permissions.canDeleteDraft}
               canDeleteAny={permissions.canDeleteAnyRequest}
-              onDeleted={() => router.push(`${E_APPROVAL_BASE_PATH}/inbox`)}
+              // Replacing, so the browser's Back does not return to a request that no longer exists.
+              onDeleted={() => back.go({ replace: true })}
             />
           </>
         }
