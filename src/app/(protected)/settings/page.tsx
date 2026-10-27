@@ -218,35 +218,31 @@ function SettingsCard({
   item,
   index,
 }: {
-  item: SettingsItemConfig & { disabled?: boolean };
+  item: SettingsItemConfig;
   index: number;
 }) {
   const { colorScheme } = item;
-  const isDisabled = item.disabled || item.href === '#';
 
   const cardContent = (
     <Card
       className={cn(
         'group relative flex flex-col h-full overflow-hidden transition-all duration-300 ease-in-out rounded-xl border',
         colorScheme.border,
-        !isDisabled && 'hover:shadow-xl hover:-translate-y-0.5 cursor-pointer',
-        isDisabled && 'cursor-not-allowed opacity-55 saturate-50',
+        'hover:shadow-xl hover:-translate-y-0.5 cursor-pointer',
       )}
     >
       {/* Gradient background */}
       <div className={cn('absolute inset-0 bg-gradient-to-br opacity-60', colorScheme.bg)} />
       {/* Top accent */}
       <div className={cn(
-        'absolute top-0 left-0 right-0 h-0.5 transition-all duration-300',
-        !isDisabled && 'group-hover:h-[2px]',
+        'absolute top-0 left-0 right-0 h-0.5 transition-all duration-300 group-hover:h-[2px]',
         colorScheme.iconBg,
       )} />
 
       <CardHeader className="relative flex-row items-center gap-4 space-y-0 p-4">
         <div className={cn(
-          'rounded-xl p-2.5 shrink-0 transition-transform duration-300',
+          'rounded-xl p-2.5 shrink-0 transition-transform duration-300 group-hover:scale-110',
           colorScheme.iconBg,
-          !isDisabled && 'group-hover:scale-110',
         )}>
           <item.icon className={cn('w-5 h-5', colorScheme.iconColor)} />
         </div>
@@ -258,7 +254,6 @@ function SettingsCard({
     </Card>
   );
 
-  if (isDisabled) return <div className="h-full">{cardContent}</div>;
   return (
     <Link href={item.href} className="no-underline h-full block animate-bb-card-in"
       style={{ animationDelay: `${index * 40}ms`, animationFillMode: 'both' }}>
@@ -288,20 +283,33 @@ export default function SettingsPage() {
     '/store-stock-management/settings': 'Store & Stock Management',
   };
 
-  const settingsItems = settingsItemsBase.map(item => {
-    const module = permissionMap[item.href] ?? 'Settings';
-    const action = item.href === '/store-stock-management/settings' ? 'View Module' : item.permission;
-    // Access Management's permission node did not exist when the current roles were written, so
-    // nobody holds it yet. Existing administrators — anyone who can already edit both users and
-    // roles, which is strictly more power than that screen offers — get in too, otherwise the page
-    // that grants the new permission would itself be unreachable. Same rule as
-    // `canOpenAccessManagement`, which the page enforces on its own.
-    const enabled =
-      item.href === '/settings/access-management'
-        ? canOpenAccessManagement(can)
-        : // Appearance is personal — every user sets their own theme, text size and layout.
-          item.href === '/settings/appearance' || can(action, module);
-    return { ...item, disabled: !enabled };
+  // Only the screens this person can open. A greyed-out card for one they cannot still announced
+  // it and cost a click to find out; each rule below is the one its page applies on arrival, so
+  // nobody loses a card for a screen they are allowed into.
+  const settingsItems = settingsItemsBase.filter((item) => {
+    const resource = permissionMap[item.href] ?? 'Settings';
+    switch (item.href) {
+      // Access Management's permission node did not exist when the current roles were written, so
+      // nobody holds it yet. Existing administrators — anyone who can already edit both users and
+      // roles, which is strictly more power than that screen offers — get in too, otherwise the page
+      // that grants the new permission would itself be unreachable. Same rule as
+      // `canOpenAccessManagement`, which the page enforces on its own.
+      case '/settings/access-management':
+        return canOpenAccessManagement(can);
+      // Appearance is personal — every user sets their own theme, text size and layout.
+      case '/settings/appearance':
+        return true;
+      case '/store-stock-management/settings':
+        return can('View Module', resource);
+      // The log also opens for whoever may view users or roles.
+      case '/settings/audit-logs':
+        return can('View', resource) || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management');
+      // Editing the profile includes reading it.
+      case '/settings/company-profile':
+        return can('View', resource) || can('Edit', resource);
+      default:
+        return can(item.permission, resource);
+    }
   });
 
   if (isLoading) {
