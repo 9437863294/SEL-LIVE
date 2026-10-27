@@ -37,6 +37,9 @@ import { HrAccessDenied, HrEmptyState, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { withReturnTo } from '@/lib/back-navigation';
+import { markNextNavigationAsReplace } from '@/lib/navigation-history';
 import { actorFromUser, canManageRoles } from '@/lib/access-control-service';
 import { AccessPageShell } from './access-ui';
 import { RoleForm } from './role-form';
@@ -60,6 +63,9 @@ export function RolePage({ roleId }: { roleId?: string }) {
 
   const returnTo = safeReturnPath(params.get('returnTo'));
   const duplicateFrom = params.get('duplicateFrom');
+  // A form: leaving it — the arrow, Cancel, Save — takes it out of the history, so the browser's
+  // Back never reopens a role that was already saved or abandoned.
+  const back = useBackNavigation(returnTo, { replace: true });
 
   const allowed = useMemo(() => canManageRoles(can), [can]);
 
@@ -80,18 +86,20 @@ export function RolePage({ roleId }: { roleId?: string }) {
     [roleId, duplicateFrom, state.directory.roles],
   );
 
-  const goBack = useCallback(() => router.push(returnTo), [router, returnTo]);
+  const { go: leave } = back;
+  const goBack = useCallback(() => leave(), [leave]);
 
   const handleSaved = useCallback(
     (savedRoleId: string, created: boolean) => {
       if (!created) {
-        router.push(returnTo);
+        goBack();
         return;
       }
       const separator = returnTo.includes('?') ? '&' : '?';
-      router.push(`${returnTo}${separator}assignRole=${encodeURIComponent(savedRoleId)}`);
+      markNextNavigationAsReplace();
+      router.replace(`${returnTo}${separator}assignRole=${encodeURIComponent(savedRoleId)}`);
     },
-    [returnTo, router],
+    [goBack, returnTo, router],
   );
 
   if (authLoading || (state.isLoading && allowed)) {
@@ -107,16 +115,16 @@ export function RolePage({ roleId }: { roleId?: string }) {
    */
   if (roleId && !editing) {
     return (
-      <AccessPageShell width="form" backHref={returnTo} backLabel="Back to roles">
+      <AccessPageShell width="form" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
         <HrEmptyState
           icon={ShieldCheck}
           title="This role no longer exists"
           description="It may have been deleted since this link was made. The role library lists everything that is still there."
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={returnTo}>
+              <Link href={back.href} onClick={back.onClick}>
                 <ArrowLeft className="mr-1.5 h-4 w-4" />
-                Back to roles
+                {back.label}
               </Link>
             </Button>
           }
@@ -129,14 +137,16 @@ export function RolePage({ roleId }: { roleId?: string }) {
    * silently create an empty role under the name "… (copy)". */
   if (!roleId && duplicateFrom && !duplicating) {
     return (
-      <AccessPageShell width="form" backHref={returnTo} backLabel="Back to roles">
+      <AccessPageShell width="form" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
         <HrEmptyState
           icon={ShieldCheck}
           title="The role being copied no longer exists"
           description="Open the role library and duplicate it from there, or start a new role from scratch."
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href="/settings/access-management/roles/new">Start a new role instead</Link>
+              <Link href={withReturnTo('/settings/access-management/roles/new', returnTo)} replace>
+                Start a new role instead
+              </Link>
             </Button>
           }
         />
@@ -147,7 +157,7 @@ export function RolePage({ roleId }: { roleId?: string }) {
   return (
     // Full width, deliberately: the permission tree and its 27 module chips are the content of this
     // page, and a centred column on a wide monitor would just turn that room into two empty gutters.
-    <AccessPageShell backHref={returnTo} backLabel="Back to roles">
+    <AccessPageShell backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
       <PageHeader
         title={editing ? `Edit ${editing.name}` : duplicating ? `Duplicate ${duplicating.name}` : 'New role'}
         description={

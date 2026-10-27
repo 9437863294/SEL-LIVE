@@ -58,6 +58,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -932,6 +933,7 @@ type PendingAction =
 const HISTORY_PAGE = 60;
 
 export default function SessionManagementPage() {
+  const back = useBackNavigation('/settings');
   const { user } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
@@ -1379,8 +1381,9 @@ export default function SessionManagementPage() {
             ? 'Monitor, control and set policy for every login session — devices, locations, idle and stale sessions.'
             : 'View and manage your own active login sessions across all devices.'
         }
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         actions={
           <>
             {myOtherSessions.length > 0 && (

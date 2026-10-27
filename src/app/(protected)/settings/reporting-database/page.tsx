@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -118,6 +119,7 @@ const toSettings = (overview: ReportingCopyOverview): ReportingCopySettingsInput
 };
 
 export default function ReportingDatabasePage() {
+  const back = useBackNavigation('/settings');
   const { toast } = useToast();
   const { can, isLoading: authzLoading } = useAuthorization();
   const canView = can('View', REPORTING_COPY_RESOURCE);
@@ -311,7 +313,7 @@ export default function ReportingDatabasePage() {
   if (!canView) {
     return (
       <div className="px-4 sm:px-5 py-3">
-        <PageHeader title="Reporting Database" icon={DatabaseZap} backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Reporting Database" icon={DatabaseZap} backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -347,8 +349,9 @@ export default function ReportingDatabasePage() {
           title="Reporting Database"
           description="A copy of the app's data for MongoDB reporting tools, refreshed on a schedule"
           icon={DatabaseZap}
-          backHref="/settings"
-          backLabel="Back to settings"
+          backHref={back.href}
+          backLabel={back.label}
+          onBackClick={back.onClick}
           actions={canRun ? (
             <>
               {running && (

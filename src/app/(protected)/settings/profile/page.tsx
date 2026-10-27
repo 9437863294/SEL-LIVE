@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from 'react';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { AccessSummaryCard } from '@/components/profile/AccessSummaryCard';
@@ -21,6 +22,7 @@ import { WorkDetailsCard } from '@/components/profile/WorkDetailsCard';
  * other modules match on and stay with administrators, and access is never granted from here.
  */
 export default function ProfilePage() {
+  const back = useBackNavigation('/settings');
   const { loading } = useAuth();
   const security = useRef<HTMLDivElement>(null);
 
@@ -50,8 +52,9 @@ export default function ProfilePage() {
       <PageHeader
         title="Your profile"
         description="Your details, access and account security."
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
       />
 
       <ProfileHero onJumpToSecurity={jumpToSecurity} />

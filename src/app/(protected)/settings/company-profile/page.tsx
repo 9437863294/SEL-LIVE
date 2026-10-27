@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { CompanyFooterLine, CompanyLetterhead, PrintedOnLine, SignatureBlock } from '@/components/shared/company-letterhead';
 import { LetterheadA4Preview, LetterheadHtmlEditor } from '@/components/shared/letterhead-designer';
 import { ChoiceField, Field, PreviewCard, ToggleField, companyProfileFetch, readStoredProfile } from '@/components/appearance/company-profile-part';
@@ -61,6 +62,7 @@ function MmField({ label, hint, value, onChange, disabled }: { label: string; hi
 /* ── the page ────────────────────────────────────────────────────────────────────────────────── */
 
 export default function CompanyProfileSettingsPage() {
+  const back = useBackNavigation('/settings');
   const { toast } = useToast();
   const { can, isLoading: authzLoading } = useAuthorization();
   const canEdit = can('Edit', COMPANY_PROFILE_RESOURCE);
@@ -158,8 +160,9 @@ export default function CompanyProfileSettingsPage() {
       title="Company Profile"
       description="The company's details, GST registrations, letterhead and print — used by every document and module."
       icon={Building2}
-      backHref="/settings"
-      backLabel="Back to settings"
+      backHref={back.href}
+      backLabel={back.label}
+      onBackClick={back.onClick}
       actions={canView && draft ? (
         <>
           {canEdit && dirty && (

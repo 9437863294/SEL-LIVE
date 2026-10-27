@@ -6,7 +6,7 @@ const location = { pathname: '/', search: '' };
 const handlers = new Map();
 globalThis.window = { location, addEventListener: (type, handler) => handlers.set(type, handler) };
 
-const { markNextNavigationAsReplace, navigationOrigin, noteNavigation, subscribeNavigation } = await import(
+const { markNextNavigationAsReplace, navigationOrigin, noteAddressChange, noteNavigation, subscribeNavigation } = await import(
   '../src/lib/navigation-history.ts'
 );
 
@@ -75,6 +75,18 @@ test('Back or Forward within one page (a hash, a query) is not a move between pa
   handlers.get('popstate')?.();
   push('/e-approval/settings/types');
   assert.equal(navigationOrigin('/e-approval/settings/types'), '/e-approval/settings');
+});
+
+test('a query changed in place is what the next page records as its origin', () => {
+  push('/settings/access-management');
+  // The tab strip writes its tab into the address with `history.replaceState`.
+  visit('/settings/access-management?tab=users');
+  noteAddressChange();
+  push('/settings/access-management/users/U1');
+  assert.equal(navigationOrigin('/settings/access-management/users/U1'), '/settings/access-management?tab=users');
+  // Only the page on screen is updated: a stale call after leaving changes nothing.
+  noteAddressChange();
+  assert.equal(navigationOrigin('/settings/access-management/users/U1'), '/settings/access-management?tab=users');
 });
 
 test('subscribers hear about each page change, and only page changes', () => {

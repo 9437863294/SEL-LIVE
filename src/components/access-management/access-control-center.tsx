@@ -46,6 +46,8 @@ import {
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { noteAddressChange } from '@/lib/navigation-history';
 import { employeeFactsFor } from '@/lib/people-directory';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -123,14 +125,37 @@ const TAB_ITEMS: Array<{ id: TabId; label: string }> = [
   { id: 'audit', label: 'Audit History' },
 ];
 
+/**
+ * Writes the tab into the address (`?tab=users`), in place, so that coming back to this screen —
+ * from a user's access profile, a role, a reload — reopens the tab that was open rather than
+ * Overview. The one-off `assignTo` / `assignRole` handovers are dropped on the way: once read they
+ * have done their job, and a reload must not hand the same selection over again.
+ */
+function keepTabInAddress(tab: TabId) {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('assignTo');
+  url.searchParams.delete('assignRole');
+  if (tab === 'overview') url.searchParams.delete('tab');
+  else url.searchParams.set('tab', tab);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
+  window.history.replaceState(null, '', next);
+  noteAddressChange();
+}
+
 export function AccessControlCenter() {
   const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
+  const back = useBackNavigation('/settings');
 
   const allowed = useMemo(() => canOpenAccessManagement(can), [can]);
   const state = useAccessDirectory(!authLoading && allowed);
 
-  const [tab, setTab] = useState<TabId>('overview');
+  const [tab, setTabState] = useState<TabId>('overview');
+  const setTab = useCallback((next: TabId) => {
+    setTabState(next);
+    keepTabInAddress(next);
+  }, []);
   /**
    * What the Assign Access tab should open with.
    *
@@ -167,7 +192,8 @@ export function AccessControlCenter() {
    *
    *   `?tab=<TabId>` opens any tab directly — used by the template editor (now its own page under
    *   `/templates/new` and `/templates/[templateId]`) to land back on Templates after Save or Cancel,
-   *   rather than always returning to Overview.
+   *   rather than always returning to Overview. The tab is kept in the address from then on
+   *   (`keepTabInAddress`), so coming back to this screen reopens the tab that was open.
    */
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -189,6 +215,20 @@ export function AccessControlCenter() {
 
     const requestedTab = search.get('tab') as TabId | null;
     if (requestedTab && TAB_ITEMS.some((item) => item.id === requestedTab)) setTab(requestedTab);
+  }, [setTab]);
+
+  /**
+   * The browser's Back and Forward between two addresses of this screen (`?tab=users` behind
+   * `?tab=assign`, after a new user was handed over) do not remount it, so the tab follows the
+   * address here.
+   */
+  useEffect(() => {
+    const followAddress = () => {
+      const requestedTab = new URLSearchParams(window.location.search).get('tab') as TabId | null;
+      setTabState(requestedTab && TAB_ITEMS.some((item) => item.id === requestedTab) ? requestedTab : 'overview');
+    };
+    window.addEventListener('popstate', followAddress);
+    return () => window.removeEventListener('popstate', followAddress);
   }, []);
 
   /**
@@ -215,20 +255,20 @@ export function AccessControlCenter() {
       }));
       setTab('assign');
     },
-    [],
+    [setTab],
   );
 
   /** Open the Reports tab on a specific report — the Overview's alerts land on the finding, not the default. */
   const openReportWith = useCallback((report: ReportId) => {
     setReportSeed((current) => ({ key: current.key + 1, report }));
     setTab('reports');
-  }, []);
+  }, [setTab]);
 
   /** Open Effective Access with a user already selected. */
   const openEffectiveWith = useCallback((userId: string) => {
     setEffectiveSeed((current) => ({ key: current.key + 1, userId }));
     setTab('effective');
-  }, []);
+  }, [setTab]);
 
   if (authLoading || (state.isLoading && !state.isRefreshing && allowed)) {
     return (
@@ -241,8 +281,9 @@ export function AccessControlCenter() {
   if (!allowed) {
     return (
       <AccessPageShell
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         aside={<h1 className="text-xl font-semibold text-slate-800">Access Management</h1>}
       >
         <HrAccessDenied what="access management" />
@@ -252,7 +293,7 @@ export function AccessControlCenter() {
 
   if (!actor) {
     return (
-      <AccessPageShell backHref="/settings" backLabel="Back to settings">
+      <AccessPageShell backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
         <HrAccessDenied what="access management" />
       </AccessPageShell>
     );
@@ -265,8 +306,9 @@ export function AccessControlCenter() {
   return (
     <AccessPageShell
       fill
-      backHref="/settings"
-      backLabel="Back to settings"
+      backHref={back.href}
+      backLabel={back.label}
+      onBackClick={back.onClick}
       aside={
         // Reassurance for somebody arriving on this screen, not something they act on — and on a
         // phone it was a whole row of the little height there is. Desktop only.

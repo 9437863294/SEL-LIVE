@@ -56,6 +56,7 @@ import {
 import { AccessKpiCard, AccessPageShell } from './access-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { cn } from '@/lib/utils';
 import {
   LINK_STATUS_LABELS,
@@ -100,6 +101,8 @@ const FILTERS: Array<{ value: 'all' | LinkRowStatus; label: string }> = [
 export function GreytHRLinkingWorkspace() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  // Opened from Access Management, a user's access profile or the Employee module's greytHR sync.
+  const back = useBackNavigation('/settings/access-management');
 
   const canView = can('View', 'Settings.User Management');
   // Either the narrow new action or the broad existing one — see the API route's header.
@@ -373,7 +376,7 @@ export function GreytHRLinkingWorkspace() {
   ];
 
   return (
-    <AccessPageShell width="wide" backHref="/settings/access-management" backLabel="Back to Access Management">
+    <AccessPageShell width="wide" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
       <PageHeader
         title="greytHR linking"
         description="Match every platform login to its greytHR employee record. HR data flows in; roles and permissions stay here."

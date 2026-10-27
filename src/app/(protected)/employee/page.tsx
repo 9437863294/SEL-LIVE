@@ -52,6 +52,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import {
   EMPLOYEE_GROUPS,
@@ -162,6 +163,7 @@ function NoticeRow({ notice, index }: { notice: Notice; index: number }) {
  * ---------------------------------------------------------------------------------------------- */
 
 export default function EmployeeHubPage() {
+  const back = useBackNavigation('/settings');
   const access = useEmployeeAccess();
 
   /**
@@ -390,8 +392,9 @@ export default function EmployeeHubPage() {
       <PageHeader
         title="Employee Management"
         breadcrumbs={[{ label: 'Settings', href: '/settings' }, { label: 'Employee' }]}
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         meta={
           <StatusBadge tone={statsLoading ? 'neutral' : freshness.tone}>
             <Clock className="h-3 w-3" aria-hidden="true" />

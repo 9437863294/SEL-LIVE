@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Building2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { DataList } from '@/components/shared/data-list';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
@@ -39,6 +40,7 @@ import { useUiText } from '@/hooks/use-company-profile';
 
 
 export default function ManageDepartmentPage() {
+  const back = useBackNavigation('/settings');
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const t = useUiText();
@@ -211,7 +213,7 @@ export default function ManageDepartmentPage() {
   if (!canView) {
     return (
       <div className="w-full">
-        <PageHeader title="Manage Department" backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Manage Department" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card><CardHeader><CardTitleShad>Access Denied</CardTitleShad><CardDescriptionShad>You do not have permission to view this page.</CardDescriptionShad></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -234,8 +236,9 @@ export default function ManageDepartmentPage() {
       <PageHeader
         title="Manage Departments"
         description={`${departments.length} department${departments.length !== 1 ? 's' : ''} configured`}
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         actions={
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>

@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { TableCard } from '@/components/shared/table-card';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -35,6 +36,7 @@ const initialWorkingHours: WorkingHours = daysOfWeek.reduce((acc, day) => {
 }, {} as WorkingHours);
 
 export default function WorkingHoursPage() {
+  const back = useBackNavigation('/settings');
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   
@@ -160,7 +162,7 @@ export default function WorkingHoursPage() {
   if (!canView) {
     return (
       <div className="w-full">
-        <PageHeader title="Working Hours" backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Working Hours" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -183,8 +185,9 @@ export default function WorkingHoursPage() {
       <PageHeader
         title="Working Hours"
         description="Configure work schedule and holidays"
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">

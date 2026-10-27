@@ -82,18 +82,24 @@ export const AccessCard = React.forwardRef<HTMLDivElement, React.ComponentPropsW
  * label is not rendered but is the accessible name, so an icon-only control still announces where it
  * goes.
  */
+/** The Control Center's Users tab — where a user's pages go back to when nothing says otherwise. */
+export const ACCESS_USERS_HREF = '/settings/access-management?tab=users';
+
 export function AccessBackLink({
   href,
   label = 'Back',
+  onClick,
   className,
 }: {
   href: string;
   label?: string;
+  /** `useBackNavigation`'s `onClick`, so the arrow returns to the page it was opened from. */
+  onClick?: React.MouseEventHandler<HTMLAnchorElement>;
   className?: string;
 }) {
   return (
     <Button asChild variant="ghost" size="icon" className={cn('rounded-full bg-white/70 shadow-sm backdrop-blur max-sm:h-11 max-sm:w-11', className)}>
-      <Link href={href} aria-label={label}>
+      <Link href={href} aria-label={label} title={label} onClick={onClick}>
         <ArrowLeft className="h-5 w-5" />
       </Link>
     </Button>
@@ -139,6 +145,7 @@ export function AccessPageShell({
   children,
   backHref,
   backLabel,
+  onBackClick,
   aside,
   width = 'full',
   className,
@@ -147,6 +154,7 @@ export function AccessPageShell({
   children: React.ReactNode;
   backHref?: string;
   backLabel?: string;
+  onBackClick?: React.MouseEventHandler<HTMLAnchorElement>;
   /** Rendered on the same row as the back link — a badge, or a heading on the denied/loading states. */
   aside?: React.ReactNode;
   width?: keyof typeof SHELL_WIDTH;
@@ -181,7 +189,7 @@ export function AccessPageShell({
       >
         {(backHref || aside) && (
           <div className="mb-1 flex shrink-0 flex-wrap items-center gap-2">
-            {backHref && <AccessBackLink href={backHref} label={backLabel} />}
+            {backHref && <AccessBackLink href={backHref} label={backLabel} onClick={onBackClick} />}
             {aside}
           </div>
         )}

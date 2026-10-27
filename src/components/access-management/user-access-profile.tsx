@@ -46,6 +46,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { hrDialog, HrEmptyState, HrField, HrLoader } from '@/components/hr/hr-ui';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { cn } from '@/lib/utils';
 import {
   formatGrantDate,
@@ -72,6 +73,7 @@ import {
   ACCESS_ACTION_ICON,
   ACCESS_ACTION_TONES,
   ACCESS_SCROLL_FRAME_CLASS,
+  ACCESS_USERS_HREF,
   AccessBackLink,
   AccessCard,
   PermissionPairList,
@@ -99,6 +101,9 @@ export function UserAccessProfile({
 }) {
   const { toast } = useToast();
   const { directory, accessByUser, departments, projects, employees, registry, isLoading } = state;
+  // Back to wherever the profile was opened from — the Users tab, greytHR linking, the employee
+  // sync — and to the Users tab when that is not known.
+  const back = useBackNavigation(ACCESS_USERS_HREF);
 
   const [term, setTerm] = useState('');
   const [removal, setRemoval] = useState<{
@@ -144,12 +149,12 @@ export function UserAccessProfile({
         title="User not found"
         description="This user may have been removed. Go back to the access management screen and pick another."
         action={
-          <Link href="/settings/access-management">
-            <Button variant="outline" size="sm">
+          <Button asChild variant="outline" size="sm">
+            <Link href={back.href} onClick={back.onClick}>
               <ArrowLeft className="mr-1.5 h-4 w-4" />
-              Back to Access Management
-            </Button>
-          </Link>
+              {back.label}
+            </Link>
+          </Button>
         }
       />
     );
@@ -274,7 +279,7 @@ export function UserAccessProfile({
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex shrink-0 flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2">
-          <AccessBackLink href="/settings/access-management" label="Back to Access Control Center" />
+          <AccessBackLink href={back.href} label={back.label} onClick={back.onClick} />
           <div className="min-w-0">
             <h1 className="break-words text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
               {user.name || user.email}

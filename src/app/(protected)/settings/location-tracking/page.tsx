@@ -22,6 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
@@ -125,6 +126,7 @@ const formatCapturedAt = (value: string | null) => {
 };
 
 export default function LocationTrackingSettingsPage() {
+  const back = useBackNavigation('/settings');
   const { user } = useAuth();
   const { can, isLoading: permissionLoading } = useAuthorization();
   const { toast } = useToast();
@@ -375,6 +377,9 @@ export default function LocationTrackingSettingsPage() {
     <div className="space-y-5 p-4 sm:p-6">
       <PageHeader
         title="Location Tracking"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         description="Choose who shares location and how often it is captured."
         icon={LocateFixed}
         actions={

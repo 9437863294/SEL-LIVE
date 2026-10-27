@@ -24,6 +24,8 @@ import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { markNextNavigationAsReplace } from '@/lib/navigation-history';
 import { actorFromUser, canAssignAccess } from '@/lib/access-control-service';
 import { canCreateUser } from '@/lib/access-control';
 import { AccessPageShell } from './access-ui';
@@ -51,6 +53,9 @@ export function AddUserPage() {
   const { can, isLoading: authLoading } = useAuthorization();
 
   const returnTo = safeReturnPath(params.get('returnTo'));
+  // A form: leaving it — the arrow, Cancel, creating the user — takes it out of the history, so the
+  // browser's Back never reopens a form whose user already exists.
+  const back = useBackNavigation(returnTo, { replace: true });
 
   /**
    * Creating a user is the same authority the drawer required, checked the same way.
@@ -70,7 +75,8 @@ export function AddUserPage() {
   const handleCreated = useCallback(
     (created: { id: string }) => {
       const separator = returnTo.includes('?') ? '&' : '?';
-      router.push(`${returnTo}${separator}assignTo=${encodeURIComponent(created.id)}`);
+      markNextNavigationAsReplace();
+      router.replace(`${returnTo}${separator}assignTo=${encodeURIComponent(created.id)}`);
     },
     [returnTo, router],
   );
@@ -86,7 +92,7 @@ export function AddUserPage() {
   // actor — so an unattributable creation is refused rather than recorded against nobody.
   if (!allowed || !actor) {
     return (
-      <AccessPageShell width="inset" backHref={returnTo} backLabel="Back">
+      <AccessPageShell width="inset" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
         <HrAccessDenied what="creating users" />
       </AccessPageShell>
     );
@@ -95,7 +101,7 @@ export function AddUserPage() {
   return (
     // A 2 cm gutter each side rather than a centred column: the form's sections are wide grids and
     // a role picker, and a 1024px cap on a wide monitor left more empty margin than form.
-    <AccessPageShell width="inset" backHref={returnTo} backLabel="Back">
+    <AccessPageShell width="inset" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
       <PageHeader
         title="Add user"
         description="Creates the login and the profile, then returns you to the assignment step with this user selected. A welcome email with the credentials is sent automatically."
@@ -115,7 +121,7 @@ export function AddUserPage() {
         users={state.directory.users}
         actor={actor}
         onCreated={handleCreated}
-        onCancel={() => router.push(returnTo)}
+        onCancel={() => back.go()}
       />
     </AccessPageShell>
   );

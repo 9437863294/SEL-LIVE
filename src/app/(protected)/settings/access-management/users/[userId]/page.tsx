@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import {
   actorFromUser,
   canAssignAccess,
@@ -34,6 +35,7 @@ export default function UserAccessProfilePage() {
   const allowed = useMemo(() => canOpenAccessManagement(can), [can]);
   const state = useAccessDirectory(!authLoading && allowed);
   const actor = useMemo(() => actorFromUser(user), [user]);
+  const back = useBackNavigation('/settings');
 
   if (authLoading) {
     return (
@@ -46,7 +48,7 @@ export default function UserAccessProfilePage() {
   if (!allowed || !actor) {
     return (
       <AccessPageShell>
-        <PageHeader title="Access profile" backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Access profile" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <HrAccessDenied what="this access profile" />
       </AccessPageShell>
     );

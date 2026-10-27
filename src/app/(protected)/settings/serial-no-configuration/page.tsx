@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ShieldAlert, Loader2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -35,6 +36,7 @@ const initialConfigState: SerialNumberConfig = {
 };
 
 export default function SerialNoConfigurationPage() {
+  const back = useBackNavigation('/settings');
     const { toast } = useToast();
     const { user } = useAuth();
     const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -138,7 +140,7 @@ export default function SerialNoConfigurationPage() {
     if (!canView) {
         return (
             <div className="w-full">
-                <PageHeader title="Serial No. Configuration" backHref="/settings" backLabel="Back to settings" />
+                <PageHeader title="Serial No. Configuration" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
                 <Card>
                     <CardHeader>
                         <CardTitle>Access Denied</CardTitle>
@@ -168,8 +170,9 @@ export default function SerialNoConfigurationPage() {
             <PageHeader
                 title="Serial No. Configuration"
                 description="Configure document numbering sequences"
-                backHref="/settings"
-                backLabel="Back to settings"
+                backHref={back.href}
+                backLabel={back.label}
+                onBackClick={back.onClick}
             />
 
             <Card className="border-indigo-200/60 dark:border-indigo-800/30 overflow-hidden">

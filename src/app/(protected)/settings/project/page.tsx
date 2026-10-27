@@ -5,6 +5,7 @@ import { Construction, Plus, ShieldAlert } from 'lucide-react';
 import { addDoc, collection, deleteDoc, doc, getDocs, runTransaction, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,6 +63,7 @@ function explain(error: unknown, fallback: string): string {
 }
 
 export default function ManageProjectPage() {
+  const back = useBackNavigation('/settings');
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
@@ -221,7 +223,7 @@ export default function ManageProjectPage() {
   if (!canView) {
     return (
       <div className="w-full px-4 sm:px-5">
-        <PageHeader title="Projects" backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Projects" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -258,8 +260,9 @@ export default function ManageProjectPage() {
           title="Projects"
           description="Every project, and the sub-division sites it is executed at."
           icon={Construction}
-          backHref="/settings"
-          backLabel="Back to settings"
+          backHref={back.href}
+          backLabel={back.label}
+          onBackClick={back.onClick}
           actions={
             <Button
               disabled={!canAdd}

@@ -65,6 +65,16 @@ export function markNextNavigationAsReplace(): void {
 }
 
 /**
+ * Call after changing the current page's query in place (`history.replaceState`, as a tab strip
+ * that keeps its tab in `?tab=` does), so a page opened next records the address as it now is —
+ * the Users tab rather than the address the page was first opened at.
+ */
+export function noteAddressChange(): void {
+  if (typeof window === 'undefined' || window.location.pathname !== currentPath) return;
+  currentHref = `${currentPath}${window.location.search}`;
+}
+
+/**
  * Where the page at `pathname` was opened from: an href that is also the history entry directly
  * behind it. `null` when that is not known — and always `null` for a page other than the current
  * one, including during the first render of a page this module has not been told about yet.

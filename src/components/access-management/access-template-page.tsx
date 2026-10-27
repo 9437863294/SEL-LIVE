@@ -7,13 +7,14 @@
 
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HrAccessDenied, HrEmptyState, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { actorFromUser, canManageRoles } from '@/lib/access-control-service';
 import { AccessPageShell } from './access-ui';
 import { AccessTemplateForm } from './access-template-form';
@@ -30,12 +31,13 @@ function safeReturnPath(raw: string | null): string {
 }
 
 export function AccessTemplatePage({ templateId }: { templateId?: string }) {
-  const router = useRouter();
   const params = useSearchParams();
   const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
 
   const returnTo = safeReturnPath(params.get('returnTo'));
+  // A form: leaving it — the arrow, Cancel, Save — takes it out of the history.
+  const back = useBackNavigation(returnTo, { replace: true });
   const allowed = useMemo(() => canManageRoles(can), [can]);
 
   const state = useAccessDirectory(!authLoading && allowed);
@@ -46,11 +48,8 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
     [templateId, state.directory.templates],
   );
 
-  const goBack = useCallback(() => router.push(returnTo), [router, returnTo]);
-
-  const handleSaved = useCallback(() => {
-    router.push(returnTo);
-  }, [router, returnTo]);
+  const { go: leave } = back;
+  const goBack = useCallback(() => leave(), [leave]);
 
   if (authLoading || (state.isLoading && allowed)) {
     return (
@@ -61,7 +60,7 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
   }
   if (!allowed || !actor) {
     return (
-      <AccessPageShell backHref={returnTo} backLabel="Back to templates">
+      <AccessPageShell backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
         <HrAccessDenied what="managing access templates" />
       </AccessPageShell>
     );
@@ -71,14 +70,16 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
   // "new template" form under an edit URL, which would let an edit turn into an accidental duplicate.
   if (templateId && !editing && !state.isLoading) {
     return (
-      <AccessPageShell width="form" backHref={returnTo} backLabel="Back to templates">
+      <AccessPageShell width="form" backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
         <HrEmptyState
           icon={Sparkles}
           title="This template no longer exists"
           description="It may have been deleted since this link was made. Open the template list to see what is available now."
           action={
             <Button asChild variant="outline" size="sm">
-              <Link href={returnTo}>Back to templates</Link>
+              <Link href={back.href} onClick={back.onClick}>
+                {back.label}
+              </Link>
             </Button>
           }
         />
@@ -89,7 +90,7 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
   return (
     // Full width, deliberately — same reasoning as the role builder: the permission tree and its
     // module chips are the content of this page, and a centred column would waste the room.
-    <AccessPageShell backHref={returnTo} backLabel="Back to templates">
+    <AccessPageShell backHref={back.href} backLabel={back.label} onBackClick={back.onClick}>
       <PageHeader
         title={editing ? `Edit ${editing.name}` : 'New access template'}
         description="A reusable bundle of roles, permissions and projects — applying one adds it on top of whatever the user already has."
@@ -107,7 +108,7 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
         projects={state.projects}
         registry={state.registry}
         actor={actor}
-        onSaved={handleSaved}
+        onSaved={goBack}
         onCancel={goBack}
       />
     </AccessPageShell>

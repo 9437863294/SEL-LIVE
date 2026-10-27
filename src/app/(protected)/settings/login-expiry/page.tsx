@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { Save, Loader2, ShieldAlert, Clock, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function LoginExpiryPage() {
+  const back = useBackNavigation('/settings');
   const { toast } = useToast();
   const { user, loading: authLoading, refreshUserData } = useAuth();
   const { can, isLoading: authzLoading } = useAuthorization();
@@ -60,7 +62,7 @@ export default function LoginExpiryPage() {
   if (!canViewPage) {
     return (
       <div className=" px-4 sm:px-5 py-3">
-        <PageHeader title="Login Expiry" icon={Clock} backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Login Expiry" icon={Clock} backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
           <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
@@ -86,8 +88,9 @@ export default function LoginExpiryPage() {
           title="Login Expiry"
           description="Session timeout configuration"
           icon={Clock}
-          backHref="/settings"
-          backLabel="Back to settings"
+          backHref={back.href}
+          backLabel={back.label}
+          onBackClick={back.onClick}
         />
 
         <Card className="border-orange-200/60 dark:border-orange-800/30 overflow-hidden">

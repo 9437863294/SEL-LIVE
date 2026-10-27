@@ -27,6 +27,7 @@ import { format } from 'date-fns';
 import type { User } from '@/lib/types';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { TableCard } from '@/components/shared/table-card';
 import { AccessPageShell, ACCESS_SCROLL_FRAME_CLASS } from '@/components/access-management/access-ui';
 
@@ -66,6 +67,7 @@ function detailText(details: Record<string, any>): string {
 export default function UserLogsPage() {
   const params = useParams<{ userId: string }>();
   const userId = String(params?.userId ?? '');
+  const back = useBackNavigation(`/settings/access-management/users/${userId}`, { fallbackLabel: 'Back to access profile' });
   const [user, setUser] = useState<User | null>(null);
   const [logs, setLogs] = useState<UserLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,8 +131,9 @@ export default function UserLogsPage() {
       <PageHeader
         title={isLoading ? 'Activity' : `Activity · ${user?.name || user?.email || 'User'}`}
         description="Sign-ins, sign-outs and edits to this user's record. Access grants and revokes are on the profile's History tab."
-        backHref={`/settings/access-management/users/${userId}`}
-        backLabel="Back to access profile"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         className="shrink-0"
       />
 

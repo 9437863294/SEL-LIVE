@@ -13,6 +13,7 @@ import {
   Loader2, RefreshCw, X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { TableCard } from '@/components/shared/table-card';
@@ -204,6 +205,7 @@ const loadErrorMessage = (err: unknown): string => {
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function AuditLogsPage() {
+  const back = useBackNavigation('/settings');
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Settings.Audit Logs') || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management');
 
@@ -758,8 +760,9 @@ export default function AuditLogsPage() {
         icon={Activity}
         title="Audit Logs"
         description="Track every action across all modules — who did what, when, and from where."
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         badge={
           !isLoading ? (
             <Badge variant="neutral">

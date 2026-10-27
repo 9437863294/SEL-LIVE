@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Accessibility, Building2, LayoutDashboard, LayoutPanelLeft, Palette, SwatchBook } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { AppearanceSectionNav, SaveStatus, type SectionLink } from '@/components/appearance/controls';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { appearanceAdminRights, canOpenAppearanceAdmin } from '@/lib/appearance/permissions';
@@ -17,6 +18,7 @@ import { COMPANY_PROFILE_RESOURCE } from '@/lib/company-profile';
  * check the same rights and refuse everyone else.
  */
 export default function AppearanceLayout({ children }: { children: ReactNode }) {
+  const back = useBackNavigation('/settings');
   const { can } = useAuthorization();
   const rights = appearanceAdminRights(can);
   const viewCompanyProfile = can('View', COMPANY_PROFILE_RESOURCE) || can('Edit', COMPANY_PROFILE_RESOURCE);
@@ -37,8 +39,9 @@ export default function AppearanceLayout({ children }: { children: ReactNode }) 
       <PageHeader
         title="Appearance"
         description="How SEL Live looks and behaves for you — and, for administrators, for everyone."
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         actions={<SaveStatus />}
       />
       <AppearanceSectionNav links={links} />

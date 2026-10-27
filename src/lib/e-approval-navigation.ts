@@ -14,7 +14,8 @@
  *      the person it is waiting on, Drafts or Created by Me for its requester, and so on — for a
  *      file opened from an email, a bookmark or a notification in a fresh tab.
  *
- * Free of React and Firestore so the rules can be tested on their own.
+ * Free of React and Firestore so the rules can be tested on their own. The rules every module
+ * shares — `returnTo`, forms — are `back-navigation.ts`; what is E-Approval's own is here.
  */
 import {
   isEApprovalRowWithActor,
@@ -23,34 +24,27 @@ import {
   type EApprovalInboxRow,
   type EApprovalStepRecord,
 } from './e-approval-policy.ts';
+import {
+  RETURN_TO_PARAM,
+  hrefPath as pathOf,
+  isBackDestination,
+  resolveBack,
+  returnToFromSearch,
+  safeReturnTo,
+  withReturnTo,
+} from './back-navigation.ts';
 
 /** `E_APPROVAL_BASE_PATH`. Repeated, because `e-approval.ts` cannot be loaded by the test runner. */
 const BASE = '/e-approval';
 
 /** The query parameter naming the page a link was followed from. */
-export const E_APPROVAL_RETURN_PARAM = 'returnTo';
+export const E_APPROVAL_RETURN_PARAM = RETURN_TO_PARAM;
 
 /** An in-app path, or `null` — never another site, and never a protocol-relative `//host`. */
-export function safeEApprovalReturnTo(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const value = raw.trim();
-  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null;
-  if (/[\u0000-\u001f\u007f]/.test(value)) return null;
-  return value;
-}
-
-const pathOf = (href: string): string => href.split(/[?#]/)[0].replace(/\/+$/, '') || '/';
+export const safeEApprovalReturnTo = safeReturnTo;
 
 /** `href` carrying `returnTo`, or `href` unchanged when there is nothing safe to carry. */
-export function withEApprovalReturnTo(href: string, returnTo: string | null | undefined): string {
-  const safe = safeEApprovalReturnTo(returnTo);
-  // A page never sends people back to itself.
-  if (!safe || pathOf(safe) === pathOf(href)) return href;
-  const hashAt = href.indexOf('#');
-  const path = hashAt === -1 ? href : href.slice(0, hashAt);
-  const hash = hashAt === -1 ? '' : href.slice(hashAt);
-  return `${path}${path.includes('?') ? '&' : '?'}${E_APPROVAL_RETURN_PARAM}=${encodeURIComponent(safe)}${hash}`;
-}
+export const withEApprovalReturnTo = withReturnTo;
 
 /** A request's screen, opened from `from` (a list, a report) so that its back arrow leads there. */
 export function eApprovalRequestHref(approvalId: string, from?: string | null): string {
@@ -58,13 +52,7 @@ export function eApprovalRequestHref(approvalId: string, from?: string | null): 
 }
 
 /** The `returnTo` of a query string (`location.search`), if it is safe to follow. */
-export function eApprovalReturnToFromSearch(search: string): string | null {
-  try {
-    return safeEApprovalReturnTo(new URLSearchParams(search).get(E_APPROVAL_RETURN_PARAM));
-  } catch {
-    return null;
-  }
-}
+export const eApprovalReturnToFromSearch = returnToFromSearch;
 
 /**
  * Whether a back arrow may lead to `href`. Never to a form — a blank New Approval, or an edit
@@ -72,11 +60,8 @@ export function eApprovalReturnToFromSearch(search: string): string | null {
  * (from a request back into its own Approval Note).
  */
 export function isEApprovalBackDestination(href: string, leaving: string): boolean {
-  const path = pathOf(href);
   const from = pathOf(leaving);
-  if (path === from || path.startsWith(`${from}/`)) return false;
-  if (path === `${BASE}/create` || (path.startsWith(`${BASE}/`) && path.endsWith('/edit'))) return false;
-  return true;
+  return isBackDestination(href, leaving) && !pathOf(href).startsWith(`${from}/`);
 }
 
 const PAGE_LABELS: ReadonlyArray<readonly [string, string]> = [
@@ -159,10 +144,6 @@ export function resolveEApprovalBack(input: {
   returnTo: string | null;
   fallback: string;
 }): { href: string; label: string; viaHistory: boolean } {
-  const { leaving, origin, returnTo, fallback } = input;
-  if (origin && isEApprovalBackDestination(origin, leaving)) {
-    return { href: origin, label: eApprovalBackLabel(origin), viaHistory: true };
-  }
-  const href = returnTo && isEApprovalBackDestination(returnTo, leaving) ? returnTo : fallback;
-  return { href, label: eApprovalBackLabel(href), viaHistory: false };
+  const { href, viaHistory } = resolveBack({ ...input, isDestination: isEApprovalBackDestination });
+  return { href, label: eApprovalBackLabel(href), viaHistory };
 }

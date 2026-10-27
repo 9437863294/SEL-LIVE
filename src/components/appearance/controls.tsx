@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { useAppearance } from '@/components/theme/ThemeProvider';
+import { markReplaceOnPlainClick } from '@/hooks/use-back-navigation';
 import { cn } from '@/lib/utils';
 
 export interface Choice<T extends string> {
@@ -241,7 +242,13 @@ export interface SectionLink {
   group?: string;
 }
 
-/** The Appearance sections, as links (each section is its own page). */
+/**
+ * The Appearance sections, as links (each section is its own page).
+ *
+ * Switching sections replaces the page rather than adding one, like a tab strip: the header's back
+ * arrow — and the browser's Back — then leave Appearance for wherever it was opened from, instead of
+ * stepping back through every section visited on the way.
+ */
 export function AppearanceSectionNav({ links }: { links: SectionLink[] }) {
   const pathname = usePathname() ?? '';
   return (
@@ -260,6 +267,8 @@ export function AppearanceSectionNav({ links }: { links: SectionLink[] }) {
               )}
               <Link
                 href={href}
+                replace
+                onClick={markReplaceOnPlainClick}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

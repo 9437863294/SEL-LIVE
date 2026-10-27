@@ -3,12 +3,14 @@
 import { MailCheck, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 
 export default function EmailAuthorizationPage() {
+  const back = useBackNavigation('/settings');
   const { can, isLoading } = useAuthorization();
 
   const canView = can('View', 'Settings.Email Authorization');
@@ -34,7 +36,7 @@ export default function EmailAuthorizationPage() {
     return (
       <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
         <AuroraBackdrop />
-        <PageHeader title="Email Authorization" backHref="/settings" backLabel="Back to settings" />
+        <PageHeader title="Email Authorization" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
         <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -57,8 +59,9 @@ export default function EmailAuthorizationPage() {
       <PageHeader
         title="Email Authorization"
         description="Manage authorization requests for integrated email services."
-        backHref="/settings"
-        backLabel="Back to settings"
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
         badge={
           <Badge variant="neutral">
             Settings

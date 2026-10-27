@@ -10,6 +10,7 @@ import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/ca
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { canOpenAccessManagement } from '@/lib/access-control';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -267,6 +268,7 @@ function SettingsCard({
 }
 
 export default function SettingsPage() {
+  const back = useBackNavigation('/');
   const { can, isLoading } = useAuthorization();
 
   const permissionMap: Record<string, string> = {
@@ -341,8 +343,9 @@ export default function SettingsPage() {
           title="System Settings"
           description="Configure system preferences and manage access"
           icon={Settings2}
-          backHref="/"
-          backLabel="Back to home"
+          backHref={back.href}
+          backLabel={back.label}
+          onBackClick={back.onClick}
           className="pt-3"
         />
 
