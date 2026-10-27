@@ -9,9 +9,11 @@
  *
  * and the finance team types STATUS (RECEIVED / NOT RECEIVED) by hand. Here the same arithmetic is
  * applied to the bill's source values (taxable, GST, deduction lines, verified receipts) and the
- * status is derived from it. Nothing else in the module is allowed to recompute these: the API
- * routes call `deriveBillTotals` before every write, the import calls it to validate legacy rows,
- * and the UI only ever displays the stored result.
+ * status is derived from it. The deduction lines are the ones the bill is paid against: the raised
+ * ones until the client certifies the bill, its certified ones after (`effectiveDeductions`); the
+ * raised total and net are kept beside them for raised vs certified. Nothing else in the module is
+ * allowed to recompute these: the API routes call `deriveBillTotals` before every write, the import
+ * calls it to validate legacy rows, and the UI only ever displays the stored result.
  *
  * Signs are preserved throughout. The legacy book carries negative taxable amounts (credit notes,
  * reversals) and negative deductions (crop-compensation rows enter the compensation as a negative
@@ -28,6 +30,7 @@ import { roundMoney, subtractMoney, sumBy, sumMoney, toPaise, withinTolerance } 
 import type {
   AgeingBucketConfig,
   Bill,
+  BillCertification,
   BillCollectionRef,
   BillDeduction,
   BillPaymentStatus,
@@ -113,19 +116,38 @@ export function computePaymentStatus(net: number, received: number, tolerance: n
 export interface BillSourceValues {
   taxableAmount: number;
   gstAmount: number;
+  /** The deductions as raised. */
   deductions: readonly BillDeduction[];
   collections: readonly BillCollectionRef[];
   transactionType?: Bill['transactionType'];
   paymentStatusOverride?: Bill['paymentStatusOverride'];
   isDeleted?: boolean;
+  /** The client's certification, once recorded — its deductions replace the raised ones (`effectiveDeductions`). */
+  certification?: Pick<BillCertification, 'deductions'> | null;
 }
+
+/**
+ * The deductions a bill is paid against: the client's certified deductions once it has certified the
+ * bill, else the raised ones. A change of deductions needs no credit / debit note — the client simply
+ * pays the invoice less what it certified as deducted. Only a change of the invoice value (taxable and
+ * its GST) is settled by a note (`certification.ts`). Every receivable, report and retention figure
+ * reads these; the raised lines stay on the bill as issued, for the comparison. A certification with
+ * no lines (or none stored) certifies no deductions — the comparison reads it the same way.
+ */
+export const effectiveDeductions = (bill: { deductions?: readonly BillDeduction[] | null; certification?: Pick<BillCertification, 'deductions'> | null }): readonly BillDeduction[] =>
+  bill.certification ? (bill.certification.deductions ?? []) : (bill.deductions ?? []);
 
 export interface BillDerivedTotals {
   grossAmount: number;
+  /** Of the effective deductions — the certified ones once certified. */
   totalDeduction: number;
   statutoryDeduction: number;
   retentionDeducted: number;
+  /** Gross less the effective deductions: what this bill is paid. */
   netReceivable: number;
+  /** The raised deductions' total and net, kept beside the effective ones for raised vs certified. */
+  raisedTotalDeduction: number;
+  raisedNetReceivable: number;
   totalReceived: number;
   outstandingAmount: number;
   shortfallSurplus: number;
@@ -143,7 +165,9 @@ export interface BillDerivedTotals {
 export function deriveBillTotals(source: BillSourceValues, options: CalculationOptions): BillDerivedTotals {
   const { tolerance } = options;
   const gross = grossAmount(source.taxableAmount, source.gstAmount);
-  const deduction = totalDeduction(source.deductions);
+  const deductions = effectiveDeductions(source);
+  const deduction = totalDeduction(deductions);
+  const raisedDeduction = totalDeduction(source.deductions ?? []);
   const net = netReceivable(gross, deduction, options.roundNetToRupee);
   const received = totalReceived(source.collections);
   const shortfall = subtractMoney(net, received);
@@ -157,9 +181,11 @@ export function deriveBillTotals(source: BillSourceValues, options: CalculationO
   return {
     grossAmount: gross,
     totalDeduction: deduction,
-    statutoryDeduction: deductionsOfKind(source.deductions, ['statutory']),
-    retentionDeducted: deductionsOfKind(source.deductions, RETENTION_KINDS),
+    statutoryDeduction: deductionsOfKind(deductions, ['statutory']),
+    retentionDeducted: deductionsOfKind(deductions, RETENTION_KINDS),
     netReceivable: net,
+    raisedTotalDeduction: raisedDeduction,
+    raisedNetReceivable: netReceivable(gross, raisedDeduction, options.roundNetToRupee),
     totalReceived: received,
     outstandingAmount: roundMoney(outstanding),
     shortfallSurplus: shortfall,
@@ -220,11 +246,12 @@ export interface LedgerLine {
 }
 
 /**
- * A bill's receivable ledger: the net raised as a debit, each verified receipt as a credit. The
- * running balance therefore ends at the outstanding amount (before any settlement override).
+ * A bill's receivable ledger: its net as a debit, each verified receipt as a credit. The net is the
+ * stored one — less the client's certified deductions once it has certified the bill — so the
+ * running balance ends at the outstanding amount (before any settlement override).
  */
 export function billLedger(bill: Pick<Bill, 'id' | 'billDate' | 'netReceivable' | 'billSerialNumber' | 'gstInvoiceNumber' | 'transactionType' | 'description' | 'collections'>): LedgerLine[] {
-  const raised = bill.netReceivable;
+  const net = bill.netReceivable;
   const lines: Omit<LedgerLine, 'balance'>[] = [
     {
       date: bill.billDate,
@@ -232,8 +259,8 @@ export function billLedger(bill: Pick<Bill, 'id' | 'billDate' | 'netReceivable' 
       reference: bill.gstInvoiceNumber || bill.billSerialNumber || bill.id,
       description: bill.description || 'Bill raised',
       billId: bill.id,
-      debit: raised >= 0 ? raised : 0,
-      credit: raised < 0 ? -raised : 0,
+      debit: net >= 0 ? net : 0,
+      credit: net < 0 ? -net : 0,
     },
     ...countedCollections(bill.collections)
       .slice()
@@ -446,7 +473,8 @@ export const ageingDays = (bill: AgeingSource, basis: keyof AgeingSource, asOf: 
 /**
  * Outstanding on a past date, from transaction dates: the bill counts only if it was raised by
  * then, and only receipts dated on or before then reduce it. This is what lets "Outstanding as on
- * 31-Aug-2026" differ from today's balance.
+ * 31-Aug-2026" differ from today's balance. The net is the bill's stored one, so a certification's
+ * deductions count from the bill date, not from the date the client certified.
  */
 export function outstandingAsOf(
   bill: Pick<Bill, 'billDate' | 'netReceivable' | 'collections' | 'paymentStatusOverride' | 'isDeleted'>,

@@ -24,6 +24,10 @@
  *     each holds;
  *   - a note whose invoice holds nothing under that head, or is not found, is read on its own base.
  *
+ * A certified bill holds what the client certified: its certified retention lines, read against the
+ * certified taxable (`retentionSource`), since the certified deductions replace the raised ones. A
+ * note against a certified invoice therefore lands in the slabs the invoice holds as certified.
+ *
  * Every slab total therefore adds up to exactly the retention the rest of the module reports.
  *
  * Releases can name the slab they release (`deductionTypeId` + `rate`) — recorded by hand, or carried
@@ -37,7 +41,7 @@
 import { isRetentionKind } from './calculations.ts';
 import { isNoteType } from './certification.ts';
 import { fromPaise, subtractMoney, sumBy, sumMoney, toPaise } from './money.ts';
-import type { Bill, BillDeduction, BillTransactionType, DeductionKind, DeductionTypeMaster, RetentionRelease } from './types';
+import type { Bill, BillCertification, BillDeduction, BillTransactionType, DeductionKind, DeductionTypeMaster, RetentionRelease } from './types';
 
 /** How close an amount-based rate must be to a half-percent to be read as that rate. */
 const SNAP_TOLERANCE = 0.05;
@@ -125,6 +129,14 @@ export interface BillSlab {
 
 type SlabSource = Pick<Bill, 'deductions' | 'taxableAmount' | 'grossAmount'>;
 
+/**
+ * The retention a bill holds, as slabs read it: once the client has certified the bill, its certified
+ * deductions — which replace the raised ones (`effectiveDeductions`) — read against the certified
+ * taxable and gross they were worked out on; before that, the raised lines and figures.
+ */
+export const retentionSource = (bill: SlabSource & { certification?: Pick<BillCertification, 'deductions' | 'taxableAmount' | 'grossAmount'> | null }): SlabSource =>
+  bill.certification ? { deductions: bill.certification.deductions ?? [], taxableAmount: bill.certification.taxableAmount, grossAmount: bill.certification.grossAmount } : { deductions: bill.deductions, taxableAmount: bill.taxableAmount, grossAmount: bill.grossAmount };
+
 const BASIS_ORDER: readonly LineBasis[] = ['percent', 'amount', 'invoice'];
 
 /** `amount` shared in proportion to `weights` (all positive), exact to the paisa: the remainder goes to the largest. */
@@ -140,7 +152,7 @@ function share(amount: number, weights: readonly number[]): number[] {
 /**
  * One bill's retention, slab by slab. For a credit / debit note, pass the invoice it adjusts as
  * `invoice`: the note's lines then land in the invoice's slabs (see the header). Without it a note
- * is read on its own base.
+ * is read on its own base. Pass both through `retentionSource`, so a certified bill reads as certified.
  */
 export function billRetentionSlabs(bill: SlabSource, types: readonly DeductionTypeMaster[], invoice?: SlabSource | null): BillSlab[] {
   const invoiceSlabs = invoice ? billRetentionSlabs(invoice, types) : [];
@@ -268,7 +280,7 @@ export function retentionBifurcation(bills: readonly Bill[], releases: readonly 
   for (const bill of bills) {
     if (bill.isDeleted) continue;
     const invoice = bill.againstBillId && isNoteType(bill.transactionType) ? byId.get(bill.againstBillId) : undefined;
-    const slabs = billRetentionSlabs(bill, types, invoice);
+    const slabs = billRetentionSlabs(retentionSource(bill), types, invoice ? retentionSource(invoice) : undefined);
     if (!slabs.length) continue;
     const row: BifurcationBillRow = {
       id: bill.id,

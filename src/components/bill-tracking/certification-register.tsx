@@ -6,7 +6,9 @@
  * - **Client certified** — every certifiable bill with what the client approved and deducts, and
  *   whether it is still awaiting certification.
  * - **Raised vs certified** — certified bills only: raised net, certified net, what the client
- *   changed, the notes raised so far and what is still to adjust, with a one-click "Raise note".
+ *   changed, how much of that is deductions (applied by the certification itself, so no note), the
+ *   notes raised so far and the credit / debit note still to raise for the taxable and GST, with a
+ *   one-click "Raise note".
  *
  * The raised view is the register as it always was (`bill-register.tsx`); the three share the page
  * header, the view tabs and the filter bar.
@@ -90,7 +92,7 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
   const compare = view === 'compare';
   // The comparison only makes sense for certified bills, so it never shows the ones still awaiting.
   const cert = filters.get('cert') || (compare ? 'certified' : '');
-  const sort = filters.get('sort') || (compare ? 'pendingNet' : 'billDate');
+  const sort = filters.get('sort') || (compare ? 'pendingGross' : 'billDate');
   const dir = (filters.get('dir') || 'desc') as 'asc' | 'desc';
   const page = Number(filters.get('page')) || 1;
   const pageSize = Number(filters.get('pageSize')) || 25;
@@ -152,7 +154,7 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
     ? [
         billColumn,
         ...shared,
-        { key: 'raisedNet', header: 'Raised net', align: 'right', sortKey: 'netReceivable', cell: (row) => <Amount value={row.cert.raisedNet} signed />, total: <Amount value={totals?.raisedNetCertified} signed /> },
+        { key: 'raisedNet', header: 'Raised net', align: 'right', sortKey: 'raisedNet', cell: (row) => <Amount value={row.cert.raisedNet} signed />, total: <Amount value={totals?.raisedNetCertified} signed /> },
         { key: 'certifiedNet', header: 'Certified net', align: 'right', sortKey: 'certifiedNet', cell: (row) => <Amount value={row.cert.certifiedNet} signed />, total: <Amount value={totals?.certifiedNet} signed /> },
         {
           key: 'variance',
@@ -162,12 +164,23 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
           cell: (row) => <Amount value={row.cert.variance} signed className={cn((row.cert.variance ?? 0) < 0 && 'text-rose-700', (row.cert.variance ?? 0) > 0 && 'text-emerald-700')} />,
           total: <Amount value={totals?.variance} signed />,
         },
+        {
+          // The part of the client's change that is deductions: the certification applies it, no note.
+          key: 'deductionChange',
+          header: <span title="Certified − raised total deduction. Applied by the certification itself — the bill is paid against the certified deductions, so no note is needed.">Deductions changed</span>,
+          label: 'Deductions changed',
+          align: 'right',
+          // More deducted means less to receive, so an increase reads red.
+          cell: (row) => <Amount value={row.cert.deductionChange} muted className={cn((row.cert.deductionChange ?? 0) > 0 && 'text-rose-700', (row.cert.deductionChange ?? 0) < 0 && 'text-emerald-700')} />,
+          total: <Amount value={totals?.deductionChange} />,
+        },
         { key: 'notes', header: 'Notes raised', align: 'right', cell: (row) => (row.cert.notesCount ? <Amount value={row.cert.notesNet} signed muted /> : <span className="text-muted-foreground">—</span>), total: <Amount value={totals?.notesNet} signed /> },
         {
           key: 'pending',
-          header: 'Still to adjust',
+          header: <span title="Taxable + GST still to adjust by a credit / debit note against the bill: certified − (raised + notes). Negative is a credit note.">Note to raise</span>,
+          label: 'Note to raise',
           align: 'right',
-          sortKey: 'pendingNet',
+          sortKey: 'pendingGross',
           mobile: 'aside',
           cell: (row) =>
             row.cert.state === 'matched' ? (
@@ -175,9 +188,9 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
                 <CheckCircle2 className="h-3.5 w-3.5" /> Matched
               </span>
             ) : (
-              <Amount value={row.cert.pendingNet} signed className="font-semibold text-violet-700" />
+              <Amount value={row.cert.pendingGross} signed className="font-semibold text-violet-700" />
             ),
-          total: <Amount value={totals?.pendingNet} signed />,
+          total: <Amount value={totals?.pendingGross} signed />,
         },
         actions,
       ]
@@ -189,7 +202,7 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
         { key: 'certGross', header: 'Cert. gross', align: 'right', defaultHidden: true, cell: (row) => certifiedOnly(row, (certification) => certification.grossAmount) },
         { key: 'certDeduction', header: 'Cert. deduction', align: 'right', cell: (row) => certifiedOnly(row, (certification) => certification.totalDeduction, 'text-slate-500') },
         { key: 'certifiedNet', header: 'Certified net', align: 'right', sortKey: 'certifiedNet', mobile: 'aside', cell: (row) => certifiedOnly(row, (certification) => certification.netAmount, 'font-semibold'), total: <Amount value={totals?.certifiedNet} signed /> },
-        { key: 'raisedNet', header: 'Raised net', align: 'right', sortKey: 'netReceivable', cell: (row) => <Amount value={row.cert.raisedNet} signed muted />, total: <Amount value={totals?.raisedNet} signed /> },
+        { key: 'raisedNet', header: 'Raised net', align: 'right', sortKey: 'raisedNet', cell: (row) => <Amount value={row.cert.raisedNet} signed muted />, total: <Amount value={totals?.raisedNet} signed /> },
         actions,
       ];
 
@@ -206,13 +219,16 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
     { key: 'certTaxable', label: 'Certified Taxable', value: (row) => row.certification?.taxableAmount, money: true },
     { key: 'raisedGst', label: 'Raised GST', value: (row) => row.gstAmount, money: true },
     { key: 'certGst', label: 'Certified GST', value: (row) => row.certification?.gstAmount, money: true },
-    { key: 'raisedDeduction', label: 'Raised Deduction', value: (row) => row.totalDeduction, money: true },
+    // Once certified, the stored total deduction is the certified one; the raised total sits beside it
+    // (absent on bills stored before 2026-10-27, whose stored total is still the raised one).
+    { key: 'raisedDeduction', label: 'Raised Deduction', value: (row) => row.raisedTotalDeduction ?? row.totalDeduction, money: true },
     { key: 'certDeduction', label: 'Certified Deduction', value: (row) => row.certification?.totalDeduction, money: true },
+    { key: 'deductionChange', label: 'Deductions Changed', value: (row) => row.cert.deductionChange, money: true },
     { key: 'raisedNet', label: 'Raised Net', value: (row) => row.cert.raisedNet, money: true },
     { key: 'certifiedNet', label: 'Certified Net', value: (row) => row.cert.certifiedNet, money: true },
     { key: 'variance', label: 'Client Change', value: (row) => row.cert.variance, money: true },
     { key: 'notesNet', label: 'Notes Raised', value: (row) => row.cert.notesNet, money: true },
-    { key: 'pendingNet', label: 'Still To Adjust', value: (row) => row.cert.pendingNet, money: true },
+    { key: 'pendingGross', label: 'Note To Raise (Taxable + GST)', value: (row) => row.cert.pendingGross, money: true },
   ];
   const title = compare ? 'Raised vs Certified' : 'Client Certified Bills';
 
@@ -221,7 +237,11 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
       <PageHeader
         icon={compare ? Scale : ClipboardCheck}
         title="Bill Register"
-        description={compare ? 'Certified bills: what the client changed, the notes raised so far, and the credit note still to raise for each.' : 'What the client approved and deducts on each bill, and which bills are still awaiting certification.'}
+        description={
+          compare
+            ? 'Certified bills: what the client changed, the notes raised so far, and the credit / debit note still to raise where the taxable or GST differs. Changed deductions need no note — the certified ones apply to the bill.'
+            : 'What the client approved and deducts on each bill, and which bills are still awaiting certification. A certified bill is paid against its certified deductions.'
+        }
         actions={
           can('Bills', 'Add') ? (
             <Button asChild size="sm" className="gap-1.5">
@@ -262,8 +282,9 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
                   { label: 'Matched', value: totals.matched.toLocaleString('en-IN'), tone: 'text-emerald-700' },
                   { label: 'Note pending', value: totals.pending.toLocaleString('en-IN'), tone: totals.pending ? 'text-violet-700' : 'text-slate-900' },
                   { label: 'Client changed', value: <Amount value={totals.variance} compact signed />, tone: totals.variance < 0 ? 'text-rose-700' : 'text-slate-900' },
+                  { label: 'Deductions changed', value: <Amount value={totals.deductionChange} compact />, tone: totals.deductionChange > 0 ? 'text-rose-700' : 'text-slate-900', hint: 'Applied — no note' },
                   { label: 'Notes raised', value: <Amount value={totals.notesNet} compact signed /> },
-                  { label: 'Still to adjust', value: <Amount value={totals.pendingNet} compact signed />, tone: totals.pending ? 'text-violet-700' : 'text-emerald-700' },
+                  { label: 'Note to raise', value: <Amount value={totals.pendingGross} compact signed />, tone: totals.pending ? 'text-violet-700' : 'text-emerald-700', hint: 'Taxable + GST' },
                 ]
               : [
                   { label: 'Bills', value: totals.count.toLocaleString('en-IN') },
@@ -295,7 +316,7 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
             <BtEmpty
               icon={ClipboardCheck}
               title={compare ? 'No certified bills for the selected filters.' : 'No bills for the selected filters.'}
-              description={compare ? 'Record the client’s certification from a bill (Actions → Record client certification) and it appears here.' : 'Credit and debit notes are not listed — they adjust the certification of their invoice.'}
+              description={compare ? 'Record the client’s certification from a bill (Actions → Record client certification) and it appears here.' : 'Credit and debit notes are not listed — they adjust the taxable and GST of the invoice they are raised against.'}
             />
           }
         />

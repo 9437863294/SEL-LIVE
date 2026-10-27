@@ -7,6 +7,7 @@ import {
   computePaymentStatus,
   daysBetween,
   deriveBillTotals,
+  effectiveDeductions,
   financialYearMonths,
   financialYearOf,
   isoWeekOf,
@@ -66,6 +67,49 @@ test('gross, deductions and net for a normal bill (legacy row 5)', () => {
 test('net is not rounded when the setting is off', () => {
   const totals = deriveBillTotals({ taxableAmount: 1688145.42, gstAmount: 303866, deductions: [deduction('other', 256261)], collections: [] }, { tolerance: 1 });
   assert.equal(totals.netReceivable, 1735750.42);
+  assert.equal(totals.raisedNetReceivable, 1735750.42);
+});
+
+test('the deductions a bill is paid against: the raised lines until the client certifies, its certified lines after', () => {
+  const raised = [deduction('statutory', 20000)];
+  const certified = [deduction('statutory', 18000), deduction('other', 25000, 'penalty')];
+  assert.equal(effectiveDeductions({ deductions: raised }), raised);
+  assert.equal(effectiveDeductions({ deductions: raised, certification: null }), raised);
+  assert.equal(effectiveDeductions({ deductions: raised, certification: { deductions: certified } }), certified);
+  // A client that certified no deductions deducts nothing, whatever was raised.
+  assert.deepEqual(effectiveDeductions({ deductions: raised, certification: { deductions: [] } }), []);
+  // A certification stored without its list reads the same way, as the comparison and the retention reading do.
+  assert.deepEqual(effectiveDeductions({ deductions: raised, certification: {} }), []);
+  assert.deepEqual(effectiveDeductions({}), []);
+});
+
+test('once certified, the bill is paid against the certified deductions, the raised totals kept beside them', () => {
+  const raised = [deduction('statutory', 20000, 'itds'), deduction('retention_invoice', 50000, 'ret')];
+  const certified = [deduction('statutory', 18000, 'itds'), deduction('retention_invoice', 45000, 'ret'), deduction('other', 25000, 'penalty')];
+  const source = { taxableAmount: 1000000, gstAmount: 180000, deductions: raised, collections: [receipt(500000)] };
+
+  const before = deriveBillTotals(source, options);
+  assert.deepEqual([before.totalDeduction, before.raisedTotalDeduction, before.netReceivable, before.raisedNetReceivable], [70000, 70000, 1110000, 1110000]);
+
+  const after = deriveBillTotals({ ...source, certification: { deductions: certified } }, options);
+  assert.equal(after.grossAmount, 1180000, 'the invoice value moves only by a note');
+  assert.equal(after.totalDeduction, 88000);
+  assert.equal(after.statutoryDeduction, 18000);
+  assert.equal(after.retentionDeducted, 45000);
+  assert.equal(after.netReceivable, 1092000);
+  assert.equal(after.outstandingAmount, 592000);
+  assert.equal(after.shortfallSurplus, 592000);
+  assert.equal(after.paymentStatus, 'partially_received');
+  assert.equal(after.raisedTotalDeduction, 70000);
+  assert.equal(after.raisedNetReceivable, 1110000);
+
+  // Paid exactly the certified net, the bill is received — against the raised deductions it would be 18,000 short.
+  const paid = { ...source, collections: [receipt(1092000)] };
+  assert.deepEqual([deriveBillTotals({ ...paid, certification: { deductions: certified } }, options).paymentStatus, deriveBillTotals(paid, options).paymentStatus], ['received', 'partially_received']);
+
+  // Both nets round to the rupee like the sheet's ROUND(I+J−V, 0).
+  const paise = deriveBillTotals({ taxableAmount: 1688145.42, gstAmount: 303866, deductions: [deduction('other', 256261)], collections: [], certification: { deductions: [deduction('other', 256000.2)] } }, options);
+  assert.deepEqual([paise.netReceivable, paise.raisedNetReceivable], [1736011, 1735750]);
 });
 
 test('negative deductions keep their sign (crop compensation rows)', () => {

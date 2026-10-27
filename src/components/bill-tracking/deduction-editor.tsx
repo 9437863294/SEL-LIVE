@@ -151,8 +151,9 @@ export function DeductionEditor({
   /**
    * The bill's taxable and gross, so a retention row can say which rate slab it counts in — an amount
    * is read against one of them, exactly as the retention reports read it (see `retention.ts`).
-   * Leave it out where that hint would mislead: a note (it follows its invoice's slabs) or a
-   * certification (certified deductions are not in the slabs).
+   * Leave it out where that hint would mislead: a note (it follows its invoice's slabs) or a certified
+   * bill's raised lines (once certified, its certified deductions count in the slabs instead, read
+   * against the certified taxable and gross — `retentionSource`).
    */
   bases?: { taxable: number; gross: number };
 }) {

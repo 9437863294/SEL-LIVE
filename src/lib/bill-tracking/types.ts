@@ -433,9 +433,10 @@ export interface DueDateRevision {
 /**
  * The client's certification of a bill: what they approved and what they deduct, which can differ
  * from what SEL raised (a lower measured quantity, an extra penalty, a different TDS base). It is
- * recorded beside the raised figures, never over them — the invoice as issued stays the receivable,
- * and the difference is settled the way the books settle it: a credit (or debit) note against the
- * raised bill. `certification.ts` compares the three.
+ * recorded beside the raised figures, never over them. Its deductions replace the raised ones in
+ * the bill's totals (`effectiveDeductions`) — a deduction change needs no document; a change of the
+ * taxable or its GST is settled by a credit (or debit) note against the raised bill.
+ * `certification.ts` compares raised, notes and certified.
  */
 export interface BillCertification {
   certifiedDate: string;
@@ -535,21 +536,35 @@ export interface Bill {
   gstRegistrationGstin?: string;
   /** The client's GSTIN at the time of the bill. */
   clientGstin?: string;
+  /** The deductions as raised. Once certified, the certification's deductions apply instead (`effectiveDeductions`). */
   deductions: BillDeduction[];
   /**
    * Retention bill only: the retention slab it releases (head + rate, rate null = the head's fixed
    * amounts). Receipts on the bill release that slab. Absent = not tied to a slab.
    */
   releasesRetention?: { deductionTypeId: string; rate: number | null };
-  /** The client's certified figures, once recorded (invoices and retention bills — never notes). */
+  /**
+   * The client's certified figures, once recorded (invoices and retention bills — never notes). Its
+   * deductions replace the raised ones in every total below; a change of taxable or GST is settled
+   * by a credit / debit note against the bill instead.
+   */
   certification?: BillCertification;
 
   /* derived — written only by the server from the source values above */
   grossAmount: number;
+  /** Total, statutory and retention of the effective deductions — the certified ones once certified. */
   totalDeduction: number;
   statutoryDeduction: number;
   retentionDeducted: number;
+  /** Gross less the effective deductions. */
   netReceivable: number;
+  /**
+   * The raised deductions' total and the net they give. Equal to the two above until the bill is
+   * certified. Absent on bills stored before 2026-10-27 — read `totalDeduction` / `netReceivable`
+   * then (those were still the raised figures).
+   */
+  raisedTotalDeduction?: number;
+  raisedNetReceivable?: number;
   totalReceived: number;
   outstandingAmount: number;
   /** Net − received; positive = short-paid, negative = surplus. Same sign as the legacy sheet. */

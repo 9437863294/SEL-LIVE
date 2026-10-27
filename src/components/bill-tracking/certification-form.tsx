@@ -7,8 +7,11 @@
  * deduction — so the user changes only what the client changed: a lower taxable, an extra penalty, a
  * different TDS. The GST type stays the raised bill's (the issuing registration decides it, not the
  * certificate) unless changed; a bill imported with one GST figure starts split by the suggested
- * type. The panel on the right compares raised and certified as the figures are typed, and
- * says what note will be needed; the server recomputes everything on save.
+ * type. The panel on the right compares raised and certified as the figures are typed.
+ *
+ * Saved, the certified deductions apply to the bill directly — its net and outstanding follow them,
+ * no document needed. Only a taxable or GST that differs from the raised bill plus its notes needs a
+ * credit / debit note, so that is all the panel asks for. The server recomputes everything on save.
  */
 
 import { useMemo, useState } from 'react';
@@ -23,7 +26,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
 import { grossAmount, netReceivable, totalDeduction } from '@/lib/bill-tracking/calculations';
-import { deductionsByType, type CertificationComparison } from '@/lib/bill-tracking/certification';
+import { deductionsByType, raisedFigures, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { GST_RATES } from '@/lib/statutory';
@@ -200,10 +203,24 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const setRows = (update: (rows: DeductionRow[]) => DeductionRow[]) => setForm((current) => ({ ...current, deductions: update(current.deductions) }));
 
   /* ── comparison ───────────────────────────────────────────────────────── */
-  const notesNet = detail.certification?.summary.notesNet ?? 0;
+  // The raised figures, not the stored totals: once certified, a bill's total deduction and net are
+  // the certified ones.
+  const raised = raisedFigures(bill);
   const notesCount = detail.certification?.summary.notesCount ?? 0;
-  const pendingNet = subtractMoney(net, sumMoney([bill.netReceivable, notesNet]));
-  const needsNote = Math.abs(pendingNet) > config.settings.tolerance;
+  /** What the notes already raised against the bill add up to on one line of the comparison. */
+  const notesOn = (key: 'taxable' | 'gst' | 'gross') => detail.certification?.lines.find((line) => line.key === key)?.notes ?? 0;
+  // Only the invoice value is settled by a note — the certified deductions apply to the bill itself —
+  // so the note needed is the taxable and GST still to adjust, as `certification.ts` works it out.
+  const pendingTaxable = subtractMoney(taxable, sumMoney([raised.taxableAmount, notesOn('taxable')]));
+  const pendingGst = subtractMoney(gstTotal, sumMoney([raised.gstAmount, notesOn('gst')]));
+  const pendingGross = subtractMoney(gross, sumMoney([raised.grossAmount, notesOn('gross')]));
+  const beyondTolerance = (amount: number) => Math.abs(toPaise(amount)) > toPaise(Math.abs(config.settings.tolerance));
+  const needsNote = beyondTolerance(pendingTaxable) || beyondTolerance(pendingGst);
+  // A note lowers the invoice value or raises it; one that nets to nothing follows the taxable.
+  const noteWord = (toPaise(pendingGross) !== 0 ? pendingGross < 0 : pendingTaxable < 0) ? 'credit' : 'debit';
+  const invoiceAsRaised = toPaise(subtractMoney(taxable, raised.taxableAmount)) === 0 && toPaise(subtractMoney(gstTotal, raised.gstAmount)) === 0;
+  const deductionChange = subtractMoney(deducted, raised.totalDeduction);
+  const deductionsChanged = toPaise(deductionChange) !== 0;
 
   const canCertify = certificationBlocked(bill, config.settings, actor) === null;
   const submit = async (event: React.FormEvent) => {
@@ -229,7 +246,14 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
           expectedRevision: existing?.revision ?? 0,
         },
       });
-      toast({ title: existing ? 'Certification updated' : 'Certification recorded', description: needsNote ? `A ${pendingNet < 0 ? 'credit' : 'debit'} note of ${formatINR(Math.abs(pendingNet))} will match it.` : 'The raised bill already matches it.' });
+      toast({
+        title: existing ? 'Certification updated' : 'Certification recorded',
+        description: needsNote
+          ? `A ${noteWord} note of ${formatINR(Math.abs(pendingGross))} for the taxable and GST will match it.`
+          : deductionsChanged
+            ? 'Its deductions now apply to the bill — no note needed.'
+            : 'No note needed.',
+      });
       router.push(`/bill-tracking/bills/${bill.id}?tab=certification`);
     } catch (caught) {
       setSaveError(caught instanceof Error ? caught.message : 'Could not save the certification.');
@@ -247,7 +271,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
         title={existing ? `Edit client certification · ${reference}` : `Record client certification · ${reference}`}
         backHref={`/bill-tracking/bills/${bill.id}?tab=certification`}
         backLabel="Bill"
-        description={`${bill.projectNameSnapshot} · raised ${dateText(bill.billDate)} · net ${formatINR(bill.netReceivable)}. Enter what the client approved and deducts — the raised bill is not changed.`}
+        description={`${bill.projectNameSnapshot} · raised ${dateText(bill.billDate)} · net ${formatINR(raised.net)}. Enter what the client approved and deducts — its deductions apply to the bill directly; a different taxable or GST needs a credit / debit note.`}
       />
 
       {!canCertify ? <Notice tone="blue">{certificationBlocked(bill, config.settings, actor)}</Notice> : null}
@@ -276,7 +300,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             </FormField>
           </FormSection>
 
-          <FormSection step={2} title="Certified amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the certificate.">
+          <FormSection step={2} title="Certified amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the certificate. A taxable or GST that differs from the raised bill is settled by a credit / debit note.">
             <div className={FIELD_ROW}>
               <FormField label={<Term tip="Pre-GST value the client certified.">Certified taxable (₹) *</Term>} htmlFor="certified-taxable" width="amount" hint={<RaisedHint raised={bill.taxableAmount} value={taxable} />}>
                 <Input id="certified-taxable" inputMode="decimal" required className="tabular-nums" value={form.taxableAmount} onChange={(event) => setForm((current) => ({ ...current, taxableAmount: event.target.value, gstManual: false }))} />
@@ -377,7 +401,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
           <FormSection
             step={3}
             title="Certified deductions"
-            description="What the client deducts. Change an amount, remove a line, or add the extra deductions the client made (penalty, LD, extra retention…)."
+            description="What the client deducts. These replace the raised deductions in the bill’s net, outstanding and retention — no note is needed for them. Change an amount, remove a line, or add the extra deductions the client made (penalty, LD, extra retention…)."
             actions={
               <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => setRows((rows) => [...rows, emptyDeductionRow()])}>
                 <Plus className="h-4 w-4" /> Add deduction
@@ -396,6 +420,8 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               defaultGstRate={config.settings.defaultGstRate}
               emptyText="The client deducts nothing."
               reference={{ label: 'Raised', byType: raisedByType }}
+              // Once certified, these are the retention lines the rate slabs hold, read against the certified figures.
+              bases={{ taxable, gross }}
             />
           </FormSection>
         </div>
@@ -403,40 +429,44 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
         <div className="space-y-3 xl:sticky xl:top-[calc(var(--app-header-offset,4rem)+1rem)] xl:self-start">
           <FormSection icon={Scale} title="Raised vs certified" description="Certified figure on the right; the raised one and the change beneath it." className="border-emerald-200" bodyClassName="px-4 pb-4 pt-1 text-sm">
             <div className="divide-y divide-slate-100">
-              <CompareRow label="Taxable" raised={bill.taxableAmount} certified={taxable} />
-              <CompareRow label="GST" raised={bill.gstAmount} certified={gstTotal} />
-              <CompareRow label="Gross" raised={bill.grossAmount} certified={gross} strong />
+              <CompareRow label="Taxable" raised={raised.taxableAmount} certified={taxable} />
+              <CompareRow label="GST" raised={raised.gstAmount} certified={gstTotal} />
+              <CompareRow label="Gross" raised={raised.grossAmount} certified={gross} strong />
               {/* More deducted means less to receive, so an increase here reads red. */}
-              <CompareRow label="Deductions" raised={bill.totalDeduction} certified={deducted} inverse />
-              <CompareRow label="Net receivable" raised={bill.netReceivable} certified={net} strong />
+              <CompareRow label="Deductions" raised={raised.totalDeduction} certified={deducted} inverse />
+              <CompareRow label="Net receivable" raised={raised.net} certified={net} strong />
             </div>
             {notesCount ? (
               <div className="mt-1 flex items-baseline justify-between gap-3 border-t border-dashed border-slate-200 pt-2 text-xs">
                 <span className="text-slate-500">
-                  {notesCount} note{notesCount === 1 ? '' : 's'} already raised against it
+                  {notesCount} note{notesCount === 1 ? '' : 's'} already raised · taxable + GST
                 </span>
-                <Amount value={notesNet} signed className="font-medium" />
+                <Amount value={notesOn('gross')} signed className="font-medium" />
               </div>
             ) : null}
             <div className={cn('mt-3 rounded-lg border p-3 text-xs leading-relaxed', needsNote ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900')}>
               {needsNote ? (
                 <>
                   <div className="font-semibold">
-                    {pendingNet < 0 ? 'Credit' : 'Debit'} note of {formatINR(Math.abs(pendingNet))} needed
+                    {noteWord === 'credit' ? 'Credit' : 'Debit'} note of {formatINR(Math.abs(pendingGross))} needed
                   </div>
-                  <div className="mt-0.5">After saving, raise it against this bill from the bill page — it is filled in for you.</div>
-                </>
-              ) : toPaise(subtractMoney(net, bill.netReceivable)) !== 0 ? (
-                <>
-                  <div className="font-semibold">No note needed</div>
-                  <div className="mt-0.5">The notes already raised cover the difference.</div>
+                  <div className="mt-0.5">
+                    {[toPaise(pendingTaxable) !== 0 ? `Taxable ${changeText(pendingTaxable)}` : null, toPaise(pendingGst) !== 0 ? `GST ${changeText(pendingGst)}` : null].filter(Boolean).join(' · ')}. After saving, raise it against this bill from the bill page — it is filled in for you.
+                  </div>
                 </>
               ) : (
                 <>
                   <div className="font-semibold">No note needed</div>
-                  <div className="mt-0.5">The certified figures are the same as the raised bill.</div>
+                  <div className="mt-0.5">
+                    {invoiceAsRaised ? 'The certified taxable and GST are the same as the raised bill.' : notesCount ? 'The notes already raised cover the taxable and GST difference.' : 'The taxable and GST are within the amount tolerance of the raised bill.'}
+                  </div>
                 </>
               )}
+              {deductionsChanged ? (
+                <div className={cn('mt-2 border-t border-dashed pt-2', needsNote ? 'border-violet-200' : 'border-emerald-200')}>
+                  Deductions {changeText(deductionChange)} — applied by the certification itself: the bill’s net and outstanding follow them, no note needed.
+                </div>
+              ) : null}
             </div>
           </FormSection>
           <BtError message={saveError} />
@@ -458,13 +488,16 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   );
 }
 
+/** A change with its sign: "+₹5,000" / "−₹1,00,000". */
+const changeText = (change: number) => `${change > 0 ? '+' : '−'}${formatINR(Math.abs(change))}`;
+
 /** "Raised ₹10,00,000" under a field, amber once the certified figure differs. */
 function RaisedHint({ raised, value }: { raised: number; value: number }) {
   const differs = Math.round(raised * 100) !== Math.round(value * 100);
   return (
     <span className={differs ? 'font-medium text-amber-700' : undefined}>
       Raised {formatINR(raised)}
-      {differs ? ` · ${value - raised > 0 ? '+' : '−'}${formatINR(Math.abs(subtractMoney(value, raised)))}` : ''}
+      {differs ? ` · ${changeText(subtractMoney(value, raised))}` : ''}
     </span>
   );
 }
@@ -490,10 +523,7 @@ function CompareRow({ label, raised, certified, strong, inverse }: { label: stri
         {toPaise(change) === 0 ? (
           <span className="text-slate-400">No change</span>
         ) : (
-          <span className={cn('rounded px-1.5 py-px font-semibold tabular-nums', good ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>
-            {change > 0 ? '+' : '−'}
-            {formatINR(Math.abs(change))}
-          </span>
+          <span className={cn('rounded px-1.5 py-px font-semibold tabular-nums', good ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700')}>{changeText(change)}</span>
         )}
       </div>
     </div>

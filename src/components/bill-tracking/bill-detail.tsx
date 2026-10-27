@@ -51,12 +51,12 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { daysBetween, type LedgerLine } from '@/lib/bill-tracking/calculations';
+import { RETENTION_KINDS, daysBetween, deductionsOfKind, effectiveDeductions, totalDeduction, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { STEP_PERMISSION, availableActions, certificationBlocked, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
-import { formatINR, sumMoney } from '@/lib/bill-tracking/money';
-import { billRetentionSlabs, formatRate, releaseSlabKey, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
+import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { billRetentionSlabs, formatRate, releaseSlabKey, retentionSource, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
   AGEING_BASIS_LABELS,
   COMMITMENT_STATUS_LABELS,
@@ -68,6 +68,7 @@ import {
   type BillActivity,
   type BillCollection,
   type BillComment,
+  type BillDeduction,
   type BillDocument,
   type BillFollowUp,
   type BillPaymentStatus,
@@ -91,7 +92,10 @@ interface Detail {
   certification: CertificationComparison | null;
   /** Credit / debit notes raised against this invoice. */
   notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number }[];
-  /** For a note: its invoice's retention, which decides the slabs the note's retention lands in. */
+  /**
+   * For a note: its invoice's retention as the slabs read it (`retentionSource` — the certified lines
+   * and taxable once the client has certified the invoice), which decides the slabs the note's lands in.
+   */
   noteInvoice?: Pick<Bill, 'deductions' | 'taxableAmount' | 'grossAmount'> | null;
 }
 
@@ -117,6 +121,10 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   const reference = billReference(bill);
   // Payment waits for the client's certification when Settings → Workflow says so.
   const receiptBlock = receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt);
+  // Once certified, the stored deduction total and net are the certified deductions' — what the bill
+  // is paid — with the raised ones kept beside them (a bill stored before 2026-10-27 has one pair).
+  const raisedNet = bill.raisedNetReceivable ?? bill.netReceivable;
+  const comparison = detail.certification;
 
   // Settings → Workflow: the stages in use and who may move this bill on (named people or permission holders).
   const actor = useWorkflowActor();
@@ -291,9 +299,11 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
       ) : bill.transactionType === 'credit_note' ? (
         <Notice tone="amber" title="Credit note not linked to an invoice">Edit it to choose the invoice it is against.</Notice>
       ) : null}
-      {detail.certification?.summary.state === 'adjustment_pending' && !bill.isDeleted ? (
-        <Notice tone="blue" title={`Client certified net ${formatINR(detail.certification.summary.certifiedNet ?? 0)} against raised ${formatINR(bill.netReceivable)}`}>
-          A {detail.certification.suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit'} note of <b>{formatINR(Math.abs(detail.certification.summary.pendingNet ?? 0))}</b> is still to be raised against this bill to match it.{' '}
+      {/* Only the invoice value takes a note: the certified deductions already apply to the bill. */}
+      {comparison?.summary.state === 'adjustment_pending' && bill.certification && !bill.isDeleted ? (
+        <Notice tone="blue" title={`Client certified an invoice value of ${formatINR(bill.certification.grossAmount)} against ${formatINR(bill.grossAmount)} raised`}>
+          A {comparison.suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit'} note of <b>{formatINR(Math.abs(comparison.suggestedNote?.netAmount ?? comparison.summary.pendingGross ?? 0))}</b> is still to be raised against this bill for the taxable and GST.
+          {toPaise(comparison.summary.deductionChange ?? 0) !== 0 ? ' The client’s certified deductions already apply — they need no note.' : ''}{' '}
           <button type="button" className="font-medium text-emerald-700 hover:underline" onClick={() => setTab('certification')}>
             See the comparison
           </button>
@@ -322,8 +332,13 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           { label: 'Taxable', value: <Amount value={bill.taxableAmount} signed /> },
           { label: 'GST', value: <Amount value={bill.gstAmount} signed />, hint: bill.gstType === 'cgst-sgst' ? 'CGST + SGST' : bill.gstType === 'igst' ? 'IGST' : undefined },
           { label: 'Gross', value: <Amount value={bill.grossAmount} signed /> },
-          { label: 'Deduction', value: <Amount value={bill.totalDeduction} signed />, tone: 'text-orange-700' },
-          { label: 'Net receivable', value: <Amount value={bill.netReceivable} signed /> },
+          {
+            label: 'Deduction',
+            value: <Amount value={bill.totalDeduction} signed />,
+            tone: 'text-orange-700',
+            hint: bill.certification ? <span title={`As raised ${formatINR(bill.raisedTotalDeduction ?? bill.totalDeduction)}`}>As certified</span> : undefined,
+          },
+          { label: 'Net receivable', value: <Amount value={bill.netReceivable} signed />, hint: bill.certification && toPaise(raisedNet) !== toPaise(bill.netReceivable) ? `Raised ${formatINR(raisedNet)}` : undefined },
           { label: 'Received', value: <Amount value={bill.totalReceived} signed />, tone: 'text-emerald-700' },
           { label: 'Outstanding', value: <Amount value={bill.outstandingAmount} signed />, tone: bill.outstandingAmount > 0 ? 'text-rose-700' : 'text-slate-900' },
         ]}
@@ -339,7 +354,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
             </TabsTrigger>
           ) : null}
           <TabsTrigger className={BT_TAB} value="deductions">
-            Deductions <TabCount value={bill.deductions.length} />
+            Deductions <TabCount value={effectiveDeductions(bill).length} />
           </TabsTrigger>
           <TabsTrigger className={BT_TAB} value="collections">
             Receipts <TabCount value={detail.collections.length} />
@@ -550,7 +565,7 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
           <BtEmpty
             icon={ClipboardCheck}
             title="The client has not certified this bill yet"
-            description="When the client certifies it, record what they approved and what they deduct. It starts from the raised figures — change only what the client changed. The raised bill itself is never altered; a credit note against it settles any difference."
+            description="When the client certifies it, record what they approved and what they deduct. It starts from the raised figures — change only what the client changed. The raised bill itself is never altered: the certified deductions apply to it as they are, and a credit / debit note against it settles any difference in taxable or GST."
             action={
               canCertify ? (
                 <Button asChild size="sm" className="gap-1.5">
@@ -568,21 +583,35 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
 
   const { summary, lines, suggestedNote } = comparison;
   const noteWord = suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit';
+  // Deductions take no note: the certified ones apply to the bill as they are. Said wherever they moved,
+  // even when a line changed and the total did not.
+  const deductionChange = summary.deductionChange ?? 0;
+  const deductionsMoved = lines.some((line) => line.settledBy === 'certification' && toPaise(line.difference ?? 0) !== 0);
+  const deductionText = deductionsMoved
+    ? `${toPaise(deductionChange) === 0 ? 'The client changed the deductions, not their total' : `${formatINR(Math.abs(deductionChange))} ${deductionChange > 0 ? 'more' : 'less'} deducted by the client`} — applied from the certification, no note needed.`
+    : null;
+  // The net still to adjust is the note to raise plus whatever the notes deduct themselves, which counts on
+  // top of the certification. A note raised to match a certification before 2026-10-27 copied the client's
+  // deduction changes onto it; with the certified deductions now applied to the bill, those count twice.
+  const notesDeducted = subtractMoney(summary.pendingNet, summary.pendingGross);
   return (
     <div className="space-y-4">
+      {/* Client changed = note to raise + notes raised − deductions changed (which the certification applies). */}
       <StatStrip
         items={[
           { label: 'Raised net', value: <Amount value={summary.raisedNet} signed /> },
           { label: 'Certified net', value: <Amount value={summary.certifiedNet} signed />, tone: 'text-emerald-700' },
           { label: 'Client changed', value: <Amount value={summary.variance} signed />, tone: (summary.variance ?? 0) < 0 ? 'text-rose-700' : 'text-slate-900' },
+          ...(deductionsMoved ? [{ label: 'Deductions changed', value: <Amount value={deductionChange} />, tone: deductionChange > 0 ? 'text-rose-700' : 'text-slate-900', hint: 'Applied — no note' }] : []),
           { label: `Notes raised · ${summary.notesCount}`, value: <Amount value={summary.notesNet} signed /> },
-          { label: 'Still to adjust', value: <Amount value={summary.pendingNet} signed />, tone: summary.state === 'matched' ? 'text-emerald-700' : 'text-violet-700', hint: summary.state === 'matched' ? 'Matched' : `${noteWord} note pending` },
+          { label: 'Note to raise', value: <Amount value={summary.pendingGross} signed />, tone: summary.state === 'matched' ? 'text-emerald-700' : 'text-violet-700', hint: summary.state === 'matched' ? 'Matched' : 'Taxable + GST' },
         ]}
       />
 
       {summary.state === 'matched' ? (
         <Notice tone="emerald" title="Matched">
-          The raised bill{summary.notesCount ? ` and its ${summary.notesCount} note${summary.notesCount === 1 ? '' : 's'}` : ''} equal the client’s certification — taxable, GST and net.
+          The raised bill{summary.notesCount ? ` and its ${summary.notesCount} note${summary.notesCount === 1 ? '' : 's'} match` : ' matches'} the client’s certification {deductionText ? 'in taxable and GST.' : '— taxable, GST and deductions.'}
+          {deductionText ? <span className="mt-0.5 block">{deductionText}</span> : null}
         </Notice>
       ) : suggestedNote ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4">
@@ -591,9 +620,9 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
               {noteWord === 'credit' ? 'Credit' : 'Debit'} note of {formatINR(Math.abs(suggestedNote.netAmount))} still to raise
             </div>
             <div className="mt-0.5 text-xs">
-              Taxable {formatINR(suggestedNote.taxableAmount)} · GST {formatINR(suggestedNote.gstAmount)}
-              {suggestedNote.deductions.length ? ` · ${suggestedNote.deductions.length} deduction change${suggestedNote.deductions.length === 1 ? '' : 's'}` : ''} — raised against this bill, it makes the bill plus its notes equal the certification.
+              Taxable {formatINR(suggestedNote.taxableAmount)} · GST {formatINR(suggestedNote.gstAmount)} — raised against this bill, it brings the bill plus its notes to the taxable and GST the client certified.
             </div>
+            {deductionText ? <div className="mt-0.5 text-xs">{deductionText}</div> : null}
           </div>
           {can('Bills', 'Add') && !bill.isDeleted ? (
             <Button asChild size="sm" className="gap-1.5 bg-violet-700 hover:bg-violet-800">
@@ -603,6 +632,12 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
             </Button>
           ) : null}
         </div>
+      ) : null}
+
+      {toPaise(notesDeducted) !== 0 ? (
+        <Notice tone="amber" title={`Deductions carried on the notes: ${formatINR(notesDeducted)}`}>
+          These count on top of the certification, so the net line below shows them still to adjust beyond the note to raise. One copied onto a note from the certification counts twice — edit it off the note. Keep it if the client deducted it on the note itself (TDS on a debit note, say).
+        </Notice>
       ) : null}
 
       <Card className="border-slate-200 bg-white shadow-sm">
@@ -643,7 +678,7 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 px-4 py-3">
           <h3 className="text-sm font-semibold text-slate-800">Raised vs certified, line by line</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Still to adjust = certified − (raised + notes raised against this bill).</p>
+          <p className="mt-0.5 text-xs text-slate-500">Still to adjust = certified − (raised + notes raised against this bill): what a credit / debit note settles. Deductions need none — the client’s certified deductions apply as they are.</p>
         </header>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm">
@@ -658,37 +693,48 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
               </tr>
             </thead>
             <tbody>
-              {lines.map((line, index) => (
-                <Fragment key={line.key}>
-                  {line.group === 'deduction' && lines[index - 1]?.group !== 'deduction' ? (
-                    <tr className="border-t border-slate-100 bg-slate-50/60">
-                      <td colSpan={6} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                        Deductions
+              {lines.map((line, index) => {
+                const change = line.difference ?? 0;
+                // More deducted means less to receive, so on a deduction line an increase reads red.
+                const inverse = line.group === 'deduction' || line.key === 'totalDeduction';
+                const worse = inverse ? change > 0 : change < 0;
+                return (
+                  <Fragment key={line.key}>
+                    {line.group === 'deduction' && lines[index - 1]?.group !== 'deduction' ? (
+                      <tr className="border-t border-slate-100 bg-slate-50/60">
+                        <td colSpan={6} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                          Deductions
+                        </td>
+                      </tr>
+                    ) : null}
+                    <tr className={cn('border-t border-slate-100', line.group === 'total' && 'bg-slate-50 font-semibold text-slate-900')}>
+                      <td className={cn('px-3 py-2', line.group === 'deduction' && 'pl-6')}>{line.label}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Amount value={line.raised} signed />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Amount value={line.certified} signed />
+                      </td>
+                      <td className={cn('px-3 py-2 text-right', worse ? 'text-rose-700' : change ? 'text-emerald-700' : 'text-slate-400')}>{change ? <Amount value={change} signed={!inverse} /> : '—'}</td>
+                      <td className="px-3 py-2 text-right text-slate-600">{line.notes ? <Amount value={line.notes} signed /> : '—'}</td>
+                      <td className="px-3 py-2 text-right">
+                        {/* A deduction the client changed is settled by the certification itself, never by a note. */}
+                        {line.settledBy === 'certification' && toPaise(change) !== 0 ? (
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-sky-700" title="The client’s certified figure applies to the bill as it is — no note needed.">
+                            <ClipboardCheck className="h-3.5 w-3.5" /> Applied by certification
+                          </span>
+                        ) : line.matched ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Matched
+                          </span>
+                        ) : (
+                          <Amount value={line.pending} signed className="font-semibold text-violet-700" />
+                        )}
                       </td>
                     </tr>
-                  ) : null}
-                  <tr className={cn('border-t border-slate-100', line.group === 'total' && 'bg-slate-50 font-semibold text-slate-900')}>
-                    <td className={cn('px-3 py-2', line.group === 'deduction' && 'pl-6')}>{line.label}</td>
-                    <td className="px-3 py-2 text-right">
-                      <Amount value={line.raised} signed />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Amount value={line.certified} signed />
-                    </td>
-                    <td className={cn('px-3 py-2 text-right', (line.difference ?? 0) < 0 ? 'text-rose-700' : (line.difference ?? 0) > 0 ? 'text-emerald-700' : 'text-slate-400')}>{line.difference ? <Amount value={line.difference} signed /> : '—'}</td>
-                    <td className="px-3 py-2 text-right text-slate-600">{line.notes ? <Amount value={line.notes} signed /> : '—'}</td>
-                    <td className="px-3 py-2 text-right">
-                      {line.matched ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Matched
-                        </span>
-                      ) : (
-                        <Amount value={line.pending} signed className="font-semibold text-violet-700" />
-                      )}
-                    </td>
-                  </tr>
-                </Fragment>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -724,6 +770,8 @@ function gstSummary(bill: Bill): string {
 
 function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }) {
   const credited = notes.reduce((sum, note) => sum + note.netReceivable, 0);
+  // The invoice's net is its gross less the deductions that apply — the certified ones once certified.
+  const afterCertified = Boolean(bill.certification) && toPaise(bill.raisedNetReceivable ?? bill.netReceivable) !== toPaise(bill.netReceivable);
   return (
     <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
       <CardContent className="space-y-2 p-4">
@@ -742,7 +790,10 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
           ))}
         </ul>
         <div className="flex flex-wrap justify-between gap-2 border-t border-violet-200 pt-2 text-sm font-semibold">
-          <span>Invoice net {formatINR(bill.netReceivable)} {credited < 0 ? '−' : '+'} notes {formatINR(Math.abs(credited))}</span>
+          <span>
+            Invoice net {formatINR(bill.netReceivable)}
+            {afterCertified ? ' (after the certified deductions)' : ''} {credited < 0 ? '−' : '+'} notes {formatINR(Math.abs(credited))}
+          </span>
           <span>
             Net after notes <Amount value={bill.netReceivable + credited} signed />
           </span>
@@ -752,92 +803,136 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
   );
 }
 
+/**
+ * The bill's deductions. Once the client has certified it, the certified deductions are the ones that
+ * apply — the net, outstanding, reports and retention follow them (`effectiveDeductions`) — and the
+ * raised lines stay a switch away, as the bill was issued.
+ */
 function DeductionsTab({ bill }: { bill: BillRow }) {
-  const withGst = bill.deductions.some((line) => line.gstAmount);
+  const [shown, setShown] = useState<'certified' | 'raised'>('certified');
+  const certification = bill.certification;
+  if (!certification) {
+    return (
+      <Card className="border-slate-200 bg-white shadow-sm">
+        <CardContent className="p-0">
+          <DeductionLines lines={bill.deductions} emptyText="No deductions on this bill." />
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="p-0">
-        {bill.deductions.length === 0 ? (
-          <p className="p-6 text-sm text-muted-foreground">No deductions on this bill.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-3 py-2 text-left">Deduction</th>
-                  <th className="px-3 py-2 text-right">%</th>
-                  <th className="px-3 py-2 text-right">Of</th>
-                  {withGst ? <th className="px-3 py-2 text-right">Base</th> : null}
-                  {withGst ? <th className="px-3 py-2 text-right">GST</th> : null}
-                  <th className="px-3 py-2 text-right">Amount</th>
-                  <th className="px-3 py-2 text-left">Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bill.deductions.map((line) => (
-                  <tr key={line.id} className="border-t border-slate-100">
-                    <td className="px-3 py-2">
-                      <Scissors className="mr-1.5 inline h-3.5 w-3.5 text-orange-500" />
-                      {line.deductionTypeName}
-                    </td>
-                    <td className="px-3 py-2 text-right">{line.percentage !== undefined ? `${line.percentage}%` : '—'}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{line.calculationBase !== undefined ? <Amount value={line.calculationBase} /> : '—'}</td>
-                    {withGst ? (
-                      <td className="px-3 py-2 text-right">
-                        <Amount value={line.baseAmount ?? line.amount} signed />
-                      </td>
-                    ) : null}
-                    {withGst ? (
-                      <td className="px-3 py-2 text-right text-xs">
-                        {!line.gstAmount ? (
-                          '—'
-                        ) : line.igstAmount ? (
-                          <span>
-                            IGST {line.igstRate}% <Amount value={line.igstAmount} />
-                          </span>
-                        ) : line.cgstAmount !== undefined ? (
-                          <span className="space-y-0.5">
-                            <span className="block">
-                              CGST {line.cgstRate}% <Amount value={line.cgstAmount} />
-                            </span>
-                            <span className="block">
-                              SGST {line.sgstRate}% <Amount value={line.sgstAmount ?? 0} />
-                            </span>
-                          </span>
-                        ) : (
-                          <span>
-                            GST {line.gstRate}% <Amount value={line.gstAmount} />
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
-                    <td className="px-3 py-2 text-right">
-                      <Amount value={line.amount} signed />
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{line.remarks ?? ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-100 font-semibold">
-                <tr>
-                  <td className="px-3 py-2">Total deduction</td>
-                  <td />
-                  <td />
-                  {withGst ? <td /> : null}
-                  {withGst ? <td /> : null}
-                  <td className="px-3 py-2 text-right">
-                    <Amount value={bill.totalDeduction} signed />
-                  </td>
-                  <td className="px-3 py-2 text-xs font-normal text-muted-foreground">
-                    Statutory <Amount value={bill.statutoryDeduction} /> · Retention <Amount value={bill.retentionDeducted} />
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+        <Tabs value={shown} onValueChange={(next) => setShown(next === 'raised' ? 'raised' : 'certified')}>
+          <div className="px-4 pt-4">
+            <SectionHeader
+              as="h3"
+              title="Deductions on this bill"
+              description={`Certified by the client on ${dateText(certification.certifiedDate)}. The certified deductions apply — the net receivable, outstanding, reports and retention follow them, with no credit / debit note. The raised lines are kept as the bill was issued.`}
+              actions={
+                <TabsList aria-label="Deductions shown">
+                  <TabsTrigger className={BT_TAB} value="certified">
+                    Certified · applies <TabCount value={certification.deductions?.length ?? 0} />
+                  </TabsTrigger>
+                  <TabsTrigger className={BT_TAB} value="raised">
+                    As raised <TabCount value={bill.deductions.length} />
+                  </TabsTrigger>
+                </TabsList>
+              }
+            />
           </div>
-        )}
+          <TabsContent value="certified" className="mt-0">
+            <DeductionLines lines={certification.deductions ?? []} emptyText="The client deducts nothing on this bill." />
+          </TabsContent>
+          <TabsContent value="raised" className="mt-0">
+            <DeductionLines lines={bill.deductions} emptyText="No deductions were raised on this bill." />
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
+  );
+}
+
+/** One set of deduction lines — raised or certified — with its total and its statutory / retention parts. */
+function DeductionLines({ lines, emptyText }: { lines: readonly BillDeduction[]; emptyText: string }) {
+  if (lines.length === 0) return <p className="p-6 text-sm text-muted-foreground">{emptyText}</p>;
+  const withGst = lines.some((line) => line.gstAmount);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <tr>
+            <th className="px-3 py-2 text-left">Deduction</th>
+            <th className="px-3 py-2 text-right">%</th>
+            <th className="px-3 py-2 text-right">Of</th>
+            {withGst ? <th className="px-3 py-2 text-right">Base</th> : null}
+            {withGst ? <th className="px-3 py-2 text-right">GST</th> : null}
+            <th className="px-3 py-2 text-right">Amount</th>
+            <th className="px-3 py-2 text-left">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={line.id} className="border-t border-slate-100">
+              <td className="px-3 py-2">
+                <Scissors className="mr-1.5 inline h-3.5 w-3.5 text-orange-500" />
+                {line.deductionTypeName}
+              </td>
+              <td className="px-3 py-2 text-right">{line.percentage !== undefined ? `${line.percentage}%` : '—'}</td>
+              <td className="px-3 py-2 text-right text-muted-foreground">{line.calculationBase !== undefined ? <Amount value={line.calculationBase} /> : '—'}</td>
+              {withGst ? (
+                <td className="px-3 py-2 text-right">
+                  <Amount value={line.baseAmount ?? line.amount} signed />
+                </td>
+              ) : null}
+              {withGst ? (
+                <td className="px-3 py-2 text-right text-xs">
+                  {!line.gstAmount ? (
+                    '—'
+                  ) : line.igstAmount ? (
+                    <span>
+                      IGST {line.igstRate}% <Amount value={line.igstAmount} />
+                    </span>
+                  ) : line.cgstAmount !== undefined ? (
+                    <span className="space-y-0.5">
+                      <span className="block">
+                        CGST {line.cgstRate}% <Amount value={line.cgstAmount} />
+                      </span>
+                      <span className="block">
+                        SGST {line.sgstRate}% <Amount value={line.sgstAmount ?? 0} />
+                      </span>
+                    </span>
+                  ) : (
+                    <span>
+                      GST {line.gstRate}% <Amount value={line.gstAmount} />
+                    </span>
+                  )}
+                </td>
+              ) : null}
+              <td className="px-3 py-2 text-right">
+                <Amount value={line.amount} signed />
+              </td>
+              <td className="px-3 py-2 text-muted-foreground">{line.remarks ?? ''}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot className="bg-slate-100 font-semibold">
+          <tr>
+            <td className="px-3 py-2">Total deduction</td>
+            <td />
+            <td />
+            {withGst ? <td /> : null}
+            {withGst ? <td /> : null}
+            <td className="px-3 py-2 text-right">
+              <Amount value={totalDeduction(lines)} signed />
+            </td>
+            <td className="px-3 py-2 text-xs font-normal text-muted-foreground">
+              Statutory <Amount value={deductionsOfKind(lines, ['statutory'])} /> · Retention <Amount value={deductionsOfKind(lines, RETENTION_KINDS)} />
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
   );
 }
 
@@ -974,12 +1069,14 @@ const SLAB_BASIS_LABELS: Record<LineBasis, string> = { percent: 'Typed %', amoun
 /**
  * Retention held on this bill slab by slab — head plus rate, since one invoice often deducts 10% and
  * 30% under the same head — and what has been released against it. A retention bill also says
- * which slab it releases; a note's retention lands in its invoice's slabs.
+ * which slab it releases; a note's retention lands in its invoice's slabs. A certified bill holds
+ * the retention the client certified, read on the certified taxable (`retentionSource`).
  */
 function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: RetentionRelease[]; invoice?: Detail['noteInvoice'] }) {
   const { config } = useLookups();
   const { can } = useBt();
-  const slabs = billRetentionSlabs(bill, config.deductionTypes, invoice);
+  const source = retentionSource(bill);
+  const slabs = billRetentionSlabs(source, config.deductionTypes, invoice);
   const slabList = slabs.map((entry) => entry.slab);
   const typeOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
   const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
@@ -996,7 +1093,7 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
   };
   const basisTip = (entry: BillSlab) => {
     const base = typeOf(entry.slab.deductionTypeId)?.percentBase === 'gross' ? 'gross' : 'taxable';
-    const fromAmount = `Worked out from the amount: read against the bill’s ${base} of ${formatINR(base === 'gross' ? bill.grossAmount : bill.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
+    const fromAmount = `Worked out from the amount: read against the ${bill.certification ? 'client’s certified' : 'bill’s'} ${base} of ${formatINR(base === 'gross' ? source.grossAmount : source.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
     const tips: Record<LineBasis, string> = {
       percent: 'The percentage typed on the deduction line (0, a negative or over 100 counts as a fixed amount).',
       amount: fromAmount,
@@ -1007,7 +1104,7 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-4 p-4">
-        <SectionHeader title="Retention on this bill" icon={PiggyBank} as="h3" />
+        <SectionHeader title="Retention on this bill" icon={PiggyBank} as="h3" description={bill.certification ? 'As the client certified it — the certified retention lines replace the raised ones.' : undefined} />
         {isRetentionBill ? (
           released ? (
             <p className="text-sm text-slate-700">

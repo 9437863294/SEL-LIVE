@@ -23,7 +23,7 @@ import { FieldValue, type DocumentReference } from 'firebase-admin/firestore';
 
 import { getFirebaseAdminBucket } from '@/lib/firebase-admin';
 
-import { deriveBillTotals, financialYearOf, monthKeyOf } from '../calculations.ts';
+import { RETENTION_KINDS, deductionsOfKind, deriveBillTotals, financialYearOf, monthKeyOf } from '../calculations.ts';
 import {
   classifyDuplicate,
   defaultRowAction,
@@ -42,6 +42,7 @@ import {
   type ParsedImportRow,
   type ProjectMatch,
 } from '../import.ts';
+import { deductionsByType } from '../certification.ts';
 import { subtractMoney, sumMoney, toPaise } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { ImportPreviewInput } from '../schemas';
@@ -57,7 +58,7 @@ import type {
   ImportRowState,
   ProjectNameMapping,
 } from '../types';
-import { calculationOptions, computeDueDate } from './bills';
+import { calculationOptions, computeDueDate, derivedFields } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadClients, loadConfig, loadProjects, loadScopedBills, logActivity, nowIso, type ProjectRecord } from './store';
 
@@ -110,6 +111,29 @@ function applyColumnOverrides(map: ImportColumnMap, overrides: Record<string, nu
   return next;
 }
 
+/**
+ * A bill's figures as raised: its raised deductions (and the retention among them), the net they give
+ * and that net less what was received. The workbook knows nothing of a client certification on the
+ * bill — whose deductions replace the raised ones in what it is paid — so the import compares the
+ * sheet with these. (A bill stored before 2026-10-27 has no raised fields; its stored totals were
+ * still the raised figures.)
+ */
+const asRaised = (bill: Bill) => {
+  const net = bill.raisedNetReceivable ?? bill.netReceivable;
+  return {
+    deduction: bill.raisedTotalDeduction ?? bill.totalDeduction,
+    net,
+    retention: deductionsOfKind(bill.deductions ?? [], RETENTION_KINDS),
+    shortfall: subtractMoney(net, bill.totalReceived),
+  };
+};
+
+/** The same deduction amounts per head, in any order — a sheet row carries only heads and amounts. */
+const sameDeductionAmounts = (a: readonly BillDeduction[], b: readonly BillDeduction[]) => {
+  const byHead = (lines: readonly BillDeduction[]) => JSON.stringify([...deductionsByType(lines).entries()].map(([id, entry]) => [id, toPaise(entry.amount)]).sort());
+  return byHead(a) === byHead(b);
+};
+
 const existingKeys = (bills: readonly Bill[]): ExistingBillKey[] =>
   bills.map((bill) => ({
     id: bill.id,
@@ -119,7 +143,10 @@ const existingKeys = (bills: readonly Bill[]): ExistingBillKey[] =>
     billDate: bill.billDate,
     billTypeName: bill.billTypeName,
     taxableAmount: bill.taxableAmount,
-    netReceivable: bill.netReceivable,
+    // A sheet row's net is its own deduction columns' net, so the same bill matches on its raised net.
+    netReceivable: asRaised(bill).net,
+    // …and a workbook exported from SEL LIVE carries the net it is paid (the certified deductions').
+    paidNetReceivable: toPaise(bill.netReceivable) !== toPaise(asRaised(bill).net) ? bill.netReceivable : undefined,
     importFingerprint: bill.importFingerprint,
     projectNameSnapshot: bill.projectNameSnapshot,
   }));
@@ -472,6 +499,8 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
         importedNetAmount: row.imported.netAmount,
         importedTotalDeduction: row.imported.totalDeduction,
         importedReceived: row.imported.received,
+        // The sheet's net against the net of its own deduction columns — the bill as raised. Never the
+        // totals below: a certified bill being updated is paid against its certified deductions.
         netMismatch: row.netMismatch && row.imported.netAmount !== undefined ? { imported: row.imported.netAmount, calculated: row.calculated.net } : undefined,
       };
 
@@ -485,21 +514,17 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
           if (!billSnapshot.exists || bill.organizationId !== context.organizationId || bill.isDeleted) throw new BtError('The bill to update no longer exists.');
           context.require('Bills', 'Edit', bill.projectId);
           const previous = Object.fromEntries(SOURCE_FIELDS.map((key) => [key, bill[key] ?? null]));
-          const merged = { ...bill, ...sourceValues };
+          // The stored bill's certification is kept, and with it its certified deductions. A sheet
+          // exported from SEL LIVE carries those certified lines: they must not overwrite the lines
+          // as raised, which the raised-vs-certified comparison still needs.
+          const update = bill.certification && sameDeductionAmounts(sourceValues.deductions, bill.certification.deductions ?? []) ? { ...sourceValues, deductions: bill.deductions } : sourceValues;
+          const merged = { ...bill, ...update };
           const totals = deriveBillTotals(merged, options);
           const version = (bill.version ?? 1) + 1;
           transaction.update(billRef, clean({
-            ...sourceValues,
+            ...update,
             netMismatch: sourceValues.netMismatch ?? FieldValue.delete(),
-            grossAmount: totals.grossAmount,
-            totalDeduction: totals.totalDeduction,
-            statutoryDeduction: totals.statutoryDeduction,
-            retentionDeducted: totals.retentionDeducted,
-            netReceivable: totals.netReceivable,
-            totalReceived: totals.totalReceived,
-            outstandingAmount: totals.outstandingAmount,
-            shortfallSurplus: totals.shortfallSurplus,
-            paymentStatus: totals.paymentStatus,
+            ...derivedFields(totals),
             searchTokens: buildSearchTokens(merged),
             importJobId: jobId,
             importRowNumber: row.row,
@@ -551,16 +576,8 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
           clientId: project.clientId,
           clientNameSnapshot: client?.name ?? project.clientName,
           dgmOffice: project.dgmOffice,
-          grossAmount: totals.grossAmount,
-          totalDeduction: totals.totalDeduction,
-          statutoryDeduction: totals.statutoryDeduction,
-          retentionDeducted: totals.retentionDeducted,
-          netReceivable: totals.netReceivable,
-          totalReceived: totals.totalReceived,
-          outstandingAmount: totals.outstandingAmount,
-          shortfallSurplus: totals.shortfallSurplus,
+          ...derivedFields(totals),
           lastReceiptDate: totals.lastReceiptDate,
-          paymentStatus: totals.paymentStatus,
           collections,
           // Legacy bills were raised long ago; they enter at follow-up (or closed when paid).
           workflowStatus: totals.paymentStatus === 'received' ? 'closed' : 'payment_followup',
@@ -720,14 +737,7 @@ export async function rollbackImport(context: BtContext, jobId: string, reason: 
         const totals = deriveBillTotals(merged as Bill, calculationOptions(config));
         batch.update(billRef, clean({
           ...Object.fromEntries(Object.entries(row.previous).map(([key, value]) => [key, value === null ? FieldValue.delete() : value])),
-          netReceivable: totals.netReceivable,
-          grossAmount: totals.grossAmount,
-          totalDeduction: totals.totalDeduction,
-          statutoryDeduction: totals.statutoryDeduction,
-          retentionDeducted: totals.retentionDeducted,
-          outstandingAmount: totals.outstandingAmount,
-          shortfallSurplus: totals.shortfallSurplus,
-          paymentStatus: totals.paymentStatus,
+          ...derivedFields(totals),
           version: (bill.version ?? 1) + 1,
           updatedAt: nowIso(),
           updatedBy: context.userId,
@@ -786,9 +796,9 @@ export interface Reconciliation {
 
 /**
  * Workbook vs SEL LIVE for one import: the sheet's own figures (its Net, Total Deduction and
- * Shortfall columns) against the bills as they stand now. Every row whose figures differ is listed
- * with the reason the import recorded (net mismatch, rounding within tolerance, legacy status), so
- * the migration is accepted only when each difference is explained.
+ * Shortfall columns) against the bills as they stand now, read as raised (`asRaised`). Every row
+ * whose figures differ is listed with the reason the import recorded (net mismatch, rounding within
+ * tolerance, legacy status), so the migration is accepted only when each difference is explained.
  */
 export async function reconcileImport(context: BtContext, jobId: string): Promise<Reconciliation> {
   const { job, rows } = await loadImportJob(context, jobId);
@@ -799,17 +809,18 @@ export async function reconcileImport(context: BtContext, jobId: string): Promis
     snapshots.forEach((snapshot) => snapshot.exists && bills.set(snapshot.id, { ...(snapshot.data() as StoredBill), id: snapshot.id }));
   }
 
+  // A certification's deductions would otherwise read as an import difference — "unexplained", or rounding.
   const liveTotals = (list: StoredBill[]): ImportReconciliationTotals => ({
     bills: list.length,
     taxable: sumMoney(list.map((bill) => bill.taxableAmount)),
     gst: sumMoney(list.map((bill) => bill.gstAmount)),
     gross: sumMoney(list.map((bill) => bill.grossAmount)),
-    deduction: sumMoney(list.map((bill) => bill.totalDeduction)),
-    net: sumMoney(list.map((bill) => bill.netReceivable)),
+    deduction: sumMoney(list.map((bill) => asRaised(bill).deduction)),
+    net: sumMoney(list.map((bill) => asRaised(bill).net)),
     received: sumMoney(list.map((bill) => bill.totalReceived)),
     // Shortfall, not "outstanding after tolerance": the workbook keeps rupee differences, so compare like with like.
-    outstanding: sumMoney(list.map((bill) => bill.shortfallSurplus)),
-    retention: sumMoney(list.map((bill) => bill.retentionDeducted)),
+    outstanding: sumMoney(list.map((bill) => asRaised(bill).shortfall)),
+    retention: sumMoney(list.map((bill) => asRaised(bill).retention)),
   });
 
   const line = (key: string, label: string, subset: StoredRow[]): ReconciliationLine => ({
@@ -831,9 +842,10 @@ export async function reconcileImport(context: BtContext, jobId: string): Promis
     const excelNet = parsed.imported.netAmount ?? parsed.calculated.net;
     const excelReceived = parsed.imported.received ?? 0;
     const excelOutstanding = parsed.imported.difference ?? subtractMoney(excelNet, excelReceived);
-    const liveNet = bill?.netReceivable ?? 0;
+    const live = bill ? asRaised(bill) : undefined;
+    const liveNet = live?.net ?? 0;
     const liveReceived = bill?.totalReceived ?? 0;
-    const liveOutstanding = bill?.shortfallSurplus ?? 0;
+    const liveOutstanding = live?.shortfall ?? 0;
     if (toPaise(excelNet) === toPaise(liveNet) && toPaise(excelReceived) === toPaise(liveReceived) && toPaise(excelOutstanding) === toPaise(liveOutstanding)) continue;
     const explanation: string[] = [];
     if (!bill || bill.isDeleted) explanation.push('Bill no longer exists in SEL LIVE.');

@@ -21,7 +21,9 @@ import {
   financialYearOf,
   isPastApproval,
   isRetentionKind,
+  isoWeekOf,
   monthKeyOf,
+  type BillDerivedTotals,
 } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
 import { isNoteType } from '../certification.ts';
@@ -101,6 +103,37 @@ export const calculationOptions = (config: BillTrackingConfig) => ({
   tolerance: config.settings.tolerance,
   roundNetToRupee: config.settings.roundNetToRupee,
 });
+
+/**
+ * Every derived total as a bill stores it. A write that changes a source value — the bill, a
+ * receipt, the client's certification — stores all of them, so the net, outstanding and status
+ * always agree, and the raised deductions' total and net stay beside the effective ones (the
+ * certified ones once certified) for raised vs certified.
+ */
+export const derivedFields = (totals: BillDerivedTotals) => ({
+  grossAmount: totals.grossAmount,
+  totalDeduction: totals.totalDeduction,
+  statutoryDeduction: totals.statutoryDeduction,
+  retentionDeducted: totals.retentionDeducted,
+  netReceivable: totals.netReceivable,
+  raisedTotalDeduction: totals.raisedTotalDeduction,
+  raisedNetReceivable: totals.raisedNetReceivable,
+  totalReceived: totals.totalReceived,
+  outstandingAmount: totals.outstandingAmount,
+  shortfallSurplus: totals.shortfallSurplus,
+  paymentStatus: totals.paymentStatus,
+});
+
+/**
+ * The update that stores a bill's recomputed totals in place: all of them, the last receipt date,
+ * and RECEIVED WEEK — the week the bill became fully paid, as the legacy sheet recorded it.
+ */
+export function totalsUpdate(bill: Pick<Bill, 'paymentStatus'>, totals: BillDerivedTotals): Record<string, unknown> {
+  const update: Record<string, unknown> = { ...derivedFields(totals), lastReceiptDate: totals.lastReceiptDate ?? FieldValue.delete() };
+  if (totals.paymentStatus === 'received' && bill.paymentStatus !== 'received' && totals.lastReceiptDate) update.receivedWeek = isoWeekOf(totals.lastReceiptDate);
+  if (totals.paymentStatus !== 'received' && bill.paymentStatus === 'received') update.receivedWeek = FieldValue.delete();
+  return update;
+}
 
 /** A month closed by finance accepts no new or changed financial records without Close Month. */
 export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, dateKeys: (string | undefined)[], what: string): void {
@@ -256,6 +289,8 @@ export function composeBill({ context, input, config, project, client, existing,
       deductions,
       collections,
       paymentStatusOverride: existing?.paymentStatusOverride,
+      // A certified bill stays paid against its certified deductions, whatever the edit does to the raised ones.
+      certification: existing?.certification,
     },
     calculationOptions(config),
   );
@@ -305,16 +340,8 @@ export function composeBill({ context, input, config, project, client, existing,
     deductions,
     // Recorded separately (`certification.ts` on the server); an edit of the raised bill keeps it.
     certification: existing?.certification,
-    grossAmount: totals.grossAmount,
-    totalDeduction: totals.totalDeduction,
-    statutoryDeduction: totals.statutoryDeduction,
-    retentionDeducted: totals.retentionDeducted,
-    netReceivable: totals.netReceivable,
-    totalReceived: totals.totalReceived,
-    outstandingAmount: totals.outstandingAmount,
-    shortfallSurplus: totals.shortfallSurplus,
+    ...derivedFields(totals),
     lastReceiptDate: totals.lastReceiptDate,
-    paymentStatus: totals.paymentStatus,
     paymentStatusOverride: existing?.paymentStatusOverride,
     collections,
     workflowStatus: existing?.workflowStatus ?? 'draft',
@@ -606,8 +633,7 @@ export async function overridePaymentStatus(context: BtContext, billId: string, 
     const totals = deriveBillTotals({ ...bill, paymentStatusOverride: override }, calculationOptions(config));
     transaction.update(ref, {
       paymentStatusOverride: override ?? FieldValue.delete(),
-      paymentStatus: totals.paymentStatus,
-      outstandingAmount: totals.outstandingAmount,
+      ...derivedFields(totals),
       version: (bill.version ?? 1) + 1,
       updatedAt: nowIso(),
       updatedBy: context.userId,
@@ -627,9 +653,9 @@ export async function overridePaymentStatus(context: BtContext, billId: string, 
 }
 
 /**
- * Resolves an import net mismatch. The bill's net is always the calculated one (it follows the
- * source values); resolving records that finance reviewed the difference and why — the imported
- * figure stays on the bill for the record.
+ * Resolves an import net mismatch: the workbook's net against the net of the bill as raised (never a
+ * certification's). The bill's net always follows its source values; resolving records that finance
+ * reviewed the difference and why — the imported figure stays on the bill for the record.
  */
 export async function resolveNetMismatch(context: BtContext, billId: string, resolution: string, reason: string): Promise<void> {
   const ref = db().collection(BT_COLLECTIONS.bills).doc(billId);

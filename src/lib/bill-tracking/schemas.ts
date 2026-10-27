@@ -83,6 +83,10 @@ export const billInputSchema = z.object({
   gstRegistrationId: optionalText(64),
   /** Credit / debit note: the invoice it adjusts. Required for a credit note. */
   againstBillId: optionalText(128),
+  /**
+   * The deductions as raised. A credit / debit note may carry its own (TDS on a debit note) but
+   * needs none: a certification's deductions apply to the invoice itself, not through a note.
+   */
   deductions: z.array(deductionLineSchema).max(60).default([]),
   targetWeek: optionalText(10),
   collectionOwnerId: optionalText(128),
@@ -106,6 +110,8 @@ export type BillInput = z.infer<typeof billInputSchema>;
 /**
  * The client's certification of a bill. The GST type defaults to the raised bill's; a bill imported
  * with one unsplit GST figure is split here (CGST + SGST or IGST) the way the certificate shows it.
+ * Its deductions replace the raised ones in what the bill is paid; a different taxable or GST is
+ * settled by a credit / debit note against the bill.
  */
 export const certificationInputSchema = z.object({
   certifiedDate: dateKey,

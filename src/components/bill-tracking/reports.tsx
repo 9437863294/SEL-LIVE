@@ -15,11 +15,11 @@ import { BarChart3, BookOpen, CalendarRange, FileWarning, Gauge, Hourglass, Land
 
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
+import { effectiveDeductions, monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { AGEING_BASIS_LABELS, PAYMENT_STATUS_LABELS, RETENTION_STATUS_LABELS, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import type { CertificationTotals } from '@/lib/bill-tracking/certification';
-import { formatINR } from '@/lib/bill-tracking/money';
+import { formatINR, sumBy } from '@/lib/bill-tracking/money';
 import type { AgeingReport, BillTotals, CollectionLine, ExceptionItem, ForecastItem, ForecastWindow, GroupRow, MonthlySummaryRow, RetentionRow, TargetPerformanceRow } from '@/lib/bill-tracking/reports';
 
 import { useBtQuery, useLookups } from './bt-client';
@@ -36,16 +36,16 @@ const REPORTS: { kind: string; title: string; description: string; icon: React.E
   { kind: 'monthly', title: 'Month-wise summary', description: 'Taxable by category, GST, statutory deductions, retention, mobilisation advance, net, received and collection — per month (the legacy summary sheet).', icon: CalendarRange },
   { kind: 'pi', title: 'Month-wise PI report', description: 'The same summary for proforma-invoice (PI) rows only.', icon: Receipt },
   { kind: 'not-received', title: 'Not received', description: 'Every bill with money outstanding, with delay days, last receipt, follow-up and commitment.', icon: FileWarning },
-  { kind: 'site-wise', title: 'Site-wise', description: 'One project’s bills with the full deduction breakdown and totals.', icon: MapPin },
+  { kind: 'site-wise', title: 'Site-wise', description: 'One project’s bills with the full deduction breakdown and totals. A certified bill shows the deductions the client certified.', icon: MapPin },
   { kind: 'project-wise', title: 'Project-wise', description: 'Billing, deductions, received, outstanding, retention, oldest outstanding and average collection days per project.', icon: Layers },
   { kind: 'client-wise', title: 'Client-wise', description: 'Billing, received, outstanding, retention and payment cycle per client.', icon: Users },
   { kind: 'dgm-office', title: 'DGM office-wise', description: 'The same measures by DGM office.', icon: Landmark },
   { kind: 'bill-type', title: 'Bill type', description: 'Taxable, GST, net, collected and outstanding by bill type or category.', icon: ListChecks },
   { kind: 'collections', title: 'Collections', description: 'Receipts by receipt date, with month totals.', icon: Wallet },
-  { kind: 'deductions', title: 'Deductions', description: 'Every deduction head by project, client, month, FY or bill type.', icon: Scissors, href: '/bill-tracking/deductions' },
+  { kind: 'deductions', title: 'Deductions', description: 'Every deduction head by project, client, month, FY or bill type. Once the client certifies a bill, its certified deductions count instead of the raised ones.', icon: Scissors, href: '/bill-tracking/deductions' },
   { kind: 'retention', title: 'Retention', description: 'Retention held, released and balance by project.', icon: PiggyBank, href: '/bill-tracking/retention' },
   { kind: 'ageing', title: 'Ageing', description: 'Outstanding by ageing bucket, as on any date, by project, client or DGM office.', icon: Hourglass, href: '/bill-tracking/ageing' },
-  { kind: 'certification', title: 'Raised vs certified', description: 'Per project: bills certified and awaiting, raised vs certified net, what the client changed, notes raised and what is still to adjust.', icon: Scale },
+  { kind: 'certification', title: 'Raised vs certified', description: 'Per project: bills certified and awaiting, raised vs certified net, what the client changed, notes raised and the credit / debit notes still to raise for a changed taxable or GST.', icon: Scale },
   { kind: 'exceptions', title: 'Exceptions', description: 'Mismatches, over-receipts, old outstanding, missed commitments, missing follow-ups.', icon: FileWarning },
   { kind: 'forecast', title: 'Collection forecast', description: 'Expected collections from commitments, expected and due dates.', icon: TrendingUp },
   { kind: 'performance', title: 'Collection performance', description: 'Target vs actual by week, project, DGM office or collection owner.', icon: Gauge },
@@ -319,7 +319,11 @@ function GroupTable({ kind, rows, totals, carry, byCategory = false }: { kind: s
 
 type CertificationGroupRow = CertificationTotals & { key: string; label: string };
 
-/** Raised vs certified per project; each figure opens the register's comparison view for that project. */
+/**
+ * Raised vs certified per project; each figure opens the register's comparison view for that project.
+ * The client's change splits into deductions, which the certification applies itself, and the
+ * invoice value (taxable + GST), which a credit / debit note settles.
+ */
 function CertificationReport({ rows, totals, carry }: { rows: CertificationGroupRow[]; totals: CertificationTotals; carry: (extra: Record<string, string | undefined>) => string }) {
   const compareHref = (project: string, cert?: string) => `/bill-tracking/bills?${carry({ project, view: 'compare', cert })}`;
   const columns: BtColumn<CertificationGroupRow & { id: string }>[] = [
@@ -337,17 +341,28 @@ function CertificationReport({ rows, totals, carry }: { rows: CertificationGroup
     { key: 'raisedNet', header: 'Raised net (certified)', align: 'right', sortValue: (row) => row.raisedNetCertified, cell: (row) => <Amount value={row.raisedNetCertified} signed />, total: <Amount value={totals.raisedNetCertified} signed /> },
     { key: 'certifiedNet', header: 'Certified net', align: 'right', sortValue: (row) => row.certifiedNet, cell: (row) => <Amount value={row.certifiedNet} signed />, total: <Amount value={totals.certifiedNet} signed /> },
     { key: 'variance', header: 'Client change', align: 'right', sortValue: (row) => row.variance, cell: (row) => <Amount value={row.variance} signed className={row.variance < 0 ? 'text-rose-700' : undefined} />, total: <Amount value={totals.variance} signed /> },
+    {
+      key: 'deductionChange',
+      header: <span title="Certified − raised total deduction. Applied by the certifications themselves — no note is needed for it.">Deductions changed</span>,
+      label: 'Deductions changed',
+      align: 'right',
+      sortValue: (row) => row.deductionChange,
+      // More deducted means less to receive, so an increase reads red.
+      cell: (row) => <Amount value={row.deductionChange} muted className={row.deductionChange > 0 ? 'text-rose-700' : undefined} />,
+      total: <Amount value={totals.deductionChange} />,
+    },
     { key: 'notesNet', header: 'Notes raised', align: 'right', sortValue: (row) => row.notesNet, cell: (row) => <Amount value={row.notesNet} signed muted />, total: <Amount value={totals.notesNet} signed /> },
     {
       key: 'pendingNet',
-      header: 'Still to adjust',
+      header: <span title="Taxable + GST still to adjust by credit / debit notes: certified − (raised + notes). Negative is a credit note.">Note to raise</span>,
+      label: 'Note to raise',
       align: 'right',
       mobile: 'aside',
-      sortValue: (row) => Math.abs(row.pendingNet),
-      cell: (row) => (row.pending ? <DrillLink href={compareHref(row.key, 'pending')} className="font-semibold text-violet-700">{formatINR(row.pendingNet)}</DrillLink> : <span className="text-xs font-medium text-emerald-700">{row.certified ? 'Matched' : '—'}</span>),
-      total: <Amount value={totals.pendingNet} signed />,
+      sortValue: (row) => Math.abs(row.pendingGross),
+      cell: (row) => (row.pending ? <DrillLink href={compareHref(row.key, 'pending')} className="font-semibold text-violet-700">{formatINR(row.pendingGross)}</DrillLink> : <span className="text-xs font-medium text-emerald-700">{row.certified ? 'Matched' : '—'}</span>),
+      total: <Amount value={totals.pendingGross} signed />,
     },
-    { key: 'pending', header: 'Notes to raise', align: 'right', sortValue: (row) => row.pending, cell: (row) => row.pending || '—', total: totals.pending },
+    { key: 'pending', header: 'Note pending', label: 'Bills with a note pending', align: 'right', sortValue: (row) => row.pending, cell: (row) => row.pending || '—', total: totals.pending },
   ];
   return (
     <div className="space-y-3">
@@ -356,8 +371,9 @@ function CertificationReport({ rows, totals, carry }: { rows: CertificationGroup
           { label: 'Certified bills', value: `${totals.certified.toLocaleString('en-IN')} of ${totals.count.toLocaleString('en-IN')}` },
           { label: 'Awaiting certification', value: totals.awaiting.toLocaleString('en-IN'), tone: totals.awaiting ? 'text-amber-700' : 'text-slate-900' },
           { label: 'Client changed', value: <Amount value={totals.variance} compact signed />, tone: totals.variance < 0 ? 'text-rose-700' : 'text-slate-900' },
+          { label: 'Deductions changed', value: <Amount value={totals.deductionChange} compact />, tone: totals.deductionChange > 0 ? 'text-rose-700' : 'text-slate-900', hint: 'Applied — no note' },
           { label: 'Notes raised', value: <Amount value={totals.notesNet} compact signed /> },
-          { label: 'Still to adjust', value: <Amount value={totals.pendingNet} compact signed />, tone: totals.pending ? 'text-violet-700' : 'text-emerald-700', hint: totals.pending ? `${totals.pending} note${totals.pending === 1 ? '' : 's'} to raise` : 'All matched' },
+          { label: 'Note to raise', value: <Amount value={totals.pendingGross} compact signed />, tone: totals.pending ? 'text-violet-700' : 'text-emerald-700', hint: totals.pending ? `${totals.pending} bill${totals.pending === 1 ? '' : 's'} · taxable or GST differs` : 'All matched' },
         ]}
       />
       <BtTable rows={rows.map((row) => ({ ...row, id: row.key }))} columns={columns} storageKey="report-certification" showTotals empty={<BtEmpty title="No certifiable bills for the selected filters." />} />
@@ -531,6 +547,16 @@ function AgeingMatrix({ report, carry, by }: { report: AgeingReport; carry: (ext
 
 /* ── bill lists (not received, site-wise) ────────────────────────────────── */
 
+/**
+ * What a bill deducts under one head: the client's certified lines once it has certified the bill,
+ * else the raised ones — the same lines its total deduction and net are worked out from.
+ */
+const headDeduction = (bill: Pick<BillRow, 'deductions' | 'certification'>, deductionTypeId: string) =>
+  sumBy(
+    effectiveDeductions(bill).filter((line) => line.deductionTypeId === deductionTypeId),
+    (line) => line.amount,
+  );
+
 function BillsReport({ kind, rows, totals, deductionTypes }: { kind: string; rows: BillRow[]; totals: BillTotals; deductionTypes: DeductionTypeMaster[] }) {
   const lookups = useLookups();
   const siteWise = kind === 'site-wise';
@@ -561,8 +587,8 @@ function BillsReport({ kind, rows, totals, deductionTypes }: { kind: string; row
           key: `d-${type.id}`,
           header: type.name,
           align: 'right' as const,
-          cell: (bill: BillRow) => <Amount value={(bill.deductions ?? []).filter((line) => line.deductionTypeId === type.id).reduce((sum, line) => sum + line.amount, 0)} muted signed />,
-          total: <Amount value={rows.reduce((sum, bill) => sum + (bill.deductions ?? []).filter((line) => line.deductionTypeId === type.id).reduce((inner, line) => inner + line.amount, 0), 0)} signed />,
+          cell: (bill: BillRow) => <Amount value={headDeduction(bill, type.id)} muted signed />,
+          total: <Amount value={sumBy(rows, (bill) => headDeduction(bill, type.id))} signed />,
         }))
       : []),
     { key: 'deduction', header: 'Total deduction', align: 'right', defaultHidden: !siteWise, cell: (bill) => <Amount value={bill.totalDeduction} signed />, total: <Amount value={totals.deduction} /> },
@@ -722,7 +748,7 @@ function exportSpecFor(kind: string, data: Record<string, unknown>, base: { meta
     case 'not-received':
     case 'site-wise': {
       const rows = ((data.rows as BillRow[]) ?? []) as unknown as Row[];
-      const deductionColumns = kind === 'site-wise' ? deductionTypes.map((type) => ({ key: `d-${type.id}`, label: type.name, money: true, value: (row: Row) => ((row.deductions as { deductionTypeId: string; amount: number }[]) ?? []).filter((line) => line.deductionTypeId === type.id).reduce((sum, line) => sum + line.amount, 0) })) : [];
+      const deductionColumns = kind === 'site-wise' ? deductionTypes.map((type) => ({ key: `d-${type.id}`, label: type.name, money: true, value: (row: Row) => headDeduction(row as unknown as BillRow, type.id) })) : [];
       return {
         ...base,
         title,
@@ -733,7 +759,7 @@ function exportSpecFor(kind: string, data: Record<string, unknown>, base: { meta
       };
     }
     case 'certification':
-      return { ...base, title, fileName, rows: (data.rows as Row[]) ?? [], columns: [text('label', 'Project'), text('count', 'Bills'), text('certified', 'Certified'), text('awaiting', 'Awaiting'), money('raisedNetCertified', 'Raised Net (certified)'), money('certifiedNet', 'Certified Net'), money('variance', 'Client Change'), money('notesNet', 'Notes Raised'), money('pendingNet', 'Still To Adjust'), text('pending', 'Notes To Raise')], totals: data.totals as unknown as Record<string, number> };
+      return { ...base, title, fileName, rows: (data.rows as Row[]) ?? [], columns: [text('label', 'Project'), text('count', 'Bills'), text('certified', 'Certified'), text('awaiting', 'Awaiting'), money('raisedNetCertified', 'Raised Net (certified)'), money('certifiedNet', 'Certified Net'), money('variance', 'Client Change'), money('deductionChange', 'Deductions Changed'), money('notesNet', 'Notes Raised'), money('pendingGross', 'Note To Raise (Taxable + GST)'), text('pending', 'Bills With Note Pending')], totals: data.totals as unknown as Record<string, number> };
     case 'exceptions':
       return { ...base, title, fileName, rows: (data.rows as Row[]) ?? [], columns: [text('kind', 'Exception'), text('gstInvoiceNumber', 'Invoice'), text('billSerialNumber', 'Bill No'), text('projectName', 'Project'), text('detail', 'Detail'), money('amount', 'Amount')] };
     case 'forecast':

@@ -103,10 +103,18 @@ const CERTIFICATION_TONES: Record<CertificationState, StatusTone> = {
   adjustment_pending: 'progress',
 };
 
-/** Awaiting certification / certified and matched / certified with a note still to raise. */
+// What each state means, on hover. Only the invoice value (taxable + GST) is settled by a note; the
+// certified deductions apply to the bill itself, so they never leave a bill pending.
+const CERTIFICATION_TIPS: Record<CertificationState, string> = {
+  not_certified: 'Not certified by the client yet — the bill is paid against its raised deductions until it is.',
+  matched: 'The taxable and GST match the raised bill and its notes. The certified deductions apply to the bill directly — no note is needed for them.',
+  adjustment_pending: 'The client certified a different taxable or GST — raise a credit / debit note against the bill for it. The certified deductions already apply.',
+};
+
+/** Awaiting certification / certified and matched / certified with a note still to raise for the taxable or GST. */
 export function CertificationBadge({ state }: { state: CertificationState }) {
   return (
-    <StatusBadge tone={CERTIFICATION_TONES[state]} dot>
+    <StatusBadge tone={CERTIFICATION_TONES[state]} dot title={CERTIFICATION_TIPS[state]}>
       {CERTIFICATION_STATE_LABELS[state]}
     </StatusBadge>
   );

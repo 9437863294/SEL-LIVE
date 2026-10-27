@@ -40,7 +40,7 @@ const MEANING: Record<BillWorkflowStatus, string> = {
   verified: 'Checked.',
   approved: 'Approved. From here amounts, GST and deductions change only with Edit After Approval and a reason.',
   raised: 'Sent to the client and waiting for their certification.',
-  certified: 'The client has certified it. If the client certified less or deducted more, raise the credit note the bill page fills in.',
+  certified: 'The client has certified it. Its certified deductions apply to the bill as they are; only if the client certified a different taxable or GST, raise the credit or debit note the bill page fills in.',
   payment_followup: 'Chasing payment: follow-ups, commitments and receipts.',
   reconciliation: 'Checking receipts and deductions against the client’s statement.',
   closed: 'Settled. The same people can reopen it.',

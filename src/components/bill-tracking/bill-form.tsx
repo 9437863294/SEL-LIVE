@@ -32,7 +32,7 @@ import { addDays, deriveBillTotals, financialYearOf, isPastApproval, isRetention
 import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tracking/categories';
 import type { CertificationComparison, SuggestedNote } from '@/lib/bill-tracking/certification';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
-import { formatINR } from '@/lib/bill-tracking/money';
+import { formatINR, subtractMoney, toPaise } from '@/lib/bill-tracking/money';
 import { formatRate } from '@/lib/bill-tracking/retention';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, WORKFLOW_STATUS_LABELS, type Bill, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
@@ -166,7 +166,8 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
 
 /**
  * The note that makes the raised bill plus its notes equal the client's certification: its type,
- * taxable, GST components and every deduction the client changed, as fixed lines.
+ * taxable and GST components. No deduction lines — the certified deductions already apply to the
+ * invoice itself; a change of deductions takes no note.
  */
 function withSuggestedNote(state: FormState, note: SuggestedNote, invoice: Pick<Bill, 'id' | 'projectId' | 'billTypeId' | 'billCategory'>, config: BillTrackingConfig): FormState {
   const type = config.billTypes.find((entry) => entry.id === invoice.billTypeId);
@@ -186,16 +187,7 @@ function withSuggestedNote(state: FormState, note: SuggestedNote, invoice: Pick<
     sgstAmount: str(note.sgstAmount),
     igstAmount: str(note.igstAmount),
     legacyGstAmount: String(note.gstAmount),
-    deductions: note.deductions.map((line) => ({
-      ...emptyDeductionRow(),
-      deductionTypeId: line.deductionTypeId,
-      baseAmount: String(line.baseAmount),
-      gstRate: line.gstRate !== undefined ? String(line.gstRate) : '',
-      cgstAmount: str(line.cgstAmount),
-      sgstAmount: str(line.sgstAmount),
-      igstAmount: str(line.igstAmount),
-      remarks: 'Per client certification',
-    })),
+    deductions: [],
     description: note.description,
   };
 }
@@ -326,7 +318,13 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   const deductionLines = computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
 
-  const totals = deriveBillTotals({ taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [] }, { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee });
+  // The rows are the deductions as raised. Once the client has certified the bill its certified
+  // deductions apply instead, so the net and outstanding previewed follow them, as the server's will.
+  const certification = existing?.certification;
+  const totals = deriveBillTotals(
+    { taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [], certification },
+    { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee },
+  );
 
   const addDeduction = () => setForm((current) => ({ ...current, deductions: [...current.deductions, emptyDeductionRow()] }));
   const setDeductionRows = (update: (rows: DeductionRow[]) => DeductionRow[]) => setForm((current) => ({ ...current, deductions: update(current.deductions) }));
@@ -336,6 +334,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const { data: invoiceData, loading: invoicesLoading } = useBtQuery<{ bills: InvoiceOption[] }>(note && form.projectId ? `bills/invoices?project=${form.projectId}${existing ? `&exclude=${existing.id}` : ''}` : null);
   const invoices = invoiceData?.bills ?? [];
   const againstInvoice = invoices.find((invoice) => invoice.id === form.againstBillId);
+  const againstReference = againstInvoice ? againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber : undefined;
   const creditFullInvoice = (invoice: InvoiceOption) =>
     setForm((current) => {
       const type = config.billTypes.find((entry) => entry.id === invoice.billTypeId);
@@ -362,7 +361,10 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       const detail = await btFetch<CertifiedInvoice>(`bills/${invoice.id}`);
       const suggestion = detail.certification?.suggestedNote;
       if (!suggestion) {
-        toast({ title: detail.certification?.summary.state === 'matched' ? 'Already matched' : 'Nothing to match', description: detail.certification?.summary.state === 'matched' ? 'This invoice and its notes already equal the client certification.' : 'The client has not certified this invoice yet.' });
+        toast({
+          title: detail.certification?.summary.state === 'matched' ? 'Already matched' : 'Nothing to match',
+          description: detail.certification?.summary.state === 'matched' ? 'This invoice and its notes already match the client certification in taxable and GST. Its certified deductions apply without a note.' : 'The client has not certified this invoice yet.',
+        });
         return;
       }
       setForm((current) => withSuggestedNote(current, suggestion, detail.bill, config));
@@ -485,13 +487,13 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
 
       {matchedFrom ? (
         <Notice tone="blue" title={`Filled to match the client certification of ${matchedFrom}`}>
-          Taxable, GST and every deduction the client changed are entered as the difference between the certification and the raised bill (less any notes already raised). Check them against the client’s certificate, add the note number and date, then save — the invoice will then show as matched.
+          Taxable and GST are entered as the difference between the certification and the raised bill (less any notes already raised). The note carries no deductions: the client’s certified deductions already apply to the invoice. Check the figures against the client’s certificate, add the note number and date, then save — the invoice will then show as matched.
         </Notice>
       ) : null}
 
       {existing?.certification ? (
         <Notice tone="blue" title="The client has certified this bill">
-          This form changes the bill as raised. The client’s certified figures are kept separately (bill page → Certification) and are compared against whatever you save here.
+          This form changes the bill as raised. The client’s certified figures are kept separately (bill page → Certification): its certified deductions set what it pays, and its taxable and GST are compared against whatever you save here.
         </Notice>
       ) : null}
 
@@ -731,7 +733,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                   </div>
                   {againstInvoice ? (
                     <p className="mt-2 text-xs text-violet-900">
-                      Invoice {againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber}: taxable {formatINR(againstInvoice.taxableAmount)}, GST {formatINR(againstInvoice.gstAmount)}, net {formatINR(againstInvoice.netReceivable)}.
+                      Invoice {againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber}: taxable {formatINR(againstInvoice.taxableAmount)}, GST {formatINR(againstInvoice.gstAmount)}, net {formatINR(againstInvoice.netReceivable)}
+                      {againstInvoice.certified ? ' after the client’s certified deductions' : ''}.
                     </p>
                   ) : null}
                 </div>
@@ -853,7 +856,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
 
           <FormSection
             step={4}
-            title="Deductions"
+            title={certification ? 'Deductions as raised' : 'Deductions'}
             description="A % line follows its configured base (e.g. Income TDS on taxable less mobilisation advance); typing an amount makes it fixed. A negative deduction adds to the net."
             actions={
               <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={addDeduction}>
@@ -862,6 +865,15 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
             }
             bodyClassName="space-y-3 p-3 sm:p-4"
           >
+            {certification ? (
+              <Notice tone="blue" title="The client’s certified deductions apply">
+                These are the deductions as raised, kept as the bill was issued. What the client pays follows its certification — the certified deductions set the net receivable and outstanding, not these. To change them, edit the client’s certification (bill page → Certification).
+              </Notice>
+            ) : note && againstInvoice?.certified ? (
+              <Notice tone="blue">
+                The client’s certified deductions already apply to {againstReference ? `invoice ${againstReference}` : 'the invoice'} — this note adjusts only the taxable value and its GST. Add a deduction here only if the client deducts something on the note itself.
+              </Notice>
+            ) : null}
             <DeductionEditor
               rows={form.deductions}
               setRows={setDeductionRows}
@@ -869,9 +881,11 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               activeTypes={activeTypes}
               deductionTypes={config.deductionTypes}
               gstType={deductionGstType}
-              totalDeduction={totals.totalDeduction}
+              totalDeduction={totals.raisedTotalDeduction}
               defaultGstRate={config.settings.defaultGstRate}
-              bases={note ? undefined : { taxable, gross }}
+              // No slab hint where it would mislead: a note follows its invoice's slabs, and a certified
+              // bill's raised lines no longer count in the slabs (its certified ones do).
+              bases={note || certification ? undefined : { taxable, gross }}
             />
           </FormSection>
 
@@ -960,8 +974,15 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               {deductionLines.map((line) => (
                 <Row key={line.id} label={`− ${line.deductionTypeName}${line.gstAmount ? ' (incl. GST)' : ''}`} value={-line.amount} muted />
               ))}
-              <Row label="Total deduction" value={-totals.totalDeduction} />
+              <Row label={certification ? 'Total deduction as raised' : 'Total deduction'} value={-totals.raisedTotalDeduction} />
               <div className="my-1 h-px bg-slate-200" />
+              {/* Certified: the client's deductions replace the rows above, so its net moves by the difference. */}
+              {certification && toPaise(totals.raisedTotalDeduction) !== toPaise(totals.totalDeduction) ? (
+                <>
+                  <Row label="Net as raised" value={totals.raisedNetReceivable} strong />
+                  <Row label={`Client deducted ${totals.totalDeduction > totals.raisedTotalDeduction ? 'more' : 'less'}`} value={subtractMoney(totals.raisedTotalDeduction, totals.totalDeduction)} />
+                </>
+              ) : null}
               <Row label={config.settings.roundNetToRupee ? 'Net receivable (rounded)' : 'Net receivable'} value={totals.netReceivable} strong />
               {existing ? (
                 <>

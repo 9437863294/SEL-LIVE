@@ -12,6 +12,12 @@
  * re-imagined, with the dimension the formulas hard-coded (bill-type name lists) replaced by the
  * configurable bill-type master.
  *
+ * A bill is reported with the deductions it is paid against (`effectiveDeductions`): the client's
+ * certified ones once it has certified the bill. The stored total deduction, retention, net and
+ * outstanding are already of those, so a report reading deduction lines must read the same ones.
+ * Raised figures appear only where something is explicitly "as raised" — the certification
+ * comparison, and the amount search (the net printed on the invoice).
+ *
  * Pure: no Firestore, no React. Dates are `yyyy-MM-dd` keys and `asOf` is always explicit, so a
  * report "as on 31-Mar-2026" is a parameter, not a different code path.
  */
@@ -23,6 +29,7 @@ import {
   collectionPercent,
   countedCollections,
   daysBetween,
+  effectiveDeductions,
   financialYearMonths,
   isoWeekOf,
   isoWeekRange,
@@ -172,10 +179,11 @@ export function filterBills(bills: readonly Bill[], filters: BillFilters, contex
     if (filters.chips?.length && !filters.chips.every((chip) => matchesChip(bill, chip, context))) return false;
     if (search) {
       const tokenHit = bill.searchTokens?.some((token) => token.includes(search));
+      // The raised net too: a certified bill's net has moved, but the invoice copy shows the raised one.
       const amountHit =
         Number.isFinite(searchNumber) &&
         searchNumber !== 0 &&
-        [bill.taxableAmount, bill.grossAmount, bill.netReceivable, bill.outstandingAmount].some((value) => toPaise(value) === toPaise(searchNumber));
+        [bill.taxableAmount, bill.grossAmount, bill.netReceivable, bill.raisedNetReceivable, bill.outstandingAmount].some((value) => toPaise(value) === toPaise(searchNumber));
       const utrHit = bill.collections?.some((entry) => entry.utrNumber?.toLowerCase().includes(search));
       if (!tokenHit && !amountHit && !utrHit) return false;
     }
@@ -460,7 +468,8 @@ export interface MonthlySummaryRow {
   billCount: number;
 }
 
-const kindSum = (bill: Bill, kinds: readonly DeductionKind[]) => sumBy((bill.deductions ?? []).filter((line) => kinds.includes(line.kind)), (line) => line.amount);
+/** A bill's deductions of these kinds — of the ones it is paid against, like its stored totals. */
+const kindSum = (bill: Bill, kinds: readonly DeductionKind[]) => sumBy(effectiveDeductions(bill).filter((line) => kinds.includes(line.kind)), (line) => line.amount);
 
 /**
  * One row per month of the FY, reproducing the legacy summary's QUERY formulas column by column:
@@ -480,6 +489,9 @@ const kindSum = (bill: Bill, kinds: readonly DeductionKind[]) => sumBy((bill.ded
  * names the column (Settings → Bill categories), so every bill lands in exactly one taxable column. "Retention withheld against
  * invoice" is the retention-against-invoice deduction (the legacy column summed retention-bill
  * shortfalls under that heading, which double counts with "Difference").
+ *
+ * The deduction columns read a certified bill's certified deductions, as its net does, so a month's
+ * taxable + GST − deductions still comes to its net.
  */
 export function monthlySummary(bills: readonly Bill[], financialYear: string, categories: readonly Pick<BillCategoryMaster, 'id' | 'summaryColumn'>[] = []): MonthlySummaryRow[] {
   const columnOf = (bill: Bill) => summaryColumnOf(bill.billCategory, categories);
@@ -556,7 +568,8 @@ export function deductionReport(bills: readonly Bill[], types: readonly Deductio
     if (bill.isDeleted) continue;
     const { key, label } = dimensionOf(bill, dimension);
     const row = rows.get(key) ?? { key, label, byType: Object.fromEntries(columns.map((column) => [column.id, 0])), total: 0 };
-    for (const line of bill.deductions ?? []) {
+    // What the client deducts: the certified lines once it has certified the bill.
+    for (const line of effectiveDeductions(bill)) {
       const id = columns.some((column) => column.id === line.deductionTypeId) ? line.deductionTypeId : (columns.find((column) => column.name === line.deductionTypeName)?.id ?? line.deductionTypeId);
       row.byType[id] = sumMoney([row.byType[id] ?? 0, line.amount]);
       totals[id] = sumMoney([totals[id] ?? 0, line.amount]);
@@ -915,10 +928,12 @@ export function exceptionItems(bills: readonly Bill[], context: ReportContext, n
       if (mismatch) items.push({ kind: 'legacy_status_mismatch', ...base(bill), amount: bill.shortfallSurplus, detail: `Workbook said ${bill.legacyStatus}; now ${bill.paymentStatus.replace(/_/g, ' ')}` });
     }
     // Needs the notes against each bill, which live outside the FY slice — given only when loaded.
+    // Pending means the invoice value (taxable + GST) is still off: a change of deductions applies
+    // through the certification and needs no note, so the amount is the note still to raise.
     if (notesByBill && bill.certification) {
       const summary = certificationSummary(bill, notesByBill.get(bill.id) ?? [], settings.tolerance);
       if (summary.state === 'adjustment_pending') {
-        items.push({ kind: 'certification_note_pending', ...base(bill), amount: summary.pendingNet ?? 0, detail: `Certified net ${summary.certifiedNet} vs raised ${summary.raisedNet}${summary.notesCount ? ` and ${summary.notesCount} note(s)` : ''}` });
+        items.push({ kind: 'certification_note_pending', ...base(bill), amount: summary.pendingGross ?? 0, detail: `Certified taxable + GST ${bill.certification.grossAmount} vs raised ${bill.grossAmount}${summary.notesCount ? ` and ${summary.notesCount} note(s)` : ''}` });
       }
     }
     if (bill.retentionExpectedReleaseDate && bill.retentionExpectedReleaseDate < asOf && toPaise(bill.retentionDeducted) > 0) {

@@ -46,7 +46,7 @@ import {
   type OutstandingChip,
   type ReportContext,
 } from '../reports.ts';
-import { retentionBifurcation } from '../retention.ts';
+import { retentionBifurcation, retentionSource } from '../retention.ts';
 import {
   AGEING_BASES,
   PAYMENT_STATUSES,
@@ -188,7 +188,13 @@ export interface CertificationRow extends BillRow {
 }
 
 export const CERTIFICATION_FILTERS = ['awaiting', 'certified', 'matched', 'pending'] as const;
-const CERTIFICATION_SORT_KEYS = ['certifiedDate', 'certifiedNet', 'variance', 'pendingNet'] as const;
+/**
+ * Sorts the certification views add to the register's own. `raisedNet` is the bill as raised (once
+ * certified, `netReceivable` is the certified deductions' net); `pendingGross` is "Note to raise", the
+ * taxable + GST a note must still adjust — `pendingNet`, that column's earlier key, sorts the same,
+ * so links and saved views keep working.
+ */
+const CERTIFICATION_SORT_KEYS = ['certifiedDate', 'certifiedNet', 'variance', 'raisedNet', 'pendingGross', 'pendingNet'] as const;
 
 const certificationFilter = (summary: CertificationSummary, filter: string | null): boolean => {
   if (filter === 'awaiting') return summary.state === 'not_certified';
@@ -211,8 +217,14 @@ async function listCertification(context: BtContext, params: URLSearchParams, lo
   const requested = params.get('sort') ?? '';
   let sorted: typeof rows;
   if ((CERTIFICATION_SORT_KEYS as readonly string[]).includes(requested)) {
-    const value = ({ bill, summary }: (typeof rows)[number]): string | number =>
-      requested === 'certifiedDate' ? (bill.certification?.certifiedDate ?? '') : requested === 'certifiedNet' ? (summary.certifiedNet ?? Number.NEGATIVE_INFINITY) : requested === 'variance' ? (summary.variance ?? 0) : Math.abs(summary.pendingNet ?? 0);
+    const value = ({ bill, summary }: (typeof rows)[number]): string | number => {
+      if (requested === 'certifiedDate') return bill.certification?.certifiedDate ?? '';
+      if (requested === 'certifiedNet') return summary.certifiedNet ?? Number.NEGATIVE_INFINITY;
+      if (requested === 'variance') return summary.variance ?? 0;
+      if (requested === 'raisedNet') return summary.raisedNet;
+      // The note to raise, by size: a credit note sorts with a debit note of the same amount.
+      return Math.abs(summary.pendingGross ?? 0);
+    };
     sorted = [...rows].sort((a, b) => {
       const x = value(a);
       const y = value(b);
@@ -349,8 +361,9 @@ export async function billDetail(context: BtContext, billId: string) {
       .slice()
       .sort((a, b) => a.billDate.localeCompare(b.billDate))
       .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable })),
-    // For a note: just what decides which of its invoice's retention slabs the note lands in.
-    noteInvoice: invoice ? { deductions: invoice.deductions, taxableAmount: invoice.taxableAmount, grossAmount: invoice.grossAmount } : null,
+    // For a note: just what decides which of its invoice's retention slabs the note lands in — the
+    // certified deductions and figures once the client has certified the invoice, as slabs read them.
+    noteInvoice: invoice ? retentionSource(invoice) : null,
   };
 }
 
@@ -552,7 +565,8 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     case 'data-quality':
       return { ...base, ...dataQuality(all, config) };
     case 'certification': {
-      // Raised vs certified, per project: what the client changed and what is still to adjust.
+      // Raised vs certified, per project: what the client changed and what is still to adjust — the
+      // projects with the largest notes to raise (taxable + GST) first.
       const rows = await withCertification(context, bills, config.settings.tolerance);
       const groups = new Map<string, { label: string; summaries: CertificationSummary[] }>();
       for (const { bill, summary } of rows) {
@@ -562,7 +576,7 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
       }
       return {
         ...base,
-        rows: [...groups.entries()].map(([key, group]) => ({ key, label: group.label, ...certificationTotals(group.summaries) })).sort((a, b) => Math.abs(b.pendingNet) - Math.abs(a.pendingNet) || b.awaiting - a.awaiting || a.label.localeCompare(b.label)),
+        rows: [...groups.entries()].map(([key, group]) => ({ key, label: group.label, ...certificationTotals(group.summaries) })).sort((a, b) => Math.abs(b.pendingGross) - Math.abs(a.pendingGross) || b.awaiting - a.awaiting || a.label.localeCompare(b.label)),
         totals: certificationTotals(rows.map((row) => row.summary)),
       };
     }

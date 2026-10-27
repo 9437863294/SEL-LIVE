@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DEFAULT_DEDUCTION_TYPES } from '../src/lib/bill-tracking/defaults.ts';
-import { billRetentionSlabs, namedReleaseSlab, releaseSlabKey, retentionBifurcation, retentionLineRate, slabKey } from '../src/lib/bill-tracking/retention.ts';
+import { billRetentionSlabs, namedReleaseSlab, releaseSlabKey, retentionBifurcation, retentionLineRate, retentionSource, slabKey } from '../src/lib/bill-tracking/retention.ts';
 
 const types = DEFAULT_DEDUCTION_TYPES;
 const line = (id, deductionTypeId, amount, extra = {}) => {
@@ -174,4 +174,42 @@ test('a release counts in the slab it names even when no bill in view holds it; 
   assert.equal(result.byProject.find((row) => row.projectId === 'p2').unattributed, 25000);
   assert.equal(result.byProject.find((row) => row.projectId === 'p1').unattributed, 0);
   assert.equal(namedReleaseSlab({ deductionTypeId: 'dt-gone', rate: null, kind: 'retention_other' }, types).label, 'Retention head no longer in Settings · fixed amount');
+});
+
+test('a certified bill holds the retention the client certified, read against the certified taxable', () => {
+  // Raised: 10% + 30% on 10,00,000. Certified on 8,00,000: the 10% typed, the 30% entered as an amount.
+  const certification = { taxableAmount: 800000, grossAmount: 944000, deductions: [line('a', 'dt-ret-inv', 80000, { percentage: 10 }), line('b', 'dt-ret-inv', 240000)] };
+  const raisedLines = [line('a', 'dt-ret-inv', 100000, { percentage: 10 }), line('b', 'dt-ret-inv', 300000, { percentage: 30 })];
+  const invoice = bill('b1', raisedLines, { certification });
+  assert.deepEqual(retentionSource(invoice), { deductions: certification.deductions, taxableAmount: 800000, grossAmount: 944000 });
+  assert.deepEqual(retentionSource(bill('b2', raisedLines)), { deductions: raisedLines, taxableAmount: 1000000, grossAmount: 1180000 }, 'not certified: as raised');
+  assert.deepEqual(retentionSource({ ...invoice, certification: { ...certification, deductions: undefined } }).deductions, [], 'a certification without its list holds none');
+
+  const result = retentionBifurcation([invoice], [], types);
+  assert.deepEqual(result.byBill[0].cells, { 'dt-ret-inv|10': 80000, 'dt-ret-inv|30': 240000 });
+  assert.equal(result.byBill[0].fromAmounts, true);
+  assert.equal(result.totals.held, 320000, 'the certified retention, as the bill’s retention total reads it');
+  // Against the raised taxable, 2,40,000 would read as 24% — a slab nobody deducted.
+  assert.deepEqual(billRetentionSlabs({ ...retentionSource(invoice), taxableAmount: 1000000 }, types).map((entry) => entry.slab.key), ['dt-ret-inv|10', 'dt-ret-inv|24']);
+});
+
+test('a note against a certified invoice lands in the slabs the invoice holds as certified', () => {
+  // The client certified only the 30% (2,40,000 on 8,00,000), dropping the raised 10%.
+  const invoice = bill('b1', [line('a', 'dt-ret-inv', 100000, { percentage: 10 }), line('b', 'dt-ret-inv', 300000, { percentage: 30 })], {
+    certification: { taxableAmount: 800000, grossAmount: 944000, deductions: [line('b', 'dt-ret-inv', 240000, { percentage: 30 })] },
+  });
+  // −40,000 on −1,00,000 reads as 40%, no slab the invoice holds: as raised it would be shared over 10% and 30%.
+  const credit = bill('n1', [line('a', 'dt-ret-inv', -40000)], { transactionType: 'credit_note', againstBillId: 'b1', taxableAmount: -100000, grossAmount: -118000 });
+  const result = retentionBifurcation([invoice, credit], [], types);
+  assert.deepEqual(result.byBill.find((row) => row.id === 'n1').cells, { 'dt-ret-inv|30': -40000 });
+  assert.deepEqual(result.byBill.find((row) => row.id === 'b1').cells, { 'dt-ret-inv|30': 240000 });
+  assert.equal(result.totals.held, 200000);
+  assert.deepEqual(billRetentionSlabs(credit, types, invoice).map((entry) => [entry.slab.key, entry.held]), [['dt-ret-inv|10', -10000], ['dt-ret-inv|30', -30000]], 'read against the raised invoice instead');
+});
+
+test('a retention bill certified for a smaller release holds the certified claim', () => {
+  // A retention bill claims its release as a negative retention line on no taxable (the legacy layout).
+  const claim = bill('r1', [line('a', 'dt-ret-inv', -300000)], { transactionType: 'retention_bill', taxableAmount: 0, grossAmount: 0, certification: { taxableAmount: 0, grossAmount: 0, deductions: [line('a', 'dt-ret-inv', -250000)] } });
+  const result = retentionBifurcation([claim], [], types);
+  assert.deepEqual(result.byBill[0].cells, { 'dt-ret-inv|amount': -250000 }, 'no taxable to read a rate against: a fixed amount');
 });

@@ -2,19 +2,29 @@
  * Raised vs certified.
  *
  * SEL raises a bill; the client certifies it — sometimes for less (a lower measured quantity), often
- * with more deducted (a penalty, a different TDS base, extra retention). The finance team then raises
- * a credit note against the raised bill so that the books match what the client will actually pay.
+ * with more deducted (a penalty, a different TDS base, extra retention). The two are settled
+ * differently:
+ *
+ *   - **Deductions** need no document. Once certified, the client's certified deductions replace
+ *     the raised ones in the bill's net, outstanding, reports and retention (`effectiveDeductions`
+ *     in `calculations.ts`) — the client simply pays the invoice less what it deducted.
+ *   - **The invoice value** — taxable and the GST on it — changes only through a credit / debit note
+ *     against the bill (a GST document). The issued invoice itself is never edited.
  *
  * So three sets of figures are compared, line by line:
  *
- *   raised      the bill as issued (it stays the receivable — an issued invoice is never edited)
+ *   raised      the bill as issued
  *   notes       the credit / debit notes raised against it so far
  *   certified   what the client approved and deducts
  *
- * and `pending = certified − (raised + notes)` is what is still to be adjusted. When the taxable, the
- * GST and the net all match within the amount tolerance, the bill is "matched"; until then the pending
- * figures are exactly the note to raise, which `suggestedNote` spells out — taxable and GST to reverse
- * plus each deduction the client changed — for the bill form to pre-fill.
+ * and `pending = certified − (raised + notes)` is what a note still has to adjust — for the taxable,
+ * the GST components and the gross. When the taxable and the GST match within the amount tolerance,
+ * the bill is "matched", whatever the deductions did; until then `suggestedNote` spells out the note
+ * to raise — taxable and GST only — for the bill form to pre-fill.
+ *
+ * The deduction lines are shown raised vs certified for the record, but nothing is pending on them.
+ * The net still to adjust is the gross still to adjust plus whatever the notes themselves deduct: a
+ * deduction on a note comes on top of the certified ones, so it shows there even on a matched bill.
  *
  * Pure: the server, the browser and the test suite use the same arithmetic.
  */
@@ -65,8 +75,10 @@ export const raisedFigures = (bill: Bill): ComparableFigures => ({
   igstAmount: bill.igstAmount ?? 0,
   grossAmount: bill.grossAmount,
   deductions: bill.deductions ?? [],
-  totalDeduction: bill.totalDeduction,
-  net: bill.netReceivable,
+  // Once certified, `totalDeduction` / `netReceivable` are the certified deductions'; the raised ones
+  // are stored beside them (a bill stored before they were still had the raised figures there).
+  totalDeduction: bill.raisedTotalDeduction ?? bill.totalDeduction,
+  net: bill.raisedNetReceivable ?? bill.netReceivable,
 });
 
 export const certifiedFigures = (certification: BillCertification): ComparableFigures => ({
@@ -129,6 +141,12 @@ export interface ComparisonLine {
   key: string;
   label: string;
   group: 'amount' | 'deduction' | 'total';
+  /**
+   * How a difference on this line is settled: `note` — by a credit / debit note (the invoice value
+   * and the net); `certification` — by the certification itself (deductions: the certified ones
+   * apply), so `pending` is null and the line is always matched.
+   */
+  settledBy: 'note' | 'certification';
   raised: number;
   /** Credit / debit notes against the bill so far. */
   notes: number;
@@ -136,35 +154,37 @@ export interface ComparisonLine {
   certified: number | null;
   /** The client's change: certified − raised. */
   difference: number | null;
-  /** Still to adjust: certified − (raised + notes). */
+  /**
+   * Still to adjust by a note: certified − (raised + notes) — on the net line, the summary's
+   * `pendingNet`, measured from what the bill is now paid (the certified deductions already
+   * apply). Null when not certified, or settled by the certification.
+   */
   pending: number | null;
   matched: boolean;
 }
 
 export interface CertificationSummary {
   state: CertificationState;
+  /** The bill's net as raised (gross less the raised deductions). */
   raisedNet: number;
   notesNet: number;
   notesCount: number;
   certifiedNet: number | null;
   /** Certified net − raised net: what the client's certification changed. */
   variance: number | null;
-  /** Certified net − (raised net + notes): what a note still has to adjust. */
+  /** Certified − raised total deduction: applied by the certification itself, no note needed. */
+  deductionChange: number | null;
+  /**
+   * Certified net − what the bill and its notes are now paid (raised gross + notes, less the
+   * certified deductions and any the notes carry): `pendingGross`, plus whatever the notes deduct —
+   * which no further note settles, so it can remain on a matched bill.
+   */
   pendingNet: number | null;
-  /** The taxable + GST part of that — what the note's own invoice value must be. */
+  /** The taxable + GST still to adjust — what the note's own invoice value must be. */
   pendingGross: number | null;
 }
 
-export interface SuggestedNoteDeduction {
-  deductionTypeId: string;
-  baseAmount: number;
-  gstRate?: number;
-  cgstAmount?: number;
-  sgstAmount?: number;
-  igstAmount?: number;
-}
-
-/** The credit (or debit) note that makes raised + notes equal the certification. */
+/** The credit (or debit) note that makes the invoice value of raised + notes equal the certification. */
 export interface SuggestedNote {
   transactionType: 'credit_note' | 'debit_note';
   taxableAmount: number;
@@ -174,8 +194,10 @@ export interface SuggestedNote {
   cgstAmount?: number;
   sgstAmount?: number;
   igstAmount?: number;
-  deductions: SuggestedNoteDeduction[];
-  /** Net of the note as it will be computed (gross less its deductions). */
+  /**
+   * Net of the note: its gross, since a note to match a certification carries no deductions (saved,
+   * it is rounded to the rupee like any net when that setting is on).
+   */
   netAmount: number;
   description: string;
 }
@@ -187,7 +209,13 @@ export interface CertificationComparison {
 }
 
 const within = (amount: number | null, tolerance: number) => amount === null || Math.abs(toPaise(amount)) <= toPaise(Math.abs(tolerance));
-const pendingOf = (certified: number | null, raised: number, notes: number) => (certified === null ? null : subtractMoney(certified, sumMoney([raised, notes])));
+
+/**
+ * One figure still to adjust: certified − (raised + notes). Asked only of a certified bill, so a
+ * figure the stored certification lacks reads as 0 — a large pending — never as nothing to adjust.
+ */
+const pendingFigure = (pick: (figures: ComparableFigures) => number, raised: ComparableFigures, notes: ComparableFigures, certified: ComparableFigures): number =>
+  subtractMoney(pick(certified), sumMoney([pick(raised), pick(notes)]));
 
 /** Just the state and headline figures — what the register needs per row. */
 export function certificationSummary(bill: Bill, notes: readonly Bill[], tolerance: number): CertificationSummary {
@@ -196,13 +224,16 @@ export function certificationSummary(bill: Bill, notes: readonly Bill[], toleran
   const fromNotes = notesFigures(live);
   const certification = bill.certification;
   if (!certification) {
-    return { state: 'not_certified', raisedNet: raised.net, notesNet: fromNotes.net, notesCount: live.length, certifiedNet: null, variance: null, pendingNet: null, pendingGross: null };
+    return { state: 'not_certified', raisedNet: raised.net, notesNet: fromNotes.net, notesCount: live.length, certifiedNet: null, variance: null, deductionChange: null, pendingNet: null, pendingGross: null };
   }
   const certified = certifiedFigures(certification);
-  const pendingTaxable = pendingOf(certified.taxableAmount, raised.taxableAmount, fromNotes.taxableAmount);
-  const pendingGst = pendingOf(certified.gstAmount, raised.gstAmount, fromNotes.gstAmount);
-  const pendingNet = pendingOf(certified.net, raised.net, fromNotes.net);
-  const matched = within(pendingTaxable, tolerance) && within(pendingGst, tolerance) && within(pendingNet, tolerance);
+  const pending = (pick: (figures: ComparableFigures) => number) => pendingFigure(pick, raised, fromNotes, certified);
+  const pendingTaxable = pending((figures) => figures.taxableAmount);
+  const pendingGst = pending((figures) => figures.gstAmount);
+  const pendingGross = pending((figures) => figures.grossAmount);
+  // Only the invoice value needs a note: the certified deductions already apply to the bill, so a
+  // bill whose taxable and GST match is matched however its deductions changed.
+  const matched = within(pendingTaxable, tolerance) && within(pendingGst, tolerance);
   return {
     state: matched ? 'matched' : 'adjustment_pending',
     raisedNet: raised.net,
@@ -210,8 +241,11 @@ export function certificationSummary(bill: Bill, notes: readonly Bill[], toleran
     notesCount: live.length,
     certifiedNet: certified.net,
     variance: subtractMoney(certified.net, raised.net),
-    pendingNet,
-    pendingGross: pendingOf(certified.grossAmount, raised.grossAmount, fromNotes.grossAmount),
+    deductionChange: subtractMoney(certified.totalDeduction, raised.totalDeduction),
+    // The bill is paid its raised gross less the certified deductions, the notes their own net; so the
+    // net still to adjust is the invoice value still to adjust, plus anything notes deduct besides.
+    pendingNet: sumMoney([pendingGross, fromNotes.totalDeduction]),
+    pendingGross,
   };
 }
 
@@ -224,16 +258,16 @@ export function compareCertification(bill: Bill, notes: readonly Bill[], toleran
   const certified = bill.certification ? certifiedFigures(bill.certification) : null;
 
   const line = (key: string, label: string, group: ComparisonLine['group'], pick: (figures: ComparableFigures) => number): ComparisonLine => {
-    const certifiedValue = certified ? pick(certified) : null;
-    const pending = pendingOf(certifiedValue, pick(raised), pick(fromNotes));
+    const pending = certified ? pendingFigure(pick, raised, fromNotes, certified) : null;
     return {
       key,
       label,
       group,
+      settledBy: 'note',
       raised: pick(raised),
       notes: pick(fromNotes),
-      certified: certifiedValue,
-      difference: certifiedValue === null ? null : subtractMoney(certifiedValue, pick(raised)),
+      certified: certified ? pick(certified) : null,
+      difference: certified ? subtractMoney(pick(certified), pick(raised)) : null,
       pending,
       matched: within(pending, tolerance),
     };
@@ -260,36 +294,32 @@ export function compareCertification(bill: Bill, notes: readonly Bill[], toleran
   const certifiedByType = certified ? deductionsByType(certified.deductions) : new Map<string, DeductionTotals>();
   const typeIds = [...new Set([...raisedByType.keys(), ...certifiedByType.keys(), ...notesByType.keys()])];
   const nameOf = (id: string) => raisedByType.get(id)?.name ?? certifiedByType.get(id)?.name ?? notesByType.get(id)?.name ?? id;
+  // Deductions are settled by the certification itself (its deductions apply), never by a note.
+  const byCertification = (entry: Omit<ComparisonLine, 'settledBy' | 'pending' | 'matched'>): ComparisonLine => ({ ...entry, settledBy: 'certification', pending: null, matched: true });
   for (const id of typeIds) {
     const amountIn = (map: Map<string, DeductionTotals>) => map.get(id)?.amount ?? 0;
     const certifiedValue = certified ? amountIn(certifiedByType) : null;
-    const pending = pendingOf(certifiedValue, amountIn(raisedByType), amountIn(notesByType));
-    lines.push({
-      key: `deduction:${id}`,
-      label: nameOf(id),
-      group: 'deduction',
-      raised: amountIn(raisedByType),
-      notes: amountIn(notesByType),
-      certified: certifiedValue,
-      difference: certifiedValue === null ? null : subtractMoney(certifiedValue, amountIn(raisedByType)),
-      pending,
-      matched: within(pending, tolerance),
-    });
+    lines.push(
+      byCertification({
+        key: `deduction:${id}`,
+        label: nameOf(id),
+        group: 'deduction',
+        raised: amountIn(raisedByType),
+        notes: amountIn(notesByType),
+        certified: certifiedValue,
+        difference: certifiedValue === null ? null : subtractMoney(certifiedValue, amountIn(raisedByType)),
+      }),
+    );
   }
-  lines.push(line('totalDeduction', 'Total deduction', 'total', (figures) => figures.totalDeduction));
-  lines.push(line('net', 'Net receivable', 'total', (figures) => figures.net));
+  lines.push({ ...line('totalDeduction', 'Total deduction', 'total', (figures) => figures.totalDeduction), settledBy: 'certification', pending: null, matched: true });
+  const net = line('net', 'Net receivable', 'total', (figures) => figures.net);
+  lines.push({ ...net, pending: summary.pendingNet, matched: within(summary.pendingNet, tolerance) });
 
-  return { summary, lines, suggestedNote: summary.state === 'adjustment_pending' && certified ? suggestNote(bill, raised, fromNotes, certified, { raisedByType, notesByType, certifiedByType }) : null };
+  return { summary, lines, suggestedNote: summary.state === 'adjustment_pending' && certified ? suggestNote(bill, raised, fromNotes, certified) : null };
 }
 
-function suggestNote(
-  bill: Bill,
-  raised: ComparableFigures,
-  fromNotes: ComparableFigures,
-  certified: ComparableFigures,
-  maps: { raisedByType: Map<string, DeductionTotals>; notesByType: Map<string, DeductionTotals>; certifiedByType: Map<string, DeductionTotals> },
-): SuggestedNote {
-  const pending = (pick: (figures: ComparableFigures) => number) => subtractMoney(pick(certified), sumMoney([pick(raised), pick(fromNotes)]));
+function suggestNote(bill: Bill, raised: ComparableFigures, fromNotes: ComparableFigures, certified: ComparableFigures): SuggestedNote {
+  const pending = (pick: (figures: ComparableFigures) => number) => pendingFigure(pick, raised, fromNotes, certified);
   const taxableAmount = pending((figures) => figures.taxableAmount);
   const pendingGst = pending((figures) => figures.gstAmount);
   const raisedType = bill.gstType;
@@ -324,27 +354,12 @@ function suggestNote(
   }
   const gstAmount = gstType === 'cgst-sgst' ? sumMoney([cgstAmount ?? 0, sgstAmount ?? 0]) : gstType === 'igst' ? (igstAmount ?? 0) : gstType === 'none' ? 0 : pendingGst;
 
-  const deductions: SuggestedNoteDeduction[] = [];
-  const typeIds = [...new Set([...maps.raisedByType.keys(), ...maps.certifiedByType.keys(), ...maps.notesByType.keys()])];
-  for (const id of typeIds) {
-    const part = (key: keyof Pick<DeductionTotals, 'amount' | 'base' | 'cgst' | 'sgst' | 'igst'>) =>
-      subtractMoney(maps.certifiedByType.get(id)?.[key] ?? 0, sumMoney([maps.raisedByType.get(id)?.[key] ?? 0, maps.notesByType.get(id)?.[key] ?? 0]));
-    if (toPaise(part('amount')) === 0 && toPaise(part('base')) === 0) continue;
-    const gstRate = maps.certifiedByType.get(id)?.gstRate ?? maps.raisedByType.get(id)?.gstRate;
-    const entry: SuggestedNoteDeduction = { deductionTypeId: id, baseAmount: part('base') };
-    if (gstRate) {
-      entry.gstRate = gstRate;
-      if (gstType === 'igst') entry.igstAmount = part('igst');
-      else Object.assign(entry, { cgstAmount: part('cgst'), sgstAmount: part('sgst') });
-    }
-    deductions.push(entry);
-  }
-
+  // No deduction lines: the certified deductions already apply to the invoice itself.
   const gross = sumMoney([taxableAmount, gstAmount]);
-  const deductionTotal = sumBy(deductions, (entry) => sumMoney([entry.baseAmount, entry.cgstAmount ?? 0, entry.sgstAmount ?? 0, entry.igstAmount ?? 0]));
-  const netAmount = subtractMoney(gross, deductionTotal);
-  // The note's direction follows its invoice value; with none (only deductions changed), its net.
-  const reduces = toPaise(gross) !== 0 ? gross < 0 : netAmount < 0;
+  // The type follows what the note does to the receivable — its gross — so a credit note's net is
+  // never positive. Only a GST rate correction moves the taxable and the GST opposite ways; there the
+  // gross decides, and a zero gross follows the taxable.
+  const reduces = toPaise(gross) !== 0 ? gross < 0 : taxableAmount < 0;
   const reference = bill.certification?.reference ? ` ${bill.certification.reference}` : '';
   const invoice = bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
   return {
@@ -356,8 +371,7 @@ function suggestNote(
     cgstAmount,
     sgstAmount,
     igstAmount,
-    deductions,
-    netAmount: roundMoney(netAmount),
+    netAmount: roundMoney(gross),
     description: `To match client certification${reference} of ${bill.certification?.certifiedDate ?? ''} against invoice ${invoice}`.replace(/\s+/g, ' ').trim(),
   };
 }
@@ -375,24 +389,35 @@ export interface CertificationTotals {
   raisedNetCertified: number;
   certifiedNet: number;
   variance: number;
+  /** The part of the variance the certified deductions apply by themselves (certified − raised deduction). */
+  deductionChange: number;
   notesNet: number;
   pendingNet: number;
+  /**
+   * The invoice value (taxable + GST) still to adjust on the bills with a note pending: what the
+   * credit / debit notes to raise add up to. A matched bill's leftover within the tolerance is no
+   * note anyone will raise, so it is left out.
+   */
+  pendingGross: number;
 }
 
 export function certificationTotals(summaries: readonly CertificationSummary[]): CertificationTotals {
   const certified = summaries.filter((summary) => summary.state !== 'not_certified');
+  const notePending = summaries.filter((summary) => summary.state === 'adjustment_pending');
   return {
     count: summaries.length,
     certified: certified.length,
     awaiting: summaries.length - certified.length,
     matched: summaries.filter((summary) => summary.state === 'matched').length,
-    pending: summaries.filter((summary) => summary.state === 'adjustment_pending').length,
+    pending: notePending.length,
     raisedNet: sumBy(summaries, (summary) => summary.raisedNet),
     raisedNetCertified: sumBy(certified, (summary) => summary.raisedNet),
     certifiedNet: sumBy(certified, (summary) => summary.certifiedNet ?? 0),
     variance: sumBy(certified, (summary) => summary.variance ?? 0),
+    deductionChange: sumBy(certified, (summary) => summary.deductionChange ?? 0),
     notesNet: sumBy(certified, (summary) => summary.notesNet),
     pendingNet: sumBy(certified, (summary) => summary.pendingNet ?? 0),
+    pendingGross: sumBy(notePending, (summary) => summary.pendingGross ?? 0),
   };
 }
 

@@ -949,6 +949,12 @@ export interface ExistingBillKey {
   billTypeName?: string;
   taxableAmount: number;
   netReceivable: number;
+  /**
+   * The net the bill is paid when it differs from `netReceivable` (the raised net): a certified bill,
+   * whose certified deductions apply. A workbook exported from SEL LIVE carries that net, so either
+   * one identifies the bill.
+   */
+  paidNetReceivable?: number;
   importFingerprint?: string;
   projectNameSnapshot?: string;
 }
@@ -1032,7 +1038,9 @@ export function classifyDuplicate(
 
   if (row.projectId) {
     const sameProject = existing.filter((bill) => bill.projectId === row.projectId);
-    const exact = sameProject.find((bill) => bill.importFingerprint === row.fingerprint || isExact(keyOfBill(bill), key));
+    const exact = sameProject.find(
+      (bill) => bill.importFingerprint === row.fingerprint || isExact(keyOfBill(bill), key) || (bill.paidNetReceivable !== undefined && isExact({ ...keyOfBill(bill), net: bill.paidNetReceivable }, key)),
+    );
     if (exact) return { kind: 'exact', existingBillId: exact.id, reason: 'This bill is already in SEL LIVE.' };
     const possible = sameProject.find((bill) => isPossible(keyOfBill(bill), key));
     if (possible) {

@@ -27,12 +27,12 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { dispatchNotificationServer } from '@/lib/notifications-server';
 
 import { bankCreditForCollection } from '../bank-posting.ts';
-import { deriveBillTotals, financialYearOf, isoWeekOf } from '../calculations.ts';
+import { deriveBillTotals, financialYearOf } from '../calculations.ts';
 import { subtractMoney, sumMoney, toPaise } from '../money.ts';
 import type { CollectionInput } from '../schemas';
 import type { Bill, BillCollection, BillCollectionRef, BillTrackingConfig, CollectionStatus, RetentionRelease } from '../types';
 import { receiptBlockReason } from '../certification.ts';
-import { assertMonthOpen, calculationOptions } from './bills';
+import { assertMonthOpen, calculationOptions, totalsUpdate } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
 
@@ -73,23 +73,14 @@ function reverseBankCredit(transaction: Transaction, collection: StoredCollectio
   return { bankExpenseId: FieldValue.delete() };
 }
 
-/** Recomputes a bill after its receipt list changed, and returns the update to write. */
+/**
+ * Recomputes a bill after its receipt list changed, and returns the update to write. Spreading the
+ * stored bill carries its certification, so a certified bill's outstanding is measured against the
+ * certified deductions; every total is rewritten, so the stored net always matches that outstanding.
+ */
 function billUpdateFor(bill: StoredBill, collections: BillCollectionRef[], config: BillTrackingConfig): Record<string, unknown> {
   const totals = deriveBillTotals({ ...bill, collections }, calculationOptions(config));
-  const update: Record<string, unknown> = {
-    collections,
-    totalReceived: totals.totalReceived,
-    outstandingAmount: totals.outstandingAmount,
-    shortfallSurplus: totals.shortfallSurplus,
-    paymentStatus: totals.paymentStatus,
-    lastReceiptDate: totals.lastReceiptDate ?? FieldValue.delete(),
-    version: (bill.version ?? 1) + 1,
-    updatedAt: nowIso(),
-  };
-  // RECEIVED WEEK: the week the bill became fully paid, as the legacy sheet recorded it.
-  if (totals.paymentStatus === 'received' && bill.paymentStatus !== 'received' && totals.lastReceiptDate) update.receivedWeek = isoWeekOf(totals.lastReceiptDate);
-  if (totals.paymentStatus !== 'received' && bill.paymentStatus === 'received') update.receivedWeek = FieldValue.delete();
-  return update;
+  return { collections, ...totalsUpdate(bill, totals), version: (bill.version ?? 1) + 1, updatedAt: nowIso() };
 }
 
 async function readBills(transaction: Transaction, context: BtContext, billIds: string[]): Promise<Map<string, { ref: DocumentReference; bill: StoredBill }>> {

@@ -26,7 +26,7 @@ the browser sends for derived fields are ignored.
 |---|---|
 | `billTrackingBills` | One document per bill. Holds embedded deduction lines and a mirror of its receipt allocations. |
 | `billTrackingCollections` | One document per bank receipt, with its allocation across bills. |
-| `billTrackingRetention` | The retention release ledger. "Held" is derived from bill deductions. |
+| `billTrackingRetention` | The retention release ledger. "Held" is derived from bill deductions (the certified ones, once a bill is certified). |
 | `billTrackingFollowUps`, `billTrackingComments`, `billTrackingDocuments` | Records attached to a bill. |
 | `billTrackingTargets` | Weekly collection targets. |
 | `billTrackingActivity` | The immutable audit trail. |
@@ -55,11 +55,15 @@ written and served only by the API.
   - The server recomputes every line on save (`computeDeductions` in `gst.ts`). Percentage lines
     are rounded to the rupee unless that setting is off.
 - **Credit notes.**
+  - **What needs one.** Only a change of the invoice value: the taxable and the GST on it. A change
+    of deductions needs no note. Once the client certifies a bill, its certified deductions apply
+    to the bill directly (see *Raised vs certified*).
   - **Linking.** A credit note must name an invoice of the same project; a debit note may. Legacy
     notes whose description says "Against Inv No -…" are linked on import if that invoice exists.
   - **Invoice page.** It lists the notes against the invoice and shows its net after notes, and
     offers *Raise credit note*.
-  - **Receivables.** Each note keeps its own receivable.
+  - **Receivables.** Each note keeps its own receivable: its gross, less any deduction the client
+    makes on the note itself.
 
 ### Bill categories
 
@@ -82,34 +86,56 @@ Categories are configured in Settings → Bill categories.
 
 ### Raised vs certified
 
-SEL raises a bill; the client then certifies it, often for less or with more deducted. Finance
-settles the difference with a credit note against the raised bill. The module follows that process.
+SEL raises a bill; the client then certifies it, often for less or with more deducted. The two
+kinds of difference are settled differently:
 
-1. **Raised.** The bill as issued. It stays the receivable, and the certification never edits it.
+- **Deductions need no document.** Once the bill is certified, the client's certified deductions
+  replace the raised ones in everything the bill is paid against: net receivable, outstanding,
+  payment status, the deduction and retention reports, and retention by rate. The client simply
+  pays the invoice less what it certified as deducted.
+- **The invoice value needs a note.** The taxable, and the GST on it, change only through a credit
+  or debit note against the bill. The issued invoice itself is never edited.
+
+1. **Raised.** The bill as issued. Its raised deductions stay on the bill for the comparison; the
+   certification never edits them.
 2. **Certified.** On the bill: *Actions → Record client certification*, or the *Certification*
    tab. The form starts from every raised figure (taxable, GST components, each deduction).
    Finance changes what the client changed and adds any extra deduction. The GST section works like
    the bill form's (registration, type, rate, CGST / SGST or IGST). The type defaults to the raised
    bill's; a bill imported with one unsplit GST figure starts split by the suggested type, with the
    same total. Stored as `bill.certification` with a revision number; every change is audited.
-3. **Compared.** Line by line: raised, certified, the client's change, notes raised against the
-   bill, and *still to adjust* = certified − (raised + notes). A bill is **matched** when the
-   taxable, GST and net still to adjust are all within the amount tolerance.
+   Saving applies the certified deductions to the bill at once.
+3. **Compared.** Line by line: raised, certified, the client's change and the notes raised against
+   the bill.
+   - Taxable and GST: *still to adjust* = certified − (raised + notes).
+   - Deductions: the change only. The certification has already applied it, so nothing is left to
+     adjust.
+   - A bill is **matched** when the taxable and the GST still to adjust are both within the amount
+     tolerance, whatever happened to its deductions.
 4. **Settled.** *Raise credit note* opens the note form already filled with the difference:
-   - taxable and each GST component;
-   - every deduction the client changed, as fixed lines (an extra penalty, a lower TDS);
+   - the taxable and each GST component, and nothing else — no deduction lines;
    - a debit note instead if the client certified more.
 
    Saving that note makes the bill matched. A credit note's form also has *Match the client
    certification* for any certified invoice.
 
+- **Deductions on a note.** If the client also deducts something on a note itself (TDS on a debit
+  note, say), enter it on the note. It counts in the note's own net, like any bill's deductions.
+- **Stored totals.** A bill's `totalDeduction`, `netReceivable`, `retentionDeducted` and
+  `outstandingAmount` are worked out from its effective deductions: the certified ones once it is
+  certified (`effectiveDeductions` in `calculations.ts`). `raisedTotalDeduction` and
+  `raisedNetReceivable` keep the raised figures beside them. Bills stored before 2026-10-27 have
+  neither. Their stored figures are the raised ones, which is out of date on a bill already
+  certified until it is recomputed (see the deployment checklist).
+
 Where it shows:
 
 | Place | What it shows |
 |---|---|
-| Bill Register | Tabs: *Raised bills*, *Client certified* (including bills awaiting certification) and *Raised vs certified* (certified bills only, with *Raise note* per row) |
+| Bill Register | Tabs: *Raised bills*, *Client certified* (including bills awaiting certification) and *Raised vs certified* (certified bills only: the deduction change, the note to raise, and *Raise note* on each bill whose taxable or GST differs) |
+| Bill page | *Deductions* tab: on a certified bill, a *Certified · applies* / *As raised* switch, showing the certified lines by default |
 | Reports | *Raised vs certified*, per project |
-| Dashboard | *Awaiting certification* and *Credit notes to raise* cards |
+| Dashboard | *Awaiting certification* and *Notes to raise* cards |
 | Exceptions | *Certified — credit note pending* |
 
 - **Workflow.** Draft → Submitted → Under verification → Verified → Approved → Bill raised →
@@ -165,8 +191,11 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
     its head.
   - Only a rate above 0 and up to 100% makes a slab. A typed 0 or negative percentage is an
     adjustment and counts as a fixed amount. A ₹0 line is left out.
+- **Certified bills.** Once the client certifies a bill, its certified retention lines count
+  instead of the raised ones. They are read against the certified taxable (or gross), so an amount
+  line takes its rate from what the client certified.
 - **Notes.** A credit or debit note adjusts its invoice's retention, so it lands in the invoice's
-  slabs, negative:
+  slabs (the certified ones, once the invoice is certified), negative:
   - a line whose own reading is a slab the invoice holds under that head goes there — a note
     reversing just the 30% reads as 30%;
   - otherwise the line is shared over the invoice's slabs of that head, in proportion to what each
@@ -189,9 +218,12 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
   - The Retention page's **By rate** tab shows each slab's held, released and balance, a project ×
     rate table and a bill × rate table, with exports.
   - The bill page's Retention tab lists the bill's slabs (a note's, as placed on its invoice).
-  - While a retention line is entered on an invoice, the bill form says which slab it counts in.
-    Notes and certifications show no such hint: a note follows its invoice, and certified
-    deductions are not in the slabs.
+  - While a retention line is entered, the form says which slab it counts in:
+    - the bill form, on a bill the client has not certified yet;
+    - the certification form, read against the certified taxable (or gross).
+
+    Two places show no such hint. A note follows its invoice. A certified bill's raised lines,
+    edited on the bill form, no longer count in the slabs: the certified ones do.
 
 ## Deployment checklist
 
@@ -215,6 +247,16 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
    2. Run `npm run bill-tracking:dry-run -- "<path to workbook>"` and check the totals offline.
    3. Import the workbook at `/bill-tracking/import`.
    4. Open the job's Reconciliation and accept the import only when every difference is explained.
+7. **Certified bills before 2026-10-27.** Until then the certified deductions did not apply to the
+   bill. Bills certified before that date still store totals worked out from the raised deductions
+   (net, outstanding, retention, payment status) until each is recomputed.
+   1. Dry run: `node --experimental-strip-types scripts/bill-tracking-recompute-totals.mjs`. It
+      lists the bills whose totals would change and writes nothing. It reads `.env` like the dev
+      server, so it reads whichever database that points at.
+   2. Run it again with `--write` to store the new totals. A second dry run should list nothing.
+   3. Check the notes raised before then to match a certification. The old suggested note carried
+      the client's changed deductions as lines. Those now count twice, on the bill and on the note,
+      so edit them off the note.
 
 ## What the 2026-27 workbook taught the importer
 

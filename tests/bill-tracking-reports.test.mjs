@@ -7,6 +7,7 @@ import {
   billTotals,
   buildSearchTokens,
   dashboardKpis,
+  deductionReport,
   exceptionItems,
   filterBills,
   followUpRollup,
@@ -19,7 +20,7 @@ import {
   targetPerformance,
 } from '../src/lib/bill-tracking/reports.ts';
 import { legacyExportRows, LEGACY_EXPORT_HEADERS } from '../src/lib/bill-tracking/legacy-export.ts';
-import { parseImportRows, readSheetLayout } from '../src/lib/bill-tracking/import.ts';
+import { classifyDuplicate, parseImportRows, readSheetLayout } from '../src/lib/bill-tracking/import.ts';
 import { resolveBtAccess } from '../src/lib/bill-tracking/access.ts';
 import { DEFAULT_CONFIG, DEFAULT_SETTINGS } from '../src/lib/bill-tracking/defaults.ts';
 
@@ -58,6 +59,40 @@ function bill(overrides) {
 }
 
 const context = (asOf) => ({ asOf, settings: { ...DEFAULT_SETTINGS } });
+
+/**
+ * An invoice raised with 20,000 TDS and 1,00,000 retention, which the client certified on a lower
+ * 9,00,000 with 18,000 TDS, 90,000 retention and a 25,000 penalty. Paid against those, it is now
+ * receivable at 11,80,000 − 1,33,000 = 10,47,000 (raised: 11,80,000 − 1,20,000 = 10,60,000).
+ */
+const certifiedBill = () =>
+  bill({
+    id: 'k',
+    billDate: '2026-05-10',
+    taxableAmount: 1000000,
+    gstAmount: 180000,
+    deductions: [line('ITDS', 20000), line('RET_INV', 100000)],
+    certification: { certifiedDate: '2026-05-20', taxableAmount: 900000, gstAmount: 162000, grossAmount: 1062000, deductions: [line('ITDS', 18000), line('RET_INV', 90000), line('OTHER', 25000)], totalDeduction: 133000, netAmount: 929000, revision: 1, recordedBy: 'u', recordedAt: '2026-05-20T10:00:00Z' },
+    billSerialNumber: '205',
+    gstInvoiceNumber: 'KA-205',
+  });
+
+/** Exported rows read back by the importer, as a round trip through the legacy workbook. */
+function importBack(rows) {
+  const grid = [LEGACY_EXPORT_HEADERS, ...rows.map((row) => row.map((cell) => (typeof cell === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cell) ? { date: cell } : cell)))];
+  return parseImportRows(grid, readSheetLayout(grid, 1), {
+    projects: [
+      { id: 'p1', name: 'Project One' },
+      { id: 'p2', name: 'Project Two' },
+    ],
+    billTypes: DEFAULT_CONFIG.billTypes,
+    deductionTypes: types,
+    projectMappings: [],
+    tolerance: 1,
+    roundNetToRupee: true,
+    piMarker: 'PI',
+  });
+}
 
 const BILLS = [
   bill({ id: 'a', billDate: '2026-04-10', taxableAmount: 1000000, gstAmount: 180000, deductions: [line('ITDS', 20000), line('RET_INV', 100000)], collections: [receipt(500000, '2026-05-05'), receipt(560000, '2026-06-20')], dueDate: '2026-05-25', billSerialNumber: '101', gstInvoiceNumber: 'KA-001' }),
@@ -182,25 +217,51 @@ test('legacy export round-trips through the importer', () => {
   const live = filterBills(BILLS, {}, context('2026-10-03'));
   const rows = legacyExportRows(live, types);
   assert.equal(rows[0].length, LEGACY_EXPORT_HEADERS.length);
-  const grid = [LEGACY_EXPORT_HEADERS, ...rows.map((row) => row.map((cell) => (typeof cell === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cell) ? { date: cell } : cell)))];
-  const parsed = parseImportRows(grid, readSheetLayout(grid, 1), {
-    projects: [
-      { id: 'p1', name: 'Project One' },
-      { id: 'p2', name: 'Project Two' },
-    ],
-    billTypes: DEFAULT_CONFIG.billTypes,
-    deductionTypes: types,
-    projectMappings: [],
-    tolerance: 1,
-    roundNetToRupee: true,
-    piMarker: 'PI',
-  });
+  const parsed = importBack(rows);
   assert.equal(parsed.rows.length, live.length);
   parsed.rows.forEach((row, index) => {
     assert.equal(row.calculated.net, live[index].netReceivable, `net of ${live[index].id}`);
     assert.equal(row.calculated.received, live[index].totalReceived, `received of ${live[index].id}`);
     assert.equal(row.netMismatch, false);
   });
+});
+
+test('a certified bill reports with its certified deductions wherever lines are read', () => {
+  const certified = certifiedBill();
+  assert.deepEqual([certified.totalDeduction, certified.statutoryDeduction, certified.retentionDeducted, certified.netReceivable], [133000, 18000, 90000, 1047000]);
+  assert.deepEqual([certified.raisedTotalDeduction, certified.raisedNetReceivable], [120000, 1060000]);
+
+  const may = monthlySummary([certified], '2026-27').find((row) => row.month === '2026-05');
+  assert.deepEqual([may.statutoryDeduction, may.retentionInvoice, may.net], [18000, 90000, 1047000]);
+
+  const deductions = deductionReport([certified], types, 'project');
+  assert.equal(deductions.rows[0].byType[typeByCode('ITDS').id], 18000);
+  assert.equal(deductions.rows[0].byType[typeByCode('RET_INV').id], 90000);
+  assert.equal(deductions.rows[0].byType[typeByCode('OTHER').id], 25000);
+  assert.equal(deductions.grandTotal, certified.totalDeduction);
+
+  // The retention columns and the retention total agree, both certified.
+  const [retention] = retentionReport([certified], [], context('2026-10-03')).rows;
+  assert.deepEqual([retention.invoice, retention.deducted], [90000, 90000]);
+
+  // Found by the raised net printed on the invoice copy, and by the net it is now paid.
+  assert.deepEqual(filterBills([certified], { search: '1060000' }, context('2026-10-03')).map((entry) => entry.id), ['k']);
+  assert.deepEqual(filterBills([certified], { search: '1047000' }, context('2026-10-03')).map((entry) => entry.id), ['k']);
+});
+
+test('legacy export writes a certified bill’s certified deductions, so its row adds up and round-trips', () => {
+  const certified = certifiedBill();
+  const [row] = legacyExportRows([certified], types);
+  const cell = (label) => row[LEGACY_EXPORT_HEADERS.indexOf(label)];
+  assert.deepEqual([cell('Taxable Amount'), cell('GST Amount')], [1000000, 180000], 'the invoice as raised');
+  assert.deepEqual([cell('Income TDS'), cell('RETENTION AGAINST INVOICE'), cell('Other'), cell('Total Deduction'), cell('Net Amount')], [18000, 90000, 25000, 133000, 1047000]);
+  const [parsed] = importBack([row]).rows;
+  assert.equal(parsed.calculated.net, certified.netReceivable);
+  assert.equal(parsed.netMismatch, false);
+  // Imported back, the row is still that bill: it carries the net the bill is paid, not the raised net.
+  const key = { id: certified.id, projectId: parsed.projectId, billSerialNumber: certified.billSerialNumber, gstInvoiceNumber: certified.gstInvoiceNumber, billDate: certified.billDate, billTypeName: certified.billTypeName, taxableAmount: certified.taxableAmount, netReceivable: certified.raisedNetReceivable, paidNetReceivable: certified.netReceivable };
+  assert.equal(classifyDuplicate(parsed, [key], []).kind, 'exact');
+  assert.equal(classifyDuplicate(parsed, [{ ...key, paidNetReceivable: undefined }], []).kind, 'possible', 'on the raised net alone it would not match');
 });
 
 /* ── permissions ─────────────────────────────────────────────────────────── */

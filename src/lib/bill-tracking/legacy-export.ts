@@ -6,8 +6,13 @@
  * Deduction lines are placed in their legacy column by deduction-type code; lines whose type has no
  * legacy column are added into "Other". "Date of Receipt of Payment" is the latest verified receipt
  * (the sheet only ever had room for one). STATUS is written in the sheet's own words.
+ *
+ * The deductions written are the ones the bill is paid against — the client's certified lines once
+ * it has certified the bill — because the exported Total Deduction and Net are: the sheet's own
+ * formulas (Total = SUM of the columns, Net = Taxable + GST − Total) must hold on every row.
  */
 
+import { effectiveDeductions } from './calculations.ts';
 import { DEDUCTION_IMPORT_COLUMNS, LEGACY_TEMPLATE_HEADERS } from './import.ts';
 import { sumMoney } from './money.ts';
 import type { Bill, BillPaymentStatus, DeductionTypeMaster } from './types';
@@ -28,7 +33,8 @@ export function legacyExportRows(bills: readonly Bill[], deductionTypes: readonl
   const legacyCodes = DEDUCTION_IMPORT_COLUMNS.map((column) => column.deductionCode as string);
   return bills.map((bill) => {
     const byCode = new Map<string, number>();
-    for (const line of bill.deductions ?? []) {
+    // Certified lines once certified, matching the stored total and net exported beside them (see the header).
+    for (const line of effectiveDeductions(bill)) {
       const code = codeOf.get(line.deductionTypeId) ?? 'OTHER';
       const target = legacyCodes.includes(code) ? code : 'OTHER';
       byCode.set(target, sumMoney([byCode.get(target) ?? 0, line.amount]));

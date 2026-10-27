@@ -142,7 +142,15 @@ export default function BillTrackingDashboard() {
             <KpiCard label="Promised this week" value={<Amount value={data.kpis.promisedThisWeek} compact />} icon={CalendarClock} tone="blue" hint="Open client commitments due this week" href={link('/bill-tracking/targets')} />
             <KpiCard label="Missed commitments" value={data.kpis.missedCommitments.toLocaleString('en-IN')} icon={CircleDollarSign} tone="rose" hint="Commitment date passed, still outstanding" href={link('/bill-tracking/outstanding', { chip: 'commitment_missed' })} />
             <KpiCard label="Awaiting certification" value={data.certification.awaiting.toLocaleString('en-IN')} icon={ClipboardCheck} tone="amber" hint={`of ${data.certification.count.toLocaleString('en-IN')} bills — not yet certified by the client`} href={link('/bill-tracking/bills', { view: 'certified', cert: 'awaiting' })} />
-            <KpiCard label="Credit notes to raise" value={<Amount value={data.certification.pendingNet} compact signed />} icon={Scale} tone="violet" hint={data.certification.pending ? `${data.certification.pending} certified bill${data.certification.pending === 1 ? '' : 's'} not yet matched` : 'Every certified bill is matched'} href={link('/bill-tracking/bills', { view: 'compare', cert: 'pending' })} />
+            {/* Credit and debit notes, by invoice value: only a changed taxable or GST needs one — the certified deductions apply to the bill directly. */}
+            <KpiCard
+              label="Notes to raise"
+              value={<Amount value={data.certification.pendingGross} compact signed />}
+              icon={Scale}
+              tone="violet"
+              hint={data.certification.pending ? `${data.certification.pending} certified bill${data.certification.pending === 1 ? '' : 's'} — taxable or GST differs` : 'Every certified bill is matched'}
+              href={link('/bill-tracking/bills', { view: 'compare', cert: 'pending' })}
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
