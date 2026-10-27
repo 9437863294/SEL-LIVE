@@ -508,10 +508,11 @@ export function GpsTripProvider({
   const panel = inFlight ? (
     <LiveRecordingCard
       description={inFlight.details.purpose}
+      startedAt={inFlight.startedAtIso}
       action={
-        // Full width on a phone, where a button beside the title leaves neither room.
-        // Review waits until the recorder has handed over every fix ("Syncing N points…").
-        <Button variant="destructive" className="w-full sm:w-auto" onClick={() => void finishTrip()} disabled={stopping}>
+        // A compact pill beside the title (the card's layout). Review waits until the recorder
+        // has handed over every fix ("Syncing N points…").
+        <Button variant="destructive" size="sm" className="rounded-full px-4" onClick={() => void finishTrip()} disabled={stopping}>
           {stopping ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Square className="mr-1.5 h-4 w-4" />}
           <SyncingLabel tripId={recorderId} active={stopping} idle="Stop & review" />
         </Button>

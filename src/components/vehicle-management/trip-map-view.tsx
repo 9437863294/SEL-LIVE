@@ -49,6 +49,11 @@ type TripMapViewProps = {
   live?: boolean;
   /** Draw the raw fixes instead of the cleaned path. For diagnosing a path that looks wrong. */
   showRaw?: boolean;
+  /**
+   * Just the map — no card, no title — with its badges and Recentre floating on the map's top
+   * corner and a one-line legend. For a map that sits inside another card (the live recording card).
+   */
+  bare?: boolean;
 };
 
 const defaultCenter = { lat: 22.9734, lng: 78.6569 };
@@ -75,6 +80,7 @@ export default function TripMapView({
   fallbackCenter = defaultCenter,
   live = false,
   showRaw = false,
+  bare = false,
 }: TripMapViewProps) {
   const mapNodeRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -284,57 +290,87 @@ export default function TripMapView({
     );
   }, [stops, ready]);
 
+  // On a bare map the badges float over the map's corner, so they need a solid face.
+  const chip = bare ? 'bg-white/95 shadow-sm backdrop-blur' : '';
+  const badges = (
+    <>
+      {!live && stops.length > 0 && (
+        <Badge variant="outline" className={`border-amber-200 bg-amber-50 text-[10px] text-amber-800 ${chip}`}>
+          {stops.length} stop{stops.length === 1 ? '' : 's'}
+        </Badge>
+      )}
+      {droppedTotal > 0 && (
+        // Said out loud: a path drawn from 40 of 300 fixes should not look like a complete
+        // record of the drive without explanation.
+        <Badge
+          variant="outline"
+          className={`text-[10px] ${chip}`}
+          title="Fixes discarded as inaccurate, stationary jitter, or impossible jumps — the same rules the distance uses."
+        >
+          {path.length}/{cleaned.rawCount} fixes
+        </Badge>
+      )}
+      {live && !following && (
+        <Button size="sm" variant="outline" className={`h-7 text-xs ${chip}`} onClick={() => setFollowing(true)}>
+          Recentre
+        </Button>
+      )}
+    </>
+  );
+  const legend = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+      {(Object.keys(BAND_COLOUR) as TripSpeedBand[]).map((band) => (
+        <span key={band} className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-1.5 w-4 rounded-full"
+            style={{ backgroundColor: BAND_COLOUR[band] }}
+          />
+          {BAND_LABEL[band]}
+        </span>
+      ))}
+      <span className="ml-auto">km/h</span>
+    </div>
+  );
+  const mapErrorBlock = (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      {mapError}
+    </div>
+  );
+
+  if (bare) {
+    return (
+      <div className="space-y-2" aria-label={title}>
+        {mapError ? (
+          mapErrorBlock
+        ) : (
+          <>
+            <div className="relative">
+              <div ref={mapNodeRef} className={`w-full overflow-hidden rounded-2xl bg-slate-100 ${heightClassName}`} />
+              <div className="absolute right-2 top-2 flex items-center gap-1.5">{badges}</div>
+            </div>
+            {legend}
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <Card className="vm-panel overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
         <CardTitle>{title}</CardTitle>
-        <div className="flex items-center gap-1.5">
-          {!live && stops.length > 0 && (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-              {stops.length} stop{stops.length === 1 ? '' : 's'}
-            </Badge>
-          )}
-          {droppedTotal > 0 && (
-            // Said out loud: a path drawn from 40 of 300 fixes should not look like a complete
-            // record of the drive without explanation.
-            <Badge
-              variant="outline"
-              className="text-[10px]"
-              title="Fixes discarded as inaccurate, stationary jitter, or impossible jumps — the same rules the distance uses."
-            >
-              {path.length}/{cleaned.rawCount} fixes
-            </Badge>
-          )}
-          {live && !following && (
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setFollowing(true)}>
-              Recentre
-            </Button>
-          )}
-        </div>
+        <div className="flex items-center gap-1.5">{badges}</div>
       </CardHeader>
       <CardContent className="space-y-2">
         {mapError ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {mapError}
-          </div>
+          mapErrorBlock
         ) : (
           <>
             <div
               ref={mapNodeRef}
               className={`w-full rounded-xl border border-white/70 bg-slate-100 ${heightClassName}`}
             />
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              {(Object.keys(BAND_COLOUR) as TripSpeedBand[]).map((band) => (
-                <span key={band} className="inline-flex items-center gap-1">
-                  <span
-                    className="inline-block h-1.5 w-4 rounded-full"
-                    style={{ backgroundColor: BAND_COLOUR[band] }}
-                  />
-                  {BAND_LABEL[band]}
-                </span>
-              ))}
-              <span className="ml-auto">km/h</span>
-            </div>
+            {legend}
           </>
         )}
       </CardContent>

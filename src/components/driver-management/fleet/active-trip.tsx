@@ -190,8 +190,9 @@ export function ActiveTrip({
   return (
     <>
       <LiveRecordingCard
-        title={paused ? 'Trip paused' : 'Recording a trip'}
+        title={paused ? 'Paused' : 'Recording'}
         paused={paused}
+        startedAt={trip.startedAt}
         description={
           <>
             {trip.vehicleNumber} · {trip.purposeName}
@@ -200,8 +201,8 @@ export function ActiveTrip({
           </>
         }
         action={
-          // Full width on a phone, where a button beside the title leaves neither room.
-          <Button type="button" variant="destructive" className="w-full sm:w-auto" onClick={() => void openEnd()} disabled={Boolean(busy) || syncing}>
+          // A compact pill beside the title (the card's layout), not a full-width bar.
+          <Button type="button" variant="destructive" size="sm" className="rounded-full px-4" onClick={() => void openEnd()} disabled={Boolean(busy) || syncing}>
             {syncing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden /> : <Square className="mr-1.5 h-4 w-4" aria-hidden />}
             <SyncingLabel tripId={tracker.native ? trip.id : null} active={syncing} idle="Stop & review" />
           </Button>

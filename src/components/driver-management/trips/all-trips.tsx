@@ -20,30 +20,21 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Download, LocateFixed, Route, Users } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Banknote, CalendarClock, Download, Gauge, Route, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { DataList } from '@/components/shared/data-list';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
 import { sumMoney } from '@/lib/employee-trips/rates';
 import { formatKm, TRIP_STATUS_LABELS, type TripRecord, type TripStatus } from '@/lib/employee-trips/types';
+import { allTripColumns } from './all-trips-columns';
 import { errorMessage, tripFetch } from './trip-api';
-import {
-  EmptyBlock,
-  ErrorBlock,
-  Km,
-  LoadingBlock,
-  Money,
-  TripStatusBadge,
-  VehicleLabel,
-  downloadCsv,
-  shortDate,
-} from './trip-ui';
+import { EmptyBlock, ErrorBlock, LoadingBlock, Money, downloadCsv } from './trip-ui';
 
 /** Same reason as the other registers: a few thousand rows in the DOM at once is a frozen page. */
 const PAGE_SIZE = 100;
+
 
 const STATUS_FILTERS: Array<{ value: TripStatus | 'all'; label: string }> = [
   { value: 'all', label: 'All statuses' },
@@ -129,56 +120,7 @@ export default function AllTrips() {
     [filtered],
   );
 
-  const columns: ListColumn<TripRecord>[] = [
-    {
-      header: 'Employee',
-      mobile: 'title',
-      cell: (trip) => <span className="font-medium text-slate-800">{trip.employeeName || trip.employeeId}</span>,
-    },
-    {
-      header: 'Trip',
-      mobile: 'title',
-      cell: (trip) => (
-        <span className="flex min-w-0 max-w-[24rem] items-center gap-1.5 sm:whitespace-nowrap" title={`${trip.fromPlace} → ${trip.toPlace} · ${trip.purpose}`}>
-          <span className="truncate text-slate-700">
-            {trip.fromPlace} → {trip.toPlace}
-          </span>
-          {trip.purpose && <span className="truncate text-xs text-muted-foreground">· {trip.purpose}</span>}
-        </span>
-      ),
-    },
-    { header: 'Date', cell: (trip) => <span className="whitespace-nowrap">{shortDate(trip.tripDate)}</span> },
-    {
-      header: 'Vehicle',
-      cell: (trip) => <VehicleLabel inline ownership={trip.ownership} vehicleNumber={trip.vehicleNumber} vehicleType={trip.vehicleType} />,
-    },
-    {
-      header: 'Distance',
-      align: 'right',
-      cell: (trip) => (
-        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
-          <Km value={trip.distanceKm} />
-          {trip.source === 'gps' && (
-            <Badge
-              variant="outline"
-              className="gap-1 border-sky-200 bg-sky-50 text-[10px] text-sky-700"
-              title={trip.gps ? `Measured by GPS: ${trip.gps.measuredKm} km over ${trip.gps.fixes} fixes.` : 'Measured by GPS.'}
-            >
-              <LocateFixed className="h-3 w-3" aria-hidden />
-              GPS
-            </Badge>
-          )}
-        </span>
-      ),
-    },
-    { header: 'Amount', align: 'right', cell: (trip) => <Money value={trip.totalAmount} /> },
-    { header: 'Project', cell: (trip) => <span className="block max-w-[14rem] truncate text-xs text-muted-foreground" title={trip.projectName ?? undefined}>{trip.projectName || '—'}</span> },
-    { header: 'Status', mobile: 'aside', cell: (trip) => <TripStatusBadge status={trip.status} /> },
-    {
-      header: 'Claim',
-      cell: (trip) => <span className="whitespace-nowrap text-xs text-muted-foreground">{trip.claimNumber || '—'}</span>,
-    },
-  ];
+  const columns = allTripColumns();
 
   const exportCsv = () => {
     downloadCsv(
@@ -207,35 +149,22 @@ export default function AllTrips() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="All Trips"
-        icon={Users}
-        description="Every employee's recorded trips, claimed or not. Read-only — changes belong to the approval flow, where they are recorded with a reason."
-        actions={
-          <Button type="button" variant="outline" onClick={exportCsv} disabled={filtered.length === 0}>
-            <Download className="mr-2 h-4 w-4" aria-hidden />
-            Export
-          </Button>
-        }
-      />
+      {/*
+        No page title or description — the module header names the module and the sidebar the page
+        (as on the Overview and My Trips). The figures cover what is filtered, so they match the list.
+      */}
+      <KpiGrid>
+        <KpiCard label="Trips" value={String(filtered.length)} icon={Route} tone="blue" accent />
+        <KpiCard label="Distance" value={formatKm(totals.distanceKm)} icon={Gauge} tone="teal" accent />
+        <KpiCard label="Value" value={<Money value={totals.amount} />} icon={Banknote} tone="emerald" accent />
+        <KpiCard label="Unclaimed" value={String(totals.unclaimed)} hint={`${totals.measured} by GPS`} icon={Wallet} tone="amber" accent />
+      </KpiGrid>
 
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        {[
-          { label: 'Trips', value: String(filtered.length) },
-          { label: 'Distance', value: formatKm(totals.distanceKm) },
-          { label: 'Value', value: `₹${totals.amount.toLocaleString('en-IN')}` },
-          { label: 'Unclaimed', value: String(totals.unclaimed), hint: `${totals.measured} measured by GPS` },
-        ].map((tile) => (
-          <div key={tile.label} className="min-w-0 rounded-xl border border-white/70 bg-white/80 p-2.5">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{tile.label}</p>
-            <p className="mt-0.5 truncate text-lg font-semibold tabular-nums text-slate-800">{tile.value}</p>
-            {tile.hint && <p className="text-[11px] text-muted-foreground">{tile.hint}</p>}
-          </div>
-        ))}
-      </div>
-
+      {/* Search, filters and Export on one line, a phone included (as My Trips' search and claim). */}
+      <div className="flex min-w-0 items-start gap-2">
       <FilterBar
-        search={{ value: search, onChange: setSearch, placeholder: 'Search employee, place, purpose, vehicle, claim…', label: 'Search trips' }}
+        className="min-w-0 flex-1"
+        search={{ value: search, onChange: setSearch, placeholder: 'Search trips…', label: 'Search trips by employee, place, purpose, vehicle or claim' }}
         activeCount={(employee !== 'all' ? 1 : 0) + (status !== 'all' ? 1 : 0) + (month !== 'all' ? 1 : 0)}
         onClear={() => {
           setEmployee('all');
@@ -273,6 +202,11 @@ export default function AllTrips() {
           </SelectContent>
         </Select>
       </FilterBar>
+        <Button type="button" variant="outline" className="shrink-0 px-3 sm:px-4" onClick={exportCsv} disabled={filtered.length === 0} aria-label="Export the trips shown as CSV" title="Export the trips shown as CSV">
+          <Download className="h-4 w-4 sm:mr-2" aria-hidden />
+          <span className="hidden sm:inline">Export</span>
+        </Button>
+      </div>
 
       {filtered.length === 0 ? (
         <EmptyBlock icon={Route} title={all.length ? 'No trips match' : 'No trips recorded yet'}>
