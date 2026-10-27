@@ -4,6 +4,7 @@
 import { useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { driverAppModeActive } from '@/lib/driver-app-mode';
 
 // Routes where logged-in users are redirected away (e.g. /login → home)
 const AUTH_ONLY_ROUTES = ['/login', '/driver-login', '/print-auth'];
@@ -19,7 +20,7 @@ const AUTH_ONLY_ROUTES = ['/login', '/driver-login', '/print-auth'];
 // it public: that folder only groups files, while this guard runs on every page and knows
 // only the list above. Omitted from AUTH_ONLY_ROUTES too, because the moment the exchange
 // succeeds the user *is* logged in and a redirect from here would race the page's own.
-const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action', '/auth/agent'];
+const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action', '/auth/agent', ...['', '/other', '/dept', '/access', '/access/users/U1', '/access/users/new', '/appearance', '/appearance/themes'].map((p) => `/back-probe${p}`)];
 
 const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management';
 const WEB_DEFAULT_REDIRECT = '/';
@@ -40,10 +41,8 @@ const isDriverAppClient = (currentPath: string, searchParams: SearchParamGetter)
   if (appParam === 'driver') return true;
 
   if (typeof window === 'undefined') return false;
-  const hasDriverModeFlag =
-    window.sessionStorage.getItem('driver_app_mode') === '1' ||
-    window.localStorage.getItem('driver_app_mode') === '1';
-  if (hasDriverModeFlag) return true;
+  // The driver sign-in's flag, honoured on a phone only (driver-app-mode.ts).
+  if (driverAppModeActive()) return true;
 
   const maybeCapacitor = (window as any).Capacitor;
   const isNativeCapacitor =

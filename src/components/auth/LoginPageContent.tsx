@@ -38,6 +38,7 @@ import { useAppearance } from "@/components/theme/ThemeProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { clearDriverAppMode } from "@/lib/driver-app-mode";
 import { LoginDesignFrame } from "@/components/auth/login/designs";
 import { GoogleIcon, IconInput, LoginSplash, OrDivider, PasswordInput } from "@/components/auth/login/parts";
 import { LOGIN_TONES } from "@/components/auth/login/tones";
@@ -164,6 +165,8 @@ export function LoginPageContent() {
         return /Android/i.test(ua) && /\bwv\b/i.test(ua);
       })();
 
+    // Signed in through the normal login: the full app, not the driver shell (driver-app-mode.ts).
+    if (!isDriverContext) clearDriverAppMode();
     return isDriverContext ? "/driver-management" : "/";
   };
 

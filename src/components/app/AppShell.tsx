@@ -10,6 +10,7 @@ import { ActionAnimationProvider } from '@/components/shared/action-animations';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
 import { noteNavigation } from '@/lib/navigation-history';
+import { driverAppModeActive } from '@/lib/driver-app-mode';
 
 const SessionExpiryDialog = dynamic(
   () => import('@/components/auth/SessionExpiryDialog').then((m) => m.SessionExpiryDialog),
@@ -34,9 +35,8 @@ export default function AppShell({
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const sessionFlag = window.sessionStorage.getItem('driver_app_mode') === '1';
-        const localFlag = window.localStorage.getItem('driver_app_mode') === '1';
-        setHasDriverAppFlag(sessionFlag || localFlag);
+        // Only on a phone: a desktop that once opened the driver sign-in keeps the global header.
+        setHasDriverAppFlag(driverAppModeActive());
     }, [safePathname]);
 
     // Listen for this user's administrator-managed location capture setting.
