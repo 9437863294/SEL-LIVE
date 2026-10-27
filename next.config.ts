@@ -1,5 +1,19 @@
 
 import type {NextConfig} from 'next';
+import { networkInterfaces } from 'node:os';
+
+/**
+ * This PC's own network addresses, so colleagues on the office network can open the dev server
+ * at http://<this PC's address>:3000. Next 16 refuses its dev-only connection (live reload) to any
+ * host but localhost, and a page opened by address then never comes alive — the login form never
+ * appears. Read at start-up, so a new address from the router needs a dev-server restart. Dev only:
+ * a production build ignores the setting.
+ */
+const lanAddresses = Object.values(networkInterfaces())
+  .flat()
+  .filter((entry) => entry && entry.family === 'IPv4' && !entry.internal)
+  .map((entry) => entry!.address);
+
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -105,6 +119,7 @@ const nextConfig: NextConfig = {
     ],
   },
   devIndicators: false,
+  allowedDevOrigins: lanAddresses,
   experimental: {
     turbopackFileSystemCacheForDev: false,
     // These are all imported by name across hundreds of files. Without this the

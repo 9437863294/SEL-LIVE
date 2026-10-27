@@ -519,7 +519,8 @@ export default function SiteAccountMonthClosureSettings() {
   return (
     <div className="space-y-4">
       <PageHeader
-        eyebrow="Site Account Statement · Settings"
+        backHref="/site-account-statement/settings"
+        backLabel="Back to settings"
         title="Month Closure"
         description="Freeze an accounting period once it has been reported on."
       />

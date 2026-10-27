@@ -461,6 +461,8 @@ export default function ExpenseCategoriesPage() {
   return (
     <div className="space-y-4">
       <PageHeader
+        backHref="/site-account-statement/settings"
+        backLabel="Back to settings"
         title="Expense Categories"
         description={
           <>

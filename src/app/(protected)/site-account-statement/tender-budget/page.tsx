@@ -223,6 +223,8 @@ export default function TenderBudgetSetupPage() {
 
       {/* Header */}
       <PageHeader
+        backHref="/site-account-statement/settings"
+        backLabel="Back to settings"
         icon={Settings}
         title="Tender Budget Setup"
         description="Configure tender budget, start and end month per project"
