@@ -16,7 +16,7 @@ import 'server-only';
 import { computeTripDistanceDeltaKm, type TripLocationPoint } from '@/lib/vehicle-management';
 import { reportingAuthorityOf } from '@/lib/employee-trips/server/lookups';
 import { projectAllowed } from '@/lib/employee-projects/links';
-import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
+import { employeeTripProjectIdsOf } from '@/lib/employee-projects/server';
 import { addDays, istDateKey, istDayStartIso, minutesBetween, monthOfDate, toMs } from '../dates.ts';
 import { attributeKm, detectGeofenceEvents, geofenceAt, measureTrack, visitsFromEvents } from '../geo.ts';
 import { dayAllowance, emergenciesLeft, kmUsedOn, startLimitCheck } from '../limits.ts';
@@ -51,7 +51,7 @@ import {
 } from '../types.ts';
 import { db, FleetError, type FleetContext } from './context';
 import { afterAudit, afterMessages, type FleetMessage } from './notify';
-import { activeGeofences, allGeofences, driverOf, fleetProjects, fleetVehicles, forgetVehicles, loadFleetSettings, activePurposes } from './lookups';
+import { activeGeofences, allGeofences, driverOf, fleetTripProjects, fleetVehicles, forgetVehicles, loadFleetSettings, activePurposes } from './lookups';
 import { attachment, claimableUpload, uploadRef } from './uploads';
 
 export const tripsCol = () => db().collection(FLEET_COLLECTIONS.trips);
@@ -297,7 +297,7 @@ export async function startTrip(context: FleetContext, body: unknown): Promise<S
   const [settings, purposes, projects, fences, driver] = await Promise.all([
     loadFleetSettings(context.organizationId),
     activePurposes(),
-    fleetProjects(),
+    fleetTripProjects(),
     activeGeofences(),
     driverOf(context.userId),
   ]);
@@ -322,7 +322,7 @@ export async function startTrip(context: FleetContext, body: unknown): Promise<S
   if (purpose.requiresProject && !project) throw new FleetError(`A ${purpose.name.toLowerCase()} is billed to a project — choose it.`, 400, { fields: { projectId: 'Choose the project.' } });
   // Settings › Fleet may limit a trip to the employee's own projects (their greytHR project, linked
   // on Employee › Category); someone with no linked project may pick any.
-  if (settings.employeeProjectsOnly && input.projectId && !projectAllowed(input.projectId, await employeeProjectIdsOf(context.userId), true)) {
+  if (settings.employeeProjectsOnly && input.projectId && !projectAllowed(input.projectId, await employeeTripProjectIdsOf(context.userId), true)) {
     throw new FleetError('Choose one of your projects — Settings › Fleet limits trips to the employee’s own projects.', 400, { fields: { projectId: 'Choose one of your projects.' } });
   }
 

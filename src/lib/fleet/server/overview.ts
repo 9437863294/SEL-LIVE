@@ -10,9 +10,9 @@ import { dayAllowance, emergenciesLeft, kmUsedOn, tripKmOn } from '../limits.ts'
 import { serviceDueInKm } from '../settings.ts';
 import type { FleetAccess } from '../access.ts';
 import { FLEET_COLLECTIONS, OPEN_TRIP_STATUSES, round1, round2, type FleetApproval, type FleetCategory, type FleetTrip, type GeofenceKind } from '../types.ts';
-import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
+import { employeeTripProjectIdsOf } from '@/lib/employee-projects/server';
 import { db, FleetError, type FleetContext } from './context';
-import { activeGeofences, activePurposes, driverOf, fleetProjects, fleetVehicles, loadFleetSettings } from './lookups';
+import { activeGeofences, activePurposes, driverOf, fleetTripProjects, fleetVehicles, loadFleetSettings } from './lookups';
 import { openFuelExceptions, type FuelEntryView } from './fuel';
 import { isFleetTrip, listMyTrips, myOpenTrip, toTrip, tripsCol, tripsOnDays } from './trips';
 
@@ -29,6 +29,8 @@ export interface BootstrapVehicle {
   allowedTodayKm: number;
   busy: boolean;
   assignedToMe: boolean;
+  /** Vehicle Master's assigned project (Settings › Projects): the start lists a division's vehicles through its links. */
+  projectId: string | null;
 }
 
 export interface FleetBootstrap {
@@ -40,11 +42,12 @@ export interface FleetBootstrap {
   isApprover: boolean;
   inbox: { approvals: number; reviews: number };
   settings: { ocrEnabled: boolean; emergencyMonthlyMax: number; gpsGapMinutes: number; companyTripsInFleet: boolean; mismatchAbsKm: number; mismatchPct: number; employeeProjectsOnly: boolean };
-  /** The employee's own projects (greytHR project → Settings › Projects, linked on Employee › Category). */
+  /** The employee's own project: their value of the source category (Project Division), pre-selected. */
   myProjectIds: string[];
   vehicles: BootstrapVehicle[];
   purposes: Array<{ id: string; name: string; requiresReason: boolean; requiresProject: boolean }>;
-  projects: Array<{ id: string; name: string; code: string }>;
+  /** Trip projects (the source category's values), with the Settings › Projects each is linked to. */
+  projects: Array<{ id: string; name: string; code: string; linkedProjectIds: string[] }>;
   geofences: Array<{ id: string; name: string; kind: GeofenceKind; lat: number; lng: number; radiusM: number }>;
   openTrip: FleetTrip | null;
   approvalsToday: FleetApproval[];
@@ -58,7 +61,7 @@ export async function fleetBootstrap(context: FleetContext): Promise<FleetBootst
   const [vehicles, purposes, projects, fences, driver, touching, openTrip, mine, myApprovalsSnap, inboxSnap, reviewSnap, myProjectIds] = await Promise.all([
     fleetVehicles(settings),
     activePurposes(),
-    fleetProjects(),
+    fleetTripProjects(),
     activeGeofences(),
     driverOf(context.userId),
     tripsOnDays([today, addDays(today, -1)]),
@@ -67,7 +70,7 @@ export async function fleetBootstrap(context: FleetContext): Promise<FleetBootst
     db().collection(FLEET_COLLECTIONS.approvals).where('driverUserId', '==', context.userId).get(),
     db().collection(FLEET_COLLECTIONS.approvals).where('notifiedIds', 'array-contains', context.userId).get(),
     tripsCol().where('managerIds', 'array-contains', context.userId).get(),
-    employeeProjectIdsOf(context.userId),
+    employeeTripProjectIdsOf(context.userId),
   ]);
   const todaysApprovals = (await db().collection(FLEET_COLLECTIONS.approvals).where('dateKey', '==', today).get()).docs.map((doc) => ({ ...(doc.data() as FleetApproval), id: doc.id }));
   const monthKey = monthOfDate(today);
@@ -110,10 +113,11 @@ export async function fleetBootstrap(context: FleetContext): Promise<FleetBootst
           allowedTodayKm: allowance.allowedKm,
           busy: Boolean(vehicle.currentTripId) && vehicle.currentTripId !== openTrip?.id,
           assignedToMe: Boolean(driver && (driver.assignedVehicleId === vehicle.id || vehicle.assignedDriverId === driver.id)),
+          projectId: vehicle.assignedProjectId,
         };
       }),
     purposes: purposes.map((purpose) => ({ id: purpose.id, name: purpose.name, requiresReason: purpose.requiresReason, requiresProject: purpose.requiresProject })),
-    projects: projects.filter((project) => project.active).map((project) => ({ id: project.id, name: project.name, code: project.code })),
+    projects: projects.filter((project) => project.active).map((project) => ({ id: project.id, name: project.name, code: project.code, linkedProjectIds: project.linkedProjectIds })),
     geofences: fences.map((fence) => ({ id: fence.id, name: fence.name, kind: fence.kind, lat: fence.lat, lng: fence.lng, radiusM: fence.radiusM })),
     myProjectIds,
     openTrip,

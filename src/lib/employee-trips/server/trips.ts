@@ -15,7 +15,7 @@ import { companyVehicles, departmentOptions, loadSettings, odometerDocId, projec
 import { afterAudit } from './notify';
 import { loadFleetSettings } from '@/lib/fleet/server/lookups';
 import { projectAllowed } from '@/lib/employee-projects/links';
-import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
+import { employeeTripProjectIdsOf } from '@/lib/employee-projects/server';
 
 const tripsCollection = () => db().collection(ET_COLLECTIONS.trips);
 
@@ -156,11 +156,13 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
   if (!result.ok) throw new TripError('Check the highlighted fields.', 400, { fields: result.errors });
   const value = result.value;
 
-  const project = value.projectId ? projects.find((entry) => entry.id === value.projectId) : null;
+  // A trip saved before projects became divisions keeps the project it has, by its stored name.
+  const kept = existing?.projectId && value.projectId === existing.projectId ? { id: existing.projectId, name: existing.projectName ?? '' } : null;
+  const project = value.projectId ? projects.find((entry) => entry.id === value.projectId) ?? kept : null;
   const department = value.departmentId ? departments.find((entry) => entry.id === value.departmentId) : null;
   if (value.projectId && !project) throw new TripError('That project no longer exists.', 400, { fields: { projectId: 'Choose another project.' } });
   // Settings › Fleet may limit a trip to the employee's own projects; an existing trip keeps its own.
-  if (fleet.employeeProjectsOnly && value.projectId && value.projectId !== existing?.projectId && !projectAllowed(value.projectId, await employeeProjectIdsOf(context.userId), true)) {
+  if (fleet.employeeProjectsOnly && value.projectId && value.projectId !== existing?.projectId && !projectAllowed(value.projectId, await employeeTripProjectIdsOf(context.userId), true)) {
     throw new TripError('Choose one of your projects — trips are limited to the employee’s own projects.', 400, { fields: { projectId: 'Choose one of your projects.' } });
   }
   if (value.departmentId && !department) throw new TripError('That department no longer exists.', 400, { fields: { departmentId: 'Choose another department.' } });

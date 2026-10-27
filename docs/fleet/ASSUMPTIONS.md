@@ -219,3 +219,21 @@ setting or a small change if the owner wants it otherwise.
       another. Someone with no linked project still sees every project.
     - **Lookup:** login → `users.employeeId` → `employees/{id}.categories[source]` → links,
       matched by name ignoring case and spacing.
+45. **A trip's project is a value of the source category, not a Settings › Projects record**
+    (owner's request, 2026-10-27). It replaces the picker of 44.
+    - **List:** both start sheets (own and company vehicle), typed trips, the save checks, a
+      claim's project name and Workflow's per-project approvers list the source category's values.
+      Here that is Project Division: Head Office, Rayagada, Aradi… (35 values).
+    - **Why:** most divisions have no Settings › Projects record, so links left most employees with
+      nothing to pre-select.
+    - **No link needed:** the employee's own value is pre-selected and listed first. A trip's
+      `projectId` is the value's category document id (`tripProjectOptions` /
+      `employeeTripProjectIdsOf` in `src/lib/employee-projects/server.ts`).
+    - **Links still matter:** a value linked to Settings › Projects lends the first linked project's
+      site code, which payment reports print.
+    - **Unchanged:** Settings › Projects (`fleetProjects`) stays the list for geofences, Vehicle
+      Master's assigned project and the reports' project lookup. A report row falls back to the
+      name and code stored on the trip.
+    - **Old records:** an old draft keeps the project it was saved with when edited; choosing
+      another must be a listed value. At the switch, no own-vehicle trip and 1 of 21 fleet trips
+      had a project, and no approval stage routed by project.

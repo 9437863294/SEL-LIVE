@@ -154,7 +154,10 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Chooseâ€
     </CommandItem>
   );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // Modal: the list is drawn outside the dialog it is usually in (a portal), and the dialog blocks
+    // wheel and touch scrolling outside itself â€” so the list would not scroll with a mouse wheel. A
+    // modal popover takes the scroll lock over while it is open, with its own content let through.
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled} className={cn('w-full justify-between bg-white text-left font-normal', invalid && 'border-destructive')}>
           <span className={cn('min-w-0 truncate', !selected && 'text-muted-foreground')}>{selected ? selected.label : placeholder}</span>

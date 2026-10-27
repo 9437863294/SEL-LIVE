@@ -273,7 +273,7 @@ export function OwnStartDialog({
               options={projectPick.options.map((project, _, all) => ({ value: project.id, label: project.name, group: projectGroup(project.mine, all.some((entry) => entry.mine)) }))}
               value={projectId}
               onChange={setProjectId}
-              placeholder={projectRequired ? 'Choose project' : 'Head office'}
+              placeholder="Choose project"
               allowClear
               invalid={Boolean(shown.projectId)}
             />

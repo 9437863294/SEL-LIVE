@@ -135,6 +135,61 @@ export async function employeeProjectIdsOf(userId: string): Promise<string[]> {
   }
 }
 
+/* ── trip projects: the source category's values ── */
+
+/**
+ * A trip's project is a value of the source category (Employee › Category — "Project Division"
+ * here), not a Settings › Projects record: greytHR's divisions are what the company calls its
+ * projects, and most of them (Head Office, Rayagada, Aradi…) have no Settings › Projects record of
+ * their own. Chosen by the product owner, 2026-10-27. The id is the value's category document id,
+ * as the links use. A value linked to Settings › Projects lends the first linked project's site code
+ * (fleet reports print it); geofences, Vehicle Master and the reports' own lists stay on Settings ›
+ * Projects.
+ */
+export interface TripProjectOption {
+  id: string;
+  name: string;
+  code: string;
+  linkedProjectIds: string[];
+}
+
+const tripProjectsCache = cached(async (): Promise<TripProjectOption[]> => {
+  const source = await projectSourceCategory();
+  const [values, links, projects] = await Promise.all([db().collection('categories').where('type', '==', source).get(), projectLinks(), projectRows()]);
+  const codeOf = new Map(projects.map((project) => [project.id, project.code]));
+  const linkOf = new Map(links.filter((link) => linkCategory(link) === source).map((link) => [link.id, link]));
+  return values.docs
+    .map((doc) => {
+      const linked = (linkOf.get(doc.id)?.projectIds ?? []).filter((id) => codeOf.has(id));
+      return { id: doc.id, name: String(doc.data().name ?? '').trim(), code: linked.map((id) => codeOf.get(id)).find(Boolean) ?? '', linkedProjectIds: linked };
+    })
+    .filter((option) => option.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+});
+
+/** The projects a trip can be for: every value of the source category, by name. */
+export const tripProjectOptions = () => tripProjectsCache.get();
+export const forgetTripProjects = () => tripProjectsCache.forget();
+
+/**
+ * The signed-in employee's own trip project: their value in the source category, as an option id
+ * (one at most — a value is one category document). Empty when any step is missing; never throws.
+ */
+export async function employeeTripProjectIdsOf(userId: string): Promise<string[]> {
+  try {
+    const user = await db().collection('users').doc(userId).get();
+    const employeeId = String(user.data()?.employeeId ?? '').trim();
+    if (!employeeId) return [];
+    const [employee, source, options] = await Promise.all([db().collection('employees').doc(employeeId).get(), projectSourceCategory(), tripProjectOptions()]);
+    const value = normaliseProjectName(employeeCategoryValue(employee.data() as Record<string, unknown> | undefined, source));
+    if (!value) return [];
+    return options.filter((option) => normaliseProjectName(option.name) === value).map((option) => option.id);
+  } catch (error) {
+    console.error('[employee-projects] trip project lookup failed', error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
 export interface ProjectLinkRow {
   id: string;
   valueId: string;
@@ -222,6 +277,7 @@ export async function saveProjectLink(actor: ProjectLinkActor, valueDocId: strin
   };
   await ref.set(link);
   linksCache.forget();
+  tripProjectsCache.forget();
   await logServerActivity({
     userId: actor.userId,
     userName: actor.userName,
@@ -255,6 +311,7 @@ export async function saveProjectSource(actor: ProjectLinkActor, body: unknown):
   const before = String((await ref.get()).data()?.sourceCategory ?? '') || GREYTHR_PROJECT_CATEGORY;
   await ref.set({ sourceCategory, updatedAt: new Date().toISOString(), updatedById: actor.userId, updatedByName: actor.userName });
   sourceCache.forget();
+  tripProjectsCache.forget();
   await logServerActivity({
     userId: actor.userId,
     userName: actor.userName,

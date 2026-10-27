@@ -13,7 +13,7 @@ import { employeeCategoryValue, linkedProjectIds, normaliseProjectName, projectA
 
 globalThis.__db = new FakeFirestore();
 const db = globalThis.__db;
-const { employeeProjectIdsOf, projectLinksOverview, projectSourceOverview, saveProjectLink, saveProjectSource } = await import('../src/lib/employee-projects/server.ts');
+const { employeeProjectIdsOf, employeeTripProjectIdsOf, projectLinksOverview, projectSourceOverview, saveProjectLink, saveProjectSource, tripProjectOptions } = await import('../src/lib/employee-projects/server.ts');
 
 /* ── rules ─────────────────────────────────────────────────────────────── */
 
@@ -154,4 +154,20 @@ test('the source category is a setting: switch to Project Division and its links
 
   await saveProjectSource(editor, { sourceCategory: 'Project Name' });
   assert.deepEqual(await employeeProjectIdsOf('u-ravi'), ['p1'], 'and switching back restores them');
+});
+
+test("a trip's projects are the source category's values, and the employee's own is theirs linked or not", async () => {
+  // Project Name is the source: its values, by name; a linked value lends its project's site code.
+  assert.deepEqual((await tripProjectOptions()).map((option) => [option.id, option.name, option.code]), [['Project_Name_13', 'HO', ''], ['Project_Name_12', 'Infocity Tower', 'ICT']]);
+  assert.deepEqual(await employeeTripProjectIdsOf('u-ravi'), ['Project_Name_12']);
+  assert.deepEqual(await employeeTripProjectIdsOf('u-nobody'), [], 'no greytHR employee: none');
+  // No link needed: an unlinked value is still the employee's project (it just has no site code).
+  await saveProjectLink(editor, 'Project_Name_12', { projectIds: [] });
+  assert.deepEqual(await employeeTripProjectIdsOf('u-ravi'), ['Project_Name_12']);
+  assert.equal((await tripProjectOptions()).find((option) => option.id === 'Project_Name_12').code, '');
+  // Switching the source switches the list.
+  await saveProjectSource(editor, { sourceCategory: 'Project Division' });
+  assert.deepEqual((await tripProjectOptions()).map((option) => option.name), ['Tower Division']);
+  assert.deepEqual(await employeeTripProjectIdsOf('u-ravi'), ['Project_Division_7']);
+  await saveProjectSource(editor, { sourceCategory: 'Project Name' });
 });

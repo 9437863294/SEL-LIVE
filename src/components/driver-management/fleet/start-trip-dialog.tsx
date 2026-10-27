@@ -160,17 +160,29 @@ export function StartTripDialog({
   const shown: Errors = attempted ? errors : {};
   const fieldError = (key: keyof Errors) => shown[key] || serverErrors[key] || undefined;
 
+  // A chosen project lists only its vehicles: those Vehicle Master assigns to the Settings › Projects
+  // the division is linked to on Employee › Category — and the driver's own, and the one chosen. A
+  // project with no links, or none of whose vehicles are in Vehicle Master, lists every vehicle.
+  const chosenProject = bootstrap.projects.find((entry) => entry.id === values.projectId) ?? null;
+  const projectVehicleIds = useMemo(() => {
+    const linked = new Set(chosenProject?.linkedProjectIds ?? []);
+    if (!linked.size) return null;
+    const ids = bootstrap.vehicles.filter((entry) => entry.projectId && linked.has(entry.projectId)).map((entry) => entry.id);
+    return ids.length ? new Set(ids) : null;
+  }, [bootstrap.vehicles, chosenProject]);
   const vehicleOptions = useMemo(
     () =>
       [...bootstrap.vehicles]
         .filter((entry) => !entry.busy || entry.id === values.vehicleId)
+        .filter((entry) => !projectVehicleIds || projectVehicleIds.has(entry.id) || entry.assignedToMe || entry.id === values.vehicleId)
         .sort((a, b) => Number(b.assignedToMe) - Number(a.assignedToMe) || a.vehicleNumber.localeCompare(b.vehicleNumber))
         .map((entry) => ({
           value: entry.id,
           label: `${entry.vehicleNumber} · ${entry.vehicleType}`,
           hint: `${formatKm(entry.usedTodayKm)} of ${formatKm(entry.allowedTodayKm)} today${entry.assignedToMe ? ' · assigned to you' : ''}`,
+          group: projectVehicleIds && chosenProject ? `${chosenProject.name} vehicles` : undefined,
         })),
-    [bootstrap.vehicles, values.vehicleId],
+    [bootstrap.vehicles, values.vehicleId, projectVehicleIds, chosenProject],
   );
   const purposeOptions = bootstrap.purposes.map((entry) => ({ value: entry.id, label: entry.name, hint: entry.requiresProject ? 'Billed to a project' : undefined }));
   const anyMine = projectPick.options.some((project) => project.mine);
@@ -288,7 +300,7 @@ export function StartTripDialog({
             <SearchSelect options={purposeOptions} value={values.purposeId || null} onChange={(value) => set('purposeId', value ?? '')} placeholder="What for?" invalid={Boolean(fieldError('purposeId'))} />
           </Field>
           <Field label="Project" required={Boolean(purpose?.requiresProject)} error={fieldError('projectId')} className="min-w-0">
-            <SearchSelect options={projectOptions} value={values.projectId} onChange={(value) => set('projectId', value)} placeholder={purpose?.requiresProject ? 'Choose project' : 'Head office'} allowClear invalid={Boolean(fieldError('projectId'))} />
+            <SearchSelect options={projectOptions} value={values.projectId} onChange={(value) => set('projectId', value)} placeholder="Choose project" allowClear invalid={Boolean(fieldError('projectId'))} />
           </Field>
         </div>
         {purpose?.requiresReason && (

@@ -68,6 +68,9 @@ db.seed('accessGrants', 'emp1', { reportingManagerId: 'dir1' });
 db.seed('employees', 'E2', { reportingManagerEmployeeId: 'E9', reportingManagerName: 'Site Manager' });
 db.seed('projects', 'p1', { projectName: 'Site A' });
 db.seed('projects', 'p2', { projectName: 'Site B' });
+// A trip's projects are the values of Employee › Category's source category (Project Name by default).
+db.seed('categories', 'p1', { id: 1, name: 'Site A', type: 'Project Name' });
+db.seed('categories', 'p2', { id: 2, name: 'Site B', type: 'Project Name' });
 db.seed('departments', 'd1', { name: 'Civil' });
 db.seed('vehicleManagementVehicles', 'v1', { vehicleNumber: 'OD 02 X 9', vehicleType: 'Two Wheeler', fuelType: 'Petrol', vehicleStatus: 'Active' });
 db.seed('vehicleManagementVehicles', 'v9', { vehicleNumber: 'OD 02 OLD 1', vehicleType: 'Car', vehicleStatus: 'Sold' });
@@ -472,3 +475,16 @@ test('with typed trips off (the default), a new trip needs its GPS recording; ed
     forgetSettings('default');
   }
 });
+
+test('a draft saved before projects became divisions keeps its project when edited; a new unknown one is refused', async () => {
+  const saved = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02LEG1', startOdometer: 9000, endOdometer: 9010 }))).trip;
+  db.seed(ET_COLLECTIONS.trips, saved.id, { ...db.read(ET_COLLECTIONS.trips, saved.id), projectId: 'old-project', projectName: 'Old Site' });
+  const edited = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02LEG1', startOdometer: 9000, endOdometer: 9012, projectId: 'old-project' }), saved.id)).trip;
+  assert.equal(edited.projectId, 'old-project');
+  assert.equal(edited.projectName, 'Old Site');
+  await rejects(saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02LEG1', startOdometer: 9000, endOdometer: 9012, projectId: 'another-gone' }), saved.id), 400, /no longer exists/);
+  // A division of the list replaces it.
+  assert.equal((await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02LEG1', startOdometer: 9000, endOdometer: 9012, projectId: 'p2' }), saved.id)).trip.projectName, 'Site B');
+  await deleteTrip(context('emp3'), saved.id);
+});
+

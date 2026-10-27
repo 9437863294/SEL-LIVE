@@ -11,6 +11,7 @@ import { DEFAULT_VEHICLE_TYPES, VEHICLE_COLLECTIONS, VEHICLE_TYPES_DOC_ID } from
 import { normaliseSettings } from '../workflow.ts';
 import { ET_COLLECTIONS, normaliseVehicleNumber, type ReportingSource, type TripClaimSettings } from '../types.ts';
 import { db } from './context';
+import { tripProjectOptions } from '@/lib/employee-projects/server';
 
 const REFERENCE_TTL_MS = 60_000;
 const SETTINGS_TTL_MS = 10_000;
@@ -117,14 +118,6 @@ export interface NamedOption {
   name: string;
 }
 
-const projects = cached(REFERENCE_TTL_MS, async (): Promise<NamedOption[]> => {
-  const snapshot = await db().collection('projects').get();
-  return snapshot.docs
-    .map((doc) => ({ id: doc.id, name: String(doc.data().projectName || doc.data().name || '').trim() }))
-    .filter((entry) => entry.name)
-    .sort((a, b) => a.name.localeCompare(b.name));
-});
-
 const departments = cached(REFERENCE_TTL_MS, async (): Promise<NamedOption[]> => {
   const snapshot = await db().collection('departments').get();
   return snapshot.docs
@@ -133,7 +126,12 @@ const departments = cached(REFERENCE_TTL_MS, async (): Promise<NamedOption[]> =>
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
-export const projectOptions = () => projects.get();
+/**
+ * A trip's projects: the values of Employee › Category's source category (Project Division here),
+ * not Settings › Projects — see `tripProjectOptions`. The picker, the save check, a claim's project
+ * name and Workflow's per-project approvers all read this one list.
+ */
+export const projectOptions = async (): Promise<NamedOption[]> => (await tripProjectOptions()).map(({ id, name }) => ({ id, name }));
 export const departmentOptions = () => departments.get();
 
 export interface CompanyVehicleOption {

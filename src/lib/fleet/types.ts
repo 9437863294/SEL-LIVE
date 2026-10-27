@@ -84,6 +84,8 @@ export interface FleetVehicle {
   odometerBaselineHistory: OdometerBaseline[];
   assignedDriverId: string | null;
   assignedDriverName: string;
+  /** Vehicle Master's assigned project (a Settings › Projects id): which division's vehicle it is, through the division's links. */
+  assignedProjectId: string | null;
 }
 
 /** The Vehicle Master fields the fleet adds; everything else on the record is left alone. */

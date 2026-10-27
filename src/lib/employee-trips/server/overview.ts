@@ -18,7 +18,7 @@ import { listClaims, toClaim } from './claims';
 import { companyVehicles, departmentOptions, hasReportees, lastOdometerReadings, loadSettings, nameResolver, projectOptions, reportingAuthorityOf, vehicleTypeOptions } from './lookups';
 import { listMyTrips, toTrip } from './trips';
 import { activePurposes, loadFleetSettings } from '@/lib/fleet/server/lookups';
-import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
+import { employeeTripProjectIdsOf } from '@/lib/employee-projects/server';
 
 async function waitingForMe(context: TripContext): Promise<TripClaim[]> {
   return (await listClaims(context, 'inbox')).claims;
@@ -48,7 +48,7 @@ export async function bootstrap(context: TripContext) {
     waitingForMe(context),
     reportingAuthorityOf(context.userId),
     nameResolver(),
-    employeeProjectIdsOf(context.userId),
+    employeeTripProjectIdsOf(context.userId),
     activePurposes(),
   ]);
   const named = namedStageKinds(settings, context.userId);
@@ -86,8 +86,8 @@ export async function bootstrap(context: TripContext) {
     vehicleTypes,
     vehicles,
     projects,
-    // The employee's own projects (greytHR project → Settings › Projects, linked on Employee ›
-    // Category), listed first in the project picker — or only, when Settings › Fleet says so.
+    // The employee's own project (their value in Employee › Category's source category — Project
+    // Division), pre-selected and listed first — or only, when Settings › Fleet says so.
     projectScope: { mine: myProjectIds, onlyMine: fleet.employeeProjectsOnly },
     // The trip purposes of Settings › Fleet: an own-vehicle trip is started with the same list as a
     // company one (its purpose is stored as the name, with the reason when the purpose asks for one).

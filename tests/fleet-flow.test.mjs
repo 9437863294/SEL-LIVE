@@ -110,7 +110,11 @@ db.seed('accessGrants', 'drv1', { reportingManagerId: 'mgr' });
 db.seed('accessGrants', 'drv2', { reportingManagerId: 'mgr' });
 db.seed('vehicleManagementDriver', 'd1', { driverName: 'Ravi K', linkedUserId: 'drv1', assignedVehicleId: 'v1' });
 db.seed('projects', 'p1', { projectName: 'Site A', siteCode: 'SA', status: 'Active' });
-db.seed('vehicleManagementVehicles', 'v1', { vehicleNumber: 'OD02AB0001', vehicleType: 'Two Wheeler', fuelType: 'Petrol', vehicleStatus: 'Active', currentOdometerKm: 10000, ratePerKm: 5, approverUid: 'boss', backupApproverUid: 'backup', stdMileageKmpl: 40, tankCapacityL: 12 });
+// A trip's projects are the values of Employee › Category's source category (Project Name by default).
+db.seed('categories', 'p1', { id: 1, name: 'Site A', type: 'Project Name' });
+// The value is linked to the Settings › Projects record: it lends the site code, and its vehicles are listed for it.
+db.seed('employeeProjectLinks', 'p1', { categoryType: 'Project Name', valueName: 'Site A', projectIds: ['p1'] });
+db.seed('vehicleManagementVehicles', 'v1', { vehicleNumber: 'OD02AB0001', vehicleType: 'Two Wheeler', fuelType: 'Petrol', vehicleStatus: 'Active', assignedProjectId: 'p1', currentOdometerKm: 10000, ratePerKm: 5, approverUid: 'boss', backupApproverUid: 'backup', stdMileageKmpl: 40, tankCapacityL: 12 });
 db.seed('vehicleManagementVehicles', 'v2', { vehicleNumber: 'OD02AB0002', vehicleType: 'Car', fuelType: 'Diesel', vehicleStatus: 'Active', currentOdometerKm: 50000, ratePerKm: 12 });
 db.seed('vehicleManagementVehicles', 'v3', { vehicleNumber: 'OD02AB0003', vehicleType: 'Pickup', fuelType: 'Diesel', vehicleStatus: 'Active', currentOdometerKm: 70000, costBasis: 'fixed_plus_fuel', fixedMonthlyCost: 30000 });
 db.seed('vehicleManagementVehicles', 'v4', { vehicleNumber: 'OD02AB0004', vehicleType: 'Car', fuelType: 'Petrol', vehicleStatus: 'Active', currentOdometerKm: 30000, ratePerKm: 10 });
@@ -566,6 +570,9 @@ test('the screens read without error and see what they should', async () => {
   const v1 = boot.vehicles.find((vehicle) => vehicle.id === 'v1');
   assert.equal(v1.assignedToMe, true);
   assert.equal(v1.usedTodayKm, 105);
+  // The start lists a project's vehicles: v1 is Vehicle Master's on Site A, the value linked to it.
+  assert.equal(v1.projectId, 'p1');
+  assert.deepEqual(boot.projects.map((project) => [project.id, project.name, project.code, project.linkedProjectIds]), [['p1', 'Site A', 'SA', ['p1']]]);
   assert.equal(boot.purposes.length, 7);
   assert.equal(boot.geofences.length, 2);
   assert.ok(boot.recentTrips.length >= 3);

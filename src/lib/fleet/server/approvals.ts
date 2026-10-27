@@ -7,7 +7,7 @@ import 'server-only';
 
 import { reportingAuthorityOf } from '@/lib/employee-trips/server/lookups';
 import { projectAllowed } from '@/lib/employee-projects/links';
-import { employeeProjectIdsOf } from '@/lib/employee-projects/server';
+import { employeeTripProjectIdsOf } from '@/lib/employee-projects/server';
 import { addDays } from '../dates.ts';
 import { buildChain, cancelApproval, createApproval, decideApproval, tickApproval, type ApprovalChain } from '../approvals.ts';
 import { dayAllowance, kmUsedOn } from '../limits.ts';
@@ -15,7 +15,7 @@ import { approvalDecisionSchema, approvalRequestSchema } from '../schemas.ts';
 import { APPROVAL_DECISION_LABELS, FLEET_COLLECTIONS, formatKm, stripUndefined, type FleetApproval, type FleetSettings, type FleetTrip, type FleetVehicle } from '../types.ts';
 import { db, FleetError, type FleetContext } from './context';
 import { afterAudit, afterMessages, sendFleetMessage, type FleetMessage } from './notify';
-import { activePurposes, fleetProjects, fleetVehicles, forgetVehicles, loadFleetSettings } from './lookups';
+import { activePurposes, fleetTripProjects, fleetVehicles, forgetVehicles, loadFleetSettings } from './lookups';
 import { tripsOnDays } from './trips';
 
 const approvalsCol = () => db().collection(FLEET_COLLECTIONS.approvals);
@@ -46,7 +46,7 @@ function requestMessage(approval: FleetApproval, userIds: string[], escalated: b
 export async function requestApproval(context: FleetContext, body: unknown): Promise<{ approval: FleetApproval; reused: boolean }> {
   const input = approvalRequestSchema.parse(body);
   const settings = await loadFleetSettings(context.organizationId);
-  const [vehicles, purposes, projects] = await Promise.all([fleetVehicles(settings), activePurposes(), fleetProjects()]);
+  const [vehicles, purposes, projects] = await Promise.all([fleetVehicles(settings), activePurposes(), fleetTripProjects()]);
   const vehicle = vehicles.find((entry) => entry.id === input.vehicleId);
   if (!vehicle || !vehicle.active) throw new FleetError('That vehicle is not available.', 404);
   const purpose = purposes.find((entry) => entry.id === input.purposeId);
@@ -54,7 +54,7 @@ export async function requestApproval(context: FleetContext, body: unknown): Pro
   const project = input.projectId ? projects.find((entry) => entry.id === input.projectId) ?? null : null;
   // Settings › Fleet may limit a trip to the employee's own projects (their greytHR project, linked
   // on Employee › Category); someone with no linked project may pick any.
-  if (settings.employeeProjectsOnly && input.projectId && !projectAllowed(input.projectId, await employeeProjectIdsOf(context.userId), true)) {
+  if (settings.employeeProjectsOnly && input.projectId && !projectAllowed(input.projectId, await employeeTripProjectIdsOf(context.userId), true)) {
     throw new FleetError('Choose one of your projects — Settings › Fleet limits trips to the employee’s own projects.', 400, { fields: { projectId: 'Choose one of your projects.' } });
   }
 

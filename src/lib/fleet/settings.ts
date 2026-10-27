@@ -153,6 +153,7 @@ export function normaliseVehicle(id: string, data: Record<string, unknown>, sett
     odometerBaselineHistory: baselines(data.odometerBaselineHistory),
     assignedDriverId: text(data.assignedDriverId) || null,
     assignedDriverName: text(data.assignedDriverName),
+    assignedProjectId: text(data.assignedProjectId) || null,
   };
 }
 

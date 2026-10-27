@@ -12,6 +12,7 @@ import 'server-only';
 import { normaliseFleetSettings, normaliseVehicle } from '../settings.ts';
 import { FLEET_COLLECTIONS, SEED_PURPOSES, type FleetSettings, type FleetVehicle, type Geofence, type ProjectOption, type Purpose } from '../types.ts';
 import { db } from './context';
+import { tripProjectOptions } from '@/lib/employee-projects/server';
 
 function cached<T>(ttl: number, load: () => Promise<T>) {
   let entry: { at: number; value: Promise<T> } | null = null;
@@ -123,6 +124,15 @@ const projects = cached(60_000, async (): Promise<ProjectOption[]> => {
 
 export const fleetProjects = () => projects.get();
 export const forgetProjects = () => projects.forget();
+
+/**
+ * The projects a fleet trip (and an over-limit request) is for: Employee › Category's source
+ * category values — Project Division — as own-vehicle trips use (`tripProjectOptions`). A value
+ * linked to Settings › Projects carries its site code. `fleetProjects` stays the list for
+ * geofences, Vehicle Master and the reports' own project names.
+ */
+export const fleetTripProjects = async (): Promise<Array<ProjectOption & { linkedProjectIds: string[] }>> =>
+  (await tripProjectOptions()).map((option) => ({ id: option.id, name: option.name, code: option.code, clientName: '', active: true, siteGeofenceIds: [], linkedProjectIds: option.linkedProjectIds }));
 
 /* ── drivers ── */
 
