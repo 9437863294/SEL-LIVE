@@ -15,14 +15,16 @@
  *
  * A trip opens its page (trip-record-detail.tsx): the table row and a card without actions are the
  * tap target. A card with actions (an unclaimed trip) cannot be one link around its buttons, so its
- * text is the link there. The checkbox, the buttons and the claim number in the table stop the tap,
- * so using them does not open the trip as well.
+ * text is the link there. The buttons and the claim number in the table stop the tap, so using them
+ * does not open the trip as well.
+ *
+ * No tick boxes: the trips for a claim are chosen in Create claim (every unclaimed trip starts
+ * ticked there), and a trip's own Claim button opens it with just that trip.
  */
 
 import { LocateFixed, Pencil, ReceiptText, Trash2, Undo2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { CellLink, type ListColumn } from '@/components/shared/data-list';
 import { shortPlace } from '@/lib/fleet/places';
 import { daysLeftToClaim } from '@/lib/employee-trips/trips';
@@ -33,8 +35,6 @@ export interface MyTripColumnsArgs {
   rules: TripRules | undefined;
   today: string;
   claimable: (trip: TripRecord) => boolean;
-  selected: ReadonlySet<string>;
-  toggle: (id: string, on: boolean) => void;
   openClaim: (tripIds: string[]) => void;
   onEdit: (trip: TripRecord) => void;
   onDelete: (trip: TripRecord) => void;
@@ -58,20 +58,8 @@ function windowNote(trip: TripRecord, rules: TripRules | undefined, today: strin
   return null;
 }
 
-export function myTripColumns({ rules, today, claimable, selected, toggle, openClaim, onEdit, onDelete }: MyTripColumnsArgs): ListColumn<TripRecord>[] {
+export function myTripColumns({ rules, today, claimable, openClaim, onEdit, onDelete }: MyTripColumnsArgs): ListColumn<TripRecord>[] {
   return [
-    {
-      header: 'Select',
-      mobile: 'omit',
-      className: 'w-10',
-      cell: (trip) =>
-        claimable(trip) ? (
-          <span className="flex items-center" onClick={keepTap}>
-            <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} />
-          </span>
-        ) : null,
-    },
-
     /* ── the phone card (hidden in the table) ── */
     {
       header: 'Route',
@@ -249,19 +237,13 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
         trip.status === 'draft' ? (
           <div className="flex items-center gap-1.5" onClick={keepTap}>
             {claimable(trip) && (
-              <label className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm sm:hidden">
-                <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} />
-                Select
-              </label>
-            )}
-            {claimable(trip) && (
               <Button type="button" variant="outline" size="sm" onClick={() => openClaim([trip.id])} title="Create a claim for this trip" className="border-primary/40 text-primary hover:text-primary">
                 <ReceiptText className="mr-1.5 h-3.5 w-3.5" aria-hidden />
                 Claim
               </Button>
             )}
-            {/* Icons only, phone and desktop alike: with Select and Claim beside them, labelled Edit and
-                Delete wrapped a phone card's actions onto a second row. */}
+            {/* Icons only, phone and desktop alike: with Claim beside them, labelled Edit and Delete
+                wrapped a phone card's actions onto a second row. */}
             <Button type="button" variant="outline" size="sm" onClick={() => onEdit(trip)} aria-label="Edit trip" title="Edit trip">
               <Pencil className="h-3.5 w-3.5" aria-hidden />
             </Button>

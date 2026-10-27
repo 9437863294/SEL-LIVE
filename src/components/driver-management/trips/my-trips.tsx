@@ -9,27 +9,25 @@
  * deletes unclaimed trips and puts them on claims.
  *
  * A trip is one journey; a claim is what gets approved and paid. "Create claim" puts one, several
- * or all unclaimed trips on a claim (the dialog picks them), a trip's own "Claim" button claims just
- * that one, and ticking rows first preselects them. Trips on a claim are locked and show where it
+ * or all unclaimed trips on a claim (they are ticked in its dialog, all of them to start with), and a
+ * trip's own "Claim" button claims just that one. Trips on a claim are locked and show where it
  * stands. Trips sent back by an approver come back here as unclaimed, with the reason, ready to
  * correct and claim again. Trips near the end of the claim window are called out before they expire.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CalendarClock, ListChecks, Plus, ReceiptText, Route, Undo2 } from 'lucide-react';
+import { CalendarClock, Plus, ReceiptText, Route, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DataList } from '@/components/shared/data-list';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { useToast } from '@/hooks/use-toast';
-import { sumMoney } from '@/lib/employee-trips/rates';
 import { daysLeftToClaim, isClaimable, withinClaimWindow } from '@/lib/employee-trips/trips';
 import { myTripColumns, tripHref } from './my-trips-columns';
-import { formatKm, type TripRecord, type TripStatus } from '@/lib/employee-trips/types';
+import type { TripRecord, TripStatus } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
 import { onOwnTripSaved } from './own-trip-outbox';
 import { OwnTripOutboxPanel } from './own-trip-outbox-panel';
@@ -38,7 +36,7 @@ import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { CreateClaimDialog, type CreatedClaim } from './submit-claim-dialog';
 import { TripFormDialog } from './trip-form-dialog';
-import { ClaimSteps, EmptyBlock, ErrorBlock, LoadingBlock, Money, SegmentTabs, shortDate } from './trip-ui';
+import { ClaimSteps, EmptyBlock, ErrorBlock, LoadingBlock, SegmentTabs, shortDate } from './trip-ui';
 
 type View = 'unclaimed' | 'process' | 'paid' | 'rejected' | 'all';
 
@@ -66,7 +64,6 @@ export default function MyTrips() {
   const [view, setView] = useState<View>('unclaimed');
   const [month, setMonth] = useState('all');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<TripRecord | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [claimOpen, setClaimOpen] = useState(false);
@@ -110,7 +107,6 @@ export default function MyTrips() {
   };
 
   const onClaimCreated = (claims: CreatedClaim[]) => {
-    setSelected(new Set());
     tripsQuery.reload();
     reloadBootstrap();
     // Show what was made: the claim itself, or the list when the trips became several claims.
@@ -139,24 +135,11 @@ export default function MyTrips() {
     );
   }, [all, month, search, view]);
 
-  // Selection holds only trips that can still be claimed.
-  const chosen = useMemo(() => all.filter((trip) => selected.has(trip.id) && claimable(trip)), [all, claimable, selected]);
-  const chosenKm = Math.round(chosen.reduce((total, trip) => total + trip.distanceKm, 0) * 10) / 10;
-  const chosenAmount = sumMoney(chosen.map((trip) => trip.totalAmount));
-  const visibleClaimable = visible.filter(claimable);
 
   const drafts = all.filter((trip) => trip.status === 'draft');
   const sentBack = drafts.filter((trip) => trip.returnNote);
   const expiring = rules ? drafts.filter((trip) => { const left = daysLeftToClaim(trip.tripDate, today, rules); return left !== null && left >= 0 && left <= 7; }) : [];
   const expired = rules ? drafts.filter((trip) => !withinClaimWindow(trip.tripDate, today, rules)) : [];
-
-  const toggle = (id: string, on: boolean) =>
-    setSelected((current) => {
-      const next = new Set(current);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
 
   const onSaved = (trip: TripRecord) =>
     setTrips((list) => {
@@ -170,7 +153,6 @@ export default function MyTrips() {
     try {
       await tripFetch(`trips/${deleting.id}`, { method: 'DELETE' });
       setTrips((list) => list.filter((trip) => trip.id !== deleting.id));
-      toggle(deleting.id, false);
       toast({ title: 'Trip deleted' });
     } catch (failure) {
       toast({ variant: 'destructive', title: 'Not deleted', description: errorMessage(failure) });
@@ -182,8 +164,6 @@ export default function MyTrips() {
     rules,
     today,
     claimable,
-    selected,
-    toggle,
     openClaim,
     onEdit: (trip) => {
       setEditing(trip);
@@ -265,18 +245,18 @@ export default function MyTrips() {
             </SelectContent>
           </Select>
         </FilterBar>
-        <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={cn('shrink-0', candidates.length && VM_PRIMARY_BUTTON)} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
+        <Button type="button" variant={candidates.length ? 'default' : 'outline'} className={cn('shrink-0', candidates.length && VM_PRIMARY_BUTTON)} onClick={() => openClaim([])}>
           <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
           <span className="sm:hidden">Claim</span>
           <span className="hidden sm:inline">
             Create claim
-            {chosen.length ? ` (${chosen.length} selected)` : candidates.length ? ` (${candidates.length} unclaimed)` : ''}
+            {candidates.length ? ` (${candidates.length} unclaimed)` : ''}
           </span>
         </Button>
       </div>
 
-      {/* The tabs fill the line (all of it on a phone; beside Select all from sm up). */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* The tabs fill the line. */}
+      <div className="flex flex-wrap items-center gap-2">
         <SegmentTabs
           fill
           className="sm:w-auto sm:flex-1"
@@ -291,30 +271,7 @@ export default function MyTrips() {
             { value: 'all', label: 'All', count: counts.all },
           ]}
         />
-        {visibleClaimable.length > 0 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelected((current) => (visibleClaimable.every((trip) => current.has(trip.id)) ? new Set() : new Set(visibleClaimable.map((trip) => trip.id))))}
-          >
-            <ListChecks className="mr-1.5 h-4 w-4" aria-hidden />
-            {visibleClaimable.every((trip) => selected.has(trip.id)) ? 'Clear selection' : `Select all ${visibleClaimable.length}`}
-          </Button>
-        )}
       </div>
-
-      {chosen.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
-          <p className="text-sm text-slate-700">
-            <span className="font-semibold">{chosen.length} selected</span> · {formatKm(chosenKm)} · <Money value={chosenAmount} className="font-semibold" />
-          </p>
-          <Button type="button" className={cn(VM_PRIMARY_BUTTON, 'w-full sm:w-auto')} onClick={() => openClaim(chosen.map((trip) => trip.id))}>
-            <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
-            Create claim with {chosen.length === 1 ? 'this trip' : `these ${chosen.length} trips`}
-          </Button>
-        </div>
-      )}
 
       {loadError ? (
         <ErrorBlock message={loadError} onRetry={tripsQuery.reload} />
@@ -328,7 +285,6 @@ export default function MyTrips() {
           // A trip opens its page (an unclaimed trip's card through its text — see my-trips-columns.tsx).
           cardHref={tripHref}
           onRowClick={(trip) => router.push(tripHref(trip))}
-          rowClassName={(trip) => (selected.has(trip.id) && claimable(trip) ? 'bg-primary/5' : undefined)}
           empty={
             <EmptyBlock icon={Route} title={all.length ? 'No trips here' : 'No trips recorded yet'}>
               {all.length ? 'Try another tab or clear the filters.' : 'Record your first trip on Fleet Trip › Own vehicle — the amount is worked out from the company rate for your vehicle.'}
