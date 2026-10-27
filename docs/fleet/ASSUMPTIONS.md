@@ -237,3 +237,22 @@ setting or a small change if the owner wants it otherwise.
     - **Old records:** an old draft keeps the project it was saved with when edited; choosing
       another must be a listed value. At the switch, no own-vehicle trip and 1 of 21 fleet trips
       had a project, and no approval stage routed by project.
+46. **The claim workflow's reporting authority is Employee › Reporting's line** (owner's request,
+    2026-10-27). One resolver (`reportingLine` / `reportingAuthorityOf` in
+    `src/lib/employee-trips/server/lookups.ts`) serves claims, Approvals and the fleet approvers.
+    - **Order:** Access Management's reporting manager on the login, then the greytHR manager of its
+      employee, matched to that manager's single active login. Nobody uses the Access Management
+      field today, so the line is exactly Employee › Reporting's.
+    - **No authority when** the login has no employee, greytHR names no manager, the person is their
+      own manager, the manager has left (an exit state — an active login does not save them), has no
+      login, or has two. The level's fallback people take the claim; with nobody else named it waits
+      for Override Workflow, as before.
+    - **Settings › Workflow** lists, on a level that follows the line, whose claims go where and why,
+      with "Set approver" adding an exception; a page with no such level says so. Employee › Reporting
+      links back to it.
+    - **Re-routing** on save uses the line as it is now, not as recorded at submission, and stores it.
+    - **Approvals** opens for a reporting manager when a reportee with a login reports to them (it
+      used to count any employee record, departed or without a login).
+    - **At the change:** 43 of 50 active logins reached a manager; 3 managers had left, 1 had no
+      login, 2 logins had no employee, 1 had no manager. Level 1 ("Reporting Authority Approval")
+      was set to fixed people, naming only its one claimant.

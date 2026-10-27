@@ -17,9 +17,12 @@
  * drawn. Deriving it over the filtered set instead would mean hiding departed staff promoted their
  * reportees to the top of the organisation — a hierarchy the screen invented.
  *
- * Read-only. greytHR owns the org tree.
+ * Read-only. greytHR owns the org tree. Fleet & Travel's claim workflow follows these same links
+ * (Settings › Workflow shows whose claims go where), so a broken link here is a claim with no
+ * manager to approve it there.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -283,6 +286,14 @@ export default function ReportingStructurePage() {
           <span className="font-medium">Sync → Automatic refresh → Standard detail</span> and run it.
         </div>
       )}
+
+      <p className="mb-3 text-xs text-muted-foreground">
+        Fleet &amp; Travel sends trip claims up this line when its workflow follows the reporting authority —{' '}
+        <Link href="/driver-management/settings/workflow" className="font-medium text-slate-700 underline underline-offset-2">
+          see whose claims go where
+        </Link>
+        .
+      </p>
 
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         <EmployeeKpiCard label="Employees" value={structure.counts.total} icon={Users} tone="indigo" index={0} />

@@ -20,15 +20,17 @@ import { ACTIVE_CLAIM_STATUSES, ET_COLLECTIONS, type RateRevision, type TripClai
 import { normaliseSettings, rerouteClaim } from '../workflow.ts';
 import { TripError, db, nowIso, type TripContext } from './context';
 import { toClaim } from './claims';
-import { departmentOptions, forgetSettings, loadSettings, projectOptions, userDirectory } from './lookups';
+import { departmentOptions, forgetSettings, loadSettings, projectOptions, reportingLine, userDirectory } from './lookups';
 import { afterAudit, afterClaimChange, claimSummary } from './notify';
 import { priceAndFlag, toTrip } from './trips';
 
 export async function getSettingsForEditing(context: TripContext) {
   if (!context.trip.settingsView) throw new TripError('Trip settings need Driver Management · Trip Settings · View.', 403);
-  const [settings, directory, projects, departments] = await Promise.all([loadSettings(context.organizationId), userDirectory(), projectOptions(), departmentOptions()]);
+  const [settings, directory, projects, departments, line] = await Promise.all([loadSettings(context.organizationId), userDirectory(), projectOptions(), departmentOptions(), reportingLine()]);
   const users = [...directory.values()].filter((user) => user.active).map(({ id, name, email }) => ({ id, name, email })).sort((a, b) => a.name.localeCompare(b.name));
-  return { settings, users, projects, departments, canEdit: context.trip.settingsEdit };
+  // Each employee's reporting line (Employee › Reporting's links), so Workflow shows whose claims go where.
+  const reporting = [...line.entries()].map(([userId, authority]) => ({ userId, ...authority }));
+  return { settings, users, projects, departments, reportingLine: reporting, canEdit: context.trip.settingsEdit };
 }
 
 /** Is the revision the rate of any trip already on a claim (or past one)? */
@@ -104,12 +106,16 @@ async function rerouteActiveClaims(context: TripContext, settings: TripClaimSett
   const directory = await userDirectory();
   const nameOf = (id: string) => directory.get(id)?.name ?? 'Unknown user';
   const snapshot = await db().collection(ET_COLLECTIONS.claims).where('status', 'in', [...ACTIVE_CLAIM_STATUSES]).get();
+  // The reporting line as it stands now — a manager changed or gone since a claim was sent is not
+  // the one to wait for. A claimant no longer active keeps the line recorded on the claim.
+  const line = settings.stages.some((stage) => stage.routing === 'reporting') ? await reportingLine({ fresh: true }) : null;
   const now = nowIso();
   let count = 0;
   for (const doc of snapshot.docs) {
     const claim = toClaim(doc.id, doc.data());
     if (claim.organizationId !== context.organizationId) continue;
-    const routed = rerouteClaim(claim, settings, nameOf);
+    const reportingAuthorityIds = line?.get(claim.employeeId)?.ids ?? claim.reportingAuthorityIds;
+    const routed = rerouteClaim({ ...claim, reportingAuthorityIds }, settings, nameOf);
     if (!routed) continue;
     const before = claim.currentAssigneeIds;
     const waitingChanged = routed.currentAssigneeIds.length !== before.length || routed.currentAssigneeIds.some((id) => !before.includes(id));
@@ -117,6 +123,7 @@ async function rerouteActiveClaims(context: TripContext, settings: TripClaimSett
     await doc.ref.update({
       stages: routed.stages,
       currentAssigneeIds: routed.currentAssigneeIds,
+      reportingAuthorityIds,
       updatedAt: now,
       ...(waitingChanged
         ? { history: [...claim.history, { action: 'rerouted', stageName: stage.name, byId: context.userId, byName: context.userName, at: now, remarks: `Workflow changed — now with ${stage.assigneeNames.join(', ') || 'nobody'}.` }] }

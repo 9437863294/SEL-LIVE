@@ -8,8 +8,9 @@ import 'server-only';
  */
 
 import { DEFAULT_VEHICLE_TYPES, VEHICLE_COLLECTIONS, VEHICLE_TYPES_DOC_ID } from '@/lib/vehicle-management';
+import { hasExited, type EmploymentState } from '@/lib/greythr';
 import { normaliseSettings } from '../workflow.ts';
-import { ET_COLLECTIONS, normaliseVehicleNumber, type ReportingSource, type TripClaimSettings } from '../types.ts';
+import { ET_COLLECTIONS, normaliseVehicleNumber, type ReportingGap, type ReportingSource, type TripClaimSettings } from '../types.ts';
 import { db } from './context';
 import { tripProjectOptions } from '@/lib/employee-projects/server';
 
@@ -68,49 +69,88 @@ export async function nameResolver(): Promise<(userId: string) => string> {
   return (userId) => directory.get(userId)?.name ?? 'Unknown user';
 }
 
-/** The active login of a greytHR employee — none when two logins claim the same employee. */
-function loginOfEmployee(directory: Map<string, DirectoryUser>, employeeId: string): DirectoryUser | null {
-  const matches = [...directory.values()].filter((user) => user.active && user.employeeId === employeeId);
-  return matches.length === 1 ? matches[0] : null;
-}
-
 export interface ReportingAuthority {
   ids: string[];
   source: ReportingSource | null;
+  /** Why nobody was found — the stage's own people then take the claim. */
+  gap: ReportingGap | null;
+}
+
+type EmployeeRecord = FirebaseFirestore.DocumentData | undefined;
+
+const managerEmployeeIdOf = (employee: EmployeeRecord) => String(employee?.reportingManagerEmployeeId ?? '').trim();
+
+/** Gone from the organisation: an exit state from the sync, else the mirror's own status. */
+function hasLeft(employee: EmployeeRecord): boolean {
+  if (!employee) return false;
+  const state = String(employee.employmentState ?? '').trim();
+  return state ? hasExited(state as EmploymentState) : employee.status === 'Inactive';
 }
 
 /**
- * An employee's reporting authority, as the organisation already records it: the reporting manager
- * set on their login in Access Management (`accessGrants.reportingManagerId`) first, then their
- * manager in greytHR's org tree (`employees/{employeeId}.reportingManagerEmployeeId`, matched to that
- * person's login). An inactive or ambiguous match counts as none, and nobody is their own authority —
- * the workflow then falls back to the stage's named people.
+ * One login's reporting authority: the reporting manager set on the login in Access Management
+ * (`accessGrants.reportingManagerId`) first, then the manager greytHR records for its employee
+ * (`employees/{employeeId}.reportingManagerEmployeeId` — the link Employee › Reporting draws), matched
+ * to that person's login. A manager who has left, has no login, or has two counts as none, and nobody
+ * is their own authority — the workflow then falls back to the stage's named people.
+ *
+ * `employees` holds the records it may need: the login's employee and that employee's manager.
  */
-export async function reportingAuthorityOf(userId: string): Promise<ReportingAuthority> {
-  const directory = await userDirectory();
-  const grant = await db().collection('accessGrants').doc(userId).get();
-  const managerId = String(grant.data()?.reportingManagerId ?? '').trim();
-  if (managerId && managerId !== userId && directory.get(managerId)?.active) return { ids: [managerId], source: 'access' };
-
+function resolveAuthority(userId: string, directory: Map<string, DirectoryUser>, accessManagerId: string, employees: Map<string, EmployeeRecord>): ReportingAuthority {
+  if (accessManagerId && accessManagerId !== userId && directory.get(accessManagerId)?.active) return { ids: [accessManagerId], source: 'access', gap: null };
+  const none = (gap: ReportingGap): ReportingAuthority => ({ ids: [], source: null, gap });
   const employeeId = directory.get(userId)?.employeeId;
-  if (employeeId) {
-    const mirror = await db().collection('employees').doc(employeeId).get();
-    const managerEmployeeId = String(mirror.data()?.reportingManagerEmployeeId ?? '').trim();
-    const manager = managerEmployeeId ? loginOfEmployee(directory, managerEmployeeId) : null;
-    if (manager && manager.id !== userId) return { ids: [manager.id], source: 'greythr' };
-  }
-  return { ids: [], source: null };
+  const employee = employeeId ? employees.get(employeeId) : undefined;
+  if (!employeeId || !employee) return none('no-employee');
+  const managerEmployeeId = managerEmployeeIdOf(employee);
+  if (!managerEmployeeId) return none('no-manager');
+  if (managerEmployeeId === employeeId) return none('own-manager');
+  if (hasLeft(employees.get(managerEmployeeId))) return none('manager-departed');
+  const logins = [...directory.values()].filter((user) => user.active && user.employeeId === managerEmployeeId);
+  if (logins.length > 1) return none('manager-two-logins');
+  if (!logins.length) return none('manager-no-login');
+  if (logins[0].id === userId) return none('own-manager');
+  return { ids: [logins[0].id], source: 'greythr', gap: null };
 }
 
-/** Does anyone report to this person (Access Management or greytHR) — they then approve claims. */
-export async function hasReportees(userId: string): Promise<boolean> {
+async function readEmployees(ids: Iterable<string>, into: Map<string, EmployeeRecord>): Promise<void> {
+  const refs = [...new Set(ids)].filter((id) => id && !into.has(id)).map((id) => db().collection('employees').doc(id));
+  if (!refs.length) return;
+  for (const snapshot of await db().getAll(...refs)) into.set(snapshot.id, snapshot.data());
+}
+
+/** An employee's reporting authority, read fresh (a claim is routed with it). */
+export async function reportingAuthorityOf(userId: string): Promise<ReportingAuthority> {
   const directory = await userDirectory();
+  const employees = new Map<string, EmployeeRecord>();
   const employeeId = directory.get(userId)?.employeeId;
-  const [byGrant, byGreytHR] = await Promise.all([
-    db().collection('accessGrants').where('reportingManagerId', '==', userId).limit(1).get(),
-    employeeId ? db().collection('employees').where('reportingManagerEmployeeId', '==', employeeId).limit(1).get() : Promise.resolve(null),
-  ]);
-  return !byGrant.empty || Boolean(byGreytHR && !byGreytHR.empty);
+  const [grant] = await Promise.all([db().collection('accessGrants').doc(userId).get(), employeeId ? readEmployees([employeeId], employees) : null]);
+  if (employeeId) await readEmployees([managerEmployeeIdOf(employees.get(employeeId))], employees);
+  return resolveAuthority(userId, directory, String(grant.data()?.reportingManagerId ?? '').trim(), employees);
+}
+
+/** Every active login's reporting authority — what Settings › Workflow shows and re-routing uses. */
+const reportingLineCache = cached(REFERENCE_TTL_MS, async (): Promise<Map<string, ReportingAuthority>> => {
+  const directory = await userDirectory();
+  const active = [...directory.values()].filter((user) => user.active);
+  const employees = new Map<string, EmployeeRecord>();
+  const [grants] = await Promise.all([db().collection('accessGrants').select('reportingManagerId').get(), readEmployees(active.map((user) => user.employeeId), employees)]);
+  await readEmployees([...employees.values()].map(managerEmployeeIdOf), employees);
+  const accessManagers = new Map(grants.docs.map((doc) => [doc.id, String(doc.data().reportingManagerId ?? '').trim()]));
+  return new Map(active.map((user) => [user.id, resolveAuthority(user.id, directory, accessManagers.get(user.id) ?? '', employees)]));
+});
+
+export function reportingLine(options: { fresh?: boolean } = {}): Promise<Map<string, ReportingAuthority>> {
+  if (options.fresh) reportingLineCache.forget();
+  return reportingLineCache.get();
+}
+
+/**
+ * Does anyone's reporting line lead to this person — a reportee with a login, whose claims they then
+ * approve when the workflow follows the reporting line.
+ */
+export async function hasReportees(userId: string): Promise<boolean> {
+  return [...(await reportingLine()).values()].some((authority) => authority.ids.includes(userId));
 }
 
 export interface NamedOption {

@@ -76,7 +76,7 @@
     "typecheck:appearance": "tsc -p tsconfig.appearance.json",
     "test:bill-tracking": "node --experimental-strip-types --test tests/bill-tracking-domain.test.mjs tests/bill-tracking-import.test.mjs tests/bill-tracking-reports.test.mjs tests/bill-tracking-categories.test.mjs tests/bill-tracking-gst.test.mjs tests/bill-tracking-certification.test.mjs tests/bill-tracking-bank-posting.test.mjs tests/bill-tracking-workflow.test.mjs tests/bill-tracking-retention.test.mjs",
     "typecheck:bill-tracking": "tsc -p tsconfig.bill-tracking.json",
-    "test:driver-management": "node --experimental-strip-types --import ./tests/helpers/server-module-hooks.mjs --test tests/employee-trips-domain.test.mjs tests/employee-trips-flow.test.mjs",
+    "test:driver-management": "node --experimental-strip-types --import ./tests/helpers/server-module-hooks.mjs --test tests/employee-trips-domain.test.mjs tests/employee-trips-flow.test.mjs tests/reporting-line.test.mjs",
     "test:fleet": "node --experimental-strip-types --import ./tests/helpers/server-module-hooks.mjs --test tests/fleet-domain.test.mjs tests/fleet-flow.test.mjs tests/fleet-jobs.test.mjs tests/employee-projects.test.mjs tests/trip-tracking.test.mjs tests/view-as.test.mjs",
     "typecheck:driver-management": "tsc -p tsconfig.driver-management.json",
     "bill-tracking:dry-run": "node --experimental-strip-types scripts/bill-tracking-dry-run.mjs"

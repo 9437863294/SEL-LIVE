@@ -8,10 +8,15 @@
  * department — the stage's own people always being the fallback. Levels after the first may apply
  * only to claims from an amount up (a director's sign-off on large claims). Being assigned is the
  * authority to act; nobody acts on their own claim. Saving re-routes the claims already in process.
+ *
+ * A level that follows the reporting line lists whose claims it sends where (reporting-line-panel),
+ * from the same links Employee › Reporting shows; a page with no such level says so, since a level
+ * can be called "Reporting Authority Approval" and still name fixed people.
  */
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Banknote, GitBranch, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Banknote, GitBranch, Plus, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/shared/page-header';
 import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { ROUTING_LABELS, type StageRouting, type WorkflowStage } from '@/lib/employee-trips/types';
+import { ReportingLinePanel } from './reporting-line-panel';
 import { ErrorBlock, Field, LoadingBlock, PeoplePicker, SearchSelect } from './trip-ui';
 import { useTripSettings } from './use-trip-settings';
 
@@ -51,6 +57,12 @@ export default function WorkflowSettings() {
   };
   const remove = (id: string) => {
     setStages((existing) => existing.filter((stage) => stage.id !== id));
+  };
+  /** An exception for one employee, its people still to choose (the editor asks for them). */
+  const setApprover = (stageId: string, employeeId: string) => {
+    setStages((existing) =>
+      existing.map((stage) => (stage.id === stageId && !stage.routes.some((route) => route.key === employeeId) ? { ...stage, routes: [...stage.routes, { key: employeeId, userIds: [] }] } : stage)),
+    );
   };
   const addLevel = () => {
     setStages((existing) => [
@@ -95,7 +107,7 @@ export default function WorkflowSettings() {
         return {
           people: 'Fallback — employees with no reporting authority on record',
           routesTitle: 'Exceptions',
-          routesHint: "Every claim goes to the employee's reporting manager — from Access Management, else greytHR. Add an exception to send one employee's claims to someone else.",
+          routesHint: "Every claim goes to the employee's reporting manager — as Employee › Reporting shows it, unless Access Management names another. Add an exception to send one employee's claims to someone else.",
           keyLabel: 'employee',
           addLabel: 'Add exception',
         };
@@ -176,6 +188,11 @@ export default function WorkflowSettings() {
             <Field label={copy.people} required hint="Any one of them can act.">
               <PeoplePicker users={users} value={stage.userIds} onChange={(next) => update(stage.id, { userIds: next })} disabled={!canEdit} invalid={!stage.userIds.length} />
             </Field>
+            {stage.routing === 'users' && stage.userIds.length === 1 && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+                {users.find((user) => user.id === stage.userIds[0])?.name ?? 'That person'}&apos;s own claims would wait for nobody here — nobody acts on their own claim. Add someone else.
+              </p>
+            )}
             {stage.routing !== 'users' && (
               <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                 <p className="text-xs font-medium text-slate-700">{copy.routesTitle}</p>
@@ -202,6 +219,12 @@ export default function WorkflowSettings() {
               </div>
             )}
           </fieldset>
+          {/* Outside the fieldset: someone who may only view the workflow can still search and filter it. */}
+          {stage.routing === 'reporting' && (
+            <div className="mt-4">
+              <ReportingLinePanel stage={stage} line={payload.reportingLine ?? []} users={users} canEdit={canEdit} onSetApprover={(employeeId) => setApprover(stage.id, employeeId)} />
+            </div>
+          )}
         </CardContent>
       </Card>
     );
@@ -231,6 +254,19 @@ export default function WorkflowSettings() {
         </ul>
       )}
       {dirty && !problems.length && <p className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">Unsaved changes. Saving re-routes the claims already in process to the people named here.</p>}
+
+      {!approvals.some((stage) => stage.routing === 'reporting') && (
+        <div className="flex gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p className="min-w-0">
+            No approval level follows the reporting line, so reporting managers do not approve their people&apos;s claims — the people named below do. To use{' '}
+            <Link href="/employee/reporting" className="font-medium underline underline-offset-2">
+              Employee › Reporting
+            </Link>
+            , set <span className="font-medium">Who works it</span> to <span className="font-medium">{ROUTING_LABELS.reporting}</span> on a level.
+          </p>
+        </div>
+      )}
 
       {approvals.map((stage, index) => stageEditor(stage, index))}
       {canEdit && approvals.length < 6 && (

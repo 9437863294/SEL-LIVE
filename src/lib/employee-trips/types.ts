@@ -157,6 +157,30 @@ export const REPORTING_SOURCE_LABELS: Record<ReportingSource, string> = {
   greythr: 'manager in greytHR',
 };
 
+/**
+ * Why an employee's reporting line names nobody who can approve here — the broken links Employee ›
+ * Reporting shows, plus the one only this app has: a manager with no login of their own.
+ */
+export type ReportingGap = 'no-employee' | 'no-manager' | 'own-manager' | 'manager-departed' | 'manager-no-login' | 'manager-two-logins';
+
+export const REPORTING_GAP_LABELS: Record<ReportingGap, string> = {
+  'no-employee': 'Login not linked to a greytHR employee',
+  'no-manager': 'No manager in greytHR',
+  'own-manager': 'Recorded as their own manager',
+  'manager-departed': 'Their manager has left',
+  'manager-no-login': 'Their manager has no login',
+  'manager-two-logins': 'Their manager has two logins',
+};
+
+/** One active login's reporting line, for Settings › Workflow (`reportingLine` on the server). */
+export interface ReportingLineEntry {
+  userId: string;
+  /** Who it leads to — empty when `gap` says why not. */
+  ids: string[];
+  source: ReportingSource | null;
+  gap: ReportingGap | null;
+}
+
 export type StageKind = 'approval' | 'payment';
 
 export interface WorkflowStage {

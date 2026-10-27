@@ -10,7 +10,7 @@ import { auth } from '@/lib/firebase';
 import { viewAsHeaders } from '@/lib/view-as';
 import type { TripAccess } from '@/lib/employee-trips/access';
 import type { ClaimAbilities } from '@/lib/employee-trips/workflow';
-import type { ClaimStatus, RateRevision, ReportingSource, StageKind, StageRouting, TripClaim, TripClaimSettings, TripRecord, TripRules } from '@/lib/employee-trips/types';
+import type { ClaimStatus, RateRevision, ReportingLineEntry, ReportingSource, StageKind, StageRouting, TripClaim, TripClaimSettings, TripRecord, TripRules } from '@/lib/employee-trips/types';
 
 export class TripApiError extends Error {
   constructor(
@@ -178,6 +178,8 @@ export interface SettingsPayload {
   users: { id: string; name: string; email: string }[];
   projects: NamedOption[];
   departments: NamedOption[];
+  /** Every active login's reporting line — whom a reporting-authority stage sends their claims to. */
+  reportingLine: ReportingLineEntry[];
   canEdit: boolean;
 }
 
