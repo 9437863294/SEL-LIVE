@@ -22,6 +22,7 @@ import { moduleDisplayName } from '@/lib/module-display-names';
 import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 import { FleetProvider, useFleet } from '@/components/fleet/fleet-provider';
 import { TripClaimsProvider, useTripClaims } from './trips/trip-claims-provider';
+import { OutboxSync } from './tracking/outbox-sync';
 import { ResumeTracking } from './tracking/resume-tracking';
 
 // ─── Per-section config ──────────────────────────────────────────────────────
@@ -180,8 +181,9 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   return (
     <TripClaimsProvider>
       <FleetProvider>
-        {/* Restarts a trip recorder the phone killed, on whichever page the driver opens. */}
+        {/* Restarts a trip recorder the phone killed, and keeps whatever was saved offline sending, on whichever page the driver opens. */}
         <ResumeTracking />
+        <OutboxSync />
         <Shell>{children}</Shell>
       </FleetProvider>
     </TripClaimsProvider>

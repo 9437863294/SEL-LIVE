@@ -27,6 +27,7 @@ import { placeName } from '@/components/driver-management/fleet/start-helpers';
 import { formatINR, odometerDistance, priceTrip, rateFor } from '@/lib/employee-trips/rates';
 import { validateTrip, type TripErrors, type TripInput } from '@/lib/employee-trips/trips';
 import { formatKm, type TripGpsEvidence, type TripRecord } from '@/lib/employee-trips/types';
+import { enqueueOwnTrip, isOfflineFailure } from './own-trip-outbox';
 import { TripApiError, errorMessage, tripFetch, type Bootstrap } from './trip-api';
 import { Field } from './trip-ui';
 
@@ -48,6 +49,8 @@ export interface OwnReview {
   /** Moving and stopped minutes, for the summary. */
   movingMinutes: number;
   idleMinutes: number;
+  /** The recording's id, sent as the trip's `clientTripId` so a save sent twice is one trip. */
+  clientTripId: string;
 }
 
 const toNumber = (value: string): number | null => {
@@ -62,6 +65,7 @@ export function OwnReviewDialog({
   review,
   onDiscard,
   onSaved,
+  onQueued,
 }: {
   open: boolean;
   data: Bootstrap;
@@ -69,6 +73,8 @@ export function OwnReviewDialog({
   /** Closing without saving: the recording is dropped. */
   onDiscard: () => void;
   onSaved: (trip: TripRecord) => void;
+  /** No connection: the trip went to the phone's outbox (own-trip-outbox.ts) and sends itself later. */
+  onQueued: () => void;
 }) {
   const { toast } = useToast();
   const rules = data.settings.rules;
@@ -129,11 +135,31 @@ export function OwnReviewDialog({
     setServerErrors({});
     if (!check.ok) return;
     setSaving(true);
+    const body = { ...input, gps: review.gps, clientTripId: review.clientTripId };
+    // Without a connection the trip is kept on the phone and sent by itself later — checked as
+    // the phone says it is offline, and again if the request cannot reach the server.
+    const queue = () => {
+      enqueueOwnTrip({
+        clientTripId: review.clientTripId,
+        body,
+        summary: { tripDate: review.tripDate, fromPlace: review.fromPlace, toPlace, distanceKm: km, amount: pricing.totalAmount, vehicleNumber: review.vehicleNumber },
+      });
+      toast({ title: 'Saved on this phone', description: 'No connection — the trip is sent by itself when you are back online, then appears on My Trips.' });
+      onQueued();
+    };
     try {
-      const result = await tripFetch<{ trip: TripRecord }>('trips', { method: 'POST', body: { ...input, gps: review.gps } });
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        queue();
+        return;
+      }
+      const result = await tripFetch<{ trip: TripRecord }>('trips', { method: 'POST', body });
       toast({ title: 'Trip saved to My Trips', description: `${formatKm(result.trip.distanceKm)} · ${formatINR(result.trip.totalAmount)} — claim it from My Trips.` });
       onSaved(result.trip);
     } catch (error) {
+      if (isOfflineFailure(error)) {
+        queue();
+        return;
+      }
       if (error instanceof TripApiError && Object.keys(error.fields).length) setServerErrors(error.fields as TripErrors);
       toast({ variant: 'destructive', title: 'Trip not saved', description: errorMessage(error) });
     } finally {

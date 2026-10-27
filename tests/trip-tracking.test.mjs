@@ -22,6 +22,7 @@ import {
   toGapRecord,
   toRoutePoint,
 } from '../src/lib/trip-tracking/rules.ts';
+import { awaitsDriverEnd } from '../src/lib/fleet/trips.ts';
 
 const T0 = Date.parse('2026-10-26T04:00:00.000Z');
 
@@ -116,6 +117,21 @@ test('the makers that kill background apps get their steps; stock Android gets n
   assert.equal(oemGuideFor('Google'), null);
   assert.equal(oemGuideFor(''), null);
   assert.equal(oemGuideFor(undefined), null);
+});
+
+test('a trip the server closed by itself waits for the driver’s own end — for 48 hours, and never over a manager', () => {
+  const closed = { status: 'pending_review', endedBy: 'auto_idle', endedAt: '2026-10-26T04:00:00.000Z', clientEndId: null, review: { status: 'pending' }, reportedIn: null };
+  assert.equal(awaitsDriverEnd(closed, '2026-10-26T09:00:00.000Z'), true);
+  assert.equal(awaitsDriverEnd({ ...closed, endedBy: 'auto_max' }, '2026-10-26T09:00:00.000Z'), true);
+  assert.equal(awaitsDriverEnd(closed, '2026-10-28T04:00:00.000Z'), true, 'exactly 48 h');
+  assert.equal(awaitsDriverEnd(closed, '2026-10-28T04:01:00.000Z'), false, 'past the window');
+  // Ended by the driver, a manager's force-close, already ended once, settled, reported, cancelled: no.
+  assert.equal(awaitsDriverEnd({ ...closed, endedBy: 'driver' }, '2026-10-26T09:00:00.000Z'), false);
+  assert.equal(awaitsDriverEnd({ ...closed, endedBy: 'force' }, '2026-10-26T09:00:00.000Z'), false);
+  assert.equal(awaitsDriverEnd({ ...closed, clientEndId: 'end-1' }, '2026-10-26T09:00:00.000Z'), false);
+  assert.equal(awaitsDriverEnd({ ...closed, review: { status: 'resolved' } }, '2026-10-26T09:00:00.000Z'), false);
+  assert.equal(awaitsDriverEnd({ ...closed, reportedIn: 'r-2026-10' }, '2026-10-26T09:00:00.000Z'), false);
+  assert.equal(awaitsDriverEnd({ ...closed, status: 'cancelled' }, '2026-10-26T09:00:00.000Z'), false);
 });
 
 test('only a gap of more than ten minutes brings the steps back', () => {

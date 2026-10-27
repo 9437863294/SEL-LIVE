@@ -21,6 +21,25 @@ import {
 /** No single trip is longer than this; a slip on the odometer keypad is the usual cause. */
 export const MAX_TRIP_KM = 2000;
 
+/**
+ * How long after the server closed a trip by itself the driver's own end is still taken — the same
+ * window as late points, so a phone that was offline sends both together.
+ */
+export const LATE_END_HOURS = 48;
+
+/**
+ * A trip the server closed by itself — no location for hours (`auto_idle`), or past the longest a
+ * trip may run (`auto_max`) — that its driver has not ended. The usual cause is a phone without
+ * signal: it kept recording, and its own end, with the odometer reading and photo, arrives late.
+ * That end still settles the trip (and the phone keeps recording until it is given), unless a
+ * manager has settled the review, a payment report has counted the trip, or the window has passed.
+ */
+export function awaitsDriverEnd(trip: Pick<FleetTrip, 'status' | 'endedBy' | 'endedAt' | 'clientEndId' | 'review' | 'reportedIn'>, now: string): boolean {
+  if (trip.endedBy !== 'auto_idle' && trip.endedBy !== 'auto_max') return false;
+  if (trip.clientEndId || trip.status === 'cancelled' || trip.review?.status === 'resolved' || trip.reportedIn) return false;
+  return Boolean(trip.endedAt) && minutesBetween(trip.endedAt as string, now) <= LATE_END_HOURS * 60;
+}
+
 export class FleetRuleError extends Error {
   readonly field: string | null;
 

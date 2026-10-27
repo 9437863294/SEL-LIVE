@@ -22,6 +22,7 @@ import { attributeKm, detectGeofenceEvents, geofenceAt, measureTrack, visitsFrom
 import { dayAllowance, emergenciesLeft, kmUsedOn, startLimitCheck } from '../limits.ts';
 import { endTripSchema, forceCloseSchema, geofenceEventsSchema, pauseSchema, pointsSchema, resolveExceptionSchema, reviewSchema, startTripSchema } from '../schemas.ts';
 import {
+  awaitsDriverEnd,
   billableDecision,
   checkEndOdometer,
   checkStartOdometer,
@@ -626,6 +627,11 @@ interface SettleInput {
   clientEndId?: string;
   endUploadId?: string | null;
   autoClosed?: boolean;
+  /**
+   * The driver's own end of a trip the server had already closed by itself (`awaitsDriverEnd`): it
+   * settles the trip again with the reading and photo, and the auto-close no longer counts against it.
+   */
+  lateDriverEnd?: boolean;
   actor?: { id: string; name: string };
 }
 
@@ -680,7 +686,8 @@ export async function settle(context: Pick<FleetContext, 'organizationId' | 'now
     siteInternal,
     isEmergency: before.isEmergency,
     ocrMismatch,
-    autoClosed: Boolean(input.autoClosed || before.flagCodes.includes('auto_closed')),
+    // The driver ending it late (after an offline auto-close) clears the auto-close.
+    autoClosed: input.lateDriverEnd ? false : Boolean(input.autoClosed || before.flagCodes.includes('auto_closed')),
     carried,
   });
   const figures = finishFigures({ decision, gpsKmByDate: measure.kmByDate, startDateKey: before.dateKey, vehicle, flags });
@@ -696,9 +703,11 @@ export async function settle(context: Pick<FleetContext, 'organizationId' | 'now
     // Settled by a manager, or already counted by an approved payment report: left as it is.
     if (current.review?.status === 'resolved' || current.reportedIn) return current;
     if (input.reason !== 'late-points' && !OPEN_TRIP_STATUSES.includes(current.status)) {
-      // Ended already: the same end again is the same answer; a different one is refused.
+      // Ended already: the same end again is the same answer; a different one is refused — except
+      // the driver's own end of a trip the server closed by itself (checked again here, in the
+      // transaction, so a manager settling it meanwhile still wins).
       if (input.clientEndId && current.clientEndId === input.clientEndId) return current;
-      throw new FleetError('That trip has already ended.', 409, { code: 'already_ended' });
+      if (!(input.lateDriverEnd && awaitsDriverEnd(current, context.now))) throw new FleetError('That trip has already ended.', 409, { code: 'already_ended' });
     }
     const pauses = current.pauses.map((pause) => (pause.to ? pause : { ...pause, to: endedAt }));
     const next: FleetTrip = {
@@ -786,7 +795,11 @@ export async function endTrip(context: FleetContext, tripId: string, body: unkno
   const input = endTripSchema.parse(body);
   const trip = await loadTrip(tripId);
   if (trip.driverUserId !== context.userId) throw new FleetError('That trip is not yours.', 403);
-  if (!OPEN_TRIP_STATUSES.includes(trip.status)) {
+  // A trip the server closed by itself while the phone had no signal is still the driver's to end:
+  // their reading and photo settle it properly (`awaitsDriverEnd`), instead of a refusal that left
+  // it to a manager with GPS alone.
+  const lateDriverEnd = !OPEN_TRIP_STATUSES.includes(trip.status) && awaitsDriverEnd(trip, context.now);
+  if (!OPEN_TRIP_STATUSES.includes(trip.status) && !lateDriverEnd) {
     if (trip.clientEndId === input.clientEndId) return { trip };
     throw new FleetError('That trip has already ended.', 409, { code: 'already_ended' });
   }
@@ -804,8 +817,9 @@ export async function endTrip(context: FleetContext, tripId: string, body: unkno
     endPlace: input.endPlace,
     clientEndId: input.clientEndId,
     endUploadId: photo.id,
+    lateDriverEnd,
   });
-  afterAudit(context, 'End Fleet Trip', { before: { status: trip.status }, after: { status: settled.status, gpsKm: settled.gpsDistanceKm, odoKm: settled.odoDistanceKm, billableKm: settled.billableDistanceKm, flags: settled.flagCodes } }, tripId, settled.vehicleNumber);
+  afterAudit(context, lateDriverEnd ? 'End Fleet Trip (after auto-close)' : 'End Fleet Trip', { before: { status: trip.status, endedBy: trip.endedBy }, after: { status: settled.status, gpsKm: settled.gpsDistanceKm, odoKm: settled.odoDistanceKm, billableKm: settled.billableDistanceKm, flags: settled.flagCodes } }, tripId, settled.vehicleNumber);
   return { trip: settled };
 }
 

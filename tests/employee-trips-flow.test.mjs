@@ -436,6 +436,17 @@ test('with typed trips off (the default), a new trip needs its GPS recording; ed
     const edited = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02GPS1', startOdometer: 12000, endOdometer: 12010, purpose: 'Inspection (corrected)' }), typed.id)).trip;
     assert.equal(edited.purpose, 'Inspection (corrected)');
     assert.equal(edited.source, 'manual');
+
+    // A save queued on a phone without signal is sent again: one trip, under its client id, untouched.
+    const offline = { ...ownTrip({ vehicleNumber: 'OD02GPS1', startOdometer: 12030, endOdometer: 12040 }), gps, clientTripId: 'own_offline0001' };
+    const first = (await saveTrip(context('emp3'), offline)).trip;
+    assert.equal(first.id, 'own_offline0001');
+    const again = (await saveTrip(context('emp3'), { ...offline, purpose: 'Changed on the second send' })).trip;
+    assert.equal(again.id, first.id);
+    assert.equal(again.purpose, first.purpose, 'the replay returns the saved trip, not an edit');
+    assert.equal(db.read(ET_COLLECTIONS.trips, 'own_offline0001').purpose, first.purpose);
+    // Somebody else's id cannot be taken over.
+    await rejects(saveTrip(context('emp1'), { ...offline, vehicleNumber: 'OD02OTHER' }), 403, /not yours/);
   } finally {
     db.seed(ET_COLLECTIONS.settings, 'default', stored);
     forgetSettings('default');

@@ -17,7 +17,7 @@ globalThis.__db = new FakeFirestore();
 const db = globalThis.__db;
 
 const { fleetErrorResponse } = await import('../src/lib/fleet/server/context.ts');
-const { startTrip, addPoints, addGeofenceEvents, endTrip, changeTrip, reviewTrip, forceCloseTrip, resolveTripException, listMyTrips, listTrips, tripDetail, runningTrips } = await import('../src/lib/fleet/server/trips.ts');
+const { startTrip, addPoints, addGeofenceEvents, endTrip, changeTrip, reviewTrip, forceCloseTrip, resolveTripException, listMyTrips, listTrips, tripDetail, runningTrips, settle } = await import('../src/lib/fleet/server/trips.ts');
 const { requestApproval, actOnApproval, myApprovals, approvalInbox, approvalDetail, tickApprovals } = await import('../src/lib/fleet/server/approvals.ts');
 const { createFuelEntry, listMyFuel, resolveFuelException } = await import('../src/lib/fleet/server/fuel.ts');
 const { saveUpload, readUpload } = await import('../src/lib/fleet/server/uploads.ts');
@@ -450,6 +450,38 @@ test('a manager force-closes: with a reading it stands, without one it waits for
   assert.ok(unread.flagCodes.includes('auto_closed'));
   assert.equal(unread.billableDistanceKm, null);
   trips.forcedPending = unread;
+  await takeNotices();
+});
+
+test('closed by the server while the phone was offline: the driver’s own end still settles it — once, and not over a manager', async () => {
+  const system = { organizationId: 'default', now: at(600), userId: 'system', userName: 'System' };
+  const trip = await start('drv2', 'v4', 30016, {}, at(360));
+  await addPoints(ctx('drv2', { now: at(366) }), trip.id, { points: track('off', 1, 3, 360) });
+  // No signal for hours: the idle job closes it at its last fix, for review, and frees the vehicle.
+  const auto = await settle(system, trip.id, { reason: 'auto_idle', autoClosed: true, endedAt: at(363) });
+  assert.equal(auto.status, 'pending_review');
+  assert.equal(auto.endedBy, 'auto_idle');
+  assert.ok(auto.flagCodes.includes('auto_closed'));
+  assert.equal(db.read('vehicleManagementVehicles', 'v4').currentTripId, null);
+  // The phone comes back: what it recorded offline, then the driver's end with the reading and photo.
+  await addPoints(ctx('drv2', { now: at(610) }), trip.id, { points: track('off', 1, 9, 360, 4) });
+  const clientEndId = cid('end');
+  const ended = await end('drv2', trip.id, 30029, at(612), { clientEndId, endedAt: at(375) });
+  assert.equal(ended.endedBy, 'driver');
+  assert.equal(ended.endOdometer.km, 30029);
+  assert.equal(ended.endedAt, at(375));
+  assert.ok(!ended.flagCodes.includes('auto_closed'), ended.flagCodes.join(','));
+  assert.ok(ended.gpsDistanceKm > 12, `the offline stretch counts: ${ended.gpsDistanceKm}`);
+  assert.equal(db.read('vehicleManagementVehicles', 'v4').currentOdometerKm, 30029);
+  // The same end again is the same answer; a different one is refused.
+  assert.equal((await end('drv2', trip.id, 30029, at(613), { clientEndId, endedAt: at(375) })).id, trip.id);
+  await rejects(end('drv2', trip.id, 30030, at(614)), 409, /already ended/, 'already_ended');
+
+  // A manager who settled the auto-closed trip first keeps the last word.
+  const second = await start('drv2', 'v4', 30029, {}, at(620));
+  await settle(system, second.id, { reason: 'auto_idle', autoClosed: true, endedAt: at(621) });
+  await reviewTrip(ctx('mgr', { now: at(700) }), second.id, { choice: 'manager', km: 4, note: 'Phone was off; driver confirmed 4 km' });
+  await rejects(end('drv2', second.id, 30035, at(710)), 409, /already ended/, 'already_ended');
   await takeNotices();
 });
 

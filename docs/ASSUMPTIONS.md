@@ -88,7 +88,26 @@ assumptions stay in `docs/fleet/ASSUMPTIONS.md`.)
       one (`com.hihonor.systemmanager`) is the least certain; every attempt falls back to App info.
     - **No new Gradle dependencies and no new npm plugin**, so `npx cap sync` is not required for
       these Java files (it is harmless).
-16. **Not done**: iOS background tracking (out of scope; iOS keeps the in-app watcher); resuming a
+16. **No signal mid-trip (both kinds of vehicle)**: recording never needs the network; what differs
+    is what happens at the end.
+    - **Company vehicle**: the server cannot tell "offline" from "forgotten", so its idle job still
+      closes a running trip after `idleAutoCloseMinutes` (3 h by default) without a fix, for review.
+      The driver's own end is now still taken for such a trip (`awaitsDriverEnd`, 48 h, the same window
+      as late points): their reading and photo settle it again (`endTrip` → `settle` with
+      `lateDriverEnd`), the auto-close no longer counts against it. A manager's resolved review or an
+      approved payment report keeps the last word. On the phone, such a trip stays on Fleet Trip as
+      "End your trip on …" and keeps recording until the driver ends it or leaves it to the manager;
+      a new start waits. The vehicle stays released from the auto-close (an abandoned trip must not
+      block it); the late end only clears the vehicle's lock if it still points at this trip and only
+      moves its odometer forward.
+    - **Own vehicle**: there is no server-side trip until it is saved, so nothing closes it. Save
+      without a connection goes to the phone's own-trip outbox (`own-trip-outbox.ts`, localStorage)
+      and is sent by itself when the network is back; the trip carries `clientTripId` (the
+      recording's id), which the server uses as the trip's id, so a save sent twice is one trip. A
+      refusal a retry will not fix (the claim window closed meanwhile) is kept and shown with Retry /
+      Remove, never dropped.
+    - Both outboxes keep sending on every Driver Management page (`OutboxSync`), not only Fleet Trip.
+17. **Not done**: iOS background tracking (out of scope; iOS keeps the in-app watcher); resuming a
     trip after a phone **reboot** (Android 14+ restricts starting a location foreground service
     from `BOOT_COMPLETED`; the trip resumes when the app is next opened, with a gap recorded).
     Battery and on-road figures need real phones — see the test checklist.

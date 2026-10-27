@@ -31,6 +31,8 @@ import { daysLeftToClaim, isClaimable, withinClaimWindow } from '@/lib/employee-
 import { myTripColumns } from './my-trips-columns';
 import { formatKm, type TripRecord, type TripStatus } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
+import { onOwnTripSaved } from './own-trip-outbox';
+import { OwnTripOutboxPanel } from './own-trip-outbox-panel';
 import { errorMessage, tripFetch } from './trip-api';
 import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
@@ -70,6 +72,10 @@ export default function MyTrips() {
   const [claimOpen, setClaimOpen] = useState(false);
   const [claimPreselect, setClaimPreselect] = useState<string[]>([]);
   const [deleting, setDeleting] = useState<TripRecord | null>(null);
+
+  // A trip saved offline on Fleet Trip reached the server: it appears in the list.
+  const setTripsData = tripsQuery.setData;
+  useEffect(() => onOwnTripSaved((trip) => setTripsData((current) => ({ trips: [trip, ...(current?.trips ?? []).filter((entry) => entry.id !== trip.id)] }))), [setTripsData]);
 
   // Old links land here with ?new=1 (record a trip) or ?claim=1 (create a claim). A new trip is
   // recorded on Fleet Trip by GPS (typed in here only when Trip rules allow it); a claim opens here
@@ -206,6 +212,9 @@ export default function MyTrips() {
           </Button>
         </div>
       )}
+
+      {/* Trips saved on the phone without a connection, until the server has them. */}
+      <OwnTripOutboxPanel />
 
       {/* The four steps are a desktop explainer; on a phone they pushed the trips below the fold. */}
       <div className="hidden sm:block">

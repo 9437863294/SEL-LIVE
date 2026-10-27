@@ -132,6 +132,10 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
 
   const existing = tripId ? mine.find((trip) => trip.id === tripId) : undefined;
   if (tripId && !existing) throw new TripError('That trip was not found among yours.', 404);
+  // A new trip sent again under the same client id (an offline save retried, a reply that never
+  // arrived): the one already saved is the answer, untouched.
+  const replay = !tripId && input.clientTripId ? mine.find((trip) => trip.id === input.clientTripId) : undefined;
+  if (replay) return { trip: replay };
   if (existing && existing.status !== 'draft') throw new TripError('This trip is on a claim and can no longer be changed.', 409);
   // Trips are recorded by GPS on Fleet Trip (own vehicle) unless Trip rules allow typing one in.
   // Editing a trip already recorded is always allowed.
@@ -161,7 +165,7 @@ export async function saveTrip(context: TripContext, body: unknown, tripId?: str
   }
   if (value.departmentId && !department) throw new TripError('That department no longer exists.', 400, { fields: { departmentId: 'Choose another department.' } });
 
-  const id = existing?.id ?? tripsCollection().doc().id;
+  const id = existing?.id ?? input.clientTripId ?? tripsCollection().doc().id;
   const draft = { ...value, id, status: 'draft' as const };
   const sameVehicle = await vehicleTrips(context.organizationId, [value.vehicleNumber]);
   const priced = priceAndFlag(draft, settings, { sameEmployee: mine, sameVehicle });

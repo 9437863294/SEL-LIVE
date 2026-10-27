@@ -160,17 +160,32 @@ const toOutbox = (tripId: string) => async (points: NativePoint[], gaps: NativeG
   void flushQueue();
 };
 
+/** Everything the native recorder holds for a fleet trip, into the outbox (no-op without it). */
+export async function drainFleetToOutbox(tripId: string): Promise<void> {
+  if (!nativeTrackingAvailable()) return;
+  await drainTrip(tripId, toOutbox(tripId)).catch(() => 0);
+}
+
+/** The recording of a fleet trip is over: stop the native recorder, then send what it held. */
+export async function finishFleetRecording(tripId: string): Promise<void> {
+  if (!nativeTrackingAvailable()) return;
+  await stopTracking(tripId).catch(() => undefined);
+  await drainFleetToOutbox(tripId);
+}
+
 /**
- * The native recorder should hold only a trip that is still running. Called with the bootstrap's
- * running trip (or null): a fleet recording the server has since closed or paused — ended from the
- * web, force-closed by a manager — is stopped, and what it buffered goes to the outbox (the server
- * takes late points for 48 hours).
+ * The native recorder should hold only a trip that is still the driver's to record. Called with
+ * the trips to keep — the bootstrap's running trip, and one the server closed by itself that waits
+ * for the driver's own end (`awaitsDriverEnd`: the phone was offline, and keeps recording until the
+ * driver ends it) — a fleet recording the server has otherwise closed or paused (ended from the web,
+ * force-closed by a manager) is stopped, and what it buffered goes to the outbox (the server takes
+ * late points for 48 hours).
  */
-export async function settleFleetRecording(runningTripId: string | null): Promise<void> {
+export async function settleFleetRecording(keep: ReadonlyArray<string | null>): Promise<void> {
   if (!nativeTrackingAvailable()) return;
   try {
     const status = await getStatus();
-    if (!status.activeTripId || status.kind !== 'fleet' || status.activeTripId === runningTripId) return;
+    if (!status.activeTripId || status.kind !== 'fleet' || keep.includes(status.activeTripId)) return;
     const tripId = status.activeTripId;
     await stopTracking(tripId);
     await drainTrip(tripId, toOutbox(tripId));
@@ -411,8 +426,7 @@ export function useTripTracker(
 
   const finish = useCallback(async () => {
     if (!native || !tripId) return;
-    await stopTracking(tripId).catch(() => undefined);
-    await drainTrip(tripId, toOutbox(tripId)).catch(() => 0);
+    await finishFleetRecording(tripId);
   }, [native, tripId]);
 
   // Measured on the cleaned path, as a GPS trip's tiles are: one wild fix must not cost the legs

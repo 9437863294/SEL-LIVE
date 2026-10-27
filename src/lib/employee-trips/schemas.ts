@@ -58,6 +58,16 @@ export const tripInputSchema = z.object({
         .default([]),
     })
     .optional(),
+  /**
+   * Optional idempotency key for a new trip: it becomes the trip's id, so a save the phone sends
+   * again (queued offline, or a reply lost on the way back) returns the trip already saved instead
+   * of a second copy. Older apps never send it.
+   */
+  clientTripId: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_-]{8,64}$/, 'Use letters, digits, - and _.')
+    .optional(),
 });
 
 export const submitClaimSchema = z.object({

@@ -13,6 +13,7 @@ Legend: ✅ passed · ❌ failed · ⏳ not run yet · 🖥 checked on the devel
 | ESLint over changed files | 🖥 ✅ (one pre-existing `set-state-in-effect` in `gps-trip-recorder.tsx`'s restore effect, unchanged from HEAD) |
 | `npm run test:fleet` — 82 tests, incl. `tests/trip-tracking.test.mjs` (point conversion, status chip, permission rows, OEM brands, gap rule) and the `gaps` server flow | 🖥 ✅ 82/82 |
 | `npm run test:driver-management` — 43 tests | 🖥 ✅ 43/43 |
+| 2026-10-27, after the offline-end and own-trip outbox work: `npm run test:fleet` (84, incl. the late driver end and `awaitsDriverEnd`) and `npm run test:driver-management` (43, incl. the `clientTripId` replay) | 🖥 ✅ 84/84, 43/43 |
 | Native code reviewed against the contract; framework APIs checked with `javap` against API 36 | 🖥 ✅ |
 | Gradle compile of the native recorder (`cd android && ./gradlew :app:compileDebugJavaWithJavac`) | 🖥 ✅ no warnings from the new files (needed a `build.gradle` fix: versionCode/versionName as assignments) |
 | `cap sync` (driver target) + `assembleDebug` | 🖥 ✅; merged manifest: `TripRecorderService` `foregroundServiceType="location"`, `stopWithTask="false"`, no warnings |
@@ -57,6 +58,23 @@ into the outbox) need a signed-in driver and are in the phone section below.
 7. ⏳ Battery drain ≤ 8–10 % per hour with the 30 m distance filter.
 8. 🖥 ✅ Gradle build and `npx cap sync android` complete cleanly at targetSdk 36, with no
    foreground-service-type warnings (2026-10-26).
+
+## No signal mid-trip (both kinds of vehicle)
+
+Automated: `tests/fleet-flow.test.mjs` (a company trip closed by the idle job, late points, the
+driver's end settles it once, a manager's settlement wins), `tests/employee-trips-flow.test.mjs` (an
+own trip saved twice under one `clientTripId` is one trip; another employee's id is refused),
+`tests/trip-tracking.test.mjs` (`awaitsDriverEnd`). On phones:
+
+9. ⏳ **Company vehicle, offline under 3 h**: start online, airplane mode, drive, End offline →
+   "Finishing trip — waiting for network"; restore → points then the end sync; trip completed.
+10. ⏳ **Company vehicle, offline over 3 h**: start online, airplane mode for > 3 h (or lower
+    Settings › Fleet › auto-close to 15 min to test), keep driving; restore and open Fleet Trip →
+    "End your trip on …" card, recording continues; End with the reading → settled with it (not
+    "auto-closed"); a new start was blocked until then.
+11. ⏳ **Own vehicle, offline**: start, airplane mode, drive, Stop & review, Save → "Saved on this
+    phone"; the panel shows it on Fleet Trip and My Trips; restore → it sends by itself and appears on
+    My Trips once; force-stop the app while it waits → it still sends after reopening.
 
 ## Acceptance
 

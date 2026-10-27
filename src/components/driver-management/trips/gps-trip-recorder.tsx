@@ -491,6 +491,8 @@ export function GpsTripProvider({
         notes: inFlight.notes,
         movingMinutes: measured.movingMinutes,
         idleMinutes: measured.idleMinutes,
+        // The recording's id makes a save sent twice (offline, then again) one trip.
+        clientTripId: inFlight.recorderId ?? recorded.recorderId ?? newRecorderId(),
       });
     } finally {
       setStopping(false);
@@ -583,6 +585,11 @@ export function GpsTripProvider({
             setReview(null);
             setInFlight(null);
             onSaved(trip);
+          }}
+          onQueued={() => {
+            // In the phone's outbox now (own-trip-outbox.ts), which sends it and tells the page.
+            setReview(null);
+            setInFlight(null);
           }}
         />
       )}

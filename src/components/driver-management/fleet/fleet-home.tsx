@@ -43,12 +43,16 @@ import { useFleet } from '@/components/fleet/fleet-provider';
 import { settleFleetRecording } from '@/components/fleet/use-trip-tracker';
 import { TrackingReadinessProvider, useTrackingReadiness } from '@/components/driver-management/tracking/tracking-readiness';
 import { GpsTripPanel, GpsTripProvider, useGpsTripControls } from '@/components/driver-management/trips/gps-trip-recorder';
+import { onOwnTripSaved } from '@/components/driver-management/trips/own-trip-outbox';
+import { OwnTripOutboxPanel } from '@/components/driver-management/trips/own-trip-outbox-panel';
 import { useTripClaims } from '@/components/driver-management/trips/trip-claims-provider';
 import { useTripQuery } from '@/components/driver-management/trips/use-trip-query';
 import { ErrorBlock, LoadingBlock, Money } from '@/components/driver-management/trips/trip-ui';
 import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { cn } from '@/lib/utils';
+import { awaitsDriverEnd } from '@/lib/fleet/trips';
 import { ActiveTrip } from './active-trip';
+import { AutoClosedTrip } from './auto-closed-trip';
 import { MyFleetTrips } from './my-fleet-trips';
 import { OverLimitDialog } from './over-limit-dialog';
 import { StartTripDialog } from './start-trip-dialog';
@@ -58,6 +62,23 @@ import type { EndOutcome } from './end-trip-dialog';
 import { emptyStartValues, type OverLimitState, type StartValues } from './start-helpers';
 
 const APPROVAL_POLL_MS = 30_000;
+
+const LEFT_TO_MANAGER_KEY = 'sel-fleet:left-to-manager';
+const readLeftToManager = (): string[] => {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LEFT_TO_MANAGER_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.slice(-20) : [];
+  } catch {
+    return [];
+  }
+};
+const writeLeftToManager = (ids: string[]) => {
+  try {
+    window.localStorage.setItem(LEFT_TO_MANAGER_KEY, JSON.stringify(ids.slice(-20)));
+  } catch {
+    // Without storage the card simply asks again.
+  }
+};
 
 /**
  * Opens the start the URL asked for, once, when it can (inside the recorder's provider, so an
@@ -136,17 +157,40 @@ function FleetHomeContent() {
 
   const assigned = useMemo(() => (data?.vehicles ?? []).find((vehicle) => vehicle.assignedToMe && !vehicle.busy) ?? null, [data?.vehicles]);
 
-  // The phone's native recorder holds only the trip that is running here; one the server has closed
-  // or paused meanwhile (from the web, by a manager) is stopped and its buffer sent.
+  // An own-vehicle trip saved offline reached the server: it joins the list (and the claim figures).
+  const setTripsData = tripsQuery.setData;
+  const reloadClaims = claims.reload;
+  useEffect(
+    () =>
+      onOwnTripSaved((trip) => {
+        setTripsData((current) => ({ trips: [trip, ...(current?.trips ?? []).filter((entry) => entry.id !== trip.id)] }));
+        reloadClaims();
+      }),
+    [setTripsData, reloadClaims],
+  );
+
+  /** "Leave it to the manager" on a trip the server closed by itself: not asked again on this phone. */
+  const [leftToManager, setLeftToManager] = useState<string[]>(readLeftToManager);
+  // A trip the server closed by itself while the phone had no signal, still the driver's to end.
+  const awaitingEnd = useMemo(
+    () => (openTrip || !data ? null : data.recentTrips.find((trip) => awaitsDriverEnd(trip, data.now) && !leftToManager.includes(trip.id) && !endedLocally.includes(trip.id)) ?? null),
+    [openTrip, data, leftToManager, endedLocally],
+  );
+
+  // The phone's native recorder holds only the trip that is running here (or one awaiting the
+  // driver's end, which it keeps recording); one the server has closed or paused meanwhile (from
+  // the web, by a manager) is stopped and its buffer sent.
   const runningTripId = openTrip?.status === 'running' && !endedLocally.includes(openTrip.id) ? openTrip.id : null;
+  const awaitingId = awaitingEnd?.id ?? null;
   useEffect(() => {
-    if (data) void settleFleetRecording(runningTripId);
-  }, [data, runningTripId]);
+    if (data) void settleFleetRecording([runningTripId, awaitingId]);
+  }, [data, runningTripId, awaitingId]);
 
   if ((loading && !data) || (claims.loading && !claims.data)) return <LoadingBlock />;
   if (!data) return <ErrorBlock message={error ?? 'Fleet Trip could not be loaded.'} onRetry={() => void reload()} />;
 
-  const busy = Boolean(openTrip) || ownRecording;
+  // A trip waiting for the driver's end blocks a new start, as a running one does.
+  const busy = Boolean(openTrip) || ownRecording || Boolean(awaitingEnd);
   const today = claims.data?.today ?? data.today;
   const rules = claims.data?.settings.rules;
   const unclaimed = rules ? myTrips.filter((trip) => isClaimable(trip, today, rules)) : [];
@@ -209,6 +253,8 @@ function FleetHomeContent() {
 
       {/* The own-vehicle recording, full width while it is driven. */}
       <GpsTripPanel />
+      {/* Own-vehicle trips saved offline, until the server has them. */}
+      <OwnTripOutboxPanel />
 
       {openTrip ? (
         <ActiveTrip
@@ -221,6 +267,20 @@ function FleetHomeContent() {
             reload();
           }}
           onEnded={ended}
+        />
+      ) : awaitingEnd ? (
+        <AutoClosedTrip
+          trip={awaitingEnd}
+          onEnded={(outcome) => {
+            if (outcome.kind === 'queued') setEndedLocally((current) => [...current, awaitingEnd.id]);
+            reload();
+          }}
+          onLeave={() => {
+            const next = [...leftToManager, awaitingEnd.id];
+            writeLeftToManager(next);
+            setLeftToManager(next);
+            reload();
+          }}
         />
       ) : ownRecording ? null : (
         <>
