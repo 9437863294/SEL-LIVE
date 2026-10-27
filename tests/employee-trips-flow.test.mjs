@@ -132,6 +132,9 @@ test('bootstrap offers active vehicles only and tells nobody about workflow they
   assert.deepEqual(boot.vehicles.map((vehicle) => vehicle.id), ['v1']);
   assert.deepEqual(boot.named, { approval: false, payment: false });
   assert.equal(boot.odometer.v1.km, 1530);
+  // The own-vehicle start offers Settings › Fleet's purposes (the seeded list until one is saved).
+  assert.ok(boot.purposes.length > 0);
+  assert.ok(boot.purposes.every((purpose) => purpose.id && purpose.name && typeof purpose.requiresReason === 'boolean' && typeof purpose.requiresProject === 'boolean'));
   const verifier = await bootstrap(context('appr1'));
   assert.deepEqual(verifier.named, { approval: true, payment: false });
 });

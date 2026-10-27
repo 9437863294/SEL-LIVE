@@ -46,7 +46,16 @@ export interface OwnStartValues {
   notes: string;
 }
 
-type Errors = Partial<Record<'vehicleType' | 'vehicleNumber' | 'purpose' | 'projectId' | 'startOdometer', string>>;
+type Errors = Partial<Record<'vehicleType' | 'vehicleNumber' | 'purpose' | 'purposeReason' | 'projectId' | 'startOdometer', string>>;
+
+/** The department, when the workflow routes by it — beside Project, or on its own line. */
+function DepartmentField({ data, value, onChange }: { data: Bootstrap; value: string | null; onChange: (next: string | null) => void }) {
+  return (
+    <Field label="Department" className="min-w-0">
+      <SearchSelect options={data.departments.map((department) => ({ value: department.id, label: department.name }))} value={value} onChange={onChange} placeholder="Optional" allowClear />
+    </Field>
+  );
+}
 
 export function OwnStartDialog({
   open,
@@ -81,6 +90,11 @@ export function OwnStartDialog({
   const [vehicleNumber, setVehicleNumber] = useState(ownVehicles[0]?.vehicleNumber ?? '');
   const [fromPlace, setFromPlace] = useState('');
   const [purpose, setPurpose] = useState('');
+  // Settings › Fleet's purposes, as a company trip starts with; typed only when none are set up.
+  const purposes = data.purposes ?? [];
+  const [purposeId, setPurposeId] = useState('');
+  const [purposeReason, setPurposeReason] = useState('');
+  const chosenPurpose = purposes.find((entry) => entry.id === purposeId) ?? null;
   const [projectId, setProjectId] = useState<string | null>(() => projectPick.preselect ?? (last?.projectId && projectPick.options.some((option) => option.id === last.projectId) ? last.projectId : null));
   const [departmentId, setDepartmentId] = useState<string | null>(null);
   const [startOdometer, setStartOdometer] = useState('');
@@ -120,8 +134,20 @@ export function OwnStartDialog({
   const errors: Errors = {};
   if (!vehicleType) errors.vehicleType = 'Choose the vehicle type.';
   if (number.length < 4) errors.vehicleNumber = 'Enter the registration number.';
-  if (purpose.trim().length < 3) errors.purpose = 'Say what the trip is for.';
-  if (rules.requireProject && !projectId) errors.projectId = 'Choose the project this trip is for.';
+  // Stored as one line: the purpose, and what for when it asks ("Other — bank work").
+  const purposeText = purposes.length
+    ? chosenPurpose
+      ? chosenPurpose.requiresReason
+        ? `${chosenPurpose.name} — ${purposeReason.trim()}`
+        : chosenPurpose.name
+      : ''
+    : purpose.trim();
+  if (purposes.length) {
+    if (!chosenPurpose) errors.purpose = 'Choose what the trip is for.';
+    else if (chosenPurpose.requiresReason && purposeReason.trim().length < 3) errors.purposeReason = 'Say what the trip is for.';
+  } else if (purpose.trim().length < 3) errors.purpose = 'Say what the trip is for.';
+  const projectRequired = rules.requireProject || Boolean(chosenPurpose?.requiresProject);
+  if (projectRequired && !projectId) errors.projectId = chosenPurpose?.requiresProject ? `A ${chosenPurpose.name.toLowerCase()} needs its project.` : 'Choose the project this trip is for.';
   const opening = startOdometer.trim() === '' ? null : Number(startOdometer);
   if (rules.requireOdometer && (opening === null || !Number.isFinite(opening) || opening < 0)) errors.startOdometer = 'Read the odometer before you set off.';
   const shown = attempted ? errors : {};
@@ -136,7 +162,7 @@ export function OwnStartDialog({
       vehicleId: null,
       tripDate: today,
       fromPlace: fromPlace.trim(),
-      purpose: purpose.trim(),
+      purpose: purposeText,
       projectId,
       departmentId,
       startOdometer: rules.requireOdometer && opening !== null ? String(opening) : null,
@@ -181,7 +207,9 @@ export function OwnStartDialog({
           </div>
         )}
 
-        <Field label="Vehicle type" required error={shown.vehicleType}>
+        {/* Type and number side by side, a phone included: they describe one vehicle. */}
+        <div className="grid min-w-0 grid-cols-2 gap-3 sm:col-span-2 sm:gap-4">
+        <Field label="Vehicle type" required error={shown.vehicleType} className="min-w-0">
           <Select value={vehicleType || undefined} onValueChange={setVehicleType}>
             <SelectTrigger className={cn('bg-white text-left', shown.vehicleType && 'border-destructive')} aria-label="Vehicle type">
               <span className="min-w-0 truncate">
@@ -197,9 +225,10 @@ export function OwnStartDialog({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Registration number" required error={shown.vehicleNumber} htmlFor="own-start-number">
-          <Input id="own-start-number" value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value.toUpperCase())} maxLength={15} placeholder="e.g. OD02AB1234" autoCapitalize="characters" className="bg-white" />
+        <Field label="Vehicle number" required error={shown.vehicleNumber} htmlFor="own-start-number" className="min-w-0">
+          <Input id="own-start-number" value={vehicleNumber} onChange={(event) => setVehicleNumber(event.target.value.toUpperCase())} maxLength={15} placeholder="OD02AB1234" autoCapitalize="characters" className="bg-white" aria-label="Vehicle registration number" />
         </Field>
+        </div>
 
         <Field label="Starting from" htmlFor="own-start-place" className="sm:col-span-2" hint={locating ? 'Finding where you are…' : 'From your location — change it if it is wrong.'}>
           <div className="flex min-w-0 gap-2">
@@ -210,39 +239,61 @@ export function OwnStartDialog({
           </div>
         </Field>
 
-        <Field label="Purpose" required error={shown.purpose} htmlFor="own-start-purpose" className="sm:col-span-2">
-          <Input id="own-start-purpose" value={purpose} onChange={(event) => setPurpose(event.target.value)} maxLength={300} placeholder="e.g. Site inspection, client meeting, bank work" className="bg-white" />
-        </Field>
-
-        <Field label="Project" required={rules.requireProject} error={shown.projectId}>
-          <SearchSelect
-            options={projectPick.options.map((project, _, all) => ({ value: project.id, label: project.name, group: projectGroup(project.mine, all.some((entry) => entry.mine)) }))}
-            value={projectId}
-            onChange={setProjectId}
-            placeholder={rules.requireProject ? 'Choose project' : 'Head office / none'}
-            allowClear
-            invalid={Boolean(shown.projectId)}
-          />
-        </Field>
-        {byDepartment ? (
-          <Field label="Department">
-            <SearchSelect options={data.departments.map((department) => ({ value: department.id, label: department.name }))} value={departmentId} onChange={setDepartmentId} placeholder="Optional" allowClear />
-          </Field>
-        ) : rules.requireOdometer ? null : (
-          <div className="hidden sm:block" />
-        )}
-
-        {rules.requireOdometer && (
-          <Field
-            label="Odometer now (km)"
-            required
-            error={shown.startOdometer}
-            htmlFor="own-start-odometer"
-            hint={lastReading !== null ? `Last logged ${lastReading.toLocaleString('en-IN')} km` : 'Read it off the dashboard.'}
-          >
-            <Input id="own-start-odometer" type="number" inputMode="decimal" min="0" step="0.1" value={startOdometer} onChange={(event) => setStartOdometer(event.target.value)} placeholder={lastReading !== null ? String(lastReading) : undefined} className="bg-white" />
+        {purposes.length > 0 ? (
+          <>
+            <Field label="Purpose" required error={shown.purpose} className="sm:col-span-2">
+              <SearchSelect
+                options={purposes.map((entry) => ({ value: entry.id, label: entry.name, hint: entry.requiresProject ? 'Needs a project' : undefined }))}
+                value={purposeId || null}
+                onChange={(value) => setPurposeId(value ?? '')}
+                placeholder="What is the trip for?"
+                invalid={Boolean(shown.purpose)}
+              />
+            </Field>
+            {chosenPurpose?.requiresReason && (
+              <Field label="What for" required error={shown.purposeReason} htmlFor="own-start-reason" className="sm:col-span-2">
+                <Input id="own-start-reason" value={purposeReason} onChange={(event) => setPurposeReason(event.target.value)} maxLength={250} placeholder="Say what the trip is for" className="bg-white" />
+              </Field>
+            )}
+          </>
+        ) : (
+          <Field label="Purpose" required error={shown.purpose} htmlFor="own-start-purpose" className="sm:col-span-2">
+            <Input id="own-start-purpose" value={purpose} onChange={(event) => setPurpose(event.target.value)} maxLength={300} placeholder="e.g. Site inspection, client meeting, bank work" className="bg-white" />
           </Field>
         )}
+
+        {/*
+          Project and the odometer reading side by side, a phone included (as type and number above);
+          without an odometer, the department takes the second place. A department as well goes on a
+          line of its own below. A lone Project keeps the full width on a phone.
+        */}
+        <div className={cn('grid min-w-0 gap-3 sm:col-span-2 sm:grid-cols-2 sm:gap-4', (rules.requireOdometer || byDepartment) && 'grid-cols-2')}>
+          <Field label="Project" required={projectRequired} error={shown.projectId} className="min-w-0">
+            <SearchSelect
+              options={projectPick.options.map((project, _, all) => ({ value: project.id, label: project.name, group: projectGroup(project.mine, all.some((entry) => entry.mine)) }))}
+              value={projectId}
+              onChange={setProjectId}
+              placeholder={projectRequired ? 'Choose project' : 'Head office'}
+              allowClear
+              invalid={Boolean(shown.projectId)}
+            />
+          </Field>
+          {rules.requireOdometer ? (
+            <Field
+              label="Odometer now (km)"
+              required
+              error={shown.startOdometer}
+              htmlFor="own-start-odometer"
+              className="min-w-0"
+              hint={lastReading !== null ? `Last logged ${lastReading.toLocaleString('en-IN')} km` : 'Read it off the dashboard.'}
+            >
+              <Input id="own-start-odometer" type="number" inputMode="decimal" min="0" step="0.1" value={startOdometer} onChange={(event) => setStartOdometer(event.target.value)} placeholder={lastReading !== null ? String(lastReading) : undefined} className="bg-white" />
+            </Field>
+          ) : (
+            byDepartment && <DepartmentField data={data} value={departmentId} onChange={setDepartmentId} />
+          )}
+        </div>
+        {rules.requireOdometer && byDepartment && <DepartmentField data={data} value={departmentId} onChange={setDepartmentId} />}
       </div>
 
       {/* No money at the start: the amount is worked out, and shown, at Stop & review. */}

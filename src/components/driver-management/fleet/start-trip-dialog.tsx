@@ -38,6 +38,7 @@ import { fleetErrorMessage, newClientId } from '@/components/fleet/fleet-api';
 import { KmLimitMeter, PhotoCapture } from '@/components/fleet/fleet-ui';
 import { Field, SearchSelect } from '@/components/driver-management/trips/trip-ui';
 import { projectChoices, projectGroup } from '@/lib/employee-projects/links';
+import { cn } from '@/lib/utils';
 import {
   emptyStartValues,
   ensureUploaded,
@@ -173,7 +174,8 @@ export function StartTripDialog({
   );
   const purposeOptions = bootstrap.purposes.map((entry) => ({ value: entry.id, label: entry.name, hint: entry.requiresProject ? 'Billed to a project' : undefined }));
   const anyMine = projectPick.options.some((project) => project.mine);
-  const projectOptions = projectPick.options.map((project) => ({ value: project.id, label: project.code ? `${project.code} · ${project.name}` : project.name, group: projectGroup(project.mine, anyMine) }));
+  // Names only, as the own-vehicle start lists them.
+  const projectOptions = projectPick.options.map((project) => ({ value: project.id, label: project.name, group: projectGroup(project.mine, anyMine) }));
 
   async function submit(choice?: { useOcr?: boolean }) {
     setAttempted(true);
@@ -257,14 +259,19 @@ export function StartTripDialog({
       submitLabel={step ?? 'Start recording'}
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Vehicle" required error={fieldError('vehicleId')} className="sm:col-span-2">
-          <SearchSelect options={vehicleOptions} value={values.vehicleId || null} onChange={(value) => set('vehicleId', value ?? '')} placeholder="Choose the vehicle" invalid={Boolean(fieldError('vehicleId'))} />
-        </Field>
-        {vehicle && (
-          <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
-            <KmLimitMeter usedKm={vehicle.usedTodayKm} allowedKm={vehicle.allowedTodayKm} limitKm={vehicle.dailyKmLimit} expectedKm={toNumber(values.expectedKm) ?? undefined} compact />
-          </div>
-        )}
+        {/* The vehicle and its km today side by side, a phone included; the meter once one is chosen. */}
+        <div className={cn('grid min-w-0 gap-3 sm:col-span-2 sm:gap-4', vehicle && 'grid-cols-2')}>
+          <Field label="Vehicle" required error={fieldError('vehicleId')} className="min-w-0">
+            <SearchSelect options={vehicleOptions} value={values.vehicleId || null} onChange={(value) => set('vehicleId', value ?? '')} placeholder="Choose the vehicle" invalid={Boolean(fieldError('vehicleId'))} />
+          </Field>
+          {vehicle && (
+            <Field label="Km today" className="min-w-0">
+              <div className="flex h-10 min-w-0 flex-col justify-center rounded-md border border-slate-200 bg-slate-50 px-3">
+                <KmLimitMeter usedKm={vehicle.usedTodayKm} allowedKm={vehicle.allowedTodayKm} limitKm={vehicle.dailyKmLimit} expectedKm={toNumber(values.expectedKm) ?? undefined} compact />
+              </div>
+            </Field>
+          )}
+        </div>
 
         <Field label="Starting from" htmlFor="fleet-start-place" className="sm:col-span-2" hint={locatingPlace ? 'Finding where you are…' : 'From your location — change it if it is wrong.'}>
           <div className="flex min-w-0 gap-2">
@@ -275,12 +282,15 @@ export function StartTripDialog({
           </div>
         </Field>
 
-        <Field label="Purpose" required error={fieldError('purposeId')}>
-          <SearchSelect options={purposeOptions} value={values.purposeId || null} onChange={(value) => set('purposeId', value ?? '')} placeholder="What is the trip for?" invalid={Boolean(fieldError('purposeId'))} />
-        </Field>
-        <Field label="Project" required={Boolean(purpose?.requiresProject)} error={fieldError('projectId')} hint={purpose?.requiresProject ? undefined : 'Leave empty for office or general running.'}>
-          <SearchSelect options={projectOptions} value={values.projectId} onChange={(value) => set('projectId', value)} placeholder={purpose?.requiresProject ? 'Choose the project' : 'No project'} allowClear invalid={Boolean(fieldError('projectId'))} />
-        </Field>
+        {/* Purpose and project side by side, a phone included; the project field as the own-vehicle start has it. */}
+        <div className="grid min-w-0 grid-cols-2 gap-3 sm:col-span-2 sm:gap-4">
+          <Field label="Purpose" required error={fieldError('purposeId')} className="min-w-0">
+            <SearchSelect options={purposeOptions} value={values.purposeId || null} onChange={(value) => set('purposeId', value ?? '')} placeholder="What for?" invalid={Boolean(fieldError('purposeId'))} />
+          </Field>
+          <Field label="Project" required={Boolean(purpose?.requiresProject)} error={fieldError('projectId')} className="min-w-0">
+            <SearchSelect options={projectOptions} value={values.projectId} onChange={(value) => set('projectId', value)} placeholder={purpose?.requiresProject ? 'Choose project' : 'Head office'} allowClear invalid={Boolean(fieldError('projectId'))} />
+          </Field>
+        </div>
         {purpose?.requiresReason && (
           <Field label="What for" required error={fieldError('purposeReason')} htmlFor="fleet-start-reason" className="sm:col-span-2">
             <Input id="fleet-start-reason" value={values.purposeReason} onChange={(event) => set('purposeReason', event.target.value)} maxLength={300} placeholder="Say what the trip is for" className="bg-white" />

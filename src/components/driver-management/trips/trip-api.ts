@@ -102,6 +102,8 @@ export interface Bootstrap {
   projects: NamedOption[];
   /** The employee's own projects, and whether the picker is limited to them (Settings › Fleet). */
   projectScope?: { mine: string[]; onlyMine: boolean };
+  /** Settings › Fleet's trip purposes, for starting an own-vehicle trip (absent from an older server). */
+  purposes?: Array<{ id: string; name: string; requiresReason: boolean; requiresProject: boolean }>;
   departments: NamedOption[];
   odometer: Record<string, { km: number; date: string }>;
 }
