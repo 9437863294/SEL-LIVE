@@ -16,12 +16,14 @@ import { indiaToday } from '../types.ts';
 import {
   AccessDeniedError,
   accessErrorResponse,
-  authenticateAccess,
+  authenticateAccessViewingAs,
   type AccessRequestContext,
 } from '@/lib/access-control-server';
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 
 export interface TripContext extends AccessRequestContext {
+  /** Set when an administrator is viewing as this user (Switch User): reads only. */
+  viewedBy?: { userId: string; userName: string };
   trip: TripAccess;
   today: string;
   ipAddress?: string;
@@ -29,7 +31,8 @@ export interface TripContext extends AccessRequestContext {
 }
 
 export async function tripContext(request: Request): Promise<TripContext> {
-  const base = await authenticateAccess(request);
+  // Switch User: an administrator viewing as someone sees that person's trips and claims.
+  const base = await authenticateAccessViewingAs(request);
   const forwarded = request.headers.get('x-forwarded-for');
   return {
     ...base,

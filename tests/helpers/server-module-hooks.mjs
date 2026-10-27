@@ -59,6 +59,7 @@ const STUBS = {
     export class AccessDeniedError extends Error { constructor(message, status = 403) { super(message); this.status = status; this.name = 'AccessDeniedError'; } }
     export function accessErrorResponse(error) { return { message: error?.message ?? 'error', status: error?.status ?? 500 }; }
     export async function authenticateAccess() { throw new Error('not used in tests'); }
+    export async function authenticateAccessViewingAs() { throw new Error('not used in tests'); }
   `,
 };
 

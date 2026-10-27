@@ -16,12 +16,14 @@ import { FleetRuleError } from '../trips.ts';
 import {
   AccessDeniedError,
   accessErrorResponse,
-  authenticateAccess,
+  authenticateAccessViewingAs,
   type AccessRequestContext,
 } from '@/lib/access-control-server';
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 
 export interface FleetContext extends AccessRequestContext {
+  /** Set when an administrator is viewing as this user (Switch User): reads only. */
+  viewedBy?: { userId: string; userName: string };
   fleet: FleetAccess;
   now: string;
   today: string;
@@ -30,7 +32,8 @@ export interface FleetContext extends AccessRequestContext {
 }
 
 export async function fleetContext(request: Request): Promise<FleetContext> {
-  const base = await authenticateAccess(request);
+  // Switch User: an administrator viewing as someone sees that person's trips, vehicle and requests.
+  const base = await authenticateAccessViewingAs(request);
   const forwarded = request.headers.get('x-forwarded-for');
   const now = new Date().toISOString();
   return {

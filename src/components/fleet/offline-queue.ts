@@ -25,6 +25,7 @@ import { useSyncExternalStore } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network';
 import type { ClientPoint } from '@/lib/fleet/types';
+import { viewingAsUserId } from '@/lib/view-as';
 import { FleetApiError, fleetFetch } from './fleet-api';
 import { uploadFleetPhoto } from './photo';
 
@@ -331,6 +332,9 @@ let flushing: Promise<{ sent: number; remaining: number }> | null = null;
 
 export function flushQueue(): Promise<{ sent: number; remaining: number }> {
   if (flushing) return flushing;
+  // The queue is the signed-in person's own trips: it waits while they view as someone else (Switch
+  // User), whose session the server would refuse to write under.
+  if (viewingAsUserId()) return Promise.resolve({ sent: 0, remaining: status.pending });
   flushing = (async () => {
     setStatus({ flushing: true });
     let sent = 0;

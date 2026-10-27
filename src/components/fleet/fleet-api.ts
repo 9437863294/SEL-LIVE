@@ -9,6 +9,7 @@
  */
 
 import { auth } from '@/lib/firebase';
+import { viewAsHeaders } from '@/lib/view-as';
 
 export class FleetApiError extends Error {
   status: number;
@@ -43,7 +44,8 @@ const url = (path: string) => `/api/fleet/${path.replace(/^\//, '')}`;
 async function authHeader(): Promise<Record<string, string>> {
   const user = auth.currentUser;
   if (!user) throw new FleetApiError('You are signed out. Sign in again.', 401);
-  return { Authorization: `Bearer ${await user.getIdToken()}` };
+  // Switch User: the server answers as the user being viewed (reads only).
+  return { Authorization: `Bearer ${await user.getIdToken()}`, ...viewAsHeaders() };
 }
 
 async function failure(response: Response): Promise<FleetApiError> {

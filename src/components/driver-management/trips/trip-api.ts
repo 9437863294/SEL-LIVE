@@ -7,6 +7,7 @@
  */
 
 import { auth } from '@/lib/firebase';
+import { viewAsHeaders } from '@/lib/view-as';
 import type { TripAccess } from '@/lib/employee-trips/access';
 import type { ClaimAbilities } from '@/lib/employee-trips/workflow';
 import type { ClaimStatus, RateRevision, ReportingSource, StageKind, StageRouting, TripClaim, TripClaimSettings, TripRecord, TripRules } from '@/lib/employee-trips/types';
@@ -31,7 +32,8 @@ export class TripApiError extends Error {
 export async function tripFetch<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new TripApiError('You are signed out. Sign in again.', 401);
-  const headers: Record<string, string> = { Authorization: `Bearer ${await user.getIdToken()}` };
+  // Switch User: the server answers as the user being viewed (reads only).
+  const headers: Record<string, string> = { Authorization: `Bearer ${await user.getIdToken()}`, ...viewAsHeaders() };
   let body: string | undefined;
   if (init.body !== undefined) {
     headers['Content-Type'] = 'application/json';

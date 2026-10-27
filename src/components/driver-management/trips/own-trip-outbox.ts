@@ -21,6 +21,7 @@ import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network';
 import type { TripRecord } from '@/lib/employee-trips/types';
+import { viewingAsUserId } from '@/lib/view-as';
 import { TripApiError, tripFetch } from './trip-api';
 
 const STORAGE_KEY = 'sel-own-trip-outbox:v1';
@@ -167,6 +168,9 @@ let flushing: Promise<void> | null = null;
 /** Sends every waiting trip, oldest first; one flush at a time. */
 export function flushOwnTrips(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
+  // These are the signed-in person's own trips: they wait while viewing as someone else (Switch User),
+  // rather than be refused and marked as not accepted.
+  if (viewingAsUserId()) return Promise.resolve();
   if (flushing) return flushing;
   flushing = (async () => {
     setState({ ...state, sending: true });

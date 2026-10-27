@@ -23,6 +23,7 @@ import 'server-only';
 import type { DocumentSnapshot } from 'firebase-admin/firestore';
 
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from './firebase-admin';
+import { VIEW_AS_HEADER, viewAsDecision } from './view-as-header';
 import {
   canAccessModule,
   canAssignAccess,
@@ -153,6 +154,30 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
 
   const context = await accessContextForUserSnapshot(userSnapshot, accessConfig, userSnapshot.id === decoded.uid ? grantByUid : undefined);
   return { ...context, authUid: decoded.uid };
+}
+
+/**
+ * `authenticateAccess`, honouring Switch User — for modules whose screens read through the server.
+ *
+ * Switch User happens in the browser only: the Firebase session stays the administrator's, so a
+ * server route saw the administrator and answered with their own data while the screen claimed to
+ * be someone else's. A request carrying `VIEW_AS_HEADER` is answered as that user, when the
+ * signed-in caller may switch users (Settings › User Management › Switch User, as the switch itself
+ * requires). Reading only — "You are now viewing as …": a change is refused rather than recorded
+ * under the other person's name. `viewedBy` names the administrator.
+ */
+export async function authenticateAccessViewingAs(request: Request): Promise<AccessRequestContext & { viewedBy?: { userId: string; userName: string } }> {
+  const caller = await authenticateAccess(request);
+  const decision = viewAsDecision({
+    callerUserId: caller.userId,
+    canSwitchUsers: hasPermission(caller.access, 'Settings.User Management', 'Switch User'),
+    target: request.headers.get(VIEW_AS_HEADER),
+    method: request.method,
+  });
+  if (decision.kind === 'self') return caller;
+  if (decision.kind === 'refuse') throw new AccessDeniedError(decision.message, decision.status);
+  const viewed = await authenticateUserById(decision.userId);
+  return { ...viewed, viewedBy: { userId: caller.userId, userName: caller.userName } };
 }
 
 /**
