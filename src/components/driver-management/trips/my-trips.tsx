@@ -28,7 +28,7 @@ import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { useToast } from '@/hooks/use-toast';
 import { sumMoney } from '@/lib/employee-trips/rates';
 import { daysLeftToClaim, isClaimable, withinClaimWindow } from '@/lib/employee-trips/trips';
-import { myTripColumns } from './my-trips-columns';
+import { myTripColumns, tripHref } from './my-trips-columns';
 import { formatKm, type TripRecord, type TripStatus } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
 import { onOwnTripSaved } from './own-trip-outbox';
@@ -325,6 +325,9 @@ export default function MyTrips() {
           rows={visible}
           columns={columns}
           dense
+          // A trip opens its page (an unclaimed trip's card through its text — see my-trips-columns.tsx).
+          cardHref={tripHref}
+          onRowClick={(trip) => router.push(tripHref(trip))}
           rowClassName={(trip) => (selected.has(trip.id) && claimable(trip) ? 'bg-primary/5' : undefined)}
           empty={
             <EmptyBlock icon={Route} title={all.length ? 'No trips here' : 'No trips recorded yet'}>

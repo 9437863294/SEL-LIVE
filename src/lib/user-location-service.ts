@@ -49,6 +49,53 @@ let scheduledCaptureInFlight = false;
 let requestedCaptureInFlight = false;
 let lastHandledFetchRequestId = '';
 
+let lastWarning = '';
+
+const POSITION_ERROR_LABELS: Record<number, string> = {
+  1: 'location permission is blocked for this site',
+  2: 'the device could not work out its location (is Location on in the system settings?)',
+  3: 'no location fix in time',
+};
+
+/**
+ * Why no location could be had, in words. A browser's GeolocationPositionError is not an `Error`,
+ * so reading it as one dropped the reason and every failure said the same thing.
+ */
+function locationErrorReason(error: unknown, fallback: string): string {
+  const { code, message } = (typeof error === 'object' && error !== null ? error : {}) as { code?: unknown; message?: unknown };
+  const label = typeof code === 'number' ? POSITION_ERROR_LABELS[code] : undefined;
+  const detail = typeof message === 'string' ? message.trim() : '';
+  if (label) return detail ? `${label} (${detail})` : label;
+  return detail || fallback;
+}
+
+/** Each reason once, not on every capture (every minute by default); a success re-arms it. */
+function warnOnce(kind: string, reason: string) {
+  const key = `${kind}: ${reason}`;
+  if (key === lastWarning) return;
+  lastWarning = key;
+  console.warn(`[UserLocation] ${kind} error:`, reason);
+}
+
+/**
+ * A browser on a PC has no GPS: a high-accuracy fix can time out, or be unavailable, where the
+ * Wi-Fi/network position is not. Those two are worth one more try without high accuracy (the
+ * accuracy is stored with the point); a blocked permission is not.
+ */
+const worthLowAccuracyRetry = (error: unknown) => {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return !Capacitor.isNativePlatform() && (code === 2 || code === 3);
+};
+
+async function currentPositionOnAnyDevice(options: PositionOptions) {
+  try {
+    return await getCurrentDriverPosition(options);
+  } catch (error) {
+    if (!options.enableHighAccuracy || !worthLowAccuracyRetry(error)) throw error;
+    return getCurrentDriverPosition({ ...options, enableHighAccuracy: false });
+  }
+}
+
 const normalizeIntervalSeconds = (value: unknown) =>
   Math.min(
     MAX_INTERVAL_SECONDS,
@@ -136,7 +183,7 @@ async function captureCurrentPosition(userId: string, version: number) {
 
   scheduledCaptureInFlight = true;
   try {
-    const position = await getCurrentDriverPosition({
+    const position = await currentPositionOnAnyDevice({
       enableHighAccuracy: true,
       timeout: 20_000,
       maximumAge: Math.min(15_000, Math.floor(activeIntervalMs / 2)),
@@ -156,9 +203,9 @@ async function captureCurrentPosition(userId: string, version: number) {
       position.coords.speed,
       { captureType: 'scheduled' },
     );
+    lastWarning = '';
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unable to fetch current location.';
-    console.warn('[UserLocation] scheduled capture error:', message);
+    warnOnce('scheduled capture', locationErrorReason(error, 'Unable to fetch current location.'));
   } finally {
     scheduledCaptureInFlight = false;
   }
@@ -176,7 +223,7 @@ async function captureRequestedPosition(userId: string, version: number, fetchRe
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const position = await getCurrentDriverPosition({
+        const position = await currentPositionOnAnyDevice({
           enableHighAccuracy: true,
           timeout: 20_000,
           maximumAge: 0,
@@ -207,8 +254,7 @@ async function captureRequestedPosition(userId: string, version: number, fetchRe
         return;
       } catch (error) {
         if (attempt === 2) {
-          const message = error instanceof Error ? error.message : 'Unable to fetch requested location.';
-          console.warn('[UserLocation] requested capture error:', message);
+          warnOnce('requested capture', locationErrorReason(error, 'Unable to fetch requested location.'));
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -255,7 +301,7 @@ async function startPositionWatcher(userId: string, version: number) {
         }
       },
       (error) => {
-        console.warn('[UserLocation] watch error:', error.message);
+        warnOnce('watch', locationErrorReason(error, 'Unable to fetch live location.'));
       },
     );
 

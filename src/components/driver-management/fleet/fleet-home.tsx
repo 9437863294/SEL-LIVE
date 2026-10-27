@@ -343,7 +343,19 @@ function FleetHomeContent() {
         </>
       )}
 
-      {!ownRecording && (data.canDrive || data.recentTrips.length > 0) && <MyFleetTrips recent={data.recentTrips} today={data.today} onRefresh={() => void reload()} refreshing={loading} />}
+      {/* Both kinds of trip, newest first — an own-vehicle trip just saved is at the top. */}
+      {!ownRecording && (data.canDrive || data.recentTrips.length > 0 || myTrips.length > 0) && (
+        <MyFleetTrips
+          recent={data.recentTrips}
+          ownTrips={myTrips}
+          today={data.today}
+          onRefresh={() => {
+            void reload();
+            tripsQuery.reload();
+          }}
+          refreshing={loading || tripsQuery.loading}
+        />
+      )}
 
       <VehicleChoiceDialog open={choosing} onOpenChange={setChoosing} ownBlocked={ownBlocked} companyBlocked={companyBlocked} onCompany={startCompany} />
       <StartFromUrl kind={params.get('kind')} enabled={!busy} onCompany={companyBlocked ? () => setChoosing(true) : startCompany} onChoose={() => setChoosing(true)} />

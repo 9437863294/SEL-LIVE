@@ -12,6 +12,11 @@
  *
  * DataList keys cells by header, so every header here is distinct. Every cell is plain text, badges
  * and buttons, which DataList's double mounting (a card and a row per trip) is safe with.
+ *
+ * A trip opens its page (trip-record-detail.tsx): the table row and a card without actions are the
+ * tap target. A card with actions (an unclaimed trip) cannot be one link around its buttons, so its
+ * text is the link there. The checkbox, the buttons and the claim number in the table stop the tap,
+ * so using them does not open the trip as well.
  */
 
 import { LocateFixed, Pencil, ReceiptText, Trash2, Undo2 } from 'lucide-react';
@@ -35,6 +40,12 @@ export interface MyTripColumnsArgs {
   onDelete: (trip: TripRecord) => void;
 }
 
+/** A trip's own page. */
+export const tripHref = (trip: TripRecord) => `/driver-management/trips/${trip.id}`;
+
+/** For a control inside a clickable table row: it does its own thing, not the row's. */
+const keepTap = (event: React.MouseEvent) => event.stopPropagation();
+
 /** What the trip is worth now: the approved amount once decided, else the claimed one. */
 const amountOf = (trip: TripRecord) => (trip.decision ? trip.decision.approvedAmount : trip.totalAmount);
 
@@ -53,7 +64,12 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
       header: 'Select',
       mobile: 'omit',
       className: 'w-10',
-      cell: (trip) => (claimable(trip) ? <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} /> : null),
+      cell: (trip) =>
+        claimable(trip) ? (
+          <span className="flex items-center" onClick={keepTap}>
+            <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} />
+          </span>
+        ) : null,
     },
 
     /* ── the phone card (hidden in the table) ── */
@@ -62,7 +78,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
       mobile: 'title',
       className: 'hidden',
       cell: (trip) => (
-        <span className="block">
+        <CellLink href={tripHref(trip)} className="block">
           <span className="line-clamp-2">
             {shortPlace(trip.fromPlace, 1) || trip.fromPlace} → {shortPlace(trip.toPlace, 1) || trip.toPlace}
           </span>
@@ -72,7 +88,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
               Sent back: {trip.returnNote.remarks}
             </span>
           )}
-        </span>
+        </CellLink>
       ),
     },
     {
@@ -80,7 +96,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
       mobile: 'title',
       className: 'hidden',
       cell: (trip) => (
-        <span className="inline-flex flex-wrap items-center gap-x-1.5">
+        <CellLink href={tripHref(trip)} className="inline-flex flex-wrap items-center gap-x-1.5">
           <span>{shortDate(trip.tripDate)}</span>
           <span aria-hidden>·</span>
           <span>{trip.vehicleNumber}</span>
@@ -90,7 +106,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
               GPS
             </span>
           )}
-        </span>
+        </CellLink>
       ),
     },
     {
@@ -98,7 +114,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
       mobile: 'title',
       className: 'hidden',
       cell: (trip) => (
-        <span className="block">
+        <CellLink href={tripHref(trip)} className="block">
           {trip.purpose || '—'}
           {trip.projectName ? ` · ${trip.projectName}` : ''}
           {trip.flags.length > 0 && (
@@ -106,7 +122,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
               <FlagChips flags={trip.flags} />
             </span>
           )}
-        </span>
+        </CellLink>
       ),
     },
     {
@@ -213,9 +229,11 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
         <div className="flex flex-nowrap items-center gap-1.5 whitespace-nowrap">
           <TripStatusBadge status={trip.status} />
           {trip.claimId && trip.claimNumber && (
-            <CellLink href={`/driver-management/claims/${trip.claimId}`} className="text-[11px] font-medium text-primary hover:underline">
-              {trip.claimNumber}
-            </CellLink>
+            <span onClick={keepTap}>
+              <CellLink href={`/driver-management/claims/${trip.claimId}`} className="text-[11px] font-medium text-primary hover:underline">
+                {trip.claimNumber}
+              </CellLink>
+            </span>
           )}
           {windowNote(trip, rules, today)}
           <FlagChips flags={trip.flags} className="flex-nowrap" />
@@ -229,7 +247,7 @@ export function myTripColumns({ rules, today, claimable, selected, toggle, openC
       mobile: 'footer',
       cell: (trip) =>
         trip.status === 'draft' ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" onClick={keepTap}>
             {claimable(trip) && (
               <label className="flex min-h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm sm:hidden">
                 <Checkbox checked={selected.has(trip.id)} onCheckedChange={(value) => toggle(trip.id, value === true)} aria-label={`Select trip on ${shortDate(trip.tripDate)}`} />

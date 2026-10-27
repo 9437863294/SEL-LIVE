@@ -13,6 +13,7 @@ globalThis.__db = new FakeFirestore();
 const db = globalThis.__db;
 
 const { saveTrip, deleteTrip } = await import('../src/lib/employee-trips/server/trips.ts');
+const { getTrip } = await import('../src/lib/employee-trips/server/trip-detail.ts');
 const { submitClaims, actOnClaim, payClaims, getClaim, listClaims } = await import('../src/lib/employee-trips/server/claims.ts');
 const { saveSettings } = await import('../src/lib/employee-trips/server/settings.ts');
 const { dashboard, bootstrap } = await import('../src/lib/employee-trips/server/overview.ts');
@@ -170,6 +171,22 @@ test('only the claimant, the workflow and wider grants can open a claim', async 
   assert.equal((await listClaims(context('appr1'), 'inbox')).claims.length, 1);
   await rejects(actOnClaim(context('pay1'), ids.c1, { action: 'approve', decisions: [] }), 403);
   await rejects(actOnClaim(context('emp1'), ids.c1, { action: 'approve', decisions: [] }), 403);
+});
+
+test('a trip’s page opens for its employee, the register and the claim’s workflow — nobody else', async () => {
+  const mine = await getTrip(context('emp1'), ids.t1);
+  assert.equal(mine.trip.id, ids.t1);
+  assert.equal(mine.mine, true);
+  // On a claim: its approver may open the trip behind it.
+  assert.equal((await getTrip(context('appr1'), ids.t1)).mine, false);
+  assert.equal((await getTrip(context('emp2', { 'Driver Management.Trip Claims': ['View All'] }), ids.t1)).trip.id, ids.t1);
+  await rejects(getTrip(context('emp2'), ids.t1), 403);
+  // Unclaimed: only the employee (and the register).
+  const draft = (await saveTrip(context('emp3'), ownTrip({ vehicleNumber: 'OD02PAGE1', startOdometer: 500, endOdometer: 510 }))).trip;
+  await rejects(getTrip(context('appr1'), draft.id), 403);
+  assert.equal((await getTrip(context('emp3'), draft.id)).trip.distanceKm, 10);
+  await deleteTrip(context('emp3'), draft.id);
+  await rejects(getTrip(context('emp3'), draft.id), 404);
 });
 
 test('the approver cuts one trip, sends one back and approves the rest', async () => {

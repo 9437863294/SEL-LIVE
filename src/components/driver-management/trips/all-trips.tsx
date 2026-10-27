@@ -20,6 +20,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Banknote, CalendarClock, Download, Gauge, Route, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,6 +36,8 @@ import { EmptyBlock, ErrorBlock, LoadingBlock, Money, downloadCsv } from './trip
 /** Same reason as the other registers: a few thousand rows in the DOM at once is a frozen page. */
 const PAGE_SIZE = 100;
 
+/** A row opens the trip's page; its back button returns here. */
+const detailHref = (trip: TripRecord) => `/driver-management/trips/${trip.id}?from=all`;
 
 const STATUS_FILTERS: Array<{ value: TripStatus | 'all'; label: string }> = [
   { value: 'all', label: 'All statuses' },
@@ -46,6 +49,7 @@ const STATUS_FILTERS: Array<{ value: TripStatus | 'all'; label: string }> = [
 ];
 
 export default function AllTrips() {
+  const router = useRouter();
   const [trips, setTrips] = useState<TripRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -214,7 +218,7 @@ export default function AllTrips() {
         </EmptyBlock>
       ) : (
         <>
-          <DataList rows={filtered.slice(0, limit)} columns={columns} dense />
+          <DataList rows={filtered.slice(0, limit)} columns={columns} dense cardHref={detailHref} onRowClick={(trip) => router.push(detailHref(trip))} />
           {filtered.length > limit && (
             <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
               <span>
