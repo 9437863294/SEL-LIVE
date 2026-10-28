@@ -9,7 +9,6 @@ import { DailyRequisitionImportDialog } from '@/components/daily-requisition/imp
 import { allocateReceptionNos, requisitionFingerprint } from '@/lib/daily-requisition-import';
 import {
   Plus,
-  ArrowUpDown,
   MoreHorizontal,
   Calendar as CalendarIcon,
   Loader2,
@@ -25,15 +24,26 @@ import {
   Paperclip,
   X,
   Lock,
+  FilePlus,
+  Inbox,
+  SlidersHorizontal,
+  Columns,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { TableCard } from '@/components/shared/table-card';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+// Bill Tracking's register parts, so this register reads exactly like the Bill Register.
+import { BtTable, Pager, type BtColumn } from '@/components/bill-tracking/bt-table';
+import { ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
@@ -87,13 +97,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
-  DailyMetricCard,
+  DailyStatStrip,
   dailyPageContainerClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
+import { formatINRCompact, sumBy } from '@/lib/bill-tracking/money';
 import { diffFields } from '@/lib/activity-logger';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
@@ -102,6 +112,7 @@ import {
   balanceOf,
   isPaymentLocked,
   paidOf,
+  REQUISITION_STAGES,
   requisitionProgress,
   voucherHref,
 } from '@/lib/requisition-progress';
@@ -127,7 +138,6 @@ import {
   resolveField,
   todayLocal,
   validateEntryValues,
-  type DRColumnKey,
   type DRDatePreset,
   type DRFieldKey,
   type ResolvedDRField,
@@ -153,6 +163,65 @@ const inr = new Intl.NumberFormat('en-IN', {
 const formatCurrency = (amount: unknown) => inr.format(Number(amount) || 0);
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** A register cell's text on one line: cut short with "…", the whole of it on hover. */
+function CellText({ text, className }: { text?: string | null; className?: string }) {
+  if (!text) return <span className="text-muted-foreground">—</span>;
+  return (
+    <Tooltip>
+      {/* A span, not the default button, so a click here opens the row too. */}
+      <TooltipTrigger asChild>
+        <span className={cn('block truncate whitespace-nowrap', className)}>{text}</span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm break-words text-xs">{text}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** An amount in a register cell, to the paisa on one line — or a dash, where nothing is better shown as nothing. */
+function Money({ value, dashWhenZero = false }: { value: number; dashWhenZero?: boolean }) {
+  if (dashWhenZero && !value) return <span className="text-muted-foreground">—</span>;
+  return <span className="whitespace-nowrap tabular-nums">{formatCurrency(value)}</span>;
+}
+
+/** The register's empty state, as Bill Tracking draws its own. */
+function RegisterEmpty({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
+      <Inbox className="h-9 w-9 text-muted-foreground/60" />
+      <p className="font-medium text-slate-700">{title}</p>
+      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
+      {action ? <div className="mt-2">{action}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * A high-value row's tint, solid in both themes: the register's pinned first cell inherits its
+ * row's fill and has to cover the columns scrolling under it, and dark-compat.css would turn a
+ * pastel `bg-amber-50` see-through. So the amber is mixed into the card colour instead.
+ */
+const HIGH_VALUE_ROW =
+  'bg-[color-mix(in_srgb,theme(colors.amber.500)_10%,hsl(var(--card)))] hover:bg-[color-mix(in_srgb,theme(colors.amber.500)_18%,hsl(var(--card)))]';
+
+/** The status filter's choices: the stages `requisitionProgress` reads entries as. */
+const STATUS_OPTIONS = REQUISITION_STAGES.map(({ stage, label }) => ({ value: stage, label }));
+
+const HIDDEN_COLUMNS_KEY = 'daily-requisition:entry-sheet:hidden-columns';
+
+/**
+ * The columns this browser has hidden, remembered across visits — none on the server or in private
+ * mode. Read once, at first render: the page shows its skeleton then, so nothing here can mismatch.
+ */
+function readHiddenColumns(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const stored = window.localStorage.getItem(HIDDEN_COLUMNS_KEY);
+    return new Set(stored ? (JSON.parse(stored) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
 
 /** Why a requisition with money paid against it cannot be deleted, or have its figures changed. */
 function paymentLockReason(entry: Pick<DailyRequisitionEntry, 'payments'>): string {
@@ -214,13 +283,9 @@ async function linkedExpenseRefs(entry: Pick<DailyRequisitionEntry, 'depNo' | 'r
 function EntrySheetSkeleton() {
   return (
     <div className={dailyPageContainerClass}>
-      <Skeleton className="mb-4 h-10 w-72 max-w-full" />
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Skeleton className="h-14 rounded-xl" />
-        <Skeleton className="h-14 rounded-xl" />
-        <Skeleton className="h-14 rounded-xl" />
-      </div>
-      <Skeleton className="h-96 w-full rounded-2xl" />
+      <Skeleton className="mb-4 h-40 rounded-xl" />
+      <Skeleton className="mb-4 h-9 w-full max-w-3xl" />
+      <Skeleton className="h-96 w-full rounded-xl" />
     </div>
   );
 }
@@ -266,6 +331,14 @@ function EntrySheetPageComponent() {
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
   const [filterText, setFilterText] = React.useState(() => queryParam ?? '');
   const [dateFilter, setDateFilter] = React.useState<Date>();
+  // Ids (a project, a department) or a `requisitionProgress` stage; '' is "all".
+  const [projectFilter, setProjectFilter] = React.useState('');
+  const [departmentFilter, setDepartmentFilter] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('');
+  /** On a phone the filter controls fold behind a "Filters" button. */
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  /** Field Control decides which columns exist; this browser may hide some of the unlocked ones. */
+  const [hiddenColumns, setHiddenColumns] = React.useState<Set<string>>(readHiddenColumns);
 
   // Field Control and Data Control, live. At their defaults nothing below behaves differently.
   const { settings: moduleSettings, isLoading: isSettingsLoading } = useDailyRequisitionSettings();
@@ -311,7 +384,7 @@ function EntrySheetPageComponent() {
   const [selectedFiles, setSelectedFiles] = React.useState<File[]>([]);
 
   const [currentPage, setCurrentPage] = React.useState(1);
-  const [itemsPerPage] = React.useState(25);
+  const [itemsPerPage, setItemsPerPage] = React.useState(25);
 
   const [selectedEntry, setSelectedEntry] = React.useState<DailyRequisitionEntry | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = React.useState(false);
@@ -925,14 +998,17 @@ function EntrySheetPageComponent() {
       });
     }
     const range = resolveDatePreset(rangePreset);
-    const onDay = (entry: EnrichedDailyRequisitionEntry) => {
+    const inView = (entry: EnrichedDailyRequisitionEntry) => {
+      if (projectFilter && entry.projectId !== projectFilter) return false;
+      if (departmentFilter && entry.departmentId !== departmentFilter) return false;
+      if (statusFilter && requisitionProgress(entry).stage !== statusFilter) return false;
       if (dateFilter && !isSameDay(new Date(entry.originalDate), dateFilter)) return false;
       if (!range) return true;
       const when = entry.originalDate ? new Date(entry.originalDate) : undefined;
       return Boolean(when) && (when as Date) >= range.from && (when as Date) <= range.to;
     };
     const needle = filterText.trim().toLowerCase();
-    if (!needle) return sortedEntries.filter(onDay);
+    if (!needle) return sortedEntries.filter(inView);
 
     // A whole reception or DEP number — what another module's `?q=` link carries — picks out exactly
     // that entry, not every number it is the start of (SEL/2026-27/1 is not also /10 to /19).
@@ -951,13 +1027,25 @@ function EntrySheetPageComponent() {
             requisitionProgress(entry).label,
           ].some((value) => String(value).toLowerCase().includes(needle)),
         );
-    return matches.filter(onDay);
-  }, [entries, sortKey, sortDirection, filterText, dateFilter, rangePreset, projectNameById, departmentNameById]);
+    return matches.filter(inView);
+  }, [
+    entries,
+    sortKey,
+    sortDirection,
+    filterText,
+    dateFilter,
+    rangePreset,
+    projectFilter,
+    departmentFilter,
+    statusFilter,
+    projectNameById,
+    departmentNameById,
+  ]);
 
-  // A narrower filter must not leave the table on a page that no longer exists.
+  // A narrower filter, or a longer page, must not leave the table on a page that no longer exists.
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [filterText, dateFilter, rangePreset]);
+  }, [filterText, dateFilter, rangePreset, projectFilter, departmentFilter, statusFilter, itemsPerPage]);
 
   const paginatedEntries = React.useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -966,34 +1054,84 @@ function EntrySheetPageComponent() {
 
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / itemsPerPage));
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortDirection('asc');
+  /** The header strip's figures: every entry the filters match, not only this page of them. */
+  const totals = React.useMemo(() => {
+    const progress = filteredEntries.map((entry) => requisitionProgress(entry));
+    return {
+      gross: sumBy(filteredEntries, (entry) => Number(entry.grossAmount) || 0),
+      net: sumBy(progress, (entry) => entry.net),
+      paid: sumBy(progress, (entry) => entry.paid),
+      balance: sumBy(progress, (entry) => entry.balance),
+      paidInFull: progress.filter((entry) => entry.stage === 'paid').length,
+      stillToPay: progress.filter((entry) => entry.balance > 0).length,
+    };
+  }, [filteredEntries]);
+  const rangeLabel = DR_DATE_PRESETS.find((preset) => preset.value === rangePreset)?.label ?? 'All time';
+  /** Anything narrowing the period's entries. */
+  const narrowed = Boolean(filterText.trim() || dateFilter || projectFilter || departmentFilter || statusFilter);
+  // The search counts, so the toolbar's Clear shows for a search alone too.
+  const activeFilterCount =
+    [filterText.trim(), projectFilter, departmentFilter, statusFilter].filter(Boolean).length +
+    (dateFilter ? 1 : 0) +
+    (rangePreset !== 'all' ? 1 : 0);
+  const clearFilters = () => {
+    setFilterText('');
+    setDateFilter(undefined);
+    setRangePreset('all');
+    setProjectFilter('');
+    setDepartmentFilter('');
+    setStatusFilter('');
+  };
+
+  const saveHiddenColumns = (next: Set<string>) => {
+    setHiddenColumns(next);
+    try {
+      window.localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...next]));
+    } catch {
+      // Private mode: the choice lasts for this visit only.
     }
   };
+  const toggleColumn = (key: string) => {
+    const next = new Set(hiddenColumns);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    saveHiddenColumns(next);
+  };
+
+  const projectOptions = React.useMemo(
+    () =>
+      projects
+        .map((project) => ({ value: project.id, label: project.projectName || project.id }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'en-IN')),
+    [projects],
+  );
+  const departmentOptions = React.useMemo(
+    () =>
+      departments
+        .map((department) => ({ value: department.id, label: department.name || department.id }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'en-IN')),
+    [departments],
+  );
 
   const handleViewDetails = (entry: DailyRequisitionEntry) => {
     setSelectedEntry(entry);
     setIsViewDialogOpen(true);
   };
 
-  /**
-   * A click on a row opens its details (or ticks it, in selection mode). React bubbles clicks from
-   * portals — the actions menu, the delete confirmation — through the row, so only clicks inside the
-   * row's own DOM count, and never ones on its buttons, links or checkbox, or ones that end a text selection.
-   */
-  const handleRowClick = (event: React.MouseEvent<HTMLTableRowElement>, entry: DailyRequisitionEntry) => {
-    const target = event.target as HTMLElement;
-    if (!event.currentTarget.contains(target)) return;
-    if (target.closest('button, a, input, [role="checkbox"], [role="menuitem"]')) return;
-    if (window.getSelection()?.toString()) return;
-    if (isSelectionMode) handleSelectRow(entry.id, !selectedIds.has(entry.id));
-    else handleViewDetails(entry);
+  /** A click on a row opens its details — or, while picking checklists to print, ticks it. */
+  const handleRowClick = (entry: EnrichedDailyRequisitionEntry) => {
+    if (!isSelectionMode) {
+      handleViewDetails(entry);
+      return;
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(entry.id)) next.delete(entry.id);
+      else next.add(entry.id);
+      return next;
+    });
   };
-  
+
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
     window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
   };
@@ -1001,37 +1139,6 @@ function EntrySheetPageComponent() {
   const handlePrintSelected = () => {
     const idsToPrint = Array.from(selectedIds).join(',');
     window.open(`/daily-requisition/entry-sheet/print?ids=${idsToPrint}`, '_blank');
-  };
-
-  // Field Control's column layout. Actions is always the last column and is rendered on its own.
-  const headers: { key: SortKey & DRColumnKey; label: string; numeric?: boolean }[] = columns
-    .filter((column) => column.key !== 'actions')
-    .map((column) => ({ key: column.key as SortKey & DRColumnKey, label: column.label, numeric: column.numeric }));
-
-  const handleSelectAll = (checked: boolean | 'indeterminate') => {
-    if (checked) {
-      setSelectedIds(new Set(paginatedEntries.map((e) => e.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
-  };
-
-  /** How much of the page on screen is ticked, for the header checkbox. */
-  const pageSelected: 'all' | 'some' | 'none' =
-    paginatedEntries.length > 0 && paginatedEntries.every((entry) => selectedIds.has(entry.id))
-      ? 'all'
-      : paginatedEntries.some((entry) => selectedIds.has(entry.id))
-        ? 'some'
-        : 'none';
-
-  const handleSelectRow = (id: string, checked: boolean) => {
-    const newSelectedIds = new Set(selectedIds);
-    if (checked) {
-      newSelectedIds.add(id);
-    } else {
-      newSelectedIds.delete(id);
-    }
-    setSelectedIds(newSelectedIds);
   };
 
   if (isAuthLoading || isLoading || isSettingsLoading) {
@@ -1071,363 +1178,470 @@ function EntrySheetPageComponent() {
     );
   }
   
+  /** A row's ⋯ menu: view, checklist, edit and delete — each disabled, with its reason, where a rule forbids it. */
+  const renderActions = (entry: EnrichedDailyRequisitionEntry) => {
+    const locked = isPaymentLocked(entry);
+    const editBlock = receivedRuleBlock(entry.status, dataControl, 'edit');
+    // The payment lock's reason wins over the status rule's.
+    const deleteBlock = locked ? paymentLockReason(entry) : receivedRuleBlock(entry.status, dataControl, 'delete');
+    return (
+      <AlertDialog>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              aria-label={`Actions for ${entry.receptionNo}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewDetails(entry);
+              }}
+            >
+              <Eye className="mr-2 h-4 w-4" /> View Details
+            </DropdownMenuItem>
+            {canViewChecklist && (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleViewChecklist(entry);
+                }}
+              >
+                <FileText className="mr-2 h-4 w-4" /> View Checklist
+              </DropdownMenuItem>
+            )}
+            {canEdit &&
+              (editBlock ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="block cursor-not-allowed">
+                      <DropdownMenuItem disabled>
+                        <Lock className="mr-2 h-4 w-4" /> Edit
+                      </DropdownMenuItem>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-xs text-xs">
+                    {editBlock}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOpenEditDialog(entry);
+                  }}
+                >
+                  <Edit className="mr-2 h-4 w-4" /> {locked ? 'Edit description' : 'Edit'}
+                </DropdownMenuItem>
+              ))}
+            {canDelete &&
+              (deleteBlock ? (
+                // A disabled item takes no pointer events, so the wrapper carries the reason.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="block cursor-not-allowed">
+                      <DropdownMenuItem disabled className="text-destructive">
+                        <Lock className="mr-2 h-4 w-4" /> Delete
+                      </DropdownMenuItem>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" className="max-w-xs text-xs">
+                    {deleteBlock}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+              ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {entry.receptionNo}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the entry.
+              {entry.depNo
+                ? ` Its expense request ${entry.depNo} is released, so it can be received again.`
+                : ''}{' '}
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => handleDeleteEntry(entry)}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  };
+
+  /** The filters behind "More filters", as removable chips under the filter row. */
+  const moreChips = [
+    ...(departmentFilter
+      ? [{ key: 'department', label: 'Department', value: departmentNameById.get(departmentFilter) || departmentFilter, onRemove: () => setDepartmentFilter('') }]
+      : []),
+    ...(dateFilter ? [{ key: 'date', label: 'Date', value: format(dateFilter, 'dd MMM yyyy'), onRemove: () => setDateFilter(undefined) }] : []),
+  ];
+
+  // Field Control's layout — which columns, in what order, under what names — drawn the way Bill
+  // Tracking's register draws its own. Every column is `pinned` so the register offers no Columns
+  // menu of its own, which would bring back the bar over the table: the filter row has this page's.
+  // A locked column always shows, even if this browser hid it before it was locked.
+  const hideableColumns = columns.filter((column) => !column.locked);
+  const tableColumns = columns
+    .filter((column) => column.locked || !hiddenColumns.has(column.key))
+    .map((column): BtColumn<EnrichedDailyRequisitionEntry> => {
+      const base = {
+        key: column.key,
+        header: column.label,
+        label: column.label,
+        pinned: true,
+        align: column.numeric ? ('right' as const) : undefined,
+        sortKey: column.key === 'actions' ? undefined : column.key,
+      };
+      switch (column.key) {
+        case 'createdAt':
+          return { ...base, mobile: 'omit', cell: (entry) => <span className="whitespace-nowrap">{entry.createdAtText}</span> };
+        case 'receptionNo':
+          return {
+            ...base,
+            mobile: 'title',
+            cell: (entry) => (
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <button type="button" onClick={() => handleViewDetails(entry)} className="font-medium text-emerald-700 hover:underline">
+                  {entry.receptionNo || '—'}
+                </button>
+                {isHighValue(entry, dataControl.highValueThreshold) ? (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+                    title={`High value — ${formatCurrency(dataControl.highValueThreshold)} or more`}
+                  />
+                ) : null}
+              </span>
+            ),
+          };
+        case 'status':
+          return {
+            ...base,
+            cell: (entry) => {
+              const progress = requisitionProgress(entry);
+              return (
+                <StatusBadge tone={progress.tone} title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}>
+                  {progress.label}
+                </StatusBadge>
+              );
+            },
+          };
+        case 'date':
+          return { ...base, cell: (entry) => <span className="whitespace-nowrap">{entry.dateText}</span> };
+        case 'projectId':
+          return { ...base, cell: (entry) => <CellText text={projectNameById.get(entry.projectId) || entry.projectId} className="max-w-[180px]" /> };
+        case 'departmentId':
+          return { ...base, cell: (entry) => <CellText text={departmentNameById.get(entry.departmentId) || entry.departmentId} className="max-w-[140px]" /> };
+        case 'partyName':
+          return { ...base, cell: (entry) => <CellText text={entry.partyName} className="max-w-[200px] font-medium text-slate-800" /> };
+        case 'description':
+          return { ...base, cell: (entry) => <CellText text={entry.description} className="max-w-[260px] text-slate-600" /> };
+        case 'grossAmount':
+          return { ...base, mobile: 'aside', cell: (entry) => <Money value={Number(entry.grossAmount) || 0} />, total: <Money value={totals.gross} /> };
+        case 'netAmount':
+          return { ...base, cell: (entry) => <Money value={Number(entry.netAmount) || 0} />, total: <Money value={totals.net} /> };
+        case 'paid':
+          return { ...base, cell: (entry) => <Money value={paidOf(entry)} dashWhenZero />, total: <Money value={totals.paid} /> };
+        case 'balance':
+          return { ...base, cell: (entry) => <Money value={balanceOf(entry)} dashWhenZero />, total: <Money value={totals.balance} /> };
+        case 'actions':
+          return { ...base, header: '', cell: renderActions };
+        default:
+          return { ...base, cell: () => null };
+      }
+    });
+
   return (
     <>
-      <div className={`${dailyPageContainerClass} no-print`}>
-        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
-          title="Entry Sheet"
-          description="Create new entries, bulk-print checklists, and keep the front door of the workflow organized."
-          meta={
-            <>
-              <Badge variant="neutral">Entry</Badge>
-              <Badge variant="neutral">
-                {filteredEntries.length} visible entries
-              </Badge>
-            </>
-          }
-          actions={
-            isSelectionMode ? (
-              <>
-                <Button variant="outline" onClick={() => setIsSelectionMode(false)}>
-                  Cancel Selection
-                </Button>
-                <Button onClick={handlePrintSelected} disabled={selectedIds.size === 0}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Confirm & Print ({selectedIds.size})
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setIsSelectionMode(true)} disabled={!canViewChecklist}>
-                  <Printer className="mr-2 h-4 w-4" /> Print Checklists
-                </Button>
-                {/* Gated on Add, the same grant as keying one by hand — importing a register is
-                    creating entries, and there is no separate power to invent for it. */}
-                <Button variant="outline" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
-                  <Upload className="mr-2 h-4 w-4" /> Import
-                </Button>
-                <Button onClick={() => { openAddDialog(); }} disabled={!canAdd}>
-                  <Plus className="mr-2 h-4 w-4" /> Add Entry
-                </Button>
-              </>
-            )
-          }
-        />
+      <div className={`${dailyPageContainerClass} space-y-4 no-print`}>
+        {/* One card: what the page is, its actions, and the totals of what the filters show. */}
+        <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          {/* A `space-y-*` parent: globals.css then drops the header's own bottom margin. */}
+          <div className="space-y-0 px-4 py-3 sm:px-5 sm:py-4">
+            <PageHeader
+              backHref="/daily-requisition"
+              eyebrow="Daily Requisition"
+              icon={FilePlus}
+              title="Entry Sheet"
+              badge={isSelectionMode ? <StatusBadge tone="info" dot>Selecting to print</StatusBadge> : undefined}
+              actions={
+                isSelectionMode ? (
+                  <>
+                    <Button size="sm" variant="outline" onClick={() => setIsSelectionMode(false)}>
+                      Cancel Selection
+                    </Button>
+                    <Button size="sm" className="gap-1.5" onClick={handlePrintSelected} disabled={selectedIds.size === 0}>
+                      <Printer className="h-4 w-4" />
+                      Confirm & Print ({selectedIds.size})
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setIsSelectionMode(true)} disabled={!canViewChecklist}>
+                      <Printer className="h-4 w-4" /> Print Checklists
+                    </Button>
+                    {/* Gated on Add, the same grant as keying one by hand — importing a register is
+                        creating entries, and there is no separate power to invent for it. */}
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
+                      <Upload className="h-4 w-4" /> Import
+                    </Button>
+                    <Button size="sm" className="gap-1.5" onClick={() => { openAddDialog(); }} disabled={!canAdd}>
+                      <Plus className="h-4 w-4" /> Add Entry
+                    </Button>
+                  </>
+                )
+              }
+            />
+          </div>
+          <DailyStatStrip
+            flush
+            items={[
+              {
+                label: 'Entries',
+                value: filteredEntries.length.toLocaleString('en-IN'),
+                hint: narrowed ? `${rangeLabel} · filtered` : rangeLabel,
+              },
+              {
+                label: 'Gross amount',
+                value: <span title={formatCurrency(totals.gross)}>{formatINRCompact(totals.gross)}</span>,
+                hint: <span title={formatCurrency(totals.net)}>Net {formatINRCompact(totals.net)}</span>,
+              },
+              {
+                label: 'Paid',
+                value: <span title={formatCurrency(totals.paid)}>{formatINRCompact(totals.paid)}</span>,
+                hint: `${totals.paidInFull.toLocaleString('en-IN')} paid in full`,
+                tone: totals.paid > 0 ? 'text-emerald-700' : undefined,
+              },
+              {
+                label: 'Balance due',
+                value: <span title={formatCurrency(totals.balance)}>{formatINRCompact(totals.balance)}</span>,
+                hint: `${totals.stillToPay.toLocaleString('en-IN')} still to pay`,
+                tone: totals.balance > 0 ? 'text-amber-700' : undefined,
+              },
+              {
+                label: 'DEP to receive',
+                value: unassignedExpenseRequests.length.toLocaleString('en-IN'),
+                hint: 'Expense requests not yet received',
+                tone: unassignedExpenseRequests.length > 0 ? 'text-sky-700' : undefined,
+              },
+            ]}
+          />
+        </section>
 
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <DailyMetricCard label="Visible Entries" value={filteredEntries.length} hint="Filtered result set" />
-          <DailyMetricCard label="Selected" value={selectedIds.size} hint={isSelectionMode ? 'Checklist print mode' : 'No bulk action active'} />
-          <DailyMetricCard label="Unassigned DEP" value={unassignedExpenseRequests.length} hint="Expense requests available to link" />
-        </div>
-
-        <TableCard
-          title="Entries workspace"
-          count={filteredEntries.length}
-          toolbar={
-            <FilterBar
-              search={{ value: filterText, onChange: setFilterText, placeholder: 'Filter entries...' }}
-              activeCount={(dateFilter ? 1 : 0) + (rangePreset !== 'all' ? 1 : 0)}
-              onClear={() => { setFilterText(''); setDateFilter(undefined); setRangePreset('all'); }}
-            >
-              <Select value={rangePreset} onValueChange={(value) => setRangePreset(value as DRDatePreset)}>
-                <SelectTrigger className="w-full sm:w-36" aria-label="Date range">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DR_DATE_PRESETS.map((preset) => (
-                    <SelectItem key={preset.value} value={preset.value}>
-                      {preset.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <div className="space-y-2 print:hidden" role="group" aria-label="Filters">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex items-center gap-2 sm:contents">
+              <ToolbarSearch
+                className="flex-1 sm:w-80 sm:flex-none"
+                value={filterText}
+                placeholder="Search reception no, party, amount…"
+                onChange={setFilterText}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 sm:hidden"
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen((open) => !open)}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
+              </Button>
+            </div>
+            <div className={cn('flex-col gap-2 sm:flex sm:flex-row sm:flex-wrap sm:items-center', filtersOpen ? 'flex' : 'hidden')}>
+              <ToolbarSelect
+                label="Period"
+                value={rangePreset === 'all' ? '' : rangePreset}
+                onChange={(value) => setRangePreset((value || 'all') as DRDatePreset)}
+                options={DR_DATE_PRESETS.filter((preset) => preset.value !== 'all')}
+                allLabel="All time"
+              />
+              <ToolbarSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={projectOptions} allLabel="All projects" />
+              <ToolbarSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} />
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
-                    variant={'outline'}
-                    className={cn('justify-start text-left font-normal', !dateFilter && 'text-muted-foreground')}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={cn('h-9 gap-1.5 bg-white shadow-sm', moreChips.length > 0 && 'border-emerald-400 bg-emerald-50 text-emerald-900')}
                   >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateFilter ? format(dateFilter, 'dd MMM yyyy') : 'Filter by date'}
+                    <SlidersHorizontal className="h-4 w-4" /> More filters
+                    {moreChips.length ? (
+                      <span className="rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold leading-4 text-white">{moreChips.length}</span>
+                    ) : null}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={dateFilter} onSelect={setDateFilter} initialFocus />
+                <PopoverContent align="start" className="w-auto space-y-3 p-3">
+                  <ToolbarSelect
+                    label="Department"
+                    value={departmentFilter}
+                    onChange={setDepartmentFilter}
+                    options={departmentOptions}
+                    allLabel="All departments"
+                    className="sm:w-full sm:max-w-none"
+                  />
+                  <div>
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Reception date</p>
+                    <Calendar mode="single" selected={dateFilter} onSelect={setDateFilter} className="rounded-md border" />
+                  </div>
                 </PopoverContent>
               </Popover>
-            </FilterBar>
-          }
-          footer={
-            <div className="flex items-center justify-between gap-2">
-              <p>
-                Page {currentPage} of {totalPages}
-              </p>
-              <div className="space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage >= totalPages}
-                >
-                  Next
-                </Button>
-              </div>
             </div>
-          }
-        >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {isSelectionMode && (
-                      <TableHead>
-                        <Checkbox
-                          // This page's rows, not the whole selection: ticking 25 on page 1 and
-                          // turning to page 2 used to show every row there as already ticked.
-                          checked={pageSelected === 'all' ? true : pageSelected === 'some' ? 'indeterminate' : false}
-                          onCheckedChange={handleSelectAll}
-                          aria-label="Select all on this page"
-                        />
-                      </TableHead>
-                    )}
-                    {headers.map((header) => (
-                      <TableHead
-                        key={header.key}
-                        onClick={() => handleSort(header.key)}
-                        className={cn('whitespace-nowrap', header.numeric && 'text-right')}
-                      >
-                        <div className={cn('flex cursor-pointer items-center', header.numeric && 'justify-end')}>
-                          {header.label}
-                          {sortKey === header.key && <ArrowUpDown className="ml-2 h-4 w-4" />}
-                        </div>
-                      </TableHead>
-                    ))}
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TooltipProvider>
-                    {paginatedEntries.map((entry) => {
-                      const progress = requisitionProgress(entry);
-                      const locked = isPaymentLocked(entry);
-                      const editBlock = receivedRuleBlock(entry.status, dataControl, 'edit');
-                      // The payment lock's reason wins over the status rule's.
-                      const deleteBlock = locked ? paymentLockReason(entry) : receivedRuleBlock(entry.status, dataControl, 'delete');
-                      const highValue = isHighValue(entry, dataControl.highValueThreshold);
-                      const rowTitle = isSelectionMode
-                        ? undefined
-                        : highValue
-                          ? `High value — ${formatCurrency(dataControl.highValueThreshold)} or more · Open details`
-                          : 'Open details';
-                      return (
-                        <TableRow
-                          key={entry.id}
-                          data-state={selectedIds.has(entry.id) ? 'selected' : ''}
-                          className={cn('cursor-pointer', highValue && 'bg-amber-50/40')}
-                          tabIndex={0}
-                          title={rowTitle}
-                          onClick={(event) => handleRowClick(event, entry)}
-                          onKeyDown={(event) => {
-                            if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
-                            event.preventDefault();
-                            if (isSelectionMode) handleSelectRow(entry.id, !selectedIds.has(entry.id));
-                            else handleViewDetails(entry);
-                          }}
-                        >
-                          {isSelectionMode && (
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedIds.has(entry.id)}
-                                onCheckedChange={(checked) => handleSelectRow(entry.id, !!checked)}
-                              />
-                            </TableCell>
-                          )}
-                          {headers.map((header, columnIndex) => {
-                            // High-value rows carry an amber rule down their first data column.
-                            const accent = highValue && columnIndex === 0 ? 'shadow-[inset_3px_0_0_0_#f59e0b]' : undefined;
-                            switch (header.key) {
-                              case 'createdAt':
-                                return <TableCell key={header.key} className={cn('whitespace-nowrap', accent)}>{entry.createdAtText}</TableCell>;
-                              case 'receptionNo':
-                                return <TableCell key={header.key} className={cn('whitespace-nowrap font-medium', accent)}>{entry.receptionNo}</TableCell>;
-                              case 'status':
-                                return (
-                                  <TableCell key={header.key} className={accent}>
-                                    <StatusBadge
-                                      tone={progress.tone}
-                                      title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}
-                                    >
-                                      {progress.label}
-                                    </StatusBadge>
-                                  </TableCell>
-                                );
-                              case 'date':
-                                return <TableCell key={header.key} className={cn('whitespace-nowrap', accent)}>{entry.dateText}</TableCell>;
-                              case 'projectId':
-                                return <TableCell key={header.key} className={accent}>{projectNameById.get(entry.projectId) || entry.projectId}</TableCell>;
-                              case 'departmentId':
-                                return <TableCell key={header.key} className={accent}>{departmentNameById.get(entry.departmentId) || entry.departmentId}</TableCell>;
-                              case 'partyName':
-                                return <TableCell key={header.key} className={accent}>{entry.partyName}</TableCell>;
-                              case 'description':
-                                return (
-                                  <TableCell key={header.key} className={accent}>
-                                    <Tooltip>
-                                      {/* A span, not the default button, so a click here opens the row too. */}
-                                      <TooltipTrigger asChild>
-                                        <span className="block max-w-xs truncate">{entry.description}</span>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p className="max-w-md">{entry.description}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TableCell>
-                                );
-                              case 'grossAmount':
-                                return (
-                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
-                                    {formatCurrency(entry.grossAmount)}
-                                  </TableCell>
-                                );
-                              case 'netAmount':
-                                return (
-                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
-                                    {formatCurrency(entry.netAmount)}
-                                  </TableCell>
-                                );
-                              case 'paid':
-                                return (
-                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
-                                    {progress.paid > 0 ? formatCurrency(progress.paid) : <span className="text-muted-foreground">—</span>}
-                                  </TableCell>
-                                );
-                              case 'balance':
-                                return (
-                                  <TableCell key={header.key} className={cn('whitespace-nowrap text-right tabular-nums', accent)}>
-                                    {progress.balance > 0 ? formatCurrency(progress.balance) : <span className="text-muted-foreground">—</span>}
-                                  </TableCell>
-                                );
-                              default:
-                                return null;
-                            }
-                          })}
-                          <TableCell>
-                            <AlertDialog>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleViewDetails(entry);
-                                    }}
-                                  >
-                                    <Eye className="mr-2 h-4 w-4" /> View Details
-                                  </DropdownMenuItem>
-                                  {canViewChecklist && (
-                                    <DropdownMenuItem
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleViewChecklist(entry);
-                                      }}
-                                    >
-                                      <FileText className="mr-2 h-4 w-4" /> View Checklist
-                                    </DropdownMenuItem>
-                                  )}
-                                  {canEdit &&
-                                    (editBlock ? (
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="block cursor-not-allowed">
-                                            <DropdownMenuItem disabled>
-                                              <Lock className="mr-2 h-4 w-4" /> Edit
-                                            </DropdownMenuItem>
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="left" className="max-w-xs text-xs">
-                                          {editBlock}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    ) : (
-                                      <DropdownMenuItem
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenEditDialog(entry);
-                                        }}
-                                      >
-                                        <Edit className="mr-2 h-4 w-4" /> {locked ? 'Edit description' : 'Edit'}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  {canDelete &&
-                                    (deleteBlock ? (
-                                      // A disabled item takes no pointer events, so the wrapper carries the reason.
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <span className="block cursor-not-allowed">
-                                            <DropdownMenuItem disabled className="text-destructive">
-                                              <Lock className="mr-2 h-4 w-4" /> Delete
-                                            </DropdownMenuItem>
-                                          </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent side="left" className="max-w-xs text-xs">
-                                          {deleteBlock}
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    ) : (
-                                      <AlertDialogTrigger asChild>
-                                        <DropdownMenuItem
-                                          className="text-destructive"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                        </DropdownMenuItem>
-                                      </AlertDialogTrigger>
-                                    ))}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete {entry.receptionNo}?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This permanently deletes the entry.
-                                    {entry.depNo
-                                      ? ` Its expense request ${entry.depNo} is released, so it can be received again.`
-                                      : ''}{' '}
-                                    This action cannot be undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDeleteEntry(entry)}>
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TooltipProvider>
-                </TableBody>
-              </Table>
-        </TableCard>
+            {activeFilterCount ? (
+              <Button type="button" variant="ghost" size="sm" className="h-9 gap-1 self-start text-muted-foreground sm:self-auto" onClick={clearFilters}>
+                <X className="h-4 w-4" /> Clear
+              </Button>
+            ) : null}
+            {/* Desktop only, as in Bill Tracking: a phone shows the register as cards. */}
+            {hideableColumns.length ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="sm" className="hidden h-9 gap-1.5 bg-white shadow-sm sm:ml-auto sm:inline-flex">
+                    <Columns className="h-4 w-4" /> Columns
+                    {hideableColumns.some((column) => hiddenColumns.has(column.key)) ? (
+                      <span className="rounded-full bg-slate-200 px-1.5 text-[11px] font-semibold leading-4 text-slate-700">
+                        {hideableColumns.filter((column) => hiddenColumns.has(column.key)).length} hidden
+                      </span>
+                    ) : null}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
+                  <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {hideableColumns.map((column) => (
+                    <DropdownMenuCheckboxItem
+                      key={column.key}
+                      checked={!hiddenColumns.has(column.key)}
+                      onCheckedChange={() => toggleColumn(column.key)}
+                      // Keep the menu open, so several columns can be switched in one go.
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      {column.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  {hiddenColumns.size ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => saveHiddenColumns(new Set())}>Show all columns</DropdownMenuItem>
+                    </>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
+          {/* What "More filters" holds, shown as chips so nothing filters the list unseen. */}
+          {moreChips.length ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Also filtered by</span>
+              {moreChips.map((chip) => (
+                <span
+                  key={chip.key}
+                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 py-0.5 pl-2.5 pr-1 text-xs text-emerald-900"
+                >
+                  <span className="text-emerald-700/80">{chip.label}:</span>
+                  <span className="max-w-[14rem] truncate font-medium">{chip.value}</span>
+                  <button
+                    type="button"
+                    onClick={chip.onRemove}
+                    aria-label={`Remove ${chip.label} filter`}
+                    className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-emerald-200"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <TooltipProvider>
+          <BtTable
+            rows={paginatedEntries}
+            columns={tableColumns}
+            sort={{ key: sortKey, dir: sortDirection }}
+            onSort={(key, dir) => {
+              setSortKey(key as SortKey);
+              setSortDirection(dir);
+            }}
+            selectable={isSelectionMode}
+            selected={selectedIds}
+            onSelectedChange={setSelectedIds}
+            onRowClick={handleRowClick}
+            // A ticked row shows as ticked, high value or not.
+            rowClassName={(entry) =>
+              isHighValue(entry, dataControl.highValueThreshold) && !(isSelectionMode && selectedIds.has(entry.id)) ? HIGH_VALUE_ROW : undefined
+            }
+            showTotals
+            dense
+            // Only while picking checklists to print — the count is in the footer's "Showing 1–25 of N".
+            caption={
+              isSelectionMode ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">{selectedIds.size} selected</span>
+                  {selectedIds.size > 0 ? (
+                    <Button size="sm" variant="ghost" className="h-8" onClick={() => setSelectedIds(new Set())}>
+                      Clear
+                    </Button>
+                  ) : null}
+                  <span className="hidden text-xs font-normal text-slate-500 md:inline">Tick the entries to print, then Confirm & Print.</span>
+                </div>
+              ) : undefined
+            }
+            footer={
+              filteredEntries.length > 0 ? (
+                <Pager
+                  page={currentPage}
+                  pages={totalPages}
+                  total={filteredEntries.length}
+                  pageSize={itemsPerPage}
+                  onPage={setCurrentPage}
+                  onPageSize={setItemsPerPage}
+                />
+              ) : undefined
+            }
+            empty={
+              activeFilterCount ? (
+                <RegisterEmpty
+                  title="No entries found for the selected filters."
+                  description="Clear or change the filters to see more."
+                  action={
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  }
+                />
+              ) : (
+                <RegisterEmpty
+                  title="No entries yet."
+                  description={canAdd ? 'Receive an expense request with Add Entry, or import a register.' : undefined}
+                />
+              )
+            }
+          />
+        </TooltipProvider>
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
