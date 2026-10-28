@@ -1,25 +1,19 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { Suspense } from 'react';
-import DriverLoginPageContent from '@/components/auth/DriverLoginPageContent';
-import { Skeleton } from '@/components/ui/skeleton';
-
-function DriverLoginLoading() {
-  return (
-    <div className="min-h-screen p-4 bg-slate-950">
-      <div className="mx-auto mt-20 max-w-md space-y-3">
-        <Skeleton className="h-10 w-40 rounded-lg" />
-        <Skeleton className="h-56 w-full rounded-xl" />
-      </div>
-    </div>
-  );
+/**
+ * The separate "Driver App Login" was retired: the app and phones sign in on the main /login
+ * (ClientSessionHandler sends them there). Installed apps, bookmarks and history that still open
+ * /driver-login land on it, keeping `redirect` and `app=driver` so they return where they were.
+ */
+export default async function DriverLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams)) {
+    for (const item of Array.isArray(value) ? value : value === undefined ? [] : [value]) query.append(key, item);
+  }
+  const search = query.toString();
+  redirect(search ? `/login?${search}` : '/login');
 }
-
-export default function DriverLoginPage() {
-  return (
-    <Suspense fallback={<DriverLoginLoading />}>
-      <DriverLoginPageContent />
-    </Suspense>
-  );
-}
-

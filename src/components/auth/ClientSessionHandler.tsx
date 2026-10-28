@@ -98,12 +98,13 @@ export function ClientSessionHandler() {
     } 
     // If user is not logged in...
     else {
-      // ...and they are on a protected page, redirect them to login.
+      // ...and they are on a protected page, redirect them to login. The app and phones use the
+      // main sign-in too (the separate driver sign-in was retired); `app=driver` only tells it to
+      // land on Fleet & Travel afterwards.
       if (!isPublicRoute) {
         const redirectTarget = isSafeInternalPath(currentPath) ? currentPath : '/';
-        const loginPath = isDriverContext ? '/driver-login' : '/login';
         const appQuery = isDriverContext ? '&app=driver' : '';
-        router.replace(`${loginPath}?redirect=${encodeURIComponent(redirectTarget)}${appQuery}`);
+        router.replace(`/login?redirect=${encodeURIComponent(redirectTarget)}${appQuery}`);
       }
     }
   }, [user, loading, pathname, router, searchParams]);

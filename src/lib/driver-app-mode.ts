@@ -2,8 +2,9 @@
  * "Driver app mode" in a browser: the SEL Driver phone experience — Fleet & Travel's own mobile
  * shell without the global header, and the driver sign-in page when signed out.
  *
- * Signing in at /driver-login sets `driver_app_mode` in both storages, for a driver who uses a
- * phone's browser rather than the app. It is honoured only on a touch-first device: the flag never
+ * The retired driver sign-in (/driver-login, now a redirect to /login) set `driver_app_mode` in both
+ * storages, for a driver who used a phone's browser rather than the app; phones that signed in
+ * there still carry it. It is honoured only on a touch-first device: the flag never
  * expires, so a desktop browser that opened the driver sign-in once lost the global header on every
  * Fleet & Travel page for good. Signing in through the normal /login clears it. The native app and
  * its Android WebView are recognised directly by the callers and need no flag.
