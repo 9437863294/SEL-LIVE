@@ -17,14 +17,15 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ClipboardCheck, Plus, RotateCcw, Save, Scale } from 'lucide-react';
+import { ArrowLeft, ClipboardCheck, FileText, Plus, RotateCcw, Save, Scale, UserCheck } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { markNextNavigationAsReplace } from '@/lib/navigation-history';
 import { grossAmount, netReceivable, totalDeduction } from '@/lib/bill-tracking/calculations';
 import { deductionsByType, raisedFigures, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
@@ -34,8 +35,8 @@ import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } fro
 import { cn } from '@/lib/utils';
 
 import { btFetch, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
-import { certificationBlocked } from '@/lib/bill-tracking/workflow';
-import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, dateText, FIELD_ROW } from './bt-ui';
+import { certificationBlocked, certificationNotDue } from '@/lib/bill-tracking/workflow';
+import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, WorkflowStatusBadge, dateText, FIELD_ROW } from './bt-ui';
 import { DeductionEditor, deductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
 interface Detail {
@@ -155,6 +156,9 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const [form, setForm] = useState<FormState>(() => (existing ? fromCertification(bill, config) : fromRaised(bill, config, lookups.today, suggestion.gstType)));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // A form: the arrow and Cancel go back where it was opened from (the bill, a register), and leave
+  // it out of the history, so the browser's Back never reopens it.
+  const back = useBackNavigation(`/bill-tracking/bills/${bill.id}?tab=certification`, { replace: true, fallbackLabel: 'Back to the bill' });
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
   const usedTypeIds = new Set([...(bill.deductions ?? []), ...(existing?.deductions ?? [])].map((line) => line.deductionTypeId));
   const activeTypes = config.deductionTypes.filter((type) => type.active || usedTypeIds.has(type.id));
@@ -254,7 +258,8 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             ? 'Its deductions now apply to the bill — no note needed.'
             : 'No note needed.',
       });
-      router.push(`/bill-tracking/bills/${bill.id}?tab=certification`);
+      markNextNavigationAsReplace();
+      router.replace(`/bill-tracking/bills/${bill.id}?tab=certification`);
     } catch (caught) {
       setSaveError(caught instanceof Error ? caught.message : 'Could not save the certification.');
       setSaving(false);
@@ -266,51 +271,107 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <PageHeader
-        icon={ClipboardCheck}
-        title={existing ? `Edit client certification · ${reference}` : `Record client certification · ${reference}`}
-        backHref={`/bill-tracking/bills/${bill.id}?tab=certification`}
-        backLabel="Bill"
-        description={`${bill.projectNameSnapshot} · raised ${dateText(bill.billDate)} · net ${formatINR(raised.net)}. Enter what the client approved and deducts — its deductions apply to the bill directly; a different taxable or GST needs a credit / debit note.`}
-      />
+      {/*
+        The same card as the bill's own header: back, a short title with the project beside it, then the
+        facts of the bill being certified in a row of their own under a rule — and, where it
+        applies, one quiet line on where the figures start from, rather than a banner of its own.
+      */}
+      <header className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-start gap-4 p-4 sm:p-6">
+          <Button asChild variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-lg print:hidden">
+            <Link href={back.href} onClick={back.onClick} aria-label={back.label} title={back.label}>
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </Button>
+          <div className="min-w-0 flex-1">
+            {/* The title and the project on one row, as on the bill's header: the project after a rule,
+                as a link to its bills, wrapping only where the screen is too narrow for both. */}
+            <div className="flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="flex min-w-0 items-center gap-2 text-xl font-bold leading-tight tracking-tight text-slate-900 sm:text-2xl">
+                <ClipboardCheck className="h-5 w-5 shrink-0 text-emerald-700" aria-hidden="true" />
+                {existing ? 'Edit client certification' : 'Record client certification'}
+              </h1>
+              <span className="mx-0.5 hidden h-5 w-px bg-slate-200 sm:block" aria-hidden="true" />
+              <Link href={`/bill-tracking/bills?project=${bill.projectId}&fy=all`} className="min-w-0 max-w-full truncate text-xs font-semibold uppercase tracking-wide text-emerald-700 hover:underline" title={`All bills of ${bill.projectNameSnapshot}`}>
+                {bill.projectNameSnapshot}
+              </Link>
+            </div>
+          </div>
+        </div>
+        <dl className="grid grid-cols-2 border-t border-slate-200 sm:grid-cols-4">
+          {(
+            [
+              ['Invoice', <span key="ref" className="break-all">{reference}</span>],
+              ['Bill date', dateText(bill.billDate)],
+              ['Raised net', <Amount key="net" value={raised.net} signed />],
+              ['Stage', <WorkflowStatusBadge key="stage" status={bill.workflowStatus} />],
+            ] as [string, React.ReactNode][]
+          ).map(([label, value], index) => (
+            <div key={label} className={cn('min-w-0 px-4 py-3 sm:px-6', index % 2 === 1 && 'border-l border-slate-200', index >= 2 && 'border-t border-slate-200 sm:border-t-0', index === 2 && 'sm:border-l')}>
+              <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+              <dd className="mt-1 text-sm font-semibold text-slate-900">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {canCertify && !existing ? (
+          <p className="flex items-center gap-2 border-t border-slate-200 bg-emerald-50/50 px-4 py-2.5 text-xs text-emerald-800 sm:px-6">
+            <RotateCcw className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Every amount and deduction below starts from the bill as raised — change only what the client changed, and add any extra deduction they made.
+          </p>
+        ) : null}
+      </header>
 
-      {!canCertify ? <Notice tone="blue">{certificationBlocked(bill, config.settings, actor)}</Notice> : null}
-      {!existing ? (
-        <Notice tone="emerald" title="Starting from the raised bill">
-          Every amount and deduction below is copied from the bill as raised. Change only what the client changed, and add any extra deduction they made.
+      {!canCertify ? (
+        <Notice tone={certificationNotDue(bill) ? 'amber' : 'blue'} title={certificationNotDue(bill) ? 'Not ready for certification' : 'You cannot record this certification'}>
+          {certificationBlocked(bill, config.settings, actor)}{' '}
+          <Link href={back.href} onClick={back.onClick} className="font-medium underline underline-offset-2">
+            {back.label}
+          </Link>
         </Notice>
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
-          <FormSection step={1} title="Client’s certificate" description="The certificate, measurement-book or RA reference and who certified it.">
-            <div className={FIELD_ROW}>
-              <FormField label="Certified date *" htmlFor="certified-date" width="date">
+          {/* The three facts of the certificate fill the row — the date at its own width, the
+              reference and the signatory sharing the rest — instead of three fixed widths and a gap;
+              the remarks, optional, beneath them. Each field says what goes in it. */}
+          <FormSection step={1} title="Client’s certificate" description="Which certificate, when, and who signed it.">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-[11rem_minmax(0,1fr)_minmax(0,1fr)]">
+              <FormField label="Certified date *" htmlFor="certified-date" hint="As dated on the certificate.">
                 <Input id="certified-date" type="date" required value={form.certifiedDate} onChange={(event) => set('certifiedDate', event.target.value)} />
               </FormField>
-              <FormField label="Certificate / MB reference" htmlFor="certificate-ref" width="medium">
-                <Input id="certificate-ref" value={form.reference} onChange={(event) => set('reference', event.target.value)} placeholder="e.g. MB-14 / RA-4" />
+              <FormField label="Certificate / MB reference" htmlFor="certificate-ref" hint="Certificate, measurement-book or RA bill number.">
+                <div className="relative">
+                  <FileText className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                  <Input id="certificate-ref" className="pl-9" value={form.reference} onChange={(event) => set('reference', event.target.value)} placeholder="e.g. MB-14 / RA-4" />
+                </div>
               </FormField>
-              <FormField label="Certified by" htmlFor="certified-by" width="wide">
-                <Input id="certified-by" value={form.certifiedBy} onChange={(event) => set('certifiedBy', event.target.value)} placeholder="Client’s engineer / officer" />
+              <FormField label="Certified by" htmlFor="certified-by" hint="The client’s engineer or officer." className="sm:col-span-2 lg:col-span-1">
+                <div className="relative">
+                  <UserCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                  <Input id="certified-by" className="pl-9" value={form.certifiedBy} onChange={(event) => set('certifiedBy', event.target.value)} placeholder="Name and designation" />
+                </div>
               </FormField>
             </div>
-            <FormField label="Remarks" htmlFor="certification-remarks">
-              <Textarea id="certification-remarks" rows={2} value={form.remarks} onChange={(event) => set('remarks', event.target.value)} placeholder="Why the client’s figures differ, if they do" />
+            <FormField label={<>Remarks <span className="font-normal text-slate-400">(optional)</span></>} htmlFor="certification-remarks" hint="Shown with the certification on the bill.">
+              <Textarea id="certification-remarks" rows={2} className="min-h-[4.5rem] resize-y" value={form.remarks} onChange={(event) => set('remarks', event.target.value)} placeholder="Why the client’s figures differ from the raised bill, if they do" />
             </FormField>
           </FormSection>
 
-          <FormSection step={2} title="Certified amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the certificate. A taxable or GST that differs from the raised bill is settled by a credit / debit note.">
-            <div className={FIELD_ROW}>
-              <FormField label={<Term tip="Pre-GST value the client certified.">Certified taxable (₹) *</Term>} htmlFor="certified-taxable" width="amount" hint={<RaisedHint raised={bill.taxableAmount} value={taxable} />}>
-                <Input id="certified-taxable" inputMode="decimal" required className="tabular-nums" value={form.taxableAmount} onChange={(event) => setForm((current) => ({ ...current, taxableAmount: event.target.value, gstManual: false }))} />
-              </FormField>
-              <FormField label="SEL GST registration" hint="As on the raised bill." width="wide">
+          {/*
+            Two rows that fill the width. First how GST is charged — the registration, type and rate,
+            nearly always as raised — with why beneath it. Then the amounts as an invoice reads them,
+            left to right: taxable, each GST component, total GST and the gross they make, each a
+            right-aligned rupee figure with the raised one under it.
+          */}
+          <FormSection step={2} title="Certified amount & GST" description="Type over any figure to match the certificate. A taxable or GST that differs from the raised bill needs a credit / debit note.">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.7fr)]">
+              <FormField label="SEL GST registration" hint="As on the raised bill.">
                 <div className="flex h-10 items-center truncate rounded-md border bg-slate-50 px-3 text-sm text-slate-600" title={registrationLabel}>
                   {registrationLabel}
                 </div>
               </FormField>
-              <FormField label="GST type" width="medium">
+              <FormField label="GST type">
                 <Select value={gstChoice} onValueChange={(value) => setForm((current) => ({ ...current, gstType: value as GstChoice, gstManual: false }))}>
                   <SelectTrigger aria-label="GST type">
                     <SelectValue />
@@ -329,7 +390,6 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               {gstChoice !== 'none' && gstChoice !== 'legacy' ? (
                 <FormField
                   label="GST rate %"
-                  width="short"
                   hint={
                     gstRateIsCustom ? (
                       <Input className="mt-1 h-8" inputMode="decimal" aria-label="GST rate (other)" placeholder="Type the rate %" value={form.gstRate} onChange={(event) => setForm((current) => ({ ...current, gstRate: event.target.value, gstManual: false }))} />
@@ -352,56 +412,66 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
                 </FormField>
               ) : null}
             </div>
-            <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">{gstReason}</p>
+            <p className="-mt-1 text-xs text-slate-500">{gstReason}</p>
 
-            {gstChoice === 'legacy' ? (
-              <div className={FIELD_ROW}>
-                <FormField label="GST (total, not split)" width="amount" hint={<RaisedHint raised={bill.gstAmount} value={gstTotal} />}>
-                  <Input inputMode="decimal" className="tabular-nums" value={form.legacyGstAmount} onChange={(event) => set('legacyGstAmount', event.target.value)} />
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+              <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2', gstChoice === 'cgst-sgst' ? 'lg:grid-cols-5' : gstChoice === 'none' ? 'lg:grid-cols-2' : 'lg:grid-cols-4')}>
+                <FormField label={<Term tip="Pre-GST value the client certified.">Certified taxable *</Term>} htmlFor="certified-taxable" hint={<RaisedHint raised={bill.taxableAmount} value={taxable} />}>
+                  <RupeeInput id="certified-taxable" required value={form.taxableAmount} onChange={(value) => setForm((current) => ({ ...current, taxableAmount: value, gstManual: false }))} />
                 </FormField>
-              </div>
-            ) : gstChoice === 'none' ? null : (
-              <div className={FIELD_ROW}>
-                {gstChoice === 'cgst-sgst' ? (
+                {gstChoice === 'legacy' ? (
+                  <FormField label="GST (total, not split)" hint={<RaisedHint raised={bill.gstAmount} value={gstTotal} />}>
+                    <RupeeInput aria-label="Certified GST" value={form.legacyGstAmount} onChange={(value) => set('legacyGstAmount', value)} />
+                  </FormField>
+                ) : gstChoice === 'cgst-sgst' ? (
                   <>
-                    <FormField label={`CGST @ ${computedGst.cgstRate}%`} width="amount" hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.cgstAmount ?? 0} value={components.cgstAmount} /> : undefined}>
-                      <Input inputMode="decimal" aria-label="Certified CGST" className="tabular-nums" value={form.gstManual ? form.cgstAmount : String(components.cgstAmount)} onChange={(event) => editComponent('cgstAmount', event.target.value)} />
+                    <FormField label={`CGST @ ${computedGst.cgstRate}%`} hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.cgstAmount ?? 0} value={components.cgstAmount} /> : undefined}>
+                      <RupeeInput aria-label="Certified CGST" value={form.gstManual ? form.cgstAmount : String(components.cgstAmount)} onChange={(value) => editComponent('cgstAmount', value)} />
                     </FormField>
-                    <FormField label={`SGST @ ${computedGst.sgstRate}%`} width="amount" hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.sgstAmount ?? 0} value={components.sgstAmount} /> : undefined}>
-                      <Input inputMode="decimal" aria-label="Certified SGST" className="tabular-nums" value={form.gstManual ? form.sgstAmount : String(components.sgstAmount)} onChange={(event) => editComponent('sgstAmount', event.target.value)} />
+                    <FormField label={`SGST @ ${computedGst.sgstRate}%`} hint={bill.gstType === 'cgst-sgst' ? <RaisedHint raised={bill.sgstAmount ?? 0} value={components.sgstAmount} /> : undefined}>
+                      <RupeeInput aria-label="Certified SGST" value={form.gstManual ? form.sgstAmount : String(components.sgstAmount)} onChange={(value) => editComponent('sgstAmount', value)} />
                     </FormField>
                   </>
-                ) : (
-                  <FormField label={`IGST @ ${computedGst.igstRate}%`} width="amount" hint={bill.gstType === 'igst' ? <RaisedHint raised={bill.igstAmount ?? 0} value={components.igstAmount} /> : undefined}>
-                    <Input inputMode="decimal" aria-label="Certified IGST" className="tabular-nums" value={form.gstManual ? form.igstAmount : String(components.igstAmount)} onChange={(event) => editComponent('igstAmount', event.target.value)} />
+                ) : gstChoice === 'igst' ? (
+                  <FormField label={`IGST @ ${computedGst.igstRate}%`} hint={bill.gstType === 'igst' ? <RaisedHint raised={bill.igstAmount ?? 0} value={components.igstAmount} /> : undefined}>
+                    <RupeeInput aria-label="Certified IGST" value={form.gstManual ? form.igstAmount : String(components.igstAmount)} onChange={(value) => editComponent('igstAmount', value)} />
                   </FormField>
-                )}
-                <FormField
-                  label="Total GST"
-                  width="amount"
-                  hint={
-                    <>
-                      <RaisedHint raised={bill.gstAmount} value={gstTotal} /> · {form.gstManual ? 'typed from the certificate' : 'calculated from the certified taxable'}
-                    </>
-                  }
-                >
-                  <div className="flex h-10 items-center justify-between rounded-md border bg-slate-50 px-3 text-sm font-semibold">
-                    <Amount value={gstTotal} signed />
-                    {form.gstManual ? (
-                      <button type="button" className="text-xs font-normal text-emerald-700 hover:underline" onClick={() => set('gstManual', false)}>
-                        Recalculate
-                      </button>
-                    ) : null}
+                ) : null}
+                {gstChoice === 'cgst-sgst' || gstChoice === 'igst' ? (
+                  <FormField
+                    label="Total GST"
+                    hint={
+                      <>
+                        <RaisedHint raised={bill.gstAmount} value={gstTotal} />
+                        <span className="block">{form.gstManual ? 'Typed from the certificate.' : 'Worked out from the taxable.'}</span>
+                      </>
+                    }
+                  >
+                    <div className="flex h-10 items-center justify-between gap-2 rounded-md border bg-white px-3 text-sm font-semibold tabular-nums">
+                      {form.gstManual ? (
+                        <button type="button" className="text-xs font-normal text-emerald-700 hover:underline" onClick={() => set('gstManual', false)}>
+                          Recalculate
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      <Amount value={gstTotal} signed />
+                    </div>
+                  </FormField>
+                ) : null}
+                <FormField label="Certified gross" hint={<RaisedHint raised={raised.grossAmount} value={gross} />}>
+                  <div className="flex h-10 items-center justify-end rounded-md border border-emerald-200 bg-emerald-50/50 px-3 text-sm font-bold tabular-nums text-slate-900">
+                    <Amount value={gross} signed />
                   </div>
                 </FormField>
               </div>
-            )}
+            </div>
           </FormSection>
 
           <FormSection
             step={3}
             title="Certified deductions"
-            description="What the client deducts. These replace the raised deductions in the bill’s net, outstanding and retention — no note is needed for them. Change an amount, remove a line, or add the extra deductions the client made (penalty, LD, extra retention…)."
+            description="What the client deducts. These replace the raised deductions in the bill’s net and outstanding — no note needed. Change, remove, or add what the client changed (penalty, LD, extra retention…)."
             actions={
               <Button type="button" size="sm" variant="outline" className="gap-1.5" onClick={() => setRows((rows) => [...rows, emptyDeductionRow()])}>
                 <Plus className="h-4 w-4" /> Add deduction
@@ -470,9 +540,14 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             </div>
           </FormSection>
           <BtError message={saveError} />
-          <div className="flex gap-2">
+          {/* Below `xl` the panel comes after the whole form, so Save rides along at the bottom of
+              the screen instead of waiting there; beside the form it sits under the panel. */}
+          <div className="sticky bottom-0 z-10 -mx-1 flex gap-2 border-t border-slate-200 bg-white/95 px-1 py-3 backdrop-blur-sm hr-sticky-actions xl:static xl:mx-0 xl:border-0 xl:bg-transparent xl:p-0 xl:backdrop-blur-none">
             <Button asChild variant="outline" className="flex-1">
-              <Link href={`/bill-tracking/bills/${bill.id}?tab=certification`}>Cancel</Link>
+              <Link href={back.href} onClick={back.onClick}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" />
+                Cancel
+              </Link>
             </Button>
             <Button type="submit" className="flex-1 gap-1.5" disabled={saving || !canCertify || !form.certifiedDate}>
               <Save className="h-4 w-4" />
@@ -490,6 +565,18 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
 
 /** A change with its sign: "+₹5,000" / "−₹1,00,000". */
 const changeText = (change: number) => `${change > 0 ? '+' : '−'}${formatINR(Math.abs(change))}`;
+
+/** An amount typed in rupees: the ₹ before it, the figure to the right in even-width digits. */
+function RupeeInput({ value, onChange, ...props }: { value: string; onChange: (value: string) => void; id?: string; required?: boolean; 'aria-label'?: string }) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">
+        ₹
+      </span>
+      <Input {...props} inputMode="decimal" className="bg-white pl-7 text-right tabular-nums" value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
 
 /** "Raised ₹10,00,000" under a field, amber once the certified figure differs. */
 function RaisedHint({ raised, value }: { raised: number; value: number }) {

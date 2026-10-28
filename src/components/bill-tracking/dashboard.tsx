@@ -31,17 +31,15 @@ import {
 
 import { KpiCard } from '@/components/shared/kpi-card';
 import { PageHeader } from '@/components/shared/page-header';
-import { TRANSACTION_TYPE_LABELS } from '@/lib/bill-tracking/types';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import type { CertificationTotals } from '@/lib/bill-tracking/certification';
 import type { AgeingReport, CollectionLine, DashboardKpis, ExceptionItem, ForecastItem, ForecastWindow, GroupRow, MonthlyFlowPoint, TargetPerformanceRow } from '@/lib/bill-tracking/reports';
 
 import { useBtQuery, useLookups } from './bt-client';
-import { useUrlFilters } from './bt-filters';
-import { BtToolbar, ToolbarDate, ToolbarSelect } from './bt-toolbar';
+import { BillFilterBar, useUrlFilters } from './bt-filters';
 import { billReference, type BillRow } from './bill-register';
 import { AgeingChart, BillingCollectionChart, ChartPanel, RankedBars, RetentionBar, TargetActualChart } from './dashboard-charts';
-import { AgeingBadge, Amount, BtError, BtLoading, DrillLink, FySelect, MoneyKpi, dateText, percentText, toQuery } from './bt-ui';
+import { AgeingBadge, Amount, BtError, BtLoading, DrillLink, MoneyKpi, dateText, percentText, toQuery } from './bt-ui';
 
 interface DashboardData {
   asOf: string;
@@ -62,10 +60,6 @@ interface DashboardData {
   exceptions: { kind: string; label: string; count: number; amount: number }[];
   retention: { deducted: number; released: number; balance: number; dueThisMonth: number; overdue: number };
   certification: CertificationTotals;
-}
-
-function MiniSelect({ label, value, onChange, options, all }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; all: string }) {
-  return <ToolbarSelect label={label} value={value} onChange={onChange} options={options} allLabel={all} />;
 }
 
 function TableBlock({ title, children, href, linkLabel = 'View all' }: { title: string; children: React.ReactNode; href?: string; linkLabel?: string }) {
@@ -92,30 +86,22 @@ export default function BillTrackingDashboard() {
   const filters = useUrlFilters();
   const { data, loading, error, reload } = useBtQuery<DashboardData>(`dashboard?${filters.apiQuery()}`);
   const fy = filters.fy;
-  // Links carry the dashboard's own filters forward.
-  const carry = { fy, project: filters.get('project'), client: filters.get('client'), dgm: filters.get('dgm'), billType: filters.get('billType'), txn: filters.get('txn'), from: filters.get('from'), to: filters.get('to') };
+  // Links carry every filter in force forward — whatever the bar set — so a figure opens the bills
+  // it was worked out from. Paging and sorting stay behind.
+  const carry: Record<string, string | undefined> = { fy };
+  filters.params.forEach((value, key) => {
+    if (!['page', 'size', 'sort', 'dir', 'view'].includes(key)) carry[key] = value;
+  });
   const link = (path: string, extra: Record<string, string | undefined> = {}) => `${path}${toQuery({ ...carry, ...extra })}`;
 
   return (
     <div className="space-y-4">
       <PageHeader icon={LayoutDashboard} title="Billing & Collection Dashboard" description={data ? `As on ${dateText(data.asOf)} · FY ${data.financialYear}${lookups.allProjects ? '' : ` · your ${lookups.projects.length} assigned project(s)`}` : 'Billing, collections, outstanding and retention at a glance.'} />
 
-      <BtToolbar
-        activeCount={filters.activeCount}
-        onClear={filters.clear}
-        controls={
-          <>
-            <FySelect value={fy} onChange={(value) => filters.set({ fy: value })} />
-            <MiniSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={lookups.projects.map((project) => ({ value: project.id, label: project.name }))} all="All projects" />
-            <MiniSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} all="All clients" />
-            <MiniSelect label="DGM" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} all="All offices" />
-            <MiniSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={[...new Set(lookups.config.billTypes.filter((type) => type.active).map((type) => type.name))].sort().map((name) => ({ value: name, label: name }))} all="All" />
-            <MiniSelect label="Type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))} all="All" />
-            <ToolbarDate label="From" value={filters.get('from')} onChange={(value) => filters.set({ from: value || undefined })} />
-            <ToolbarDate label="To" value={filters.get('to')} onChange={(value) => filters.set({ to: value || undefined })} />
-          </>
-        }
-      />
+      {/* The bill register's own filter bar — search, FY, project and status, the rest in "More
+          filters", saved views — so the dashboard is filtered exactly as the lists it opens. The
+          dashboard is worked out from the same filters on the server. */}
+      <BillFilterBar filters={filters} page="dashboard" />
 
       <BtError message={error} onRetry={reload} />
       {loading && !data ? <BtLoading label="Calculating…" /> : null}

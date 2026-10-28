@@ -9,18 +9,31 @@
  * reloads the record rather than patching numbers locally.
  */
 
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Activity,
   AlertTriangle,
+  ArrowLeft,
+  Building2,
   CalendarClock,
+  CalendarDays,
+  Check,
   CheckCircle2,
+  Circle,
   ClipboardCheck,
   Copy,
+  Download,
+  ExternalLink,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   HandCoins,
+  History,
+  Hourglass,
+  Loader2,
   Mail,
   MessageSquare,
   MoreHorizontal,
@@ -28,16 +41,20 @@ import {
   Pencil,
   PhoneCall,
   PiggyBank,
-  ReceiptIndianRupee,
   Scissors,
   ShieldCheck,
+  StickyNote,
   Trash2,
   Undo2,
   Upload,
+  UploadCloud,
   Wallet,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { OverflowActions, type OverflowAction } from '@/components/shared/overflow-actions';
+import { TableCard } from '@/components/shared/table-card';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -46,15 +63,16 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { SectionHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { Badge } from '@/components/ui/badge';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { RETENTION_KINDS, daysBetween, deductionsOfKind, effectiveDeductions, totalDeduction, type LedgerLine } from '@/lib/bill-tracking/calculations';
+import { RETENTION_KINDS, WORKFLOW_PATH, daysBetween, deductionsOfKind, effectiveDeductions, totalDeduction, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
-import { STEP_PERMISSION, availableActions, certificationBlocked, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
+import { STEP_PERMISSION, WORKFLOW_ACTION_RULES, availableActions, certificationBlocked, certificationNotDue, isStepEnabled, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { billRetentionSlabs, formatRate, releaseSlabKey, retentionSource, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
@@ -64,8 +82,11 @@ import {
   FOLLOW_UP_METHODS,
   PAYMENT_STATUS_LABELS,
   WORKFLOW_STATUS_LABELS,
+  type BillWorkflowStatus,
+  type CertificationState,
   type Bill,
   type BillActivity,
+  type BillDocumentCategory,
   type BillCollection,
   type BillComment,
   type BillDeduction,
@@ -77,7 +98,7 @@ import {
 
 import { btDownload, btFetch, useBt, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, CertificationBadge, Notice, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, Notice, TransactionTypeBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
 
 interface Detail {
   bill: BillRow;
@@ -110,6 +131,278 @@ export default function BillDetail({ billId }: { billId: string }) {
   return <DetailBody detail={data} reload={reload} tab={tab} setTab={setTab} />;
 }
 
+/** Copies a reference to the clipboard — invoice and bill numbers are long and pasted into mails and portals. */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const { toast } = useToast();
+  return (
+    <button
+      type="button"
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 print:hidden"
+      title={`Copy ${label}`}
+      aria-label={`Copy ${label}`}
+      onClick={() => void navigator.clipboard.writeText(value).then(() => toast({ title: `${label} copied` }))}
+    >
+      <Copy className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+type StepTone = 'done' | 'current' | 'attention' | 'pending' | 'danger';
+
+const STEP_DOT: Record<StepTone, string> = {
+  done: 'border-emerald-700 bg-emerald-700 text-white',
+  current: 'border-emerald-700 bg-emerald-700',
+  attention: 'border-amber-500 bg-amber-50',
+  pending: 'border-slate-300 bg-white',
+  danger: 'border-rose-600 bg-rose-50',
+};
+const STEP_INNER: Record<StepTone, string | null> = { done: null, current: 'bg-white', attention: 'bg-amber-500', pending: null, danger: 'bg-rose-600' };
+const STEP_LABEL: Record<StepTone, string> = { done: 'text-slate-700', current: 'text-slate-900', attention: 'text-amber-800', pending: 'text-slate-400', danger: 'text-rose-700' };
+const STEP_CAPTION: Record<StepTone, string> = { done: 'text-slate-500', current: 'text-emerald-700', attention: 'text-amber-700', pending: 'text-slate-400', danger: 'text-rose-700' };
+
+/** Workflow stages after the payment, left off the line. */
+const AFTER_PAYMENT: readonly BillWorkflowStatus[] = ['reconciliation', 'closed'];
+
+interface PipelineStep {
+  status: BillWorkflowStatus;
+  label: string;
+  /** A word under the stage: "Current", the certification, the payment. */
+  caption?: string;
+  tone: StepTone;
+  current: boolean;
+}
+
+/**
+ * The bill's pipeline up to its payment — every workflow stage in use (Settings → Workflow switches the optional
+ * ones off) — and where it stands on it. Stages behind it are done, its own is current, those ahead
+ * are to come. *Certified by client* says what the client did; the payment follow-up stage, which is
+ * optional work rather than a milestone, is shown as *Payment* — what has been received.
+ */
+function billPipeline(bill: BillRow, certificationState: CertificationState | null, settings: Parameters<typeof isStepEnabled>[0]): PipelineStep[] {
+  // A returned bill sits at the stage it was returned from, marked as such.
+  const at = bill.workflowStatus === 'returned' ? (bill.returnedFrom ?? 'submitted') : bill.workflowStatus;
+  // The line ends at the payment: reconciliation and closing are book-keeping after it, so a bill at
+  // either is past every step shown (the payment step says which).
+  const stages = WORKFLOW_PATH.filter((status) => !AFTER_PAYMENT.includes(status) && (isStepEnabled(settings, status) || status === at));
+  const atIndex = AFTER_PAYMENT.includes(at) ? stages.length : stages.indexOf(at);
+  const paid = bill.paymentStatus === 'received' || bill.paymentStatus === 'adjusted';
+  const partly = bill.paymentStatus === 'partially_received' || bill.paymentStatus === 'over_received';
+  return stages.map((status, index) => {
+    const current = index === atIndex;
+    let tone: StepTone = index < atIndex ? 'done' : current ? 'current' : 'pending';
+    let caption: string | undefined = current ? 'Current' : undefined;
+    if (current && bill.workflowStatus === 'returned') {
+      tone = 'danger';
+      caption = 'Returned for correction';
+    }
+    if (current && bill.isDeleted) {
+      tone = 'danger';
+      caption = 'Bill deleted';
+    }
+    if (status === 'certified') {
+      if (certificationState === null) {
+        caption = isNote(bill.transactionType) ? 'Not needed for a note' : caption;
+      } else if (certificationState === 'not_certified') {
+        // The client is waiting to certify only once the bill has gone to them (raised); before
+        // that the stage is simply ahead, like the rest (certificationNotDue).
+        if (atIndex >= stages.indexOf('raised')) {
+          tone = 'attention';
+          caption = 'Awaiting';
+        }
+      } else if (certificationState === 'adjustment_pending') {
+        tone = 'attention';
+        caption = 'Note pending';
+      } else {
+        tone = index <= atIndex ? (current ? 'current' : 'done') : 'done';
+        caption = 'Certified';
+      }
+    }
+    if (status === 'payment_followup') {
+      // Following up is optional work, not a milestone: this place on the line shows the payment
+      // itself — done once received, amber while part-paid or still unpaid after the bill moved on.
+      const caption = current ? `Following up · ${PAYMENT_STATUS_LABELS[bill.paymentStatus]}` : AFTER_PAYMENT.includes(at) ? `${PAYMENT_STATUS_LABELS[bill.paymentStatus]} · ${WORKFLOW_STATUS_LABELS[at]}` : PAYMENT_STATUS_LABELS[bill.paymentStatus];
+      const tone: StepTone = paid ? 'done' : partly || index < atIndex ? 'attention' : current ? 'current' : 'pending';
+      return { status, label: 'Payment', caption, tone, current };
+    }
+    return { status, label: WORKFLOW_STATUS_LABELS[status], caption, tone, current };
+  });
+}
+
+const isNote = (type: BillRow['transactionType']) => type === 'credit_note' || type === 'debit_note';
+
+/** The pipeline as a progress line; scrolled so the current stage is in view where it overflows (a phone). */
+function Pipeline({ steps }: { steps: PipelineStep[] }) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const currentIndex = steps.findIndex((step) => step.current);
+  useEffect(() => {
+    const list = listRef.current;
+    const item = list?.children[currentIndex] as HTMLElement | undefined;
+    if (!list || !item || list.scrollWidth <= list.clientWidth) return;
+    list.scrollLeft = Math.max(0, item.offsetLeft - list.clientWidth / 2 + item.offsetWidth / 2);
+  }, [currentIndex]);
+  return (
+    <ol ref={listRef} className="flex overflow-x-auto border-t border-slate-200 px-4 py-5 sm:px-6" aria-label="Bill pipeline">
+      {steps.map((step, index) => (
+        // The last stage has no line after it, so it takes only its label's width — not an equal share
+        // left empty — and the line runs the full width of the card, ending at the last dot.
+        <li key={step.status} className={cn('min-w-24', index < steps.length - 1 ? 'flex-1' : 'flex-none')} aria-current={step.current ? 'step' : undefined}>
+          <div className="flex items-center">
+            <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2', STEP_DOT[step.tone], step.current && 'ring-4 ring-emerald-100')} aria-hidden="true">
+              {step.tone === 'done' ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : STEP_INNER[step.tone] ? <span className={cn('h-2 w-2 rounded-full', STEP_INNER[step.tone])} /> : null}
+            </span>
+            {index < steps.length - 1 ? <span className={cn('mx-2 h-0.5 flex-1 rounded-full', index < currentIndex ? 'bg-emerald-600' : 'bg-slate-200')} aria-hidden="true" /> : null}
+          </div>
+          <p className={cn('mt-3 pr-3 text-xs font-semibold leading-snug', STEP_LABEL[step.tone])}>{step.label}</p>
+          {step.caption ? <p className={cn('mt-0.5 pr-3 text-xs leading-snug', STEP_CAPTION[step.tone])}>{step.caption}</p> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * The top of a bill: back, the project it belongs to, what it is called (the GST invoice, or the
+ * internal bill number where there is none) and what can be done with it; then, under a rule, its
+ * pipeline from draft to payment, with the certification and the payment on their stages. The
+ * actions sit on their own row beneath the title; on a phone the pipeline scrolls sideways, opened at
+ * the current stage.
+ */
+function BillHeader({ bill, certificationState, actions }: { bill: BillRow; certificationState: CertificationState | null; actions: ReactNode }) {
+  const title = bill.gstInvoiceNumber || bill.billSerialNumber || 'Bill';
+  const { config } = useLookups();
+  const steps = billPipeline(bill, certificationState, config.settings);
+  return (
+    <header className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* The actions on a row of their own under the title, at every width: beside it, the workflow
+          buttons squeezed the invoice number into two lines. Indented to the title's edge. */}
+      <div className="flex flex-col gap-4 p-4 sm:p-6">
+        <div className="flex min-w-0 flex-1 items-start gap-4">
+          <Button asChild variant="outline" size="icon" className="h-10 w-10 shrink-0 rounded-lg print:hidden">
+            <Link href="/bill-tracking/bills" aria-label="Bill register" title="Bill register">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </Button>
+          <div className="min-w-0 flex-1">
+            {/* The invoice number and its project on one row — the project after a rule, as a link to
+                its bills — wrapping only where the screen is too narrow for both. */}
+            <div className="flex min-h-10 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+              <h1 className="min-w-0 break-all text-xl font-bold leading-tight tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
+              <CopyButton value={title} label={bill.gstInvoiceNumber ? 'Invoice number' : 'Bill number'} />
+              {bill.transactionType !== 'invoice' ? <TransactionTypeBadge type={bill.transactionType} /> : null}
+              <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" aria-hidden="true" />
+              <Link href={`/bill-tracking/bills?project=${bill.projectId}&fy=all`} className="min-w-0 max-w-full truncate text-xs font-semibold uppercase tracking-wide text-emerald-700 hover:underline" title={`All bills of ${bill.projectNameSnapshot}`}>
+                {bill.projectNameSnapshot}
+              </Link>
+            </div>
+            {/* The long internal bill number is not repeated here: it heads the Overview's
+                "Invoice & GST" card, with its own copy button. */}
+          </div>
+        </div>
+        {actions ? <div className="page-header-actions flex w-full min-w-0 flex-wrap items-center gap-2.5 print:hidden sm:pl-14">{actions}</div> : null}
+      </div>
+      <Pipeline steps={steps} />
+    </header>
+  );
+}
+
+/**
+ * The bill's key facts, under its header: dates, client, year and category in a grid that reflows
+ * from two columns on a phone to six on a desktop; then what the bill waits for, and — while payment
+ * waits for the client's certification — that hold, all in one card rather than a row of tiny labels
+ * and a separate banner.
+ */
+function BillFacts({
+  bill,
+  category,
+  today,
+  waitingOn,
+  awaitingCertification,
+  onOpenCertification,
+}: {
+  bill: BillRow;
+  category: string;
+  today: string;
+  waitingOn: { stage: string; who: string } | null;
+  awaitingCertification: boolean;
+  onOpenCertification?: () => void;
+}) {
+  const overdueDays = bill.overdue && bill.dueDate ? Math.max(0, daysBetween(bill.dueDate, today) ?? 0) : 0;
+  const facts: { label: string; value: ReactNode; hint?: ReactNode; wide?: boolean }[] = [
+    { label: 'Bill date', value: dateText(bill.billDate) },
+    {
+      label: 'Due date',
+      value: <span className={bill.overdue ? 'text-rose-700' : undefined}>{dateText(bill.dueDate)}</span>,
+      hint: bill.overdue ? <span className="font-medium text-rose-600">{overdueDays ? `${overdueDays} day${overdueDays === 1 ? '' : 's'} overdue` : 'Overdue'}</span> : undefined,
+    },
+    { label: 'Client', value: bill.clientNameSnapshot ? bill.clientNameSnapshot : <span className="font-normal text-slate-400">Not set</span> },
+    { label: 'Financial year', value: bill.financialYear },
+    // The widest value: it claims more of the row, and a row of its own on a phone.
+    { label: 'Category', value: category, hint: bill.billTypeName, wide: true },
+  ];
+  return (
+    <section aria-label="Bill details" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      {/* Each fact grows from a base width, so every row fills the card edge to edge at any screen
+          width — two to a row on a phone, all on one line on a desktop — and gap-px over a tinted
+          background draws the dividers wherever the rows break. */}
+      <dl className="flex flex-wrap gap-px bg-slate-100">
+        {facts.map((fact) => (
+          <div key={fact.label} className={cn('min-w-0 grow bg-white px-4 py-3', fact.wide ? 'basis-60 grow-[2]' : 'basis-36')}>
+            <dt className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{fact.label}</dt>
+            <dd className="mt-1 break-words text-sm font-semibold text-slate-900">{fact.value}</dd>
+            {fact.hint ? <dd className="mt-0.5 break-words text-xs text-slate-500">{fact.hint}</dd> : null}
+          </div>
+        ))}
+      </dl>
+      {/* What the bill waits for and the certification hold share one row from a tablet up, each
+          taking half; on a phone they stack. Inside the half, the button goes under the message until
+          a wide screen leaves room beside it, so the sentence is never squeezed into a ragged wrap. */}
+      {waitingOn || awaitingCertification ? (
+        <div className="flex flex-col border-t border-slate-200 md:flex-row">
+          {waitingOn ? (
+            <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500" aria-hidden="true">
+                <Hourglass className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 text-sm">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Waiting for</p>
+                <p className="mt-0.5 break-words text-slate-700">
+                  <span className="font-semibold text-slate-900">{waitingOn.stage}</span>
+                  <span className="text-slate-400"> · </span>
+                  {waitingOn.who}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {awaitingCertification ? (
+            <div className={cn('flex min-w-0 flex-1 flex-col gap-2.5 bg-amber-50 px-4 py-3 xl:flex-row xl:items-center xl:gap-3', waitingOn && 'border-t border-amber-200 md:border-l md:border-t-0')}>
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700" aria-hidden="true">
+                  <ClipboardCheck className="h-4 w-4" />
+                </span>
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold text-amber-900">Awaiting the client’s certification</p>
+                  <p className="mt-0.5 text-amber-800">Payment can be received once the client certifies this bill.</p>
+                </div>
+              </div>
+              {onOpenCertification ? (
+                <Button type="button" size="sm" variant="outline" className="w-full shrink-0 border-amber-300 bg-white text-amber-900 hover:bg-amber-100 sm:ml-11 sm:w-auto sm:self-start xl:ml-0 xl:self-auto" onClick={onOpenCertification}>
+                  Open certification
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * The bill's tabs share the bar's width from a laptop up, so the row is filled edge to edge instead
+ * of bunching on the left; below that they keep their size and the bar scrolls sideways.
+ */
+const DETAIL_TAB = cn(BT_TAB, 'lg:flex-1');
+
 function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: () => void; tab: string; setTab: (tab: string) => void }) {
   const { bill } = detail;
   const lookups = useLookups();
@@ -133,13 +426,12 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   const canCertify = certificationBlocked(bill, settings, actor) === null;
   const waiting = waitingFor(bill, settings);
   const nameOf = (id: string) => lookups.users.find((user) => user.id === id)?.name ?? 'Unknown user';
-  const waitingText = !waiting
+  // The next stage and who can take it, said apart so the header can set the stage in bold.
+  const waitingOn = !waiting
     ? null
     : waiting.status === null
-      ? `${waiting.userIds.map(nameOf).join(', ') || 'The preparer'} · correction`
-      : waiting.userIds.length
-        ? `${waiting.userIds.map(nameOf).join(', ')} · ${WORKFLOW_STATUS_LABELS[waiting.status]}`
-        : `${WORKFLOW_STATUS_LABELS[waiting.status]} · anyone with ${STEP_PERMISSION[waiting.status]}`;
+      ? { stage: 'Correction', who: waiting.userIds.map(nameOf).join(', ') || 'The preparer' }
+      : { stage: WORKFLOW_STATUS_LABELS[waiting.status], who: waiting.userIds.length ? waiting.userIds.map(nameOf).join(', ') : `Anyone with ${STEP_PERMISSION[waiting.status]}` };
   const runWorkflow = async (action: WorkflowAction, remarks?: string) => {
     try {
       await btFetch(`bills/${bill.id}/workflow`, { body: { action, remarks } });
@@ -149,145 +441,79 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
       toast({ title: 'Could not update the workflow', description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
     }
   };
+  // Return, close and reopen ask for a remark first; the rest move the bill at once.
+  const startWorkflow = (action: WorkflowActionName) => {
+    if (action === 'return' || action === 'close' || action === 'reopen') {
+      setPendingAction(action);
+      setDialog('workflow');
+    } else void runWorkflow(action);
+  };
+  // The move into the stage the bill is waiting for is the one to make, so it is the solid button.
+  const nextAction = actions.find((entry) => entry.tone !== 'danger' && WORKFLOW_ACTION_RULES[entry.action].to === waiting?.status)?.action ?? actions.find((entry) => entry.tone !== 'danger')?.action;
+  // The header's actions, most important first: the next workflow step, then taking the money (or
+  // the certification it waits for), the other workflow moves, Edit, and the tools after them.
+  const certificationLabel = bill.certification ? 'Edit client certification' : 'Record certification';
+  const headerActions: OverflowAction[] = [
+    ...actions.map((entry): OverflowAction => ({
+      key: `wf-${entry.action}`,
+      label: entry.label,
+      icon: entry.tone === 'danger' ? Undo2 : CheckCircle2,
+      variant: entry.action === nextAction ? 'primary' : entry.tone === 'danger' ? 'danger' : 'secondary',
+      priority: entry.action === nextAction ? 0 : entry.tone === 'danger' ? 3 : 2,
+      onSelect: () => startWorkflow(entry.action),
+    })),
+    ...(can('Collections', 'Add') && bill.outstandingAmount !== 0 && !receiptBlock
+      ? [{ key: 'receive', label: 'Receive', icon: Wallet, href: `/bill-tracking/collections/new?bill=${bill.id}`, variant: 'primary', priority: 1 } satisfies OverflowAction]
+      : []),
+    // Payment waiting on the certification makes recording it a main action; otherwise a tool.
+    ...(canCertify && (receiptBlock || detail.certification)
+      ? [{ key: 'certify', label: certificationLabel, icon: ClipboardCheck, href: `/bill-tracking/bills/${bill.id}/certify`, variant: receiptBlock ? 'primary' : 'secondary', priority: receiptBlock ? 1 : 6 } satisfies OverflowAction]
+      : []),
+    ...(can('Bills', 'Edit') ? [{ key: 'edit', label: 'Edit', icon: Pencil, href: `/bill-tracking/bills/${bill.id}/edit`, priority: 4 } satisfies OverflowAction] : []),
+    ...(can('Follow-ups', 'Add') ? [{ key: 'follow-up', label: 'Add follow-up', icon: PhoneCall, onSelect: () => setTab('followup'), priority: 5 } satisfies OverflowAction] : []),
+    ...(bill.netMismatch && !bill.netMismatch.resolvedAt && can('Bills', 'Verify')
+      ? [{ key: 'mismatch', label: 'Resolve net mismatch', icon: AlertTriangle, onSelect: () => setDialog('mismatch'), priority: 6 } satisfies OverflowAction]
+      : []),
+    ...(detail.certification?.suggestedNote && can('Bills', 'Add')
+      ? [{ key: 'match-note', label: 'Raise note to match certification', icon: Undo2, href: matchNoteHref(bill), priority: 7 } satisfies OverflowAction]
+      : []),
+    ...(can('Bills', 'Add') && bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note'
+      ? ([
+          { key: 'credit-note', label: 'Raise credit note', icon: Undo2, href: `/bill-tracking/bills/new?type=credit_note&project=${bill.projectId}&against=${bill.id}`, priority: 8 },
+          { key: 'debit-note', label: 'Raise debit note', icon: FileText, href: `/bill-tracking/bills/new?type=debit_note&project=${bill.projectId}&against=${bill.id}`, priority: 8 },
+        ] satisfies OverflowAction[])
+      : []),
+    { key: 'email', label: 'Draft follow-up email', icon: Mail, onSelect: () => setDialog('email'), priority: 9 },
+    ...(can('Bills', 'Approve') ? [{ key: 'due', label: 'Revise due date', icon: CalendarClock, onSelect: () => setDialog('due'), priority: 9 } satisfies OverflowAction] : []),
+    ...(can('Bills', 'Override Status') ? [{ key: 'override', label: 'Override payment status', icon: ShieldCheck, onSelect: () => setDialog('override'), priority: 10 } satisfies OverflowAction] : []),
+    ...(can('Bills', 'Delete')
+      ? [{ key: 'delete', label: 'Delete bill', icon: Trash2, onSelect: () => setDialog('delete'), variant: 'danger', menuOnly: true, separatorBefore: true } satisfies OverflowAction]
+      : []),
+  ];
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        icon={ReceiptIndianRupee}
-        backHref="/bill-tracking/bills"
-        backLabel="Bill register"
-        eyebrow={bill.projectNameSnapshot}
-        title={`Bill ${bill.billSerialNumber ?? ''}${bill.gstInvoiceNumber ? ` · ${bill.gstInvoiceNumber}` : ''}`}
-        badge={
-          <div className="flex flex-wrap gap-1.5">
-            <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} />
-            <WorkflowStatusBadge status={bill.workflowStatus} />
-            <TransactionTypeBadge type={bill.transactionType} />
-            {detail.certification && !bill.isDeleted ? <CertificationBadge state={detail.certification.summary.state} /> : null}
-            {bill.isDeleted ? <StatusBadge tone="danger">Deleted</StatusBadge> : null}
-          </div>
-        }
-        meta={[
-          { label: 'Bill date', value: dateText(bill.billDate) },
-          { label: 'Category', value: `${categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName)} › ${bill.billTypeName}` },
-          { label: 'Client', value: bill.clientNameSnapshot ?? '—' },
-          { label: 'FY', value: bill.financialYear },
-          { label: 'Due', value: dateText(bill.dueDate) },
-          ...(waitingText ? [{ label: 'Waiting for', value: waitingText }] : []),
-        ]}
+      <BillHeader
+        bill={bill}
+        certificationState={detail.certification && !bill.isDeleted ? detail.certification.summary.state : null}
         actions={
           bill.isDeleted ? null : (
-            <div className="flex flex-wrap gap-2">
-              {can('Collections', 'Add') && bill.outstandingAmount !== 0 && !receiptBlock ? (
-                <Button asChild size="sm" className="gap-1.5">
-                  <Link href={`/bill-tracking/collections/new?bill=${bill.id}`}>
-                    <Wallet className="h-4 w-4" /> Receive
-                  </Link>
-                </Button>
-              ) : null}
-              {receiptBlock && canCertify ? (
-                <Button asChild size="sm" className="gap-1.5">
-                  <Link href={`/bill-tracking/bills/${bill.id}/certify`}>
-                    <ClipboardCheck className="h-4 w-4" /> Record certification
-                  </Link>
-                </Button>
-              ) : null}
-              {can('Bills', 'Edit') ? (
-                <Button asChild size="sm" variant="outline" className="gap-1.5">
-                  <Link href={`/bill-tracking/bills/${bill.id}/edit`}>
-                    <Pencil className="h-4 w-4" /> Edit
-                  </Link>
-                </Button>
-              ) : null}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline" className="gap-1.5" aria-label="More actions">
-                    <MoreHorizontal className="h-4 w-4" /> Actions
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  {actions.map((entry) => (
-                    <DropdownMenuItem
-                      key={entry.action}
-                      className={entry.tone === 'danger' ? 'text-rose-700' : undefined}
-                      onSelect={() => {
-                        if (entry.action === 'return' || entry.action === 'close' || entry.action === 'reopen') {
-                          setPendingAction(entry.action);
-                          setDialog('workflow');
-                        } else void runWorkflow(entry.action);
-                      }}
-                    >
-                      {entry.action === 'return' ? <Undo2 className="mr-2 h-4 w-4" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                      {entry.label}
-                    </DropdownMenuItem>
-                  ))}
-                  {actions.length ? <DropdownMenuSeparator /> : null}
-                  {can('Follow-ups', 'Add') ? (
-                    <DropdownMenuItem onSelect={() => setTab('followup')}>
-                      <PhoneCall className="mr-2 h-4 w-4" /> Add follow-up
-                    </DropdownMenuItem>
-                  ) : null}
-                  {detail.certification && canCertify ? (
-                    <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/${bill.id}/certify`)}>
-                      <ClipboardCheck className="mr-2 h-4 w-4" /> {bill.certification ? 'Edit client certification' : 'Record client certification'}
-                    </DropdownMenuItem>
-                  ) : null}
-                  {detail.certification?.suggestedNote && can('Bills', 'Add') ? (
-                    <DropdownMenuItem onSelect={() => router.push(matchNoteHref(bill))}>
-                      <Undo2 className="mr-2 h-4 w-4" /> Raise note to match certification
-                    </DropdownMenuItem>
-                  ) : null}
-                  {can('Bills', 'Add') && bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' ? (
-                    <>
-                      <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/new?type=credit_note&project=${bill.projectId}&against=${bill.id}`)}>
-                        <Undo2 className="mr-2 h-4 w-4" /> Raise credit note
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => router.push(`/bill-tracking/bills/new?type=debit_note&project=${bill.projectId}&against=${bill.id}`)}>
-                        <FileText className="mr-2 h-4 w-4" /> Raise debit note
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
-                  <DropdownMenuItem onSelect={() => setDialog('email')}>
-                    <Mail className="mr-2 h-4 w-4" /> Draft follow-up email
-                  </DropdownMenuItem>
-                  {can('Bills', 'Approve') ? (
-                    <DropdownMenuItem onSelect={() => setDialog('due')}>
-                      <CalendarClock className="mr-2 h-4 w-4" /> Revise due date
-                    </DropdownMenuItem>
-                  ) : null}
-                  {can('Bills', 'Override Status') ? (
-                    <DropdownMenuItem onSelect={() => setDialog('override')}>
-                      <ShieldCheck className="mr-2 h-4 w-4" /> Override payment status
-                    </DropdownMenuItem>
-                  ) : null}
-                  {bill.netMismatch && !bill.netMismatch.resolvedAt && can('Bills', 'Verify') ? (
-                    <DropdownMenuItem onSelect={() => setDialog('mismatch')}>
-                      <AlertTriangle className="mr-2 h-4 w-4" /> Resolve net mismatch
-                    </DropdownMenuItem>
-                  ) : null}
-                  {can('Bills', 'Delete') ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-rose-700" onSelect={() => setDialog('delete')}>
-                        <Trash2 className="mr-2 h-4 w-4" /> Delete bill
-                      </DropdownMenuItem>
-                    </>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            // As many as fit the width, by priority; the rest — and Delete, always — in the menu.
+            <OverflowActions moreLabel="Actions" actions={headerActions} />
           )
         }
       />
 
-      {receiptBlock && !bill.isDeleted && bill.outstandingAmount !== 0 ? (
-        <Notice tone="amber" title="Awaiting the client’s certification">
-          Payment can be received once the client certifies this bill.{' '}
-          <button type="button" className="font-medium text-emerald-700 hover:underline" onClick={() => setTab('certification')}>
-            Open certification
-          </button>
-        </Notice>
-      ) : null}
+      <BillFacts
+        bill={bill}
+        category={categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName)}
+        today={lookups.today}
+        waitingOn={bill.isDeleted ? null : waitingOn}
+        // Only once the bill has gone to the client: before it is raised there is nothing for the
+        // client to certify yet, and the stage it waits for is said beside this already.
+        awaitingCertification={Boolean(receiptBlock) && !bill.isDeleted && bill.outstandingAmount !== 0 && certificationNotDue(bill) === null}
+        onOpenCertification={detail.certification ? () => setTab('certification') : undefined}
+      />
       {bill.isDeleted ? <Notice tone="rose" title="This bill has been deleted">{bill.deleteReason ?? 'No reason recorded.'} It is excluded from every total.</Notice> : null}
       {bill.againstBillId ? (
         <Notice tone="blue" title={`${bill.transactionType === 'credit_note' ? 'Credit' : 'Debit'} note against invoice ${bill.againstBillRef ?? ''}`}>
@@ -346,30 +572,36 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className={BT_TABS_LIST}>
-          <TabsTrigger className={BT_TAB} value="overview">Overview</TabsTrigger>
+          <TabsTrigger className={DETAIL_TAB} value="overview">
+            <FileText className="h-4 w-4" aria-hidden="true" /> Overview
+          </TabsTrigger>
           {detail.certification ? (
-            <TabsTrigger className={BT_TAB} value="certification">
-              Certification
+            <TabsTrigger className={DETAIL_TAB} value="certification">
+              <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> Certification
               {detail.certification.summary.state === 'adjustment_pending' ? <span className="h-1.5 w-1.5 rounded-full bg-violet-500" aria-label="note still to raise" /> : null}
             </TabsTrigger>
           ) : null}
-          <TabsTrigger className={BT_TAB} value="deductions">
-            Deductions <TabCount value={effectiveDeductions(bill).length} />
+          <TabsTrigger className={DETAIL_TAB} value="deductions">
+            <Scissors className="h-4 w-4" aria-hidden="true" /> Deductions <TabCount value={effectiveDeductions(bill).length} />
           </TabsTrigger>
-          <TabsTrigger className={BT_TAB} value="collections">
-            Receipts <TabCount value={detail.collections.length} />
+          <TabsTrigger className={DETAIL_TAB} value="collections">
+            <Wallet className="h-4 w-4" aria-hidden="true" /> Receipts <TabCount value={detail.collections.length} />
           </TabsTrigger>
-          <TabsTrigger className={BT_TAB} value="retention">Retention</TabsTrigger>
-          <TabsTrigger className={BT_TAB} value="documents">
-            Documents <TabCount value={detail.documents.length} />
+          <TabsTrigger className={DETAIL_TAB} value="retention">
+            <PiggyBank className="h-4 w-4" aria-hidden="true" /> Retention
           </TabsTrigger>
-          <TabsTrigger className={BT_TAB} value="followup">
-            Follow-up <TabCount value={detail.followUps.length} />
+          <TabsTrigger className={DETAIL_TAB} value="documents">
+            <Paperclip className="h-4 w-4" aria-hidden="true" /> Documents <TabCount value={detail.documents.length} />
           </TabsTrigger>
-          <TabsTrigger className={BT_TAB} value="comments">
-            Comments <TabCount value={detail.comments.length} />
+          <TabsTrigger className={DETAIL_TAB} value="followup">
+            <PhoneCall className="h-4 w-4" aria-hidden="true" /> Follow-up <TabCount value={detail.followUps.length} />
           </TabsTrigger>
-          <TabsTrigger className={BT_TAB} value="activity">Activity</TabsTrigger>
+          <TabsTrigger className={DETAIL_TAB} value="comments">
+            <MessageSquare className="h-4 w-4" aria-hidden="true" /> Comments <TabCount value={detail.comments.length} />
+          </TabsTrigger>
+          <TabsTrigger className={DETAIL_TAB} value="activity">
+            <Activity className="h-4 w-4" aria-hidden="true" /> Activity
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -397,7 +629,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           <CommentsTab bill={bill} comments={detail.comments} reload={reload} />
         </TabsContent>
         <TabsContent value="activity">
-          <ActivityTimeline entries={detail.activity} />
+          <ActivityTimeline entries={detail.activity} billNumber={bill.billSerialNumber} />
         </TabsContent>
       </Tabs>
 
@@ -479,67 +711,178 @@ function Facts({ items }: { items: [string, React.ReactNode][] }) {
   );
 }
 
+/** A value, or a muted dash where the bill has none — so an empty field reads as empty at a glance. */
+function orDash(value: ReactNode): ReactNode {
+  return value === null || value === undefined || value === '' || value === '—' ? <span className="font-normal text-slate-400">—</span> : value;
+}
+
+/**
+ * One group of the Overview: a titled card of label / value rows, labels to the left and values to
+ * the right, a hairline between rows. Grouped by what a reader is looking for — the invoice, where
+ * the bill belongs, its dates, its collection — rather than one 25-field grid read left to right.
+ */
+function DetailGroup({ icon: Icon, title, rows, children }: { icon: typeof FileText; title: string; rows: [string, ReactNode][]; children?: ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <h3 className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/70 px-4 py-2.5 text-sm font-semibold text-slate-800">
+        <Icon className="h-4 w-4 text-slate-500" aria-hidden="true" />
+        {title}
+      </h3>
+      <dl className="divide-y divide-slate-100 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5">
+            <dt className="shrink-0 text-slate-500">{label}</dt>
+            <dd className="min-w-0 break-words text-right font-medium text-slate-800">{orDash(value)}</dd>
+          </div>
+        ))}
+      </dl>
+      {children}
+    </section>
+  );
+}
+
+/** The GST as its lines — each component with its rate, then the total — rather than one long sum. */
+function GstLines({ bill }: { bill: Bill }) {
+  const lines: [string, number][] =
+    bill.gstType === 'cgst-sgst'
+      ? [[`CGST ${bill.cgstRate ?? 0}%`, bill.cgstAmount ?? 0], [`SGST ${bill.sgstRate ?? 0}%`, bill.sgstAmount ?? 0]]
+      : bill.gstType === 'igst'
+        ? [[`IGST ${bill.igstRate ?? 0}%`, bill.igstAmount ?? bill.gstAmount]]
+        : [];
+  if (bill.gstType === 'none') return <span>No GST</span>;
+  if (!lines.length) return <>{orDash(bill.gstAmount ? gstSummary(bill) : null)}</>;
+  return (
+    <span className="inline-grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 tabular-nums">
+      {lines.map(([label, amount]) => (
+        <Fragment key={label}>
+          <span className="font-normal text-slate-500">{label}</span>
+          <Amount value={amount} signed />
+        </Fragment>
+      ))}
+      <span className="border-t border-slate-200 pt-0.5 font-normal text-slate-500">Total</span>
+      <span className="border-t border-slate-200 pt-0.5">
+        <Amount value={bill.gstAmount} signed />
+      </span>
+    </span>
+  );
+}
+
 function OverviewTab({ bill }: { bill: BillRow }) {
   const lookups = useLookups();
+  const basis = lookups.config.settings.defaultAgeingBasis;
+  const notes = [bill.description && ['Description', bill.description], bill.remarks && ['Remarks', bill.remarks]].filter(Boolean) as [string, string][];
   return (
-    <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="space-y-5 p-4">
-        <Facts
-          items={[
-            ['Bill number', bill.billSerialNumber ?? '—'],
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <DetailGroup
+          icon={FileText}
+          title="Invoice & GST"
+          rows={[
+            ['Bill number', bill.billSerialNumber ? <span className="inline-flex items-center gap-0.5">{bill.billSerialNumber}<CopyButton value={bill.billSerialNumber} label="Bill number" /></span> : null],
             ['GST invoice', bill.gstInvoiceNumber ?? 'NA'],
-            ['GST', gstSummary(bill)],
-            ['SEL GST registration', bill.gstRegistrationLabel ? `${bill.gstRegistrationLabel}${bill.gstRegistrationGstin ? ` · ${bill.gstRegistrationGstin}` : ''}` : '—'],
-            ['Client GSTIN', bill.clientGstin ?? '—'],
-            ['Legacy Sl. No.', bill.serialNumber ?? '—'],
+            ['GST', <GstLines key="gst" bill={bill} />],
+            ['SEL GST registration', bill.gstRegistrationLabel ? `${bill.gstRegistrationLabel}${bill.gstRegistrationGstin ? ` · ${bill.gstRegistrationGstin}` : ''}` : null],
+            ['Client GSTIN', bill.clientGstin],
+            ['Legacy Sl. No.', bill.serialNumber],
+          ]}
+        />
+        <DetailGroup
+          icon={Building2}
+          title="Project & classification"
+          rows={[
             ['Project', bill.projectNameSnapshot],
-            ['Client', bill.clientNameSnapshot ?? '—'],
-            ['DGM office', bill.dgmOffice ?? '—'],
+            ['Client', bill.clientNameSnapshot],
+            ['DGM office', bill.dgmOffice],
             ['Main category', categoryName(bill.billCategory, lookups.config.billCategories, bill.billCategoryName)],
             ['Sub category', `${bill.billTypeName}${bill.isRetentionBill ? ' · retention bill' : ''}`],
-            ['Description', bill.description ?? '—'],
-            ['Stage', bill.currentStage ?? '—'],
+            ['Stage', bill.currentStage],
+          ]}
+        />
+        <DetailGroup
+          icon={CalendarDays}
+          title="Dates"
+          rows={[
             ['Bill date', dateText(bill.billDate)],
             ['Submission date', dateText(bill.submissionDate)],
             ['Bill passed date', dateText(bill.passedDate)],
-            ['Due date', <span key="due" className={bill.overdue ? 'font-medium text-rose-700' : undefined}>{dateText(bill.dueDate)}{bill.overdue ? ' · overdue' : ''}</span>],
+            [
+              'Due date',
+              bill.dueDate ? (
+                <span key="due" className={bill.overdue ? 'text-rose-700' : undefined}>
+                  {dateText(bill.dueDate)}
+                  {bill.overdue ? <span className="ml-1.5 rounded-full bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">Overdue</span> : null}
+                </span>
+              ) : null,
+            ],
             ['Expected payment', dateText(bill.expectedPaymentDate)],
-            ['Ageing', <AgeingBadge key="age" label={bill.ageingBucket} days={bill.ageingBucket ? bill.ageingDays : undefined} buckets={lookups.config.settings.ageingBuckets} />],
-            ['Target week', bill.targetWeek ?? '—'],
-            ['Received week', bill.receivedWeek ?? '—'],
-            ['Collection owner', bill.collectionOwnerName ?? '—'],
-            ['Last receipt', dateText(bill.lastReceiptDate)],
-            ['Shortfall / surplus', <Amount key="sf" value={bill.shortfallSurplus} signed />],
-            ['Remarks', bill.remarks ?? '—'],
           ]}
         />
-        {bill.dueDateRevisions?.length ? (
-          <div>
-            <SectionHeader title="Due date revisions" as="h3" />
-            <ul className="mt-2 space-y-1 text-sm">
-              {bill.dueDateRevisions.map((revision) => (
-                <li key={revision.changedAt} className="text-slate-700">
-                  {dateText(revision.previousDueDate)} → <b>{dateText(revision.dueDate)}</b> · {revision.reason} · {revision.changedByName ?? revision.changedBy} · {dateTimeText(revision.changedAt)}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {bill.source === 'excel_import' ? (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            Imported from the legacy workbook (row {bill.importRowNumber}). Sheet values: net {bill.importedNetAmount ?? '—'}, total deduction {bill.importedTotalDeduction ?? '—'}, received {bill.importedReceived ?? '—'}, status {bill.legacyStatus ?? '—'}.{' '}
-            {bill.importJobId ? (
-              <Link className="text-emerald-700 hover:underline" href={`/bill-tracking/import/${bill.importJobId}`}>
-                Open the import
-              </Link>
-            ) : null}
-          </div>
-        ) : null}
-        <p className="text-xs text-muted-foreground">
-          Ageing is measured from the {AGEING_BASIS_LABELS[lookups.config.settings.defaultAgeingBasis].toLowerCase()} (falls back to the bill date). Created {dateTimeText(bill.createdAt)} by {bill.createdByName ?? bill.createdBy}; last changed {dateTimeText(bill.updatedAt)}.
-        </p>
-      </CardContent>
-    </Card>
+        <DetailGroup
+          icon={Wallet}
+          title="Collection"
+          rows={[
+            ['Ageing', bill.ageingBucket ? <AgeingBadge key="age" label={bill.ageingBucket} days={bill.ageingDays} buckets={lookups.config.settings.ageingBuckets} /> : null],
+            ['Collection owner', bill.collectionOwnerName],
+            ['Target week', bill.targetWeek],
+            ['Received week', bill.receivedWeek],
+            ['Last receipt', dateText(bill.lastReceiptDate)],
+            ['Shortfall / surplus', <Amount key="sf" value={bill.shortfallSurplus} signed />],
+          ]}
+        />
+      </div>
+
+      {notes.length ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800">
+            <StickyNote className="h-4 w-4 text-slate-500" aria-hidden="true" /> Notes
+          </h3>
+          <dl className="space-y-3 text-sm">
+            {notes.map(([label, text]) => (
+              <div key={label}>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+                <dd className="mt-0.5 whitespace-pre-line break-words text-slate-800">{text}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
+
+      {bill.dueDateRevisions?.length ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <SectionHeader title="Due date revisions" as="h3" />
+          <ul className="mt-2 space-y-1 text-sm">
+            {bill.dueDateRevisions.map((revision) => (
+              <li key={revision.changedAt} className="text-slate-700">
+                {dateText(revision.previousDueDate)} → <b>{dateText(revision.dueDate)}</b> · {revision.reason} · {revision.changedByName ?? revision.changedBy} · {dateTimeText(revision.changedAt)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+      {bill.source === 'excel_import' ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          Imported from the legacy workbook (row {bill.importRowNumber}). Sheet values: net {bill.importedNetAmount ?? '—'}, total deduction {bill.importedTotalDeduction ?? '—'}, received {bill.importedReceived ?? '—'}, status {bill.legacyStatus ?? '—'}.{' '}
+          {bill.importJobId ? (
+            <Link className="text-emerald-700 hover:underline" href={`/bill-tracking/import/${bill.importJobId}`}>
+              Open the import
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* The record's own history, out of the way at the foot. */}
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <History className="h-3.5 w-3.5" aria-hidden="true" />
+          Created {dateTimeText(bill.createdAt)} by {bill.createdByName ?? bill.createdBy}
+        </span>
+        <span>Last changed {dateTimeText(bill.updatedAt)}</span>
+        <span>
+          Ageing from the {AGEING_BASIS_LABELS[basis].toLowerCase()}
+          {basis === 'billDate' ? '' : ' (the bill date where it is not set)'}
+        </span>
+      </p>
+    </div>
   );
 }
 
@@ -1200,96 +1543,214 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
   );
 }
 
+const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+const DOCUMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc,.csv,.zip';
+
+/** "348 KB", "2.4 MB". */
+const fileSizeText = (bytes: number | undefined) =>
+  !bytes ? '—' : bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/** An icon for the kind of file, from its type or, failing that, its name. */
+function documentIcon(document: Pick<BillDocument, 'contentType' | 'fileName'>) {
+  const type = document.contentType ?? '';
+  const name = document.fileName.toLowerCase();
+  if (type.startsWith('image/') || /\.(jpe?g|png|webp)$/.test(name)) return FileImage;
+  if (type.includes('sheet') || type.includes('excel') || /\.(xlsx?|csv)$/.test(name)) return FileSpreadsheet;
+  if (type.includes('zip') || name.endsWith('.zip')) return FileArchive;
+  return FileText;
+}
+
+/**
+ * The bill's documents. The categories head the tab as chips — each says how many files are filed
+ * under it, so what is still missing shows at a glance, and picking one files the next upload
+ * there. Files are dropped on (or chosen through) one upload area, several at a time; the list
+ * beneath is a table of what is attached, with Open, Download and Remove on each row.
+ */
 function DocumentsTab({ bill, documents, reload }: { bill: BillRow; documents: BillDocument[]; reload: () => void }) {
   const { can } = useBt();
   const { toast } = useToast();
-  const [category, setCategory] = useState<string>('Invoice');
-  const [uploading, setUploading] = useState(false);
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.set('file', file);
-      form.set('category', category);
-      await btFetch(`bills/${bill.id}/documents`, { form });
-      toast({ title: 'Document uploaded', description: file.name });
+  const [category, setCategory] = useState<BillDocumentCategory>('Invoice');
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const canUpload = can('Bills', 'Edit') && !bill.isDeleted;
+  const counts = new Map<string, number>();
+  for (const document of documents) counts.set(document.category, (counts.get(document.category) ?? 0) + 1);
+
+  const upload = async (files: File[]) => {
+    if (!files.length || progress) return;
+    const tooBig = files.filter((file) => file.size > MAX_DOCUMENT_BYTES);
+    if (tooBig.length) toast({ title: 'Too large to upload', description: `${tooBig.map((file) => file.name).join(', ')} — the limit is 20 MB a file.`, variant: 'destructive' });
+    const queue = files.filter((file) => file.size <= MAX_DOCUMENT_BYTES);
+    if (!queue.length) return;
+    let uploaded = 0;
+    setProgress({ done: 0, total: queue.length });
+    for (const file of queue) {
+      try {
+        const form = new FormData();
+        form.set('file', file);
+        form.set('category', category);
+        await btFetch(`bills/${bill.id}/documents`, { form });
+        uploaded += 1;
+      } catch (caught) {
+        toast({ title: `Could not upload ${file.name}`, description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
+      }
+      setProgress({ done: uploaded, total: queue.length });
+    }
+    setProgress(null);
+    if (uploaded) {
+      toast({ title: uploaded === 1 ? 'Document uploaded' : `${uploaded} documents uploaded`, description: `Filed under ${category}.` });
       reload();
-    } catch (caught) {
-      toast({ title: 'Upload failed', description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
-    } finally {
-      setUploading(false);
     }
   };
+
+  const remove = async (document: BillDocument) => {
+    if (!window.confirm(`Remove ${document.fileName} from this bill? The file is kept in the audit trail.`)) return;
+    try {
+      await btFetch(`documents/${document.id}`, { method: 'DELETE' });
+      reload();
+    } catch (caught) {
+      toast({ title: 'Could not remove the document', description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
+    }
+  };
+  const open = (document: BillDocument, inline: boolean) =>
+    void btDownload(`documents/${document.id}`, document.fileName, inline).catch((caught) => toast({ title: 'Could not open', description: String(caught), variant: 'destructive' }));
+
   return (
-    <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Documents" icon={Paperclip} as="h3" description="Invoice, submission, measurement, payment advice, bank proof, TDS certificate, letters." />
-        {can('Bills', 'Edit') && !bill.isDeleted ? (
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-slate-300 p-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Category</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DOCUMENT_CATEGORIES.map((entry) => (
-                    <SelectItem key={entry} value={entry}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700">
-              <Upload className="h-4 w-4" /> {uploading ? 'Uploading…' : 'Upload file'}
-              <input type="file" className="sr-only" disabled={uploading} onChange={(event) => void upload(event.target.files?.[0])} accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc,.csv,.zip" />
-            </Label>
-            <span className="text-xs text-muted-foreground">Up to 20 MB. Stored privately; opened only through Bill Tracking.</span>
+    <TableCard
+      title="Documents"
+      icon={Paperclip}
+      description="Invoice, submission, measurement, payment advice, bank proof, TDS certificate, letters."
+      count={documents.length}
+      noun="document"
+      scroll="natural"
+      toolbar={
+        <div className="space-y-3">
+          <div role={canUpload ? 'radiogroup' : undefined} aria-label={canUpload ? 'File the upload under' : 'Documents by category'} className="flex flex-wrap gap-1.5">
+            {DOCUMENT_CATEGORIES.map((entry) => {
+              const count = counts.get(entry) ?? 0;
+              const selected = canUpload && entry === category;
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  role={canUpload ? 'radio' : undefined}
+                  aria-checked={canUpload ? selected : undefined}
+                  disabled={!canUpload}
+                  onClick={() => setCategory(entry)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default',
+                    selected ? 'border-emerald-600 bg-emerald-600 text-white' : count ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                  )}
+                >
+                  {count ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Circle className="h-3.5 w-3.5 opacity-40" aria-hidden="true" />}
+                  {entry}
+                  {count ? <span className={cn('tabular-nums', selected ? 'text-white/80' : 'text-emerald-700')}>{count}</span> : null}
+                </button>
+              );
+            })}
           </div>
-        ) : null}
-        {documents.length === 0 ? <p className="text-sm text-muted-foreground">No documents attached.</p> : null}
-        <ul className="divide-y divide-slate-100">
-          {documents.map((document) => (
-            <li key={document.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-800">
-                  <FileText className="mr-1.5 inline h-4 w-4 text-slate-500" />
-                  {document.fileName}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {document.category} · {document.size ? `${Math.round(document.size / 1024)} KB` : ''} · {document.uploadedByName ?? document.uploadedBy} · {dateTimeText(document.uploadedAt)}
-                </p>
-              </div>
-              <div className="flex gap-1">
-                <Button size="sm" variant="outline" onClick={() => void btDownload(`documents/${document.id}`, document.fileName, true).catch((caught) => toast({ title: 'Could not open', description: String(caught), variant: 'destructive' }))}>
-                  Open
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => void btDownload(`documents/${document.id}`, document.fileName)}>
-                  Download
-                </Button>
-                {can('Bills', 'Edit') ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-rose-700"
-                    aria-label={`Remove ${document.fileName}`}
-                    onClick={async () => {
-                      if (!window.confirm(`Remove ${document.fileName} from this bill? The file is kept in the audit trail.`)) return;
-                      await btFetch(`documents/${document.id}`, { method: 'DELETE' });
-                      reload();
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+          {canUpload ? (
+            <label
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragging(false);
+                void upload(Array.from(event.dataTransfer.files));
+              }}
+              className={cn(
+                'flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors',
+                dragging ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-slate-50/50 hover:border-emerald-300 hover:bg-emerald-50/40',
+                progress && 'pointer-events-none opacity-70',
+              )}
+            >
+              {progress ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" aria-hidden="true" /> : <UploadCloud className="h-6 w-6 text-emerald-600" aria-hidden="true" />}
+              <span className="text-sm font-medium text-slate-800">
+                {progress ? `Uploading ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…` : (
+                  <>
+                    Drop files here or <span className="text-emerald-700 underline underline-offset-2">browse</span>
+                  </>
+                )}
+              </span>
+              <span className="text-xs text-slate-500">
+                Filed under <b className="font-semibold text-slate-700">{category}</b> · PDF, images, Excel, Word, CSV or ZIP · up to 20 MB each · stored privately, opened only through Bill Tracking
+              </span>
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                disabled={Boolean(progress)}
+                accept={DOCUMENT_ACCEPT}
+                onChange={(event) => {
+                  void upload(Array.from(event.target.files ?? []));
+                  event.target.value = '';
+                }}
+              />
+            </label>
+          ) : null}
+        </div>
+      }
+    >
+      <Table className="min-w-[720px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>File</TableHead>
+            <TableHead className="w-36">Category</TableHead>
+            <TableHead className="w-20 text-right">Size</TableHead>
+            <TableHead className="w-40">Uploaded by</TableHead>
+            <TableHead className="w-40">Uploaded</TableHead>
+            <TableHead className="w-44 text-right">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {documents.length === 0 ? (
+            <TableEmpty colSpan={6} icon={<Paperclip />}>
+              No documents attached yet.
+            </TableEmpty>
+          ) : (
+            documents.map((document) => {
+              const Icon = documentIcon(document);
+              return (
+                <TableRow key={document.id}>
+                  <TableCell>
+                    <button type="button" className="flex min-w-0 items-center gap-2 text-left font-medium text-slate-800 hover:text-emerald-700 hover:underline" onClick={() => open(document, true)} title={`Open ${document.fileName}`}>
+                      <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                      <span className="truncate">{document.fileName}</span>
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{document.category}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-slate-600">{fileSizeText(document.size)}</TableCell>
+                  <TableCell className="text-slate-700">{document.uploadedByName ?? document.uploadedBy}</TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums text-slate-600">{dateTimeText(document.uploadedAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => open(document, true)}>
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> Open
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => open(document, false)} aria-label={`Download ${document.fileName}`} title="Download">
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      {can('Bills', 'Edit') ? (
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-rose-700 hover:bg-rose-50" aria-label={`Remove ${document.fileName}`} title="Remove" onClick={() => void remove(document)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </TableCard>
   );
 }
 
@@ -1526,35 +1987,99 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
   );
 }
 
-export function ActivityTimeline({ entries }: { entries: BillActivity[] }) {
+/** "workflowStatus" → "Workflow status". */
+const fieldLabel = (key: string) => {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/** A stored value as a person reads it: a stage or payment status by its name, an amount in rupees. */
+function activityValue(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (key === 'workflowStatus' && typeof value === 'string') return WORKFLOW_STATUS_LABELS[value as BillWorkflowStatus] ?? value;
+  if (key === 'paymentStatus' && typeof value === 'string') return PAYMENT_STATUS_LABELS[value as keyof typeof PAYMENT_STATUS_LABELS] ?? value;
+  if (typeof value === 'number') return /amount|net|deduction|received|outstanding|gross|taxable|gst|receivable/i.test(key) ? formatINR(value) : value.toLocaleString('en-IN');
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+/** What an entry changed: each field whose value differs between before and after. */
+function activityChanges(entry: BillActivity): { field: string; before: string; after: string }[] {
+  if (!entry.previous && !entry.next) return [];
+  const before = entry.previous ?? {};
+  const after = entry.next ?? {};
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+    .map((key) => ({ field: fieldLabel(key), before: activityValue(key, before[key]), after: activityValue(key, after[key]) }));
+}
+
+/**
+ * The bill's audit trail as a table — when, who, what, what changed and why — one row an entry,
+ * newest first as stored. The action drops the "Bill <number>" every entry starts with, since this
+ * is that bill's page, and the change is read out field by field ("Workflow status: Bill Raised →
+ * Payment Follow-up") instead of two blocks of raw before / after data.
+ */
+export function ActivityTimeline({ entries, billNumber }: { entries: BillActivity[]; billNumber?: string }) {
+  const action = (summary: string) => {
+    const prefix = billNumber ? `Bill ${billNumber}` : null;
+    if (!prefix || !summary.startsWith(prefix)) return summary;
+    const rest = summary.slice(prefix.length).replace(/^:\s*/, '').trim();
+    return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : summary;
+  };
   return (
-    <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Activity" icon={Activity} as="h3" description="Immutable audit trail — every financial action with who, when, before and after, and the reason." />
-        {entries.length === 0 ? <p className="text-sm text-muted-foreground">No activity recorded.</p> : null}
-        <ol className="relative space-y-3 border-l border-slate-200 pl-4">
-          {entries.map((entry) => (
-            <li key={entry.id} className="relative">
-              <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-slate-400" />
-              <p className="text-xs text-muted-foreground">
-                {dateTimeText(entry.at)} · {entry.actorName ?? entry.actorId}
-              </p>
-              <p className="text-sm text-slate-800">{entry.summary}</p>
-              {entry.reason ? <p className="text-xs text-slate-600">Reason: {entry.reason}</p> : null}
-              {entry.previous && entry.next ? (
-                <details className="mt-1 text-xs text-muted-foreground">
-                  <summary className="cursor-pointer">Before / after</summary>
-                  <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                    <pre className="overflow-x-auto rounded bg-slate-50 p-2">{JSON.stringify(entry.previous, null, 1)}</pre>
-                    <pre className="overflow-x-auto rounded bg-emerald-50 p-2">{JSON.stringify(entry.next, null, 1)}</pre>
-                  </div>
-                </details>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      </CardContent>
-    </Card>
+    <TableCard
+      title="Activity"
+      icon={Activity}
+      description="Immutable audit trail — every financial action with who, when, what changed and the reason."
+      count={entries.length}
+      noun="event"
+      scroll="natural"
+    >
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-40">When</TableHead>
+            <TableHead className="w-44">By</TableHead>
+            <TableHead>Action</TableHead>
+            <TableHead className="w-[30%]">Change</TableHead>
+            <TableHead className="w-48">Reason</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {entries.length === 0 ? (
+            <TableEmpty colSpan={5}>No activity recorded.</TableEmpty>
+          ) : (
+            entries.map((entry) => {
+              const changes = activityChanges(entry);
+              return (
+                <TableRow key={entry.id} className="align-top">
+                  <TableCell className="whitespace-nowrap align-top tabular-nums text-slate-600">{dateTimeText(entry.at)}</TableCell>
+                  <TableCell className="align-top font-medium text-slate-800">{entry.actorName ?? entry.actorId}</TableCell>
+                  <TableCell className="align-top text-slate-800">{action(entry.summary)}</TableCell>
+                  <TableCell className="align-top">
+                    {changes.length ? (
+                      <ul className="space-y-0.5 text-xs">
+                        {changes.map((change) => (
+                          <li key={change.field} className="text-slate-600">
+                            <span className="font-medium text-slate-700">{change.field}:</span> <span className="text-slate-500">{change.before}</span>
+                            <span className="mx-1 text-slate-400" aria-label="to">→</span>
+                            <span className="font-medium text-emerald-700">{change.after}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top text-xs text-slate-600">{entry.reason || <span className="text-slate-400">—</span>}</TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </TableCard>
   );
 }
 

@@ -70,7 +70,8 @@ test('switched-off stages are skipped: no button into them, returns step back pa
   const verifier = actor('v', ['Bills.Verify', 'Bills.Approve', 'Bills.Edit']);
   const names = availableActions(bill('submitted'), settings, verifier).map((entry) => entry.action);
   assert.ok(!names.includes('start_verification') && !names.includes('verify'));
-  assert.ok(names.includes('approve') && names.includes('raise') && names.includes('return'));
+  // The next stage in use is Approved: approve, not straight to raised.
+  assert.ok(names.includes('approve') && !names.includes('raise') && names.includes('return'));
   assert.match(actionBlocked('verify', bill('submitted'), settings, verifier), /switched off/);
   assert.equal(nextStepAfter('submitted', settings), 'approved');
   // Returned from Approved: back to Submitted (Verified and Under verification are off).
@@ -93,6 +94,42 @@ test('who records the certification', () => {
   assert.match(certificationBlocked(bill('raised'), settings, actor('fin', ['Bills.Certify'])), /Only the people/);
   assert.equal(certificationBlocked(bill('raised'), settingsWith(), actor('fin', ['Bills.Certify'])), null);
   assert.match(certificationBlocked(bill('raised'), settingsWith(), actor('fin')), /Certify/);
+});
+
+test('up to Bill Raised the stages are taken in order — no raising a draft', () => {
+  const all = actor('boss', ['Bills.Edit', 'Bills.Verify', 'Bills.Approve']);
+  const moves = (status, settings = settingsWith()) => availableActions(bill(status), settings, all).map((entry) => entry.action);
+  assert.deepEqual(moves('draft'), ['submit']);
+  assert.match(actionBlocked('raise', bill('draft'), settingsWith(), all), /“Submitted” comes first/);
+  assert.match(actionBlocked('approve', bill('submitted'), settingsWith(), all), /“Under Verification” comes first/);
+  assert.deepEqual(moves('submitted'), ['start_verification', 'return']);
+  assert.deepEqual(moves('approved'), ['raise', 'return']);
+  // A stage switched off is passed over: with Submitted off, a draft goes on to Under Verification.
+  assert.deepEqual(moves('draft', settingsWith({ submitted: { enabled: false } })), ['start_verification']);
+  assert.deepEqual(moves('draft', settingsWith({ submitted: { enabled: false }, under_verification: { enabled: false } })), ['verify']);
+  // Every pre-raise stage off: a draft is raised directly.
+  const bare = settingsWith({ submitted: { enabled: false }, under_verification: { enabled: false }, verified: { enabled: false }, approved: { enabled: false } });
+  assert.deepEqual(moves('draft', bare), ['raise']);
+  // After Bill Raised the moves stay free.
+  assert.ok(moves('raised').includes('start_followup') && moves('raised').includes('close'));
+});
+
+test('a certification follows the stages before it: not until the bill is raised', () => {
+  const fin = actor('fin', ['Bills.Certify']);
+  for (const status of ['draft', 'submitted', 'under_verification', 'verified', 'approved']) {
+    assert.match(certificationBlocked(bill(status), settingsWith(), fin), /raised bill/, status);
+  }
+  for (const status of ['raised', 'certified', 'payment_followup', 'reconciliation', 'closed']) {
+    assert.equal(certificationBlocked(bill(status), settingsWith(), fin), null, status);
+  }
+  // Returned: it counts as raised only if it was returned from Bill Raised or later.
+  assert.match(certificationBlocked({ ...bill('returned'), returnedFrom: 'approved' }, settingsWith(), fin), /raised bill/);
+  assert.equal(certificationBlocked({ ...bill('returned'), returnedFrom: 'certified' }, settingsWith(), fin), null);
+  // One already recorded on an earlier stage (older bills) stays correctable and removable.
+  assert.equal(certificationBlocked({ ...bill('draft'), certification: { revision: 1 } }, settingsWith(), fin), null);
+  // Even someone named on the Certified stage waits for the bill to be raised.
+  const named = settingsWith({ certified: { assignment: 'users', userIds: ['site'], onlyAssigned: true } });
+  assert.match(certificationBlocked(bill('draft'), named, actor('site')), /raised bill/);
 });
 
 test('waiting for: the next stage’s people; “mine” for named people or, with none named, permission holders', () => {
