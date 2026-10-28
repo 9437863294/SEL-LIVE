@@ -45,6 +45,8 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { OverflowActions, type OverflowAction } from '@/components/shared/overflow-actions';
+import { TableCard } from '@/components/shared/table-card';
+import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -271,13 +273,16 @@ function BillHeader({ bill, certificationState, actions }: { bill: BillRow; cert
             </Link>
           </Button>
           <div className="min-w-0 flex-1">
-            <Link href={`/bill-tracking/bills?project=${bill.projectId}&fy=all`} className="block truncate text-xs font-semibold text-emerald-700 hover:underline" title={`All bills of ${bill.projectNameSnapshot}`}>
-              {bill.projectNameSnapshot}
-            </Link>
-            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+            {/* The invoice number and its project on one row — the project after a rule, as a link to
+                its bills — wrapping only where the screen is too narrow for both. */}
+            <div className="flex min-h-10 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
               <h1 className="min-w-0 break-all text-xl font-bold leading-tight tracking-tight text-slate-900 sm:text-2xl">{title}</h1>
               <CopyButton value={title} label={bill.gstInvoiceNumber ? 'Invoice number' : 'Bill number'} />
               {bill.transactionType !== 'invoice' ? <TransactionTypeBadge type={bill.transactionType} /> : null}
+              <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block" aria-hidden="true" />
+              <Link href={`/bill-tracking/bills?project=${bill.projectId}&fy=all`} className="min-w-0 max-w-full truncate text-xs font-semibold uppercase tracking-wide text-emerald-700 hover:underline" title={`All bills of ${bill.projectNameSnapshot}`}>
+                {bill.projectNameSnapshot}
+              </Link>
             </div>
             {/* The long internal bill number is not repeated here: it heads the Overview's
                 "Invoice & GST" card, with its own copy button. */}
@@ -614,7 +619,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           <CommentsTab bill={bill} comments={detail.comments} reload={reload} />
         </TabsContent>
         <TabsContent value="activity">
-          <ActivityTimeline entries={detail.activity} />
+          <ActivityTimeline entries={detail.activity} billNumber={bill.billSerialNumber} />
         </TabsContent>
       </Tabs>
 
@@ -1854,35 +1859,99 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
   );
 }
 
-export function ActivityTimeline({ entries }: { entries: BillActivity[] }) {
+/** "workflowStatus" → "Workflow status". */
+const fieldLabel = (key: string) => {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/** A stored value as a person reads it: a stage or payment status by its name, an amount in rupees. */
+function activityValue(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (key === 'workflowStatus' && typeof value === 'string') return WORKFLOW_STATUS_LABELS[value as BillWorkflowStatus] ?? value;
+  if (key === 'paymentStatus' && typeof value === 'string') return PAYMENT_STATUS_LABELS[value as keyof typeof PAYMENT_STATUS_LABELS] ?? value;
+  if (typeof value === 'number') return /amount|net|deduction|received|outstanding|gross|taxable|gst|receivable/i.test(key) ? formatINR(value) : value.toLocaleString('en-IN');
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+/** What an entry changed: each field whose value differs between before and after. */
+function activityChanges(entry: BillActivity): { field: string; before: string; after: string }[] {
+  if (!entry.previous && !entry.next) return [];
+  const before = entry.previous ?? {};
+  const after = entry.next ?? {};
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+    .map((key) => ({ field: fieldLabel(key), before: activityValue(key, before[key]), after: activityValue(key, after[key]) }));
+}
+
+/**
+ * The bill's audit trail as a table — when, who, what, what changed and why — one row an entry,
+ * newest first as stored. The action drops the "Bill <number>" every entry starts with, since this
+ * is that bill's page, and the change is read out field by field ("Workflow status: Bill Raised →
+ * Payment Follow-up") instead of two blocks of raw before / after data.
+ */
+export function ActivityTimeline({ entries, billNumber }: { entries: BillActivity[]; billNumber?: string }) {
+  const action = (summary: string) => {
+    const prefix = billNumber ? `Bill ${billNumber}` : null;
+    if (!prefix || !summary.startsWith(prefix)) return summary;
+    const rest = summary.slice(prefix.length).replace(/^:\s*/, '').trim();
+    return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : summary;
+  };
   return (
-    <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Activity" icon={Activity} as="h3" description="Immutable audit trail — every financial action with who, when, before and after, and the reason." />
-        {entries.length === 0 ? <p className="text-sm text-muted-foreground">No activity recorded.</p> : null}
-        <ol className="relative space-y-3 border-l border-slate-200 pl-4">
-          {entries.map((entry) => (
-            <li key={entry.id} className="relative">
-              <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full bg-slate-400" />
-              <p className="text-xs text-muted-foreground">
-                {dateTimeText(entry.at)} · {entry.actorName ?? entry.actorId}
-              </p>
-              <p className="text-sm text-slate-800">{entry.summary}</p>
-              {entry.reason ? <p className="text-xs text-slate-600">Reason: {entry.reason}</p> : null}
-              {entry.previous && entry.next ? (
-                <details className="mt-1 text-xs text-muted-foreground">
-                  <summary className="cursor-pointer">Before / after</summary>
-                  <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-2">
-                    <pre className="overflow-x-auto rounded bg-slate-50 p-2">{JSON.stringify(entry.previous, null, 1)}</pre>
-                    <pre className="overflow-x-auto rounded bg-emerald-50 p-2">{JSON.stringify(entry.next, null, 1)}</pre>
-                  </div>
-                </details>
-              ) : null}
-            </li>
-          ))}
-        </ol>
-      </CardContent>
-    </Card>
+    <TableCard
+      title="Activity"
+      icon={Activity}
+      description="Immutable audit trail — every financial action with who, when, what changed and the reason."
+      count={entries.length}
+      noun="event"
+      scroll="natural"
+    >
+      <Table className="min-w-[760px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-40">When</TableHead>
+            <TableHead className="w-44">By</TableHead>
+            <TableHead>Action</TableHead>
+            <TableHead className="w-[30%]">Change</TableHead>
+            <TableHead className="w-48">Reason</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {entries.length === 0 ? (
+            <TableEmpty colSpan={5}>No activity recorded.</TableEmpty>
+          ) : (
+            entries.map((entry) => {
+              const changes = activityChanges(entry);
+              return (
+                <TableRow key={entry.id} className="align-top">
+                  <TableCell className="whitespace-nowrap align-top tabular-nums text-slate-600">{dateTimeText(entry.at)}</TableCell>
+                  <TableCell className="align-top font-medium text-slate-800">{entry.actorName ?? entry.actorId}</TableCell>
+                  <TableCell className="align-top text-slate-800">{action(entry.summary)}</TableCell>
+                  <TableCell className="align-top">
+                    {changes.length ? (
+                      <ul className="space-y-0.5 text-xs">
+                        {changes.map((change) => (
+                          <li key={change.field} className="text-slate-600">
+                            <span className="font-medium text-slate-700">{change.field}:</span> <span className="text-slate-500">{change.before}</span>
+                            <span className="mx-1 text-slate-400" aria-label="to">→</span>
+                            <span className="font-medium text-emerald-700">{change.after}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top text-xs text-slate-600">{entry.reason || <span className="text-slate-400">—</span>}</TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </TableCard>
   );
 }
 
