@@ -186,34 +186,33 @@ export interface StatItem {
   tone?: string;
 }
 
-// Columns per item count, and a span for the last item where a row would otherwise end short and
-// show the grey hairline background as an empty cell. Static strings so Tailwind sees them all.
-const STAT_LAYOUT: Record<number, { grid: string; last?: string }> = {
-  2: { grid: 'grid-cols-2' },
-  3: { grid: 'grid-cols-2 sm:grid-cols-3', last: 'col-span-2 sm:col-span-1' },
-  4: { grid: 'grid-cols-2 sm:grid-cols-4' },
-  5: { grid: 'grid-cols-2 sm:grid-cols-5', last: 'col-span-2 sm:col-span-1' },
-  6: { grid: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6' },
-  7: { grid: 'grid-cols-2 sm:grid-cols-4 xl:grid-cols-7', last: 'col-span-2 xl:col-span-1' },
-  8: { grid: 'grid-cols-2 sm:grid-cols-4' },
-};
-
 /**
  * A row of headline figures in one frame, split by hairlines — lighter than a row of KPI cards, for
  * the totals above a register or the amounts at the top of a bill.
+ *
+ * The figures size to their contents: each grows from a base width and a figure that will not fit
+ * moves to the next row whole, never cut to "₹37,95,…". Every row fills the frame edge to edge at
+ * any width, and gap-px over the tinted background draws the hairlines wherever the rows break.
  */
 export function StatStrip({ items, className }: { items: StatItem[]; className?: string }) {
-  const layout = STAT_LAYOUT[items.length] ?? { grid: 'grid-cols-2 sm:grid-cols-4' };
   return (
-    <dl className={cn('grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 shadow-sm', layout.grid, className)}>
+    // Real borders between the tiles, not a 1px gap over a grey background: at a zoom or display
+    // scale other than 100% a 1px gap can round to nothing, leaving tiles with no line between them,
+    // whereas a border is always drawn. Each tile draws its left and top edge; the -1px margins tuck
+    // the outer ones under the card's own border, wherever the tiles wrap.
+    <div className={cn('overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
+      <dl className="-ml-px -mt-px flex flex-wrap">
       {items.map((item, index) => (
-        <div key={index} className={cn('min-w-0 bg-white px-3.5 py-3', index === items.length - 1 && layout.last)}>
-          <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500">{item.label}</dt>
-          <dd className={cn('mt-1 truncate text-base font-semibold tabular-nums', item.tone ?? 'text-slate-900')}>{item.value}</dd>
-          {item.hint ? <dd className="mt-0.5 truncate text-[11px] text-slate-400">{item.hint}</dd> : null}
+        <div key={index} className="grow basis-32 border-l border-t border-slate-200 bg-white px-3.5 py-3">
+          {/* The label centred over its tile; the figure (and its hint) to the right, as amounts sit
+              in a table column, so the tiles' digits line up from one to the next. */}
+          <dt className="whitespace-nowrap text-center text-[11px] font-medium uppercase tracking-wide text-slate-500">{item.label}</dt>
+          <dd className={cn('mt-1 whitespace-nowrap text-right text-base font-semibold tabular-nums', item.tone ?? 'text-slate-900')}>{item.value}</dd>
+          {item.hint ? <dd className="mt-0.5 whitespace-nowrap text-right text-[11px] text-slate-400">{item.hint}</dd> : null}
         </div>
       ))}
-    </dl>
+      </dl>
+    </div>
   );
 }
 

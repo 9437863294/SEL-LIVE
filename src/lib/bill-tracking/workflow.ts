@@ -35,9 +35,11 @@ export interface WorkflowActionRule {
 
 export const WORKFLOW_ACTION_RULES: Record<WorkflowActionName, WorkflowActionRule> = {
   submit: { label: 'Submit', from: ['draft'], to: 'submitted', permission: ['Bills', 'Edit'] },
-  start_verification: { label: 'Start verification', from: ['submitted'], to: 'under_verification', permission: ['Bills', 'Verify'] },
-  verify: { label: 'Verify', from: ['submitted', 'under_verification'], to: 'verified', permission: ['Bills', 'Verify'] },
-  approve: { label: 'Approve', from: ['submitted', 'under_verification', 'verified'], to: 'approved', permission: ['Bills', 'Approve'] },
+  // Each move into a stage before Bill Raised accepts any earlier stage, because the stages between
+  // may be switched off; `actionBlocked` still allows only the move into the next stage in use.
+  start_verification: { label: 'Start verification', from: ['draft', 'submitted'], to: 'under_verification', permission: ['Bills', 'Verify'] },
+  verify: { label: 'Verify', from: ['draft', 'submitted', 'under_verification'], to: 'verified', permission: ['Bills', 'Verify'] },
+  approve: { label: 'Approve', from: ['draft', 'submitted', 'under_verification', 'verified'], to: 'approved', permission: ['Bills', 'Approve'] },
   raise: { label: 'Mark bill raised', from: ['draft', 'submitted', 'under_verification', 'verified', 'approved'], to: 'raised', permission: ['Bills', 'Edit'] },
   start_followup: { label: 'Start payment follow-up', from: ['raised', 'certified'], to: 'payment_followup', permission: ['Bills', 'Edit'] },
   reconcile: { label: 'Send to reconciliation', from: ['raised', 'certified', 'payment_followup'], to: 'reconciliation', permission: ['Bills', 'Verify'] },
@@ -51,6 +53,8 @@ export const WORKFLOW_ACTION_RULES: Record<WorkflowActionName, WorkflowActionRul
 export const CONFIGURABLE_STEPS: readonly BillWorkflowStatus[] = WORKFLOW_PATH.filter((status) => status !== 'draft');
 /** Stages that can be switched off. */
 export const OPTIONAL_STEPS: readonly BillWorkflowStatus[] = ['submitted', 'under_verification', 'verified', 'approved'];
+/** The stages taken strictly in order (`actionBlocked`): everything up to and including Bill Raised. */
+const UP_TO_RAISED: readonly string[] = WORKFLOW_PATH.slice(1, WORKFLOW_PATH.indexOf('raised') + 1);
 
 /** The role permission each stage falls back to: what the action into it needs. */
 export const STEP_PERMISSION: Record<string, string> = {
@@ -136,6 +140,14 @@ export function actionBlocked(action: WorkflowActionName, bill: ActionBill, sett
   if (bill.isDeleted) return 'This bill has been deleted.';
   if (!rule.from.includes(bill.workflowStatus)) return `A ${stepLabel(bill.workflowStatus).toLowerCase()} bill cannot be moved by “${rule.label}”.`;
   if (rule.to !== 'resubmit' && rule.to !== 'returned' && !isStepEnabled(settings, rule.to)) return `${stepLabel(rule.to)} is switched off in Settings → Workflow.`;
+  // Up to Bill Raised the stages are taken in order: a bill moves only into the next one in use, so
+  // it cannot be marked raised without being submitted (or approved without being verified). A
+  // stage switched off in Settings → Workflow is passed over. After Bill Raised the moves stay free
+  // — a credit note is never certified, and a paid bill may close from wherever it stands.
+  if (rule.to !== 'resubmit' && UP_TO_RAISED.includes(rule.to)) {
+    const next = nextStepAfter(bill.workflowStatus, settings);
+    if (next && rule.to !== next) return `“${stepLabel(next)}” comes first — the stages before Bill Raised are taken in order.`;
+  }
 
   const governing = governingStep(action, bill, settings);
   const step = governing ? workflowStep(settings, governing) : null;
@@ -153,9 +165,29 @@ export function availableActions(bill: ActionBill, settings: WorkflowSettings, a
   return WORKFLOW_ACTIONS.filter((action) => actionBlocked(action, bill, settings, actor) === null).map((action) => ({ action, label: WORKFLOW_ACTION_RULES[action].label, tone: WORKFLOW_ACTION_RULES[action].tone }));
 }
 
+/**
+ * The client certifies a bill it has been sent, so a certification follows the stages before it:
+ * none can be recorded until the bill is raised (a bill returned from Bill Raised or later counts —
+ * it has been raised). Recording one used to be possible on a draft, and moved it straight to
+ * Certified past Submitted and Bill Raised. A bill already carrying a certification keeps it
+ * correctable and removable wherever it stands.
+ */
+export function certificationNotDue(bill: Pick<Bill, 'workflowStatus' | 'returnedFrom' | 'certification'>): string | null {
+  if (bill.certification) return null;
+  const at = bill.workflowStatus === 'returned' ? (bill.returnedFrom ?? 'submitted') : bill.workflowStatus;
+  if (WORKFLOW_PATH.indexOf(at) >= WORKFLOW_PATH.indexOf('raised')) return null;
+  return `The client certifies a raised bill — this one is at “${WORKFLOW_STATUS_LABELS[bill.workflowStatus]}”. Take it to “${WORKFLOW_STATUS_LABELS.raised}” first.`;
+}
+
 /** Recording (or changing, or removing) the client's certification is the Certified stage's job. */
-export function certificationBlocked(bill: Pick<Bill, 'projectId' | 'collectionOwnerId' | 'isDeleted'>, settings: WorkflowSettings, actor: WorkflowActor): string | null {
+export function certificationBlocked(
+  bill: Pick<Bill, 'projectId' | 'collectionOwnerId' | 'isDeleted' | 'workflowStatus' | 'returnedFrom' | 'certification'>,
+  settings: WorkflowSettings,
+  actor: WorkflowActor,
+): string | null {
   if (bill.isDeleted) return 'This bill has been deleted.';
+  const notDue = certificationNotDue(bill);
+  if (notDue) return notDue;
   const step = workflowStep(settings, 'certified');
   const doers = stepDoers(step, bill);
   if (doers.includes(actor.userId)) return null;

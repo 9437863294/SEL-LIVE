@@ -99,7 +99,10 @@ kinds of difference are settled differently:
 1. **Raised.** The bill as issued. Its raised deductions stay on the bill for the comparison; the
    certification never edits them.
 2. **Certified.** On the bill: *Actions → Record client certification*, or the *Certification*
-   tab. The form starts from every raised figure (taxable, GST components, each deduction).
+   tab. Only once the bill is raised: the client certifies a bill it has been sent, so a draft,
+   submitted or approved bill cannot be certified (`certificationNotDue` in `workflow.ts`, checked
+   by the server and by every Certify button). A bill returned from Bill Raised or later counts as
+   raised, and a certification already on an earlier-stage bill stays correctable and removable. The form starts from every raised figure (taxable, GST components, each deduction).
    Finance changes what the client changed and adds any extra deduction. The GST section works like
    the bill form's (registration, type, rate, CGST / SGST or IGST). The type defaults to the raised
    bill's; a bill imported with one unsplit GST figure starts split by the suggested type, with the
@@ -143,8 +146,11 @@ Where it shows:
   order are fixed. Everything else is set per stage in Settings → **Workflow**
   (`settings.workflowSteps`, rules in `src/lib/bill-tracking/workflow.ts`):
   - **Used or skipped.** Submitted, Under verification, Verified and Approved can be switched off.
-    A skipped stage gets no button, and a returned bill steps back past it. *Mark bill raised* is
-    offered from Draft onwards, and *Approve* needs no verification first.
+    A skipped stage gets no button, and a returned bill steps back past it. Up to Bill raised the
+    stages are taken strictly in order (2026-10-28): a bill moves only into the next stage in use,
+    so it cannot be raised without being submitted, or approved without being verified, while those
+    stages are on. After Bill raised the moves stay free (a note is never certified; a paid bill may
+    close from any later stage).
   - **Moved here by.** Who moves a bill into the stage:
     - anyone with the role permission (the default);
     - named people;
