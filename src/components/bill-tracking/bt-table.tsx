@@ -90,6 +90,15 @@ function readHidden(key: string | undefined, columns: BtColumn<unknown>[]): Set<
   }
 }
 
+/**
+ * The right edge of a pinned column: a hairline, then a strip in the cell's own fill (the row's
+ * stripe, hover or tint), solid and then fading, so text scrolling under the column fades out
+ * instead of showing half a letter against the line. The strip is a cell's padding wide, so
+ * unscrolled it covers nothing.
+ */
+const PIN_EDGE =
+  'shadow-[1px_0_0_0_rgb(226,232,240)] after:pointer-events-none after:absolute after:inset-y-0 after:left-[calc(100%+1px)] after:w-3 after:bg-inherit after:[mask-image:linear-gradient(to_right,#000_60%,transparent)]';
+
 export function BtTable<T extends { id: string }>({
   rows,
   columns,
@@ -274,7 +283,7 @@ export function BtTable<T extends { id: string }>({
                         className={cn(
                           'whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500',
                           alignClass(column.align),
-                          pinnedCell(column.key) && cn('sticky z-10 shadow-[1px_0_0_0_rgb(226,232,240)]', pinOffset),
+                          pinnedCell(column.key) && cn('sticky z-10', PIN_EDGE, pinOffset),
                           column.headerClassName,
                         )}
                         aria-sort={active ? (activeSort?.dir === 'asc' ? 'ascending' : 'descending') : undefined}
@@ -320,7 +329,7 @@ export function BtTable<T extends { id: string }>({
                             'border-b border-slate-100 px-3 align-middle text-slate-700',
                             cellY,
                             alignClass(column.align),
-                            pinnedCell(column.key) && cn('sticky z-[1] shadow-[1px_0_0_0_rgb(226,232,240)]', pinOffset, pinnedBg),
+                            pinnedCell(column.key) && cn('sticky z-[1]', PIN_EDGE, pinOffset, pinnedBg),
                             column.className,
                           )}
                         >
@@ -341,7 +350,7 @@ export function BtTable<T extends { id: string }>({
                         className={cn(
                           'whitespace-nowrap border-t-2 border-slate-300 bg-slate-100 px-3 py-2.5 font-semibold text-slate-900',
                           alignClass(column.align),
-                          pinnedCell(column.key) && cn('sticky z-10', pinOffset),
+                          pinnedCell(column.key) && cn('sticky z-10', PIN_EDGE, pinOffset),
                         )}
                       >
                         {column.total ?? (index === 0 ? 'Total' : null)}
