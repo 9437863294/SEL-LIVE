@@ -38,7 +38,7 @@ import type { AgeingReport, CollectionLine, DashboardKpis, ExceptionItem, Foreca
 
 import { useBtQuery, useLookups } from './bt-client';
 import { useUrlFilters } from './bt-filters';
-import { BtToolbar, ToolbarDate, ToolbarSelect } from './bt-toolbar';
+import { BtToolbar, ToolbarMoreFilters, ToolbarPeriod, ToolbarSelect } from './bt-toolbar';
 import { billReference, type BillRow } from './bill-register';
 import { AgeingChart, BillingCollectionChart, ChartPanel, RankedBars, RetentionBar, TargetActualChart } from './dashboard-charts';
 import { AgeingBadge, Amount, BtError, BtLoading, DrillLink, FySelect, MoneyKpi, dateText, percentText, toQuery } from './bt-ui';
@@ -95,6 +95,16 @@ export default function BillTrackingDashboard() {
   // Links carry the dashboard's own filters forward.
   const carry = { fy, project: filters.get('project'), client: filters.get('client'), dgm: filters.get('dgm'), billType: filters.get('billType'), txn: filters.get('txn'), from: filters.get('from'), to: filters.get('to') };
   const link = (path: string, extra: Record<string, string | undefined> = {}) => `${path}${toQuery({ ...carry, ...extra })}`;
+  // The less-used filters, behind "More filters"; each one set is also a removable chip under the bar.
+  const subCategories = [...new Set(lookups.config.billTypes.filter((type) => type.active).map((type) => type.name))].sort().map((name) => ({ value: name, label: name }));
+  const transactionTypes = Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }));
+  const moreChips = [
+    { key: 'dgm', label: 'DGM office', value: filters.get('dgm') },
+    { key: 'billType', label: 'Sub category', value: filters.get('billType') },
+    { key: 'txn', label: 'Type', value: TRANSACTION_TYPE_LABELS[filters.get('txn') as keyof typeof TRANSACTION_TYPE_LABELS] ?? filters.get('txn') },
+  ]
+    .filter((chip) => filters.get(chip.key))
+    .map((chip) => ({ ...chip, onRemove: () => filters.set({ [chip.key]: undefined }) }));
 
   return (
     <div className="space-y-4">
@@ -103,18 +113,22 @@ export default function BillTrackingDashboard() {
       <BtToolbar
         activeCount={filters.activeCount}
         onClear={filters.clear}
+        // One row: the year and the period inside it, then who — project and client — and the
+        // rest behind "More filters". The period replaces separate From and To boxes.
         controls={
           <>
             <FySelect value={fy} onChange={(value) => filters.set({ fy: value })} />
+            <ToolbarPeriod from={filters.get('from')} to={filters.get('to')} today={lookups.today} onChange={(range) => filters.set({ from: range.from, to: range.to })} />
             <MiniSelect label="Project" value={filters.get('project')} onChange={(value) => filters.set({ project: value })} options={lookups.projects.map((project) => ({ value: project.id, label: project.name }))} all="All projects" />
             <MiniSelect label="Client" value={filters.get('client')} onChange={(value) => filters.set({ client: value })} options={lookups.clients.map((client) => ({ value: client.id, label: client.name }))} all="All clients" />
-            <MiniSelect label="DGM" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} all="All offices" />
-            <MiniSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={[...new Set(lookups.config.billTypes.filter((type) => type.active).map((type) => type.name))].sort().map((name) => ({ value: name, label: name }))} all="All" />
-            <MiniSelect label="Type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={Object.entries(TRANSACTION_TYPE_LABELS).map(([value, label]) => ({ value, label }))} all="All" />
-            <ToolbarDate label="From" value={filters.get('from')} onChange={(value) => filters.set({ from: value || undefined })} />
-            <ToolbarDate label="To" value={filters.get('to')} onChange={(value) => filters.set({ to: value || undefined })} />
+            <ToolbarMoreFilters count={moreChips.length}>
+              <MiniSelect label="DGM" value={filters.get('dgm')} onChange={(value) => filters.set({ dgm: value })} options={lookups.dgmOffices.map((office) => ({ value: office, label: office }))} all="All offices" />
+              <MiniSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={subCategories} all="All" />
+              <MiniSelect label="Type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={transactionTypes} all="All" />
+            </ToolbarMoreFilters>
           </>
         }
+        chips={moreChips}
       />
 
       <BtError message={error} onRetry={reload} />

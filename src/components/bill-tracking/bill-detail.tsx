@@ -21,12 +21,19 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  Circle,
   ClipboardCheck,
   Copy,
+  Download,
+  ExternalLink,
+  FileArchive,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   HandCoins,
   History,
   Hourglass,
+  Loader2,
   Mail,
   MessageSquare,
   MoreHorizontal,
@@ -40,6 +47,7 @@ import {
   Trash2,
   Undo2,
   Upload,
+  UploadCloud,
   Wallet,
 } from 'lucide-react';
 
@@ -57,6 +65,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
+import { Badge } from '@/components/ui/badge';
 import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -77,6 +86,7 @@ import {
   type CertificationState,
   type Bill,
   type BillActivity,
+  type BillDocumentCategory,
   type BillCollection,
   type BillComment,
   type BillDeduction,
@@ -1533,96 +1543,214 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
   );
 }
 
+const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+const DOCUMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc,.csv,.zip';
+
+/** "348 KB", "2.4 MB". */
+const fileSizeText = (bytes: number | undefined) =>
+  !bytes ? '—' : bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+/** An icon for the kind of file, from its type or, failing that, its name. */
+function documentIcon(document: Pick<BillDocument, 'contentType' | 'fileName'>) {
+  const type = document.contentType ?? '';
+  const name = document.fileName.toLowerCase();
+  if (type.startsWith('image/') || /\.(jpe?g|png|webp)$/.test(name)) return FileImage;
+  if (type.includes('sheet') || type.includes('excel') || /\.(xlsx?|csv)$/.test(name)) return FileSpreadsheet;
+  if (type.includes('zip') || name.endsWith('.zip')) return FileArchive;
+  return FileText;
+}
+
+/**
+ * The bill's documents. The categories head the tab as chips — each says how many files are filed
+ * under it, so what is still missing shows at a glance, and picking one files the next upload
+ * there. Files are dropped on (or chosen through) one upload area, several at a time; the list
+ * beneath is a table of what is attached, with Open, Download and Remove on each row.
+ */
 function DocumentsTab({ bill, documents, reload }: { bill: BillRow; documents: BillDocument[]; reload: () => void }) {
   const { can } = useBt();
   const { toast } = useToast();
-  const [category, setCategory] = useState<string>('Invoice');
-  const [uploading, setUploading] = useState(false);
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.set('file', file);
-      form.set('category', category);
-      await btFetch(`bills/${bill.id}/documents`, { form });
-      toast({ title: 'Document uploaded', description: file.name });
+  const [category, setCategory] = useState<BillDocumentCategory>('Invoice');
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const canUpload = can('Bills', 'Edit') && !bill.isDeleted;
+  const counts = new Map<string, number>();
+  for (const document of documents) counts.set(document.category, (counts.get(document.category) ?? 0) + 1);
+
+  const upload = async (files: File[]) => {
+    if (!files.length || progress) return;
+    const tooBig = files.filter((file) => file.size > MAX_DOCUMENT_BYTES);
+    if (tooBig.length) toast({ title: 'Too large to upload', description: `${tooBig.map((file) => file.name).join(', ')} — the limit is 20 MB a file.`, variant: 'destructive' });
+    const queue = files.filter((file) => file.size <= MAX_DOCUMENT_BYTES);
+    if (!queue.length) return;
+    let uploaded = 0;
+    setProgress({ done: 0, total: queue.length });
+    for (const file of queue) {
+      try {
+        const form = new FormData();
+        form.set('file', file);
+        form.set('category', category);
+        await btFetch(`bills/${bill.id}/documents`, { form });
+        uploaded += 1;
+      } catch (caught) {
+        toast({ title: `Could not upload ${file.name}`, description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
+      }
+      setProgress({ done: uploaded, total: queue.length });
+    }
+    setProgress(null);
+    if (uploaded) {
+      toast({ title: uploaded === 1 ? 'Document uploaded' : `${uploaded} documents uploaded`, description: `Filed under ${category}.` });
       reload();
-    } catch (caught) {
-      toast({ title: 'Upload failed', description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
-    } finally {
-      setUploading(false);
     }
   };
+
+  const remove = async (document: BillDocument) => {
+    if (!window.confirm(`Remove ${document.fileName} from this bill? The file is kept in the audit trail.`)) return;
+    try {
+      await btFetch(`documents/${document.id}`, { method: 'DELETE' });
+      reload();
+    } catch (caught) {
+      toast({ title: 'Could not remove the document', description: caught instanceof Error ? caught.message : undefined, variant: 'destructive' });
+    }
+  };
+  const open = (document: BillDocument, inline: boolean) =>
+    void btDownload(`documents/${document.id}`, document.fileName, inline).catch((caught) => toast({ title: 'Could not open', description: String(caught), variant: 'destructive' }));
+
   return (
-    <Card className="border-slate-200 bg-white shadow-sm">
-      <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Documents" icon={Paperclip} as="h3" description="Invoice, submission, measurement, payment advice, bank proof, TDS certificate, letters." />
-        {can('Bills', 'Edit') && !bill.isDeleted ? (
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-dashed border-slate-300 p-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Category</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DOCUMENT_CATEGORIES.map((entry) => (
-                    <SelectItem key={entry} value={entry}>
-                      {entry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700">
-              <Upload className="h-4 w-4" /> {uploading ? 'Uploading…' : 'Upload file'}
-              <input type="file" className="sr-only" disabled={uploading} onChange={(event) => void upload(event.target.files?.[0])} accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.docx,.doc,.csv,.zip" />
-            </Label>
-            <span className="text-xs text-muted-foreground">Up to 20 MB. Stored privately; opened only through Bill Tracking.</span>
+    <TableCard
+      title="Documents"
+      icon={Paperclip}
+      description="Invoice, submission, measurement, payment advice, bank proof, TDS certificate, letters."
+      count={documents.length}
+      noun="document"
+      scroll="natural"
+      toolbar={
+        <div className="space-y-3">
+          <div role={canUpload ? 'radiogroup' : undefined} aria-label={canUpload ? 'File the upload under' : 'Documents by category'} className="flex flex-wrap gap-1.5">
+            {DOCUMENT_CATEGORIES.map((entry) => {
+              const count = counts.get(entry) ?? 0;
+              const selected = canUpload && entry === category;
+              return (
+                <button
+                  key={entry}
+                  type="button"
+                  role={canUpload ? 'radio' : undefined}
+                  aria-checked={canUpload ? selected : undefined}
+                  disabled={!canUpload}
+                  onClick={() => setCategory(entry)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default',
+                    selected ? 'border-emerald-600 bg-emerald-600 text-white' : count ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                  )}
+                >
+                  {count ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Circle className="h-3.5 w-3.5 opacity-40" aria-hidden="true" />}
+                  {entry}
+                  {count ? <span className={cn('tabular-nums', selected ? 'text-white/80' : 'text-emerald-700')}>{count}</span> : null}
+                </button>
+              );
+            })}
           </div>
-        ) : null}
-        {documents.length === 0 ? <p className="text-sm text-muted-foreground">No documents attached.</p> : null}
-        <ul className="divide-y divide-slate-100">
-          {documents.map((document) => (
-            <li key={document.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-800">
-                  <FileText className="mr-1.5 inline h-4 w-4 text-slate-500" />
-                  {document.fileName}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {document.category} · {document.size ? `${Math.round(document.size / 1024)} KB` : ''} · {document.uploadedByName ?? document.uploadedBy} · {dateTimeText(document.uploadedAt)}
-                </p>
-              </div>
-              <div className="flex gap-1">
-                <Button size="sm" variant="outline" onClick={() => void btDownload(`documents/${document.id}`, document.fileName, true).catch((caught) => toast({ title: 'Could not open', description: String(caught), variant: 'destructive' }))}>
-                  Open
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => void btDownload(`documents/${document.id}`, document.fileName)}>
-                  Download
-                </Button>
-                {can('Bills', 'Edit') ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-rose-700"
-                    aria-label={`Remove ${document.fileName}`}
-                    onClick={async () => {
-                      if (!window.confirm(`Remove ${document.fileName} from this bill? The file is kept in the audit trail.`)) return;
-                      await btFetch(`documents/${document.id}`, { method: 'DELETE' });
-                      reload();
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
+          {canUpload ? (
+            <label
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragging(false);
+                void upload(Array.from(event.dataTransfer.files));
+              }}
+              className={cn(
+                'flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors',
+                dragging ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 bg-slate-50/50 hover:border-emerald-300 hover:bg-emerald-50/40',
+                progress && 'pointer-events-none opacity-70',
+              )}
+            >
+              {progress ? <Loader2 className="h-6 w-6 animate-spin text-emerald-600" aria-hidden="true" /> : <UploadCloud className="h-6 w-6 text-emerald-600" aria-hidden="true" />}
+              <span className="text-sm font-medium text-slate-800">
+                {progress ? `Uploading ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…` : (
+                  <>
+                    Drop files here or <span className="text-emerald-700 underline underline-offset-2">browse</span>
+                  </>
+                )}
+              </span>
+              <span className="text-xs text-slate-500">
+                Filed under <b className="font-semibold text-slate-700">{category}</b> · PDF, images, Excel, Word, CSV or ZIP · up to 20 MB each · stored privately, opened only through Bill Tracking
+              </span>
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                disabled={Boolean(progress)}
+                accept={DOCUMENT_ACCEPT}
+                onChange={(event) => {
+                  void upload(Array.from(event.target.files ?? []));
+                  event.target.value = '';
+                }}
+              />
+            </label>
+          ) : null}
+        </div>
+      }
+    >
+      <Table className="min-w-[720px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>File</TableHead>
+            <TableHead className="w-36">Category</TableHead>
+            <TableHead className="w-20 text-right">Size</TableHead>
+            <TableHead className="w-40">Uploaded by</TableHead>
+            <TableHead className="w-40">Uploaded</TableHead>
+            <TableHead className="w-44 text-right">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {documents.length === 0 ? (
+            <TableEmpty colSpan={6} icon={<Paperclip />}>
+              No documents attached yet.
+            </TableEmpty>
+          ) : (
+            documents.map((document) => {
+              const Icon = documentIcon(document);
+              return (
+                <TableRow key={document.id}>
+                  <TableCell>
+                    <button type="button" className="flex min-w-0 items-center gap-2 text-left font-medium text-slate-800 hover:text-emerald-700 hover:underline" onClick={() => open(document, true)} title={`Open ${document.fileName}`}>
+                      <Icon className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                      <span className="truncate">{document.fileName}</span>
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{document.category}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-slate-600">{fileSizeText(document.size)}</TableCell>
+                  <TableCell className="text-slate-700">{document.uploadedByName ?? document.uploadedBy}</TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums text-slate-600">{dateTimeText(document.uploadedAt)}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => open(document, true)}>
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> Open
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => open(document, false)} aria-label={`Download ${document.fileName}`} title="Download">
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      {can('Bills', 'Edit') ? (
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-rose-700 hover:bg-rose-50" aria-label={`Remove ${document.fileName}`} title="Remove" onClick={() => void remove(document)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </TableCard>
   );
 }
 
