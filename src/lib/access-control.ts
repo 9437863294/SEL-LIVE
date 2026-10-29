@@ -1715,7 +1715,7 @@ export type MatrixAction = (typeof MATRIX_ACTIONS)[number];
  */
 const MATRIX_ACTION_SYNONYMS: Record<MatrixAction, string[]> = {
   View: ['View', 'View Module', 'View All', 'View Own', 'View Department', 'View Log', 'View Dashboard', 'View Reports', 'View History'],
-  Create: ['Create', 'Add', 'Add Manual', 'Record', 'Request', 'Submit', 'Import', 'Upload', 'Refer', 'Generate Manually'],
+  Create: ['Create', 'Add', 'Add Manual', 'Record', 'Request', 'Submit', 'Raise', 'Import', 'Upload', 'Refer', 'Generate Manually'],
   Edit: ['Edit', 'Update', 'Update EMI', 'Update Progress', 'Edit Own', 'Reassign', 'Renew', 'Revise Request'],
   Delete: ['Delete', 'Delete Draft', 'Delete Items', 'Clear BOQ', 'Remove', 'Write Off'],
   Approve: ['Approve', 'Approve Request', 'Reject', 'Verify', 'Return', 'Certify', 'Clear', 'Issue', 'Sign', 'Release', 'Approve Transfer', 'Approve Stock Count', 'Bulk Approve', 'Reverse Any'],

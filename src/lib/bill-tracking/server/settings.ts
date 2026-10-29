@@ -7,16 +7,42 @@ import 'server-only';
 
 import { validateAgeingBuckets } from '../calculations.ts';
 import { validateCategoryConfig } from '../categories.ts';
+import { normaliseWorkflowSteps, workflowProblem } from '../workflow.ts';
 import type { ConfigInput } from '../schemas';
 import type { BillTrackingConfig } from '../types';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadConfig, logActivity, nowIso } from './store';
+
+/**
+ * A configured workflow must hold together (`workflowProblem`), and a step may only be removed once
+ * no bill stands on it — a bill at a step that no longer exists could not be moved on. Returned bills
+ * remember the step they came from, so those count too. Single-field queries, so no index is needed.
+ */
+async function checkWorkflow(context: BtContext, current: BillTrackingConfig, steps: NonNullable<ConfigInput['settings']['workflowSteps']>): Promise<void> {
+  const problem = workflowProblem(steps);
+  if (problem) throw new BtError(problem);
+  const before = normaliseWorkflowSteps(current.settings.workflowSteps);
+  const removed = before.filter((step) => !steps.some((entry) => entry.status === step.status));
+  if (!removed.length) return;
+  const ids = removed.map((step) => step.status).slice(0, 30);
+  const bills = db().collection(BT_COLLECTIONS.bills);
+  const [at, returnedFrom] = await Promise.all([bills.where('workflowStatus', 'in', ids).get(), bills.where('returnedFrom', 'in', ids).get()]);
+  const live = [...at.docs, ...returnedFrom.docs]
+    .map((doc) => doc.data() as { organizationId?: string; isDeleted?: boolean; workflowStatus?: string; returnedFrom?: string })
+    .filter((bill) => bill.organizationId === context.organizationId && !bill.isDeleted && (ids.includes(bill.workflowStatus ?? '') || (bill.workflowStatus === 'returned' && ids.includes(bill.returnedFrom ?? ''))));
+  if (!live.length) return;
+  const counts = removed
+    .map((step) => ({ label: step.label, count: live.filter((bill) => bill.workflowStatus === step.status || bill.returnedFrom === step.status).length }))
+    .filter((entry) => entry.count);
+  throw new BtError(`Bills are still on a step being removed: ${counts.map((entry) => `${entry.count} at “${entry.label}”`).join(', ')}. Move them on, or switch the step off instead.`, 409);
+}
 
 export async function saveConfig(context: BtContext, input: ConfigInput): Promise<BillTrackingConfig> {
   context.require('Settings', 'Manage');
   const current = await loadConfig(context.organizationId);
   const bucketError = validateAgeingBuckets(input.settings.ageingBuckets);
   if (bucketError) throw new BtError(bucketError);
+  if (input.settings.workflowSteps) await checkWorkflow(context, current, input.settings.workflowSteps);
   const duplicate = (values: string[]) => values.find((value, index) => values.indexOf(value) !== index);
   // Codes default to the name, so an administrator only has to type the name.
   const billCategories = input.billCategories.map((category) => ({ ...category, code: category.code || category.name.toUpperCase() }));
@@ -30,7 +56,7 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
   if (removed.length) throw new BtError(`Deduction types cannot be deleted once used — deactivate ${removed.map((type) => type.name).join(', ')} instead.`);
 
   const next: BillTrackingConfig = clean({
-    settings: { ...current.settings, ...input.settings, closedMonths: current.settings.closedMonths, updatedAt: nowIso(), updatedBy: context.userId },
+    settings: { ...current.settings, ...input.settings, workflowSteps: normaliseWorkflowSteps(input.settings.workflowSteps ?? current.settings.workflowSteps), closedMonths: current.settings.closedMonths, updatedAt: nowIso(), updatedBy: context.userId },
     billCategories,
     billTypes,
     deductionTypes: input.deductionTypes,

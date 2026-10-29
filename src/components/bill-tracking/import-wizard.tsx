@@ -251,7 +251,7 @@ export default function ImportWizard() {
       {step === 2 && workbook ? (
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-4 p-4">
-            <SectionHeader title="Sheet and heading row" as="h3" description={`${workbook.file.name} · ${(workbook.file.size / 1024).toFixed(0)} KB · ${workbook.sheets.length} sheets`} />
+            <SectionHeader descriptionAs="info" title="Sheet and heading row" as="h3" description={`${workbook.file.name} · ${(workbook.file.size / 1024).toFixed(0)} KB · ${workbook.sheets.length} sheets`} />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1">
                 <Label>Sheet</Label>
@@ -310,7 +310,7 @@ export default function ImportWizard() {
       {step === 3 && layout ? (
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-4 p-4">
-            <SectionHeader title="Map columns" as="h3" description="Matched automatically by heading (case, spacing and punctuation ignored). Change any that are wrong." />
+            <SectionHeader descriptionAs="info" title="Map columns" as="h3" description="Matched automatically by heading (case, spacing and punctuation ignored). Change any that are wrong." />
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {IMPORT_COLUMNS.map((column) => {
                 const index = columnMap[column.key];
@@ -395,7 +395,7 @@ export default function ImportWizard() {
 
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
-              <SectionHeader
+              <SectionHeader descriptionAs="info"
                 title="Preview"
                 as="h3"
                 description="Click a row's status to see its issues. Choose what happens to each duplicate."
@@ -453,7 +453,7 @@ export default function ImportWizard() {
       {step === 5 ? (
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-3 p-6">
-            <SectionHeader title="Importing" as="h3" description="Rows are written in small batches. You can leave this page — the job resumes from History." />
+            <SectionHeader descriptionAs="info" title="Importing" as="h3" description="Rows are written in small batches. You can leave this page — the job resumes from History." />
             {job ? (
               <>
                 <Progress value={((job.rowsImported + job.rowsUpdated + job.rowsFailed) / Math.max(1, job.rowsImported + job.rowsUpdated + job.rowsFailed + job.rowsPending)) * 100} />
@@ -495,7 +495,7 @@ function ProjectMapper({
   return (
     <Card className={cn('shadow-sm', needsAction.length ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 bg-white')}>
       <CardContent className="space-y-3 p-4">
-        <SectionHeader
+        <SectionHeader descriptionAs="info"
           title={`Project mapping (${preview.projects.length} names in the workbook)`}
           as="h3"
           description={needsAction.length ? `${needsAction.length} need your confirmation — similar names are suggested but never merged silently.` : 'Every project name is mapped.'}
@@ -587,7 +587,7 @@ export function FinancialPanel({ excel, calculated, tolerance, liveLabel = 'Calc
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-2 p-4">
-        <SectionHeader title="Financial validation" as="h3" description={`Workbook figures (its own Net, Total Deduction and Shortfall columns) against SEL LIVE’s calculation, over the rows selected for import. Tolerance ₹${tolerance}.`} />
+        <SectionHeader descriptionAs="info" title="Financial validation" as="h3" description={`Workbook figures (its own Net, Total Deduction and Shortfall columns) against SEL LIVE’s calculation, over the rows selected for import. Tolerance ₹${tolerance}.`} />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -729,7 +729,7 @@ function ImportResult({ job }: { job: BillImportJob }) {
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-4 p-6">
-        <SectionHeader title={job.status === 'completed' ? 'Import complete' : job.status === 'partial' ? 'Import finished with failures' : 'Import paused'} as="h3" description={`${job.jobNumber} · ${job.fileName}`} />
+        <SectionHeader descriptionAs="info" title={job.status === 'completed' ? 'Import complete' : job.status === 'partial' ? 'Import finished with failures' : 'Import paused'} as="h3" description={`${job.jobNumber} · ${job.fileName}`} />
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
           {[
             ['Rows detected', job.rowsDetected],

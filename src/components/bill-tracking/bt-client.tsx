@@ -14,7 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import { auth } from '@/lib/firebase';
 import type { BillTrackingConfig } from '@/lib/bill-tracking/types';
-import type { WorkflowActor } from '@/lib/bill-tracking/workflow';
+import { stepLabel, type WorkflowActor } from '@/lib/bill-tracking/workflow';
 import type { RegistrationSetup } from '@/lib/bill-tracking/gst';
 
 export class BtApiError extends Error {
@@ -167,6 +167,17 @@ export function useBt(): LookupState {
 export function useWorkflowActor(): WorkflowActor {
   const { lookups, can } = useBt();
   return { userId: lookups?.user.id ?? '', can: (resource, action) => can(resource, action) };
+}
+
+/** The workflow as configured once loaded, else undefined (read as the default) — safe outside the shell. */
+export function useWorkflowSettings(): Lookups['config']['settings'] | undefined {
+  return useContext(LookupContext)?.lookups?.config.settings;
+}
+
+/** A workflow step's name as configured in Settings → Workflow ("Submitted", or a step added there). */
+export function useStepLabel(): (status: string | undefined | null) => string {
+  const settings = useWorkflowSettings();
+  return (status) => stepLabel(settings, status);
 }
 
 /** Lookups once loaded; screens render inside the shell, which waits for them. */

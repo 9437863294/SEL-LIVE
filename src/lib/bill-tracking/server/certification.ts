@@ -15,19 +15,17 @@ import 'server-only';
 
 import { FieldValue } from 'firebase-admin/firestore';
 
-import { WORKFLOW_PATH, deriveBillTotals, grossAmount, netReceivable, totalDeduction } from '../calculations.ts';
+import { deriveBillTotals, grossAmount, netReceivable, totalDeduction } from '../calculations.ts';
 import { canBeCertified } from '../certification.ts';
 import { roundMoney, toPaise } from '../money.ts';
 import type { CertificationInput } from '../schemas';
 import type { Bill, BillCertification, BillWorkflowStatus } from '../types';
-import { certificationBlocked } from '../workflow.ts';
+import { certificationAdvances, certificationBlocked } from '../workflow.ts';
 import { calculationOptions, composeGst, derivedFields, notifyWaiting, resolveDeductions, totalsUpdate, workflowActor } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
 
 type StoredBill = Bill & { organizationId: string };
-
-const PRE_CERTIFIED: readonly BillWorkflowStatus[] = WORKFLOW_PATH.slice(0, WORKFLOW_PATH.indexOf('certified'));
 
 const headline = (certification: Pick<BillCertification, 'taxableAmount' | 'gstAmount' | 'totalDeduction' | 'netAmount'>) => ({
   taxableAmount: certification.taxableAmount,
@@ -101,7 +99,7 @@ export async function recordCertification(context: BtContext, billId: string, in
 
     // A bill at any step before Certified moves there (the client has evidently received it); one
     // further along (follow-up, reconciliation, closed) or returned for correction keeps its stage.
-    const advance = !previous && PRE_CERTIFIED.includes(bill.workflowStatus);
+    const advance = !previous && certificationAdvances(bill.workflowStatus, config.settings);
     if (advance) advanced = { ...bill, ...derivedFields(totals), workflowStatus: 'certified' };
     transaction.update(ref, { certification, ...totalsUpdate(bill, totals), ...(advance ? { workflowStatus: 'certified' } : {}), version: (bill.version ?? 1) + 1, updatedAt: now, updatedBy: context.userId, updatedByName: context.userName });
     const reference = certification.reference ? ` ${certification.reference}` : '';

@@ -666,7 +666,7 @@ export function TargetsPage() {
       {data ? (
         <>
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <SectionHeader title={`Target vs actual · FY ${data.financialYear}`} as="h3" />
+            <SectionHeader descriptionAs="info" title={`Target vs actual · FY ${data.financialYear}`} as="h3" />
             <div className="mt-2">
               <TargetActualChart data={data.weeks.slice(-16)} />
             </div>

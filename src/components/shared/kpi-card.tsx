@@ -21,6 +21,7 @@
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { InfoTip } from './info-tip';
 
 export type Tone =
   | 'slate'
@@ -72,6 +73,7 @@ export function KpiCard({
   style,
   accent = false,
   accentClassName,
+  info,
 }: {
   label: string;
   /** A node so a card can show a `<Money>` figure without the caller stringifying it. */
@@ -94,6 +96,11 @@ export function KpiCard({
   accent?: boolean;
   /** Classes for the accent bar itself, e.g. an animation. */
   accentClassName?: string;
+  /**
+   * What the figure means, behind an (i) at the card's corner instead of an open line under it.
+   * The (i) sits beside the card's link, not inside it, so tapping it never opens the link.
+   */
+  info?: React.ReactNode;
 }) {
   const palette = TONES[tone] || TONES.slate;
 
@@ -138,12 +145,21 @@ export function KpiCard({
     </Card>
   );
 
-  return href ? (
-    <Link href={href} className="block">
+  const card = href ? (
+    <Link href={href} className="block h-full">
       {body}
     </Link>
   ) : (
     body
+  );
+  if (!info) return card;
+  return (
+    <div className="relative h-full">
+      {card}
+      <InfoTip label={`About “${label}”`} className="absolute right-2 top-2">
+        {info}
+      </InfoTip>
+    </div>
   );
 }
 

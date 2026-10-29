@@ -10,6 +10,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { InfoTip } from './info-tip';
 
 export interface TableCardProps {
   title?: ReactNode;
@@ -27,6 +28,8 @@ export interface TableCardProps {
    * in one wrapping row as usual. Keep each label short enough for half a phone's width.
    */
   actionsGrid?: boolean;
+  /** `info` puts the description behind an (i) beside the title instead of an open line under it. */
+  descriptionAs?: 'text' | 'info';
   /** A row under the title for the list's `FilterBar`. */
   toolbar?: ReactNode;
   footer?: ReactNode;
@@ -58,6 +61,7 @@ export function TableCard({
   noun,
   actions,
   actionsGrid = false,
+  descriptionAs = 'text',
   toolbar,
   footer,
   scroll = 'contained',
@@ -78,9 +82,10 @@ export function TableCard({
             <div className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 {title && <h2 className="min-w-0 break-words text-[15px] font-semibold leading-snug tracking-tight text-foreground sm:text-base">{title}</h2>}
+                {description && descriptionAs === 'info' ? <InfoTip label={`About “${typeof title === 'string' ? title : 'this list'}”`}>{description}</InfoTip> : null}
                 {count !== undefined && <Badge variant="neutral">{countLabel(count, total, noun)}</Badge>}
               </div>
-              {description && <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">{description}</div>}
+              {description && descriptionAs === 'text' && <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">{description}</div>}
             </div>
           </div>
           {actions && (

@@ -22,6 +22,7 @@ import type { MouseEventHandler, ReactNode } from 'react';
 import { ArrowLeft, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { InfoTip } from './info-tip';
 
 export interface HeaderCrumb {
   label: string;
@@ -224,10 +225,12 @@ export interface SectionHeaderProps {
   /** The heading level — `h2` for a section of the page, `h3` for one inside a section. */
   as?: 'h2' | 'h3';
   className?: string;
+  /** `info` puts the description behind an (i) beside the title instead of an open line under it. */
+  descriptionAs?: 'text' | 'info';
 }
 
 /** A titled block inside a page. Same type scale in every module. */
-export function SectionHeader({ title, description, icon: Icon, badge, actions, as: Heading = 'h2', className }: SectionHeaderProps) {
+export function SectionHeader({ title, description, icon: Icon, badge, actions, as: Heading = 'h2', className, descriptionAs = 'text' }: SectionHeaderProps) {
   return (
     <div className={cn('section-header mb-3 flex flex-wrap items-start justify-between gap-x-3 gap-y-2', className)}>
       <div className="flex min-w-0 flex-1 basis-[14rem] items-start gap-2.5">
@@ -241,9 +244,10 @@ export function SectionHeader({ title, description, icon: Icon, badge, actions, 
             <Heading className="min-w-0 break-words text-[15px] font-semibold leading-snug tracking-tight text-foreground sm:text-base">
               {title}
             </Heading>
+            {description && descriptionAs === 'info' ? <InfoTip label={`About “${typeof title === 'string' ? title : 'this section'}”`}>{description}</InfoTip> : null}
             {badge}
           </div>
-          {description && <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">{description}</div>}
+          {description && descriptionAs === 'text' && <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground sm:text-[13px]">{description}</div>}
         </div>
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

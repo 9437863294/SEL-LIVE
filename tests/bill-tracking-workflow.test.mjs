@@ -41,7 +41,7 @@ test('with nobody named, the role permissions decide (as before)', () => {
   assert.equal(actionBlocked('approve', bill('verified'), settings, actor('u1', ['Bills.Approve'])), null);
   assert.match(actionBlocked('approve', bill('verified'), settings, actor('u1', ['Bills.Verify'])), /Approve permission/);
   assert.match(actionBlocked('approve', bill('verified'), settings, actor('u1', ['Bills.Approve'], ['p2'])), /permission/, 'outside the project scope');
-  assert.match(actionBlocked('approve', bill('raised'), settings, actor('u1', ['Bills.Approve'])), /cannot be moved/);
+  assert.match(actionBlocked('approve', bill('raised'), settings, actor('u1', ['Bills.Approve'])), /already past “Approved”/);
 });
 
 test('a named person does the stage without any role permission or project grant', () => {

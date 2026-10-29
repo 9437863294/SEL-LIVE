@@ -14,6 +14,7 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, ComposedCh
 
 import { useTheme } from '@/components/theme/ThemeProvider';
 import { chartChrome } from '@/components/ui/chart';
+import { InfoTip } from '@/components/shared/info-tip';
 import { monthLabel } from '@/lib/bill-tracking/calculations';
 import { formatINR, formatINRCompact } from '@/lib/bill-tracking/money';
 
@@ -46,8 +47,10 @@ export function ChartPanel({ title, description, children, footer }: { title: st
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
       <header className="border-b border-slate-100 px-4 py-3">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
-        {description ? <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p> : null}
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+          {title}
+          {description ? <InfoTip label={`About “${title}”`}>{description}</InfoTip> : null}
+        </h3>
       </header>
       <div className="flex-1 p-4">{children}</div>
       {footer ? <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-xs text-slate-500">{footer}</div> : null}

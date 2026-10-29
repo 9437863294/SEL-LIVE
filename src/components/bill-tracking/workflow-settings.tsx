@@ -1,18 +1,20 @@
 'use client';
 
 /**
- * Settings → Workflow: the bill's stages, and for each one whether it is used, who moves a bill into
- * it (anyone with the permission, named people, or the bill's collection owner) and whether those
- * people are told when a bill is waiting for them — plus the rule that payment waits for the client's
- * certification.
+ * Settings → Workflow: the bill's steps, one card a step, laid out as Recurring Payments' workflow
+ * is — the step's number, name and meaning across the top, how it is run on the left and who runs it
+ * on the right — plus the rule that payment waits for the client's certification.
  *
- * The stages and their order are fixed (reports and the receipt rule read them); everything else is
- * the configuration here, applied by `workflow.ts` on the server and the bill page alike. Being named
- * on a stage is the authority to do it: no role permission or project grant is needed on top.
+ * The steps are configuration (see `workflow.ts`): review steps can be added, renamed, removed and
+ * moved anywhere between Draft and Closed; the role steps — Bill raised, Certified by client,
+ * Payment follow-up, Reconciliation, Closed — can be renamed and moved among the review steps but
+ * not removed, and keep their order among themselves. The server applies the same checks on save,
+ * and refuses to remove a step bills are still on. Being named on a step is the authority to do it:
+ * no role permission or project grant is needed on top.
  */
 
-import { useState } from 'react';
-import { ArrowDown, Bell, ChevronDown, ShieldCheck, Undo2, Users, Workflow } from 'lucide-react';
+import { useId, useState } from 'react';
+import { ArrowDown, ArrowUp, Bell, ChevronDown, KeyRound, Lock, Plus, ShieldCheck, Trash2, Undo2, UserCheck, Users, Workflow } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -20,12 +22,21 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { CERTIFIABLE_TYPES } from '@/lib/bill-tracking/certification';
-import { OPTIONAL_STEPS, STEP_PERMISSION, WORKFLOW_ACTION_RULES, normaliseWorkflowSteps } from '@/lib/bill-tracking/workflow';
-import { TRANSACTION_TYPE_LABELS, type BillWorkflowStatus, type CertificationReceiptRule, type WorkflowAssignment, type WorkflowStepSetting } from '@/lib/bill-tracking/types';
+import { completeWorkflowStep, defaultWorkflowStep, isOptionalStep, isRoleStep, normaliseWorkflowSteps, permissionText, workflowProblem } from '@/lib/bill-tracking/workflow';
+import {
+  TRANSACTION_TYPE_LABELS,
+  WORKFLOW_STEP_PERMISSIONS,
+  type BillWorkflowStatus,
+  type CertificationReceiptRule,
+  type WorkflowAssignment,
+  type WorkflowStepPermission,
+  type WorkflowStepSetting,
+} from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
 
-import { FormField, FormSection, WorkflowStatusBadge } from './bt-ui';
+import { FormField, FormSection, InfoTip } from './bt-ui';
 
 interface UserOption {
   id: string;
@@ -33,31 +44,12 @@ interface UserOption {
   email?: string;
 }
 
-const MEANING: Record<BillWorkflowStatus, string> = {
-  draft: 'Entered and still being prepared. Everything can be edited.',
-  submitted: 'Handed over for checking.',
-  under_verification: 'Finance is checking the figures and documents.',
-  verified: 'Checked.',
-  approved: 'Approved. From here amounts, GST and deductions change only with Edit After Approval and a reason.',
-  raised: 'Sent to the client and waiting for their certification.',
-  certified: 'The client has certified it. Its certified deductions apply to the bill as they are; only if the client certified a different taxable or GST, raise the credit or debit note the bill page fills in.',
-  payment_followup: 'Chasing payment: follow-ups, commitments and receipts.',
-  reconciliation: 'Checking receipts and deductions against the client’s statement.',
-  closed: 'Settled. The same people can reopen it.',
-  returned: '',
-};
-
-/** What moves a bill into each stage. */
-const REACHED_BY: Partial<Record<BillWorkflowStatus, string>> = {
-  submitted: WORKFLOW_ACTION_RULES.submit.label,
-  under_verification: WORKFLOW_ACTION_RULES.start_verification.label,
-  verified: WORKFLOW_ACTION_RULES.verify.label,
-  approved: WORKFLOW_ACTION_RULES.approve.label,
-  raised: WORKFLOW_ACTION_RULES.raise.label,
-  certified: 'Recording the client’s certification',
-  payment_followup: WORKFLOW_ACTION_RULES.start_followup.label,
-  reconciliation: WORKFLOW_ACTION_RULES.reconcile.label,
-  closed: `${WORKFLOW_ACTION_RULES.close.label} — once fully received or adjusted`,
+/** A fresh id for a step added here — the shape `workflow.ts` accepts, unlikely to repeat. */
+const newStepId = (taken: readonly string[]) => {
+  let id = '';
+  do id = `step_${Math.random().toString(36).slice(2, 8)}`;
+  while (taken.includes(id));
+  return id;
 };
 
 export function WorkflowSettings({
@@ -76,51 +68,145 @@ export function WorkflowSettings({
   disabled?: boolean;
 }) {
   const setRule = (patch: Partial<CertificationReceiptRule>) => onRuleChange({ ...rule, ...patch });
-  const list = normaliseWorkflowSteps(steps);
+  // Edited as typed once it is a full list of named steps (a name being retyped may be blank for a
+  // moment — the problem line says so, and the server refuses it); repaired only when it arrives in
+  // the older shape, or empty.
+  const list = steps.length && steps.every((step) => typeof step.label === 'string') ? steps.map(completeWorkflowStep) : normaliseWorkflowSteps(steps);
   const setStep = (status: BillWorkflowStatus, patch: Partial<WorkflowStepSetting>) => onStepsChange(list.map((step) => (step.status === status ? { ...step, ...patch } : step)));
   const named = list.filter((step) => step.assignment !== 'permission' && step.userIds.length).length;
+  const problem = workflowProblem(list);
+
+  /** Can the step at `index` swap with its neighbour? Not past another role step, and Closed stays last. */
+  const canMove = (index: number, direction: -1 | 1) => {
+    const other = list[index + direction];
+    if (!other) return false;
+    if (list[index].status === 'closed' || other.status === 'closed') return false;
+    return !(isRoleStep(list[index].status) && isRoleStep(other.status));
+  };
+  const move = (index: number, direction: -1 | 1) => {
+    if (!canMove(index, direction)) return;
+    const next = [...list];
+    [next[index], next[index + direction]] = [next[index + direction], next[index]];
+    onStepsChange(next);
+  };
+  /** A new review step, just before Bill raised — where review steps usually go — to move from there. */
+  const addStep = () => {
+    const ids = list.map((step) => step.status);
+    const number = list.filter((step) => !isRoleStep(step.status)).length + 1;
+    const step = defaultWorkflowStep(newStepId(ids), `New step ${number}`);
+    const at = list.findIndex((entry) => entry.status === 'raised');
+    const next = [...list];
+    next.splice(at < 0 ? next.length - 1 : at, 0, step);
+    onStepsChange(next);
+  };
+  const removeStep = (status: BillWorkflowStatus) => onStepsChange(list.filter((step) => step.status !== status));
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <FormSection
-        icon={Workflow}
-        title="Bill workflow"
-        description="For each stage: whether it is used, who moves a bill into it, and whether they are told when a bill is waiting for them. Being named on a stage is the permission to do it — no role permission or project grant is needed on top."
-        actions={named ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">{named} stage{named === 1 ? '' : 's'} with named people</span> : null}
-      >
-        <ol>
-          <StageRow index={0} status="draft" last={false}>
-            <p className="text-xs text-slate-500">Anyone who can add bills (Bills · Add) creates a draft; the preparer edits it until it moves on.</p>
-          </StageRow>
-          {list.map((step, index) => (
-            <StageRow key={step.status} index={index + 1} status={step.status} last={index === list.length - 1} off={!step.enabled}>
-              <StepControls step={step} users={users} disabled={disabled} onChange={(patch) => setStep(step.status, patch)} />
-            </StageRow>
-          ))}
-        </ol>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
-          <b>Skipping stages.</b> Switched-off stages are left out: their button is not offered and a returned bill steps back past them. <b>Mark bill raised</b> is available from Draft onwards, and recording the client’s certification moves a bill to Certified from any earlier stage.
+      <div className="min-w-0 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700" aria-hidden="true">
+              <Workflow className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-slate-900">Bill workflow</h3>
+              <p className="max-w-3xl text-xs leading-relaxed text-slate-500">
+                Add, rename, remove and reorder the steps a bill goes through. For each: who moves a bill into it, whether they are told when one is waiting, and whether it locks the amounts. Being named on a step is the permission to do it.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {named ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800">{named} step{named === 1 ? '' : 's'} with named people</span> : null}
+            <Button type="button" variant="outline" size="sm" className="gap-1.5" disabled={disabled} onClick={addStep}>
+              <Plus className="h-4 w-4" /> Add step
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-3 rounded-lg border border-rose-100 bg-rose-50/60 p-3 text-xs text-rose-900">
-          <Undo2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <div className="leading-relaxed">
-            <b>Returned for correction.</b> Whoever would move a bill on from Submitted up to Approved can return it with a note. It goes back to its preparer, who corrects and resubmits it to the stage before the one that returned it.
+
+        {problem ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{problem}</p> : null}
+
+        <StageCard index={0} status="draft" label="Draft" description="Entered and still being prepared. Everything can be edited." enteredBy={null}>
+          <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+            Anyone who can add bills (Bills · Add) creates a draft; the preparer edits it until it moves on.
+          </div>
+        </StageCard>
+        {list.map((step, index) => (
+          <StageCard
+            key={step.status}
+            index={index + 1}
+            status={step.status}
+            label={step.label}
+            description={step.description}
+            enteredBy={step.status === 'certified' ? 'Recording the client’s certification' : step.status === 'closed' ? `${step.actionLabel} — once fully received or adjusted` : step.actionLabel}
+            locks={step.locksAmounts && !isRoleStep(step.status)}
+            off={!step.enabled}
+            tools={
+              <>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={disabled || !canMove(index, -1)} onClick={() => move(index, -1)} aria-label={`Move ${step.label} up`} title="Move up">
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" disabled={disabled || !canMove(index, 1)} onClick={() => move(index, 1)} aria-label={`Move ${step.label} down`} title="Move down">
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+                {isOptionalStep(step.status) ? (
+                  <label className="ml-1 flex items-center gap-2 text-xs font-medium text-slate-600">
+                    <Switch disabled={disabled} checked={step.enabled} onCheckedChange={(value) => setStep(step.status, { enabled: value })} aria-label={`Use ${step.label}`} />
+                    Use
+                  </label>
+                ) : null}
+                {!isRoleStep(step.status) ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-rose-700 hover:bg-rose-50"
+                    disabled={disabled}
+                    onClick={() => removeStep(step.status)}
+                    aria-label={`Remove ${step.label}`}
+                    title="Remove step — refused on save while bills are on it"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                ) : null}
+              </>
+            }
+          >
+            <StepControls step={step} users={users} disabled={disabled} onChange={(patch) => setStep(step.status, patch)} />
+          </StageCard>
+        ))}
+
+        <div className="flex justify-center">
+          <Button type="button" variant="outline" className="gap-1.5" disabled={disabled} onClick={addStep}>
+            <Plus className="h-4 w-4" /> Add step
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-relaxed text-slate-700">
+            <b>Steps in order.</b> Up to {list.find((step) => step.status === 'raised')?.label ?? 'Bill Raised'} a bill moves only into the next step in use — it cannot be raised without passing every step before it — and a step switched off is passed over. The client’s certification can be recorded once the bill is raised. Built-in steps can be renamed but not removed.
+          </div>
+          <div className="flex gap-3 rounded-lg border border-rose-100 bg-rose-50/60 p-3 text-xs text-rose-900">
+            <Undo2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <div className="leading-relaxed">
+              <b>Returned for correction.</b> A bill at a step marked “Can be returned” can go back to its preparer with a note; it is corrected and resubmitted to the step before the one that returned it.
+            </div>
           </div>
         </div>
         <p className="text-xs text-slate-500">
           The <b>Stages</b> tab is a separate free-form label (the legacy STAGES column) shown on the bill; it does not move the workflow.
         </p>
-      </FormSection>
+      </div>
 
       <div className="space-y-4 xl:self-start">
         <FormSection icon={ShieldCheck} title="Payment needs client certification" description="Recording or verifying a receipt is refused until the bill’s client certification is recorded.">
-          <label className="flex items-start gap-3">
-            <Switch className="mt-0.5" disabled={disabled} checked={rule.enabled} onCheckedChange={(value) => setRule({ enabled: value })} aria-label="Only receive payment against certified bills" />
-            <span className="text-sm">
-              <span className="font-medium text-slate-800">Only receive payment against certified bills</span>
-              <span className="mt-0.5 block text-xs text-slate-500">{rule.enabled ? 'On — a bill must be certified before money is recorded against it.' : 'Off — receipts can be recorded against any bill.'}</span>
-            </span>
-          </label>
+          <ToggleRow
+            label="Only receive payment against certified bills"
+            hint={rule.enabled ? 'On — a bill must be certified before money is recorded against it.' : 'Off — receipts can be recorded against any bill.'}
+            disabled={disabled}
+            checked={rule.enabled}
+            onChange={(value) => setRule({ enabled: value })}
+          />
 
           <div className={cn('space-y-4', !rule.enabled && 'pointer-events-none opacity-50')} aria-disabled={!rule.enabled}>
             <FormField label="Applies to" hint="Credit and debit notes are never certified, so they are never blocked.">
@@ -138,13 +224,13 @@ export function WorkflowSettings({
               </div>
             </FormField>
 
-            <label className="flex items-start gap-3">
-              <Switch className="mt-0.5" disabled={disabled} checked={rule.exemptImported} onCheckedChange={(value) => setRule({ exemptImported: value })} aria-label="Leave out bills imported from the workbook" />
-              <span className="text-sm">
-                <span className="font-medium text-slate-800">Leave out bills imported from the workbook</span>
-                <span className="mt-0.5 block text-xs text-slate-500">Their certificates were issued before SEL LIVE, so receipts can still be recorded against them.</span>
-              </span>
-            </label>
+            <ToggleRow
+              label="Leave out bills imported from the workbook"
+              hint="Their certificates were issued before SEL LIVE, so receipts can still be recorded against them."
+              disabled={disabled}
+              checked={rule.exemptImported}
+              onChange={(value) => setRule({ exemptImported: value })}
+            />
 
             <FormField label="Applies to bills dated from" hint="Blank = every bill. Bills dated earlier can take receipts without a certification." width="date">
               <Input type="date" disabled={disabled} value={rule.fromDate ?? ''} onChange={(event) => setRule({ fromDate: event.target.value || undefined })} />
@@ -156,99 +242,267 @@ export function WorkflowSettings({
   );
 }
 
-function StageRow({ index, status, last, off, children }: { index: number; status: BillWorkflowStatus; last: boolean; off?: boolean; children: React.ReactNode }) {
-  const optional = OPTIONAL_STEPS.includes(status);
+/** One step as a card: number, name and meaning across the top with its tools; its settings beneath, or "Skipped". */
+function StageCard({
+  index,
+  status,
+  label,
+  description,
+  enteredBy,
+  locks,
+  off,
+  tools,
+  children,
+}: {
+  index: number;
+  status: BillWorkflowStatus;
+  label: string;
+  description: string;
+  enteredBy: string | null;
+  locks?: boolean;
+  off?: boolean;
+  tools?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const role = isRoleStep(status);
   const client = status === 'raised' || status === 'certified';
   return (
-    <li className="relative flex gap-3 pb-5 last:pb-0">
-      {!last ? <span className="absolute bottom-0 left-[13px] top-7 w-px bg-slate-200" aria-hidden="true" /> : null}
-      <span
-        className={cn(
-          'relative z-[1] flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold',
-          off ? 'border-dashed border-slate-300 bg-slate-50 text-slate-300' : client ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : optional ? 'border-dashed border-slate-300 bg-white text-slate-500' : 'border-slate-200 bg-white text-slate-600',
-        )}
-      >
-        {index + 1}
-      </span>
-      <div className={cn('min-w-0 flex-1 space-y-2 pt-0.5', off && 'opacity-70')}>
-        <div className="flex flex-wrap items-center gap-2">
-          <WorkflowStatusBadge status={status} />
-          {status === 'certified' ? <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Client step</span> : null}
-          {optional ? <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Optional</span> : null}
-          {off ? <span className="text-xs font-medium text-slate-400">Skipped</span> : null}
+    <section className={cn('overflow-hidden rounded-xl border bg-white shadow-sm', off ? 'border-dashed border-slate-300' : client ? 'border-emerald-200' : 'border-slate-200')}>
+      <header className={cn('flex flex-wrap items-start gap-3 px-4 py-3.5 sm:px-5', !off && 'border-b border-slate-100')}>
+        <span
+          className={cn(
+            'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold',
+            off ? 'bg-slate-100 text-slate-400' : client ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700',
+          )}
+          aria-hidden="true"
+        >
+          {index + 1}
+        </span>
+        <div className={cn('min-w-0 flex-1', off && 'opacity-70')}>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-[15px] font-semibold text-slate-900">
+              Step {index + 1}: {label}
+            </h4>
+            {status === 'certified' ? <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">Client step</span> : null}
+            {role && status !== 'certified' ? <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">Built-in</span> : null}
+            {locks ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                <Lock className="h-3 w-3" aria-hidden="true" /> Locks amounts
+              </span>
+            ) : null}
+          </div>
+          {description ? <p className="mt-0.5 text-sm text-slate-600">{description}</p> : null}
+          {enteredBy ? (
+            <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+              <ArrowDown className="h-3.5 w-3.5 rotate-180 text-slate-400" aria-hidden="true" />
+              Entered by <span className="font-medium text-slate-700">{enteredBy}</span>
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">Where every bill starts.</p>
+          )}
         </div>
-        <p className="text-sm text-slate-700">{MEANING[status]}</p>
-        {REACHED_BY[status] ? (
-          <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
-            <ArrowDown className="h-3.5 w-3.5 rotate-180 text-slate-400" aria-hidden="true" />
-            Reached by <span className="font-medium text-slate-700">{REACHED_BY[status]}</span>
-          </p>
-        ) : null}
-        {children}
-      </div>
-    </li>
+        {tools ? <div className="flex shrink-0 items-center gap-0.5 pt-0.5">{tools}</div> : null}
+      </header>
+      {off ? <p className="px-4 pb-3.5 text-sm text-slate-500 sm:px-5 sm:pl-[4.25rem]">Skipped — bills move past this step.</p> : <div className="p-4 sm:p-5">{children}</div>}
+    </section>
   );
 }
 
-function StepControls({ step, users, disabled, onChange }: { step: WorkflowStepSetting; users: UserOption[]; disabled?: boolean; onChange: (patch: Partial<WorkflowStepSetting>) => void }) {
-  const optional = OPTIONAL_STEPS.includes(step.status);
-  const permission = STEP_PERMISSION[step.status];
-  const naming = step.assignment !== 'permission';
-  return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
-      {optional ? (
-        <label className="flex items-center gap-2 text-sm">
-          <Switch disabled={disabled} checked={step.enabled} onCheckedChange={(value) => onChange({ enabled: value })} aria-label={`Use this stage`} />
-          <span className="font-medium text-slate-800">{step.enabled ? 'Used' : 'Skipped — bills move past this stage'}</span>
-        </label>
-      ) : null}
+/** The three ways a step can be done — the "Moved here by" dropdown. */
+const ASSIGNMENT_CHOICES: { value: WorkflowAssignment; label: string; hint: string; icon: typeof Users }[] = [
+  { value: 'permission', label: 'Permission holders', hint: 'Anyone holding the permission below', icon: KeyRound },
+  { value: 'users', label: 'Named people', hint: 'The people you choose', icon: Users },
+  { value: 'collection_owner', label: 'Collection owner', hint: 'The bill’s owner, plus backups', icon: UserCheck },
+];
 
-      {step.enabled ? (
-        <>
-          <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-            <FormField label="Moved here by" width="medium">
-              <Select disabled={disabled} value={step.assignment} onValueChange={(value) => onChange({ assignment: value as WorkflowAssignment })}>
-                <SelectTrigger aria-label="Moved here by">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="permission">Anyone with {permission}</SelectItem>
-                  <SelectItem value="users">Named people</SelectItem>
-                  <SelectItem value="collection_owner">The bill’s collection owner</SelectItem>
-                </SelectContent>
-              </Select>
+/**
+ * A step's settings in three parts: what the step is (name, button, meaning), who moves bills into
+ * it — one choice, then the one place its permission is named, in full as Access Management names
+ * it — and, for review steps, its rules. Switches that do not apply are left out, not greyed.
+ */
+function StepControls({ step, users, disabled, onChange }: { step: WorkflowStepSetting; users: UserOption[]; disabled?: boolean; onChange: (patch: Partial<WorkflowStepSetting>) => void }) {
+  const certify = step.status === 'certified';
+  const permission = `Bill Tracking · ${permissionText(step.permissions)}`;
+  const fresh = step.permissions.filter((entry) => entry === 'Submit' || entry === 'Raise');
+  const naming = step.assignment !== 'permission';
+  const review = !isRoleStep(step.status);
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <fieldset className="min-w-0 space-y-3">
+          <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Step details</legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <FormField label="Step name *" htmlFor={`step-name-${step.status}`}>
+              <Input id={`step-name-${step.status}`} disabled={disabled} maxLength={40} value={step.label} onChange={(event) => onChange({ label: event.target.value })} />
             </FormField>
-            {naming ? (
-              <FormField label={step.assignment === 'collection_owner' ? 'Backup people' : 'People'} width="wide">
-                <UserPicker value={step.userIds} users={users} disabled={disabled} onChange={(userIds) => onChange({ userIds })} placeholder={step.assignment === 'collection_owner' ? 'Nobody else' : 'Choose people'} />
-              </FormField>
-            ) : null}
+            <FormField label="Button text" htmlFor={`step-action-${step.status}`} hint={certify ? 'Reached by recording the certification.' : undefined}>
+              <Input id={`step-action-${step.status}`} disabled={disabled || certify} maxLength={40} value={step.actionLabel} onChange={(event) => onChange({ actionLabel: event.target.value })} />
+            </FormField>
           </div>
+          <FormField label="What it means" htmlFor={`step-description-${step.status}`}>
+            <Textarea id={`step-description-${step.status}`} rows={2} className="min-h-[4rem] resize-y" disabled={disabled} maxLength={300} value={step.description} onChange={(event) => onChange({ description: event.target.value })} placeholder="Shown on this card and on the bill." />
+          </FormField>
+        </fieldset>
+
+        <fieldset className="min-w-0 space-y-3">
+          <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who moves bills here</legend>
+          {/* A dropdown, each choice with its icon and what it means, open and closed alike. */}
+          <FormField label="Moved here by">
+            <Select disabled={disabled} value={step.assignment} onValueChange={(value) => onChange({ assignment: value as WorkflowAssignment })}>
+              <SelectTrigger aria-label="Who moves bills here" className="h-auto min-h-10 py-1.5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ASSIGNMENT_CHOICES.map((choice) => {
+                  const Icon = choice.icon;
+                  return (
+                    <SelectItem key={choice.value} value={choice.value}>
+                      <span className="flex items-start gap-2 text-left">
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-medium text-slate-800">{choice.label}</span>
+                          <span className="block text-[11px] leading-snug text-slate-500">{choice.hint}</span>
+                        </span>
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </FormField>
 
           {naming ? (
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              <label className="flex items-center gap-2 text-sm">
-                <Switch disabled={disabled} checked={step.onlyAssigned} onCheckedChange={(value) => onChange({ onlyAssigned: value })} aria-label="Only these people" />
-                <span>
-                  Only them <span className="text-xs text-slate-500">— {step.onlyAssigned ? `people with ${permission} cannot do it` : `people with ${permission} can still do it`}</span>
-                </span>
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <Switch disabled={disabled} checked={step.notify} onCheckedChange={(value) => onChange({ notify: value })} aria-label="Notify when a bill is waiting" />
-                <Bell className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
-                <span>Notify when a bill is waiting</span>
-              </label>
-            </div>
+            <FormField label={step.assignment === 'collection_owner' ? 'Backup people' : 'People'} hint={step.assignment === 'collection_owner' ? 'Used when the bill has no collection owner, and alongside the owner.' : undefined}>
+              <UserPicker value={step.userIds} users={users} disabled={disabled} onChange={(userIds) => onChange({ userIds })} placeholder={step.assignment === 'collection_owner' ? 'Nobody else' : 'Choose people'} />
+            </FormField>
           ) : null}
 
-          {step.assignment === 'users' && !step.userIds.length ? (
-            <p className="text-xs text-amber-700">Nobody is named yet, so anyone with {permission} keeps doing it.</p>
-          ) : step.assignment === 'collection_owner' ? (
-            <p className="text-xs text-slate-500">The bill’s collection owner{step.userIds.length ? ' and the backup people' : ''}{step.onlyAssigned ? ' only' : `, plus anyone with ${permission}`}. A bill without an owner falls back to {step.userIds.length ? 'the backup people' : `anyone with ${permission}`}.</p>
+          <FormField label={naming ? 'Permissions that can also do it' : 'Permissions needed'} hint={naming ? (step.onlyAssigned ? 'Not used while “Only these people” is on.' : 'Holders of any of them can do the step too, unless “Only these people” is on.') : 'Holding any one of them is enough. Granted in Settings → Access Management.'}>
+            <PermissionPicker value={step.permissions} disabled={disabled || (naming && step.onlyAssigned)} onChange={(permissions) => onChange({ permissions })} />
+          </FormField>
+          {fresh.length && !(naming && step.onlyAssigned) ? (
+            // Added to the registry with the configurable workflow, so no role holds them yet.
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {permissionText(fresh)} {fresh.length === 1 ? 'is a new permission' : 'are new permissions'}. Grant {fresh.length === 1 ? 'it' : 'them'} to the right roles in Settings → Access Management before saving
+              {fresh.length === step.permissions.length && !naming ? ', or nobody can do this step' : ''}.
+            </p>
           ) : null}
-        </>
+
+          {naming ? (
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <ToggleRow label="Only these people" hint={step.onlyAssigned ? 'Permission holders cannot do it.' : 'Permission holders can still do it.'} disabled={disabled} checked={step.onlyAssigned} onChange={(value) => onChange({ onlyAssigned: value })} />
+              <ToggleRow label="Notify them" icon={<Bell className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />} hint="Told when a bill is waiting." disabled={disabled} checked={step.notify} onChange={(value) => onChange({ notify: value })} />
+            </div>
+          ) : null}
+          {step.assignment === 'users' && !step.userIds.length ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Nobody is chosen yet, so holders of {permission} keep doing it.</p>
+          ) : null}
+        </fieldset>
+      </div>
+
+      {review ? (
+        <fieldset className="space-y-2 border-t border-slate-100 pt-4">
+          <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Rules</legend>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <ToggleRow
+              label="Locks the amounts"
+              icon={<Lock className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />}
+              hint="From here, amounts, GST and deductions change only with Edit After Approval and a reason."
+              disabled={disabled}
+              checked={step.locksAmounts}
+              onChange={(value) => onChange({ locksAmounts: value })}
+            />
+            <ToggleRow
+              label="Can be returned for correction"
+              icon={<Undo2 className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />}
+              hint="A bill here can go back to its preparer with a note."
+              disabled={disabled}
+              checked={step.canReturn}
+              onChange={(value) => onChange({ canReturn: value })}
+            />
+          </div>
+        </fieldset>
       ) : null}
     </div>
+  );
+}
+
+/** A setting that is on or off, in a bordered row: its name and (i), the switch on the right. */
+function ToggleRow({ label, hint, icon, checked, onChange, disabled }: { label: string; hint: string; icon?: React.ReactNode; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  const id = useId();
+  // The name and its switch; what it means is behind the (i), not open under it.
+  return (
+    <div className={cn('flex items-center justify-between gap-3 rounded-lg border p-3', disabled && 'opacity-60')}>
+      <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium text-slate-800">
+        {icon}
+        <label htmlFor={id} className="cursor-pointer">
+          {label}
+        </label>
+        <InfoTip label={`About “${label}”`}>{hint}</InfoTip>
+      </span>
+      <Switch id={id} disabled={disabled} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+/** What each Bills permission is for, beside its name in the picker. */
+const PERMISSION_HINTS: Record<WorkflowStepPermission, string> = {
+  Add: 'Creates bills',
+  Submit: 'Submits bills for checking (new)',
+  Edit: 'Edits bills',
+  Verify: 'Checks figures and documents',
+  Approve: 'Approves bills',
+  Raise: 'Sends bills to the client (new)',
+  Certify: 'Records the client’s certification',
+  'Edit After Approval': 'Changes locked amounts',
+  'Override Status': 'Overrides payment status',
+};
+
+/**
+ * Pick the permissions that may do a step — any one is enough — by ticking them; the button lists
+ * those chosen. At least one stays ticked, so a step can never be left to nobody.
+ */
+function PermissionPicker({ value, onChange, disabled }: { value: WorkflowStepPermission[]; onChange: (permissions: WorkflowStepPermission[]) => void; disabled?: boolean }) {
+  const toggle = (entry: WorkflowStepPermission) => {
+    if (value.includes(entry)) {
+      if (value.length > 1) onChange(value.filter((item) => item !== entry));
+    } else onChange(WORKFLOW_STEP_PERMISSIONS.filter((item) => item === entry || value.includes(item)));
+  };
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" disabled={disabled} className="h-auto min-h-10 w-full justify-between gap-2 py-1.5 font-normal">
+          <span className="flex min-w-0 flex-wrap items-center gap-1">
+            <KeyRound className="mr-1 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            {value.map((entry) => (
+              <span key={entry} className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-800">
+                {entry}
+              </span>
+            ))}
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-2">
+        <p className="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bill Tracking · Bills — any one is enough</p>
+        <ul>
+          {WORKFLOW_STEP_PERMISSIONS.map((entry) => {
+            const checked = value.includes(entry);
+            return (
+              <li key={entry}>
+                <label className={cn('flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-slate-50', checked && value.length === 1 && 'cursor-default')}>
+                  <Checkbox checked={checked} disabled={checked && value.length === 1} onCheckedChange={() => toggle(entry)} />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-slate-800">{entry}</span>
+                    <span className="block text-[11px] text-slate-500">{PERMISSION_HINTS[entry]}</span>
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      </PopoverContent>
+    </Popover>
   );
 }
 

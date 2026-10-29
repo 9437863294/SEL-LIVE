@@ -51,7 +51,6 @@ import {
   AGEING_BASES,
   PAYMENT_STATUSES,
   TRANSACTION_TYPES,
-  WORKFLOW_STATUSES,
   type AgeingBasis,
   type Bill,
   type BillActivity,
@@ -100,7 +99,8 @@ export function parseFilters(params: URLSearchParams, today: string): BillFilter
     categories: list(params, 'category'),
     transactionTypes: oneOf(TRANSACTION_TYPES, list(params, 'txn')),
     paymentStatuses: oneOf(PAYMENT_STATUSES, list(params, 'payment')),
-    workflowStatuses: oneOf(WORKFLOW_STATUSES, list(params, 'workflow')),
+    // Any step id (the workflow's steps are configured), checked only for shape.
+    workflowStatuses: list(params, 'workflow').filter((id) => /^[a-z][a-z0-9_]{1,39}$/.test(id)),
     ageingBucket: params.get('ageing') || undefined,
     ageingBasis: oneOf(AGEING_BASES, list(params, 'basis'))[0],
     outstandingMin: numberParam(params, 'min'),
@@ -142,7 +142,7 @@ export async function lookups(context: BtContext) {
   const configured = loadConfig(context.organizationId).then(async (config) => ({ config, projects: await loadProjects(context, config.projectProfiles) }));
   const [{ config, projects }, clients, users, gstSetup] = await Promise.all([configured, loadClients(), loadUsers(), loadGstSetup()]);
   const resources = ['Dashboard', 'Bills', 'Collections', 'Retention', 'Follow-ups', 'Targets', 'Import', 'Reports', 'Settings'] as const;
-  const actions = ['View', 'Add', 'Edit', 'Delete', 'Verify', 'Approve', 'Override Status', 'Edit After Approval', 'Certify', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
+  const actions = ['View', 'Add', 'Edit', 'Submit', 'Delete', 'Verify', 'Approve', 'Raise', 'Override Status', 'Edit After Approval', 'Certify', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
   const permissions: Record<string, string[]> = {};
   for (const resource of resources) permissions[resource] = actions.filter((action) => context.can(resource, action));
   return {

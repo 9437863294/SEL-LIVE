@@ -72,7 +72,7 @@ import { cn } from '@/lib/utils';
 import { RETENTION_KINDS, WORKFLOW_PATH, daysBetween, deductionsOfKind, effectiveDeductions, totalDeduction, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
-import { STEP_PERMISSION, WORKFLOW_ACTION_RULES, availableActions, certificationBlocked, certificationNotDue, isStepEnabled, waitingFor, type WorkflowActionName } from '@/lib/bill-tracking/workflow';
+import { availableActions, certificationBlocked, certificationNotDue, isAfterPayment, isStepEnabled, stepLabel, stepPermissionText, waitingFor, workflowPath, type AvailableMove, type WorkflowMove } from '@/lib/bill-tracking/workflow';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { billRetentionSlabs, formatRate, releaseSlabKey, retentionSource, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
@@ -96,7 +96,7 @@ import {
   type RetentionRelease,
 } from '@/lib/bill-tracking/types';
 
-import { btDownload, btFetch, useBt, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
+import { btDownload, btFetch, useBt, useBtQuery, useLookups, useStepLabel, useWorkflowActor } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
 import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, Notice, TransactionTypeBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
 
@@ -120,7 +120,6 @@ interface Detail {
   noteInvoice?: Pick<Bill, 'deductions' | 'taxableAmount' | 'grossAmount'> | null;
 }
 
-type WorkflowAction = WorkflowActionName;
 
 export default function BillDetail({ billId }: { billId: string }) {
   const { data, loading, error, reload } = useBtQuery<Detail>(`bills/${billId}`);
@@ -160,8 +159,6 @@ const STEP_INNER: Record<StepTone, string | null> = { done: null, current: 'bg-w
 const STEP_LABEL: Record<StepTone, string> = { done: 'text-slate-700', current: 'text-slate-900', attention: 'text-amber-800', pending: 'text-slate-400', danger: 'text-rose-700' };
 const STEP_CAPTION: Record<StepTone, string> = { done: 'text-slate-500', current: 'text-emerald-700', attention: 'text-amber-700', pending: 'text-slate-400', danger: 'text-rose-700' };
 
-/** Workflow stages after the payment, left off the line. */
-const AFTER_PAYMENT: readonly BillWorkflowStatus[] = ['reconciliation', 'closed'];
 
 interface PipelineStep {
   status: BillWorkflowStatus;
@@ -180,11 +177,11 @@ interface PipelineStep {
  */
 function billPipeline(bill: BillRow, certificationState: CertificationState | null, settings: Parameters<typeof isStepEnabled>[0]): PipelineStep[] {
   // A returned bill sits at the stage it was returned from, marked as such.
-  const at = bill.workflowStatus === 'returned' ? (bill.returnedFrom ?? 'submitted') : bill.workflowStatus;
-  // The line ends at the payment: reconciliation and closing are book-keeping after it, so a bill at
-  // either is past every step shown (the payment step says which).
-  const stages = WORKFLOW_PATH.filter((status) => !AFTER_PAYMENT.includes(status) && (isStepEnabled(settings, status) || status === at));
-  const atIndex = AFTER_PAYMENT.includes(at) ? stages.length : stages.indexOf(at);
+  const at = bill.workflowStatus === 'returned' ? (bill.returnedFrom ?? 'draft') : bill.workflowStatus;
+  // The line is the configured workflow up to the payment: reconciliation and closing are
+  // book-keeping after it, so a bill at either is past every step shown (the payment step says which).
+  const stages = workflowPath(settings).filter((status) => !isAfterPayment(status) && (isStepEnabled(settings, status) || status === at));
+  const atIndex = isAfterPayment(at) ? stages.length : stages.indexOf(at);
   const paid = bill.paymentStatus === 'received' || bill.paymentStatus === 'adjusted';
   const partly = bill.paymentStatus === 'partially_received' || bill.paymentStatus === 'over_received';
   return stages.map((status, index) => {
@@ -220,11 +217,11 @@ function billPipeline(bill: BillRow, certificationState: CertificationState | nu
     if (status === 'payment_followup') {
       // Following up is optional work, not a milestone: this place on the line shows the payment
       // itself — done once received, amber while part-paid or still unpaid after the bill moved on.
-      const caption = current ? `Following up · ${PAYMENT_STATUS_LABELS[bill.paymentStatus]}` : AFTER_PAYMENT.includes(at) ? `${PAYMENT_STATUS_LABELS[bill.paymentStatus]} · ${WORKFLOW_STATUS_LABELS[at]}` : PAYMENT_STATUS_LABELS[bill.paymentStatus];
+      const caption = current ? `Following up · ${PAYMENT_STATUS_LABELS[bill.paymentStatus]}` : isAfterPayment(at) ? `${PAYMENT_STATUS_LABELS[bill.paymentStatus]} · ${stepLabel(settings, at)}` : PAYMENT_STATUS_LABELS[bill.paymentStatus];
       const tone: StepTone = paid ? 'done' : partly || index < atIndex ? 'attention' : current ? 'current' : 'pending';
       return { status, label: 'Payment', caption, tone, current };
     }
-    return { status, label: WORKFLOW_STATUS_LABELS[status], caption, tone, current };
+    return { status, label: stepLabel(settings, status), caption, tone, current };
   });
 }
 
@@ -410,7 +407,9 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   const router = useRouter();
   const { toast } = useToast();
   const [dialog, setDialog] = useState<null | 'workflow' | 'override' | 'due' | 'mismatch' | 'delete' | 'email'>(null);
-  const [pendingAction, setPendingAction] = useState<WorkflowAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<WorkflowMove | null>(null);
+  // What the remark dialog is for: returning, closing or reopening.
+  const pendingKind = !pendingAction ? null : pendingAction.action === 'return' ? 'return' : pendingAction.action === 'reopen' ? 'reopen' : 'close';
   const reference = billReference(bill);
   // Payment waits for the client's certification when Settings → Workflow says so.
   const receiptBlock = receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt);
@@ -431,10 +430,10 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
     ? null
     : waiting.status === null
       ? { stage: 'Correction', who: waiting.userIds.map(nameOf).join(', ') || 'The preparer' }
-      : { stage: WORKFLOW_STATUS_LABELS[waiting.status], who: waiting.userIds.length ? waiting.userIds.map(nameOf).join(', ') : `Anyone with ${STEP_PERMISSION[waiting.status]}` };
-  const runWorkflow = async (action: WorkflowAction, remarks?: string) => {
+      : { stage: stepLabel(settings, waiting.status), who: waiting.userIds.length ? waiting.userIds.map(nameOf).join(', ') : `Anyone with ${stepPermissionText(settings, waiting.status)}` };
+  const runWorkflow = async (move: WorkflowMove, remarks?: string) => {
     try {
-      await btFetch(`bills/${bill.id}/workflow`, { body: { action, remarks } });
+      await btFetch(`bills/${bill.id}/workflow`, { body: { action: move.action, to: move.to, remarks } });
       toast({ title: 'Workflow updated' });
       reload();
     } catch (caught) {
@@ -442,25 +441,29 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
     }
   };
   // Return, close and reopen ask for a remark first; the rest move the bill at once.
-  const startWorkflow = (action: WorkflowActionName) => {
-    if (action === 'return' || action === 'close' || action === 'reopen') {
-      setPendingAction(action);
+  const startWorkflow = (move: WorkflowMove) => {
+    if (move.action === 'return' || move.action === 'reopen' || move.to === 'closed') {
+      setPendingAction(move);
       setDialog('workflow');
-    } else void runWorkflow(action);
+    } else void runWorkflow(move);
   };
-  // The move into the stage the bill is waiting for is the one to make, so it is the solid button.
-  const nextAction = actions.find((entry) => entry.tone !== 'danger' && WORKFLOW_ACTION_RULES[entry.action].to === waiting?.status)?.action ?? actions.find((entry) => entry.tone !== 'danger')?.action;
+  // The move into the step the bill is waiting for is the one to make, so it is the solid button.
+  const moveKey = (move: AvailableMove) => `wf-${move.action}-${move.to ?? ''}`;
+  const nextMove = actions.find((entry) => entry.tone !== 'danger' && entry.to === waiting?.status) ?? actions.find((entry) => entry.tone !== 'danger');
+  const nextAction = nextMove ? moveKey(nextMove) : null;
+  // The remark dialog's wording: the move's own label (a renamed Close says so).
+  const pendingLabel = pendingAction ? actions.find((entry) => entry.action === pendingAction.action && entry.to === pendingAction.to)?.label : undefined;
   // The header's actions, most important first: the next workflow step, then taking the money (or
   // the certification it waits for), the other workflow moves, Edit, and the tools after them.
   const certificationLabel = bill.certification ? 'Edit client certification' : 'Record certification';
   const headerActions: OverflowAction[] = [
     ...actions.map((entry): OverflowAction => ({
-      key: `wf-${entry.action}`,
+      key: moveKey(entry),
       label: entry.label,
       icon: entry.tone === 'danger' ? Undo2 : CheckCircle2,
-      variant: entry.action === nextAction ? 'primary' : entry.tone === 'danger' ? 'danger' : 'secondary',
-      priority: entry.action === nextAction ? 0 : entry.tone === 'danger' ? 3 : 2,
-      onSelect: () => startWorkflow(entry.action),
+      variant: moveKey(entry) === nextAction ? 'primary' : entry.tone === 'danger' ? 'danger' : 'secondary',
+      priority: moveKey(entry) === nextAction ? 0 : entry.tone === 'danger' ? 3 : 2,
+      onSelect: () => startWorkflow(entry),
     })),
     ...(can('Collections', 'Add') && bill.outstandingAmount !== 0 && !receiptBlock
       ? [{ key: 'receive', label: 'Receive', icon: Wallet, href: `/bill-tracking/collections/new?bill=${bill.id}`, variant: 'primary', priority: 1 } satisfies OverflowAction]
@@ -511,7 +514,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
         waitingOn={bill.isDeleted ? null : waitingOn}
         // Only once the bill has gone to the client: before it is raised there is nothing for the
         // client to certify yet, and the stage it waits for is said beside this already.
-        awaitingCertification={Boolean(receiptBlock) && !bill.isDeleted && bill.outstandingAmount !== 0 && certificationNotDue(bill) === null}
+        awaitingCertification={Boolean(receiptBlock) && !bill.isDeleted && bill.outstandingAmount !== 0 && certificationNotDue(bill, settings) === null}
         onOpenCertification={detail.certification ? () => setTab('certification') : undefined}
       />
       {bill.isDeleted ? <Notice tone="rose" title="This bill has been deleted">{bill.deleteReason ?? 'No reason recorded.'} It is excluded from every total.</Notice> : null}
@@ -635,11 +638,11 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
 
       <ReasonDialog
         open={dialog === 'workflow'}
-        title={pendingAction === 'return' ? 'Return for correction' : pendingAction === 'close' ? 'Close bill' : 'Reopen bill'}
-        description={pendingAction === 'return' ? 'Say what needs correcting. The bill goes back to its preparer with your note.' : 'Recorded in the audit trail.'}
-        label={pendingAction === 'return' ? 'What needs correcting *' : 'Remarks'}
-        required={pendingAction === 'return'}
-        confirm={pendingAction === 'return' ? 'Return' : pendingAction === 'close' ? 'Close bill' : 'Reopen'}
+        title={pendingKind === 'return' ? 'Return for correction' : pendingLabel ?? (pendingKind === 'close' ? 'Close bill' : 'Reopen bill')}
+        description={pendingKind === 'return' ? 'Say what needs correcting. The bill goes back to its preparer with your note.' : 'Recorded in the audit trail.'}
+        label={pendingKind === 'return' ? 'What needs correcting *' : 'Remarks'}
+        required={pendingKind === 'return'}
+        confirm={pendingKind === 'return' ? 'Return' : pendingLabel ?? (pendingKind === 'close' ? 'Close bill' : 'Reopen')}
         onClose={() => setDialog(null)}
         onConfirm={async (remarks) => {
           if (pendingAction) await runWorkflow(pendingAction, remarks || undefined);
@@ -849,7 +852,7 @@ function OverviewTab({ bill }: { bill: BillRow }) {
 
       {bill.dueDateRevisions?.length ? (
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <SectionHeader title="Due date revisions" as="h3" />
+          <SectionHeader descriptionAs="info" title="Due date revisions" as="h3" />
           <ul className="mt-2 space-y-1 text-sm">
             {bill.dueDateRevisions.map((revision) => (
               <li key={revision.changedAt} className="text-slate-700">
@@ -985,7 +988,7 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
 
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <SectionHeader
+          <SectionHeader descriptionAs="info"
             title="Client’s certificate"
             as="h3"
             actions={
@@ -1118,7 +1121,7 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
   return (
     <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
       <CardContent className="space-y-2 p-4">
-        <SectionHeader title="Credit / debit notes against this invoice" as="h3" description="Each note is its own document with its own receivable; this shows their effect on the invoice." />
+        <SectionHeader descriptionAs="info" title="Credit / debit notes against this invoice" as="h3" description="Each note is its own document with its own receivable; this shows their effect on the invoice." />
         <ul className="divide-y divide-violet-100 text-sm">
           {notes.map((note) => (
             <li key={note.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
@@ -1168,7 +1171,7 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
       <CardContent className="p-0">
         <Tabs value={shown} onValueChange={(next) => setShown(next === 'raised' ? 'raised' : 'certified')}>
           <div className="px-4 pt-4">
-            <SectionHeader
+            <SectionHeader descriptionAs="info"
               as="h3"
               title="Deductions on this bill"
               description={`Certified by the client on ${dateText(certification.certifiedDate)}. The certified deductions apply — the net receivable, outstanding, reports and retention follow them, with no credit / debit note. The raised lines are kept as the bill was issued.`}
@@ -1296,7 +1299,7 @@ function CollectionsTab({ detail, reload }: { detail: Detail; reload: () => void
     <div className="space-y-4">
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <SectionHeader title="Receipts" as="h3" description="Only verified receipts reduce the outstanding." />
+          <SectionHeader descriptionAs="info" title="Receipts" as="h3" description="Only verified receipts reduce the outstanding." />
           {detail.collections.length === 0 ? <p className="text-sm text-muted-foreground">No collection records found for this bill.</p> : null}
           <div className="space-y-2">
             {detail.collections.map((collection) => {
@@ -1337,7 +1340,7 @@ function CollectionsTab({ detail, reload }: { detail: Detail; reload: () => void
 
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <SectionHeader title="Payment ledger" as="h3" description="Bill raised, then every verified receipt — the running balance ends at the outstanding." />
+          <SectionHeader descriptionAs="info" title="Payment ledger" as="h3" description="Bill raised, then every verified receipt — the running balance ends at the outstanding." />
           <LedgerTable lines={detail.ledger} />
         </CardContent>
       </Card>
@@ -1447,7 +1450,7 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-4 p-4">
-        <SectionHeader title="Retention on this bill" icon={PiggyBank} as="h3" description={bill.certification ? 'As the client certified it — the certified retention lines replace the raised ones.' : undefined} />
+        <SectionHeader descriptionAs="info" title="Retention on this bill" icon={PiggyBank} as="h3" description={bill.certification ? 'As the client certified it — the certified retention lines replace the raised ones.' : undefined} />
         {isRetentionBill ? (
           released ? (
             <p className="text-sm text-slate-700">
@@ -1616,7 +1619,7 @@ function DocumentsTab({ bill, documents, reload }: { bill: BillRow; documents: B
     void btDownload(`documents/${document.id}`, document.fileName, inline).catch((caught) => toast({ title: 'Could not open', description: String(caught), variant: 'destructive' }));
 
   return (
-    <TableCard
+    <TableCard descriptionAs="info"
       title="Documents"
       icon={Paperclip}
       description="Invoice, submission, measurement, payment advice, bank proof, TDS certificate, letters."
@@ -1807,7 +1810,7 @@ function FollowUpTab({ bill, followUps, reload }: { bill: BillRow; followUps: Bi
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <SectionHeader title="Follow-up history" icon={PhoneCall} as="h3" />
+          <SectionHeader descriptionAs="info" title="Follow-up history" icon={PhoneCall} as="h3" />
           {followUps.length === 0 ? <p className="text-sm text-muted-foreground">No follow-ups recorded yet.</p> : null}
           <ol className="relative space-y-4 border-l border-slate-200 pl-4">
             {followUps.map((followUp) => (
@@ -1857,7 +1860,7 @@ function FollowUpTab({ bill, followUps, reload }: { bill: BillRow; followUps: Bi
       {can('Follow-ups', 'Add') && !bill.isDeleted ? (
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-3 p-4">
-            <SectionHeader title="Record a follow-up" as="h3" />
+            <SectionHeader descriptionAs="info" title="Record a follow-up" as="h3" />
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">Date</Label>
@@ -1947,7 +1950,7 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Internal comments" icon={MessageSquare} as="h3" description="Comments are kept in full — nothing overwrites an earlier remark. Type @Name to notify someone." />
+        <SectionHeader descriptionAs="info" title="Internal comments" icon={MessageSquare} as="h3" description="Comments are kept in full — nothing overwrites an earlier remark. Type @Name to notify someone." />
         <div className="space-y-2">
           <Textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} placeholder="Add a comment…" />
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1994,9 +1997,9 @@ const fieldLabel = (key: string) => {
 };
 
 /** A stored value as a person reads it: a stage or payment status by its name, an amount in rupees. */
-function activityValue(key: string, value: unknown): string {
+function activityValue(key: string, value: unknown, label: (status: string) => string): string {
   if (value === null || value === undefined || value === '') return '—';
-  if (key === 'workflowStatus' && typeof value === 'string') return WORKFLOW_STATUS_LABELS[value as BillWorkflowStatus] ?? value;
+  if ((key === 'workflowStatus' || key === 'returnedFrom') && typeof value === 'string') return label(value);
   if (key === 'paymentStatus' && typeof value === 'string') return PAYMENT_STATUS_LABELS[value as keyof typeof PAYMENT_STATUS_LABELS] ?? value;
   if (typeof value === 'number') return /amount|net|deduction|received|outstanding|gross|taxable|gst|receivable/i.test(key) ? formatINR(value) : value.toLocaleString('en-IN');
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
@@ -2005,13 +2008,13 @@ function activityValue(key: string, value: unknown): string {
 }
 
 /** What an entry changed: each field whose value differs between before and after. */
-function activityChanges(entry: BillActivity): { field: string; before: string; after: string }[] {
+function activityChanges(entry: BillActivity, label: (status: string) => string): { field: string; before: string; after: string }[] {
   if (!entry.previous && !entry.next) return [];
   const before = entry.previous ?? {};
   const after = entry.next ?? {};
   return [...new Set([...Object.keys(before), ...Object.keys(after)])]
     .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-    .map((key) => ({ field: fieldLabel(key), before: activityValue(key, before[key]), after: activityValue(key, after[key]) }));
+    .map((key) => ({ field: fieldLabel(key), before: activityValue(key, before[key], label), after: activityValue(key, after[key], label) }));
 }
 
 /**
@@ -2021,6 +2024,8 @@ function activityChanges(entry: BillActivity): { field: string; before: string; 
  * Payment Follow-up") instead of two blocks of raw before / after data.
  */
 export function ActivityTimeline({ entries, billNumber }: { entries: BillActivity[]; billNumber?: string }) {
+  // Steps by their configured names (Settings → Workflow).
+  const stepName = useStepLabel();
   const action = (summary: string) => {
     const prefix = billNumber ? `Bill ${billNumber}` : null;
     if (!prefix || !summary.startsWith(prefix)) return summary;
@@ -2028,7 +2033,7 @@ export function ActivityTimeline({ entries, billNumber }: { entries: BillActivit
     return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : summary;
   };
   return (
-    <TableCard
+    <TableCard descriptionAs="info"
       title="Activity"
       icon={Activity}
       description="Immutable audit trail — every financial action with who, when, what changed and the reason."
@@ -2051,7 +2056,7 @@ export function ActivityTimeline({ entries, billNumber }: { entries: BillActivit
             <TableEmpty colSpan={5}>No activity recorded.</TableEmpty>
           ) : (
             entries.map((entry) => {
-              const changes = activityChanges(entry);
+              const changes = activityChanges(entry, stepName);
               return (
                 <TableRow key={entry.id} className="align-top">
                   <TableCell className="whitespace-nowrap align-top tabular-nums text-slate-600">{dateTimeText(entry.at)}</TableCell>
