@@ -51,7 +51,6 @@ import {
   AGEING_BASES,
   PAYMENT_STATUSES,
   TRANSACTION_TYPES,
-  WORKFLOW_STATUSES,
   type AgeingBasis,
   type Bill,
   type BillActivity,
@@ -100,7 +99,8 @@ export function parseFilters(params: URLSearchParams, today: string): BillFilter
     categories: list(params, 'category'),
     transactionTypes: oneOf(TRANSACTION_TYPES, list(params, 'txn')),
     paymentStatuses: oneOf(PAYMENT_STATUSES, list(params, 'payment')),
-    workflowStatuses: oneOf(WORKFLOW_STATUSES, list(params, 'workflow')),
+    // Any step id (the workflow's steps are configured), checked only for shape.
+    workflowStatuses: list(params, 'workflow').filter((id) => /^[a-z][a-z0-9_]{1,39}$/.test(id)),
     ageingBucket: params.get('ageing') || undefined,
     ageingBasis: oneOf(AGEING_BASES, list(params, 'basis'))[0],
     outstandingMin: numberParam(params, 'min'),
@@ -142,7 +142,7 @@ export async function lookups(context: BtContext) {
   const configured = loadConfig(context.organizationId).then(async (config) => ({ config, projects: await loadProjects(context, config.projectProfiles) }));
   const [{ config, projects }, clients, users, gstSetup] = await Promise.all([configured, loadClients(), loadUsers(), loadGstSetup()]);
   const resources = ['Dashboard', 'Bills', 'Collections', 'Retention', 'Follow-ups', 'Targets', 'Import', 'Reports', 'Settings'] as const;
-  const actions = ['View', 'Add', 'Edit', 'Delete', 'Verify', 'Approve', 'Override Status', 'Edit After Approval', 'Certify', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
+  const actions = ['View', 'Add', 'Edit', 'Submit', 'Delete', 'Verify', 'Approve', 'Raise', 'Override Status', 'Edit After Approval', 'Certify', 'Cancel', 'Hold Unallocated', 'Manage', 'Import', 'Rollback', 'Export', 'Close Month'];
   const permissions: Record<string, string[]> = {};
   for (const resource of resources) permissions[resource] = actions.filter((action) => context.can(resource, action));
   return {
@@ -287,10 +287,15 @@ export async function openBillsForAllocation(context: BtContext, params: URLSear
   const all = await loadScopedBills(context);
   const rc = reportContext(config, context.today);
   const filters: BillFilters = { search: params.get('q') || undefined, projectIds: list(params, 'project'), clientIds: list(params, 'client'), billIds: list(params, 'ids') };
-  const bills = filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
+  // `against`: the open credit / debit notes raised against these invoices — the receipt form adds
+  // them beside their invoice, so the client's payment (invoice less credit note) allocates in full.
+  const against = list(params, 'against');
+  const bills = against.length
+    ? all.filter((bill) => bill.againstBillId && against.includes(bill.againstBillId) && isNoteType(bill.transactionType) && isOpen(bill))
+    : filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
   return sortBills(bills, 'billDate', 'asc', rc)
     .slice(0, 200)
-    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings.certificationBeforeReceipt) }));
+    .map((bill) => ({ id: bill.id, transactionType: bill.transactionType, againstBillId: bill.againstBillId, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings.certificationBeforeReceipt) }));
 }
 
 /**

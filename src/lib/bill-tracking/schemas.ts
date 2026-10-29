@@ -20,7 +20,9 @@ import {
   TRANSACTION_TYPES,
   SUMMARY_COLUMNS,
   WORKFLOW_STATUSES,
+  WORKFLOW_STEP_PERMISSIONS,
 } from './types.ts';
+import { WORKFLOW_ACTIONS } from './workflow.ts';
 
 const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a yyyy-MM-dd date.');
 const optionalDate = z.union([dateKey, z.literal('')]).optional().transform((value) => value || undefined);
@@ -133,8 +135,10 @@ export const certificationInputSchema = z.object({
 });
 export type CertificationInput = z.infer<typeof certificationInputSchema>;
 
+/** A move: `advance` into a configured step (`to`), a named move into a default step, or a side move. */
 export const workflowActionSchema = z.object({
-  action: z.enum(['submit', 'start_verification', 'verify', 'approve', 'raise', 'start_followup', 'reconcile', 'close', 'return', 'resubmit', 'reopen']),
+  action: z.enum(WORKFLOW_ACTIONS),
+  to: z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/).optional(),
   remarks: optionalText(1000),
 });
 export type WorkflowAction = z.infer<typeof workflowActionSchema>['action'];
@@ -303,7 +307,16 @@ export const configInputSchema = z.object({
     workflowSteps: z
       .array(
         z.object({
-          status: z.enum(WORKFLOW_STATUSES),
+          // A default step's key, or the id of a step added in Settings → Workflow.
+          status: z.string().trim().regex(/^[a-z][a-z0-9_]{1,39}$/),
+          label: z.string().trim().min(1, 'Every step needs a name.').max(40).optional(),
+          actionLabel: z.string().trim().max(40).optional(),
+          description: z.string().trim().max(300).optional(),
+          permissions: z.array(z.enum(WORKFLOW_STEP_PERMISSIONS)).min(1, 'Give every step at least one permission.').max(WORKFLOW_STEP_PERMISSIONS.length).optional(),
+          // Older clients sent one.
+          permission: z.enum(WORKFLOW_STEP_PERMISSIONS).optional(),
+          locksAmounts: z.boolean().optional(),
+          canReturn: z.boolean().optional(),
           enabled: z.boolean(),
           assignment: z.enum(['permission', 'users', 'collection_owner']),
           userIds: z.array(z.string().min(1).max(128)).max(50),
@@ -311,7 +324,7 @@ export const configInputSchema = z.object({
           notify: z.boolean(),
         }),
       )
-      .max(20)
+      .max(30)
       .optional(),
     piMarker: z.string().trim().max(20),
   }),

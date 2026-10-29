@@ -24,11 +24,11 @@ import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { useToast } from '@/hooks/use-toast';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason } from '@/lib/bill-tracking/certification';
-import { STEP_PERMISSION, certificationBlocked, waitingFor } from '@/lib/bill-tracking/workflow';
+import { certificationBlocked, stepLabel, stepPermissionText, waitingFor } from '@/lib/bill-tracking/workflow';
 import { LEGACY_EXPORT_HEADERS, legacyExportRows } from '@/lib/bill-tracking/legacy-export';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { exportWorkbook } from '@/lib/report-excel';
-import { GST_TYPE_LABELS, PAYMENT_STATUS_LABELS, WORKFLOW_STATUS_LABELS, type Bill } from '@/lib/bill-tracking/types';
+import { GST_TYPE_LABELS, PAYMENT_STATUS_LABELS, type Bill } from '@/lib/bill-tracking/types';
 import type { BillTotals } from '@/lib/bill-tracking/reports';
 
 import { btFetch, useBtQuery, useLookups, useBt, useWorkflowActor } from './bt-client';
@@ -182,7 +182,7 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
         const waiting = waitingFor(bill, lookups.config.settings);
         if (!waiting) return <span className="text-muted-foreground">—</span>;
         const names = waiting.userIds.map((id) => lookups.users.find((user) => user.id === id)?.name ?? 'Unknown').join(', ');
-        return <TruncatedText text={waiting.status === null ? `${names || 'Preparer'} · correction` : names ? `${names} · ${WORKFLOW_STATUS_LABELS[waiting.status]}` : `${WORKFLOW_STATUS_LABELS[waiting.status]} · ${STEP_PERMISSION[waiting.status]}`} className="max-w-[200px] text-xs" />;
+        return <TruncatedText text={waiting.status === null ? `${names || 'Preparer'} · correction` : names ? `${names} · ${stepLabel(lookups.config.settings, waiting.status)}` : `${stepLabel(lookups.config.settings, waiting.status)} · ${stepPermissionText(lookups.config.settings, waiting.status)}`} className="max-w-[200px] text-xs" />;
       },
     },
     {
@@ -244,7 +244,7 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     { key: 'commitment', label: 'Commitment Date', value: (bill) => bill.nextCommitmentDate },
     { key: 'owner', label: 'Owner', value: (bill) => bill.collectionOwnerName },
     { key: 'payment', label: 'Payment Status', value: (bill) => PAYMENT_STATUS_LABELS[bill.paymentStatus] },
-    { key: 'workflow', label: 'Workflow', value: (bill) => WORKFLOW_STATUS_LABELS[bill.workflowStatus] },
+    { key: 'workflow', label: 'Workflow', value: (bill) => stepLabel(lookups.config.settings, bill.workflowStatus) },
   ];
 
   const exportLegacy = async () => {

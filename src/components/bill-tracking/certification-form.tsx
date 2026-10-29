@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils';
 
 import { btFetch, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
 import { certificationBlocked, certificationNotDue } from '@/lib/bill-tracking/workflow';
-import { Amount, BtError, BtLoading, FormField, FormSection, Notice, Term, WorkflowStatusBadge, dateText, FIELD_ROW } from './bt-ui';
+import { Amount, BtError, BtLoading, FormField, FormSection, Notice, RupeeInput, Term, WorkflowStatusBadge, dateText, FIELD_ROW } from './bt-ui';
 import { DeductionEditor, deductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
 interface Detail {
@@ -322,7 +322,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
       </header>
 
       {!canCertify ? (
-        <Notice tone={certificationNotDue(bill) ? 'amber' : 'blue'} title={certificationNotDue(bill) ? 'Not ready for certification' : 'You cannot record this certification'}>
+        <Notice tone={certificationNotDue(bill, config.settings) ? 'amber' : 'blue'} title={certificationNotDue(bill, config.settings) ? 'Not ready for certification' : 'You cannot record this certification'}>
           {certificationBlocked(bill, config.settings, actor)}{' '}
           <Link href={back.href} onClick={back.onClick} className="font-medium underline underline-offset-2">
             {back.label}
@@ -565,18 +565,6 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
 
 /** A change with its sign: "+₹5,000" / "−₹1,00,000". */
 const changeText = (change: number) => `${change > 0 ? '+' : '−'}${formatINR(Math.abs(change))}`;
-
-/** An amount typed in rupees: the ₹ before it, the figure to the right in even-width digits. */
-function RupeeInput({ value, onChange, ...props }: { value: string; onChange: (value: string) => void; id?: string; required?: boolean; 'aria-label'?: string }) {
-  return (
-    <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">
-        ₹
-      </span>
-      <Input {...props} inputMode="decimal" className="bg-white pl-7 text-right tabular-nums" value={value} onChange={(event) => onChange(event.target.value)} />
-    </div>
-  );
-}
 
 /** "Raised ₹10,00,000" under a field, amber once the certified figure differs. */
 function RaisedHint({ raised, value }: { raised: number; value: number }) {

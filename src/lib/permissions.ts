@@ -926,7 +926,9 @@ export const permissionModules = {
     "View Module": [],
     "All Projects": ["View"],
     Dashboard: ["View"],
-    Bills: ["View", "Add", "Edit", "Delete", "Verify", "Approve", "Override Status", "Edit After Approval", "Certify"],
+    // Submit and Raise let Settings → Workflow give those steps a permission of their own; until a
+    // step is set to use them, submitting and raising need Edit, as they always have.
+    Bills: ["View", "Add", "Edit", "Submit", "Delete", "Verify", "Approve", "Raise", "Override Status", "Edit After Approval", "Certify"],
     Collections: ["View", "Add", "Edit", "Verify", "Cancel", "Hold Unallocated"],
     Retention: ["View", "Manage"],
     "Follow-ups": ["View", "Add", "Edit"],

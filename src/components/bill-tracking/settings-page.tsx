@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { collection, getDocs, limit, query } from 'firebase/firestore';
-import { Database, Lock, Plus, Save, Settings, ShieldCheck, Trash2, Unlock } from 'lucide-react';
+import { BellRing, CalendarClock, Coins, Database, Hash, Lock, Plus, Save, Settings, ShieldCheck, Trash2, Unlock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -28,6 +28,9 @@ import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { financialYearMonths, monthLabel, validateAgeingBuckets } from '@/lib/bill-tracking/calculations';
+import { formatBillNumber } from '@/lib/bill-tracking/defaults';
+import { formatINR } from '@/lib/bill-tracking/money';
+import { cn } from '@/lib/utils';
 import {
   AGEING_BASIS_LABELS,
   DEDUCTION_KINDS,
@@ -40,7 +43,7 @@ import { validateCategoryConfig } from '@/lib/bill-tracking/categories';
 import { BillCategoriesEditor } from './bill-categories-settings';
 import { WorkflowSettings } from './workflow-settings';
 import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
-import { BtError, BtLoading, FySelect, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
+import { BtError, BtLoading, FySelect, InfoTip, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
 
 const KIND_LABELS: Record<string, string> = {
   statutory: 'Statutory (Cess / TDS)',
@@ -130,63 +133,95 @@ export default function SettingsPage() {
           <TabsTrigger className={BT_TAB} value="security">Security & permissions</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="general">
-          <Card className="border-slate-200 bg-white shadow-sm">
-            <CardContent className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Amount tolerance (₹)" hint="Receipts within this of the net count as fully received; net mismatches within it are not flagged.">
-                <Input inputMode="decimal" disabled={!manage} value={settings.tolerance} onChange={(event) => setSettings({ tolerance: number(event.target.value) })} />
-              </Field>
-              <Field label="Default GST rate %" hint="The rate a new bill starts with. CGST and SGST each take half; IGST the whole.">
-                <Input inputMode="decimal" disabled={!manage} value={settings.defaultGstRate} onChange={(event) => setSettings({ defaultGstRate: number(event.target.value) })} />
-              </Field>
-              <Field label="Round % deductions to the rupee" hint="TDS, cess and other percentage deductions — as clients usually deduct them.">
-                <div className="flex h-10 items-center">
-                  <Switch disabled={!manage} checked={settings.roundDeductionsToRupee} onCheckedChange={(value) => setSettings({ roundDeductionsToRupee: value })} />
-                </div>
-              </Field>
-              <Field label="Round net to the rupee" hint="As the legacy sheet's ROUND(Taxable + GST − Deductions, 0).">
-                <div className="flex h-10 items-center">
-                  <Switch disabled={!manage} checked={settings.roundNetToRupee} onCheckedChange={(value) => setSettings({ roundNetToRupee: value })} />
-                </div>
-              </Field>
-              <Field label="Default credit days" hint="Due date = bill (or submission) date + credit days, unless the project or client sets its own.">
-                <Input inputMode="numeric" disabled={!manage} value={settings.defaultCreditDays} onChange={(event) => setSettings({ defaultCreditDays: number(event.target.value) })} />
-              </Field>
-              <Field label="Default ageing basis">
-                <Select disabled={!manage} value={settings.defaultAgeingBasis} onValueChange={(value) => setSettings({ defaultAgeingBasis: value as BillTrackingConfig['settings']['defaultAgeingBasis'] })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(AGEING_BASIS_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="No follow-up alert after (days)">
-                <Input inputMode="numeric" disabled={!manage} value={settings.noFollowUpDays} onChange={(event) => setSettings({ noFollowUpDays: number(event.target.value) })} />
-              </Field>
-              <Field label="Old outstanding after (days)">
-                <Input inputMode="numeric" disabled={!manage} value={settings.oldOutstandingDays} onChange={(event) => setSettings({ oldOutstandingDays: number(event.target.value) })} />
-              </Field>
-              <Field label="High-value bill threshold (₹)" hint="Unpaid bills at or above this appear in Exceptions.">
-                <Input inputMode="decimal" disabled={!manage} value={settings.highValueThreshold} onChange={(event) => setSettings({ highValueThreshold: number(event.target.value) })} />
-              </Field>
-              <Field label="PI marker" hint="Value of “Bill / PI” (legacy TAXABLE / ADVANCE) that marks a proforma invoice for the PI report.">
-                <Input disabled={!manage} value={settings.piMarker} onChange={(event) => setSettings({ piMarker: event.target.value.toUpperCase() })} />
-              </Field>
-              <Field label="Bill numbering" hint="Tokens {FY} and {SEQ}. Imported bills always keep their own numbers.">
-                <div className="flex items-center gap-2">
-                  <Switch disabled={!manage} checked={settings.numbering.enabled} onCheckedChange={(value) => setSettings({ numbering: { ...settings.numbering, enabled: value } })} aria-label="Enable bill numbering" />
-                  <Input disabled={!manage || !settings.numbering.enabled} value={settings.numbering.pattern} onChange={(event) => setSettings({ numbering: { ...settings.numbering, pattern: event.target.value } })} />
-                  <Input className="w-16" inputMode="numeric" aria-label="Number padding" disabled={!manage || !settings.numbering.enabled} value={settings.numbering.padding} onChange={(event) => setSettings({ numbering: { ...settings.numbering, padding: number(event.target.value) } })} />
-                </div>
-              </Field>
-            </CardContent>
-          </Card>
+        {/*
+          Four groups a finance admin looks for — amounts and GST, due dates and ageing, alerts, and
+          numbering — each a list: what the setting does on the left, its control on the right, so a
+          long explanation no longer pushes the grid out of line. Amounts, rates and days carry their
+          unit beside the figure.
+        */}
+        <TabsContent value="general" className="space-y-4">
+          <SettingsGroup icon={Coins} title="Amounts & GST" description="How bills are worked out and when a bill counts as paid.">
+            <SettingRow title="Amount tolerance" description="Receipts within this of the net count as fully received; net mismatches within it are not flagged.">
+              <AffixInput prefix="₹" inputMode="decimal" disabled={!manage} value={settings.tolerance} onChange={(value) => setSettings({ tolerance: number(value) })} aria-label="Amount tolerance" />
+            </SettingRow>
+            <SettingRow title="Default GST rate" description="The rate a new bill starts with. CGST and SGST each take half; IGST the whole.">
+              <AffixInput suffix="%" inputMode="decimal" disabled={!manage} value={settings.defaultGstRate} onChange={(value) => setSettings({ defaultGstRate: number(value) })} aria-label="Default GST rate" />
+            </SettingRow>
+            <SettingRow title="Round percentage deductions to the rupee" description="TDS, cess and other percentage deductions — as clients usually deduct them.">
+              <Switch disabled={!manage} checked={settings.roundDeductionsToRupee} onCheckedChange={(value) => setSettings({ roundDeductionsToRupee: value })} aria-label="Round percentage deductions to the rupee" />
+            </SettingRow>
+            <SettingRow title="Round net to the rupee" description="As the legacy sheet's ROUND(Taxable + GST − Deductions, 0).">
+              <Switch disabled={!manage} checked={settings.roundNetToRupee} onCheckedChange={(value) => setSettings({ roundNetToRupee: value })} aria-label="Round net to the rupee" />
+            </SettingRow>
+          </SettingsGroup>
+
+          <SettingsGroup icon={CalendarClock} title="Due dates & ageing" description="When a bill falls due, and how its age is counted.">
+            <SettingRow title="Default credit days" description="Due date = bill (or submission) date + credit days, unless the project or client sets its own.">
+              <AffixInput suffix="days" inputMode="numeric" disabled={!manage} value={settings.defaultCreditDays} onChange={(value) => setSettings({ defaultCreditDays: number(value) })} aria-label="Default credit days" />
+            </SettingRow>
+            <SettingRow title="Default ageing basis" description="The date a bill's age is counted from in reports, unless a report picks another.">
+              <Select disabled={!manage} value={settings.defaultAgeingBasis} onValueChange={(value) => setSettings({ defaultAgeingBasis: value as BillTrackingConfig['settings']['defaultAgeingBasis'] })}>
+                <SelectTrigger aria-label="Default ageing basis">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(AGEING_BASIS_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+            <SettingRow title="Old outstanding after" description="An unpaid bill older than this is listed in Exceptions as old outstanding.">
+              <AffixInput suffix="days" inputMode="numeric" disabled={!manage} value={settings.oldOutstandingDays} onChange={(value) => setSettings({ oldOutstandingDays: number(value) })} aria-label="Old outstanding after (days)" />
+            </SettingRow>
+          </SettingsGroup>
+
+          <SettingsGroup icon={BellRing} title="Alerts & exceptions" description="What the Exceptions list and reminders flag.">
+            <SettingRow title="No follow-up alert after" description="An unpaid bill with no follow-up recorded for this long — since its last follow-up, or since billing — is flagged.">
+              <AffixInput suffix="days" inputMode="numeric" disabled={!manage} value={settings.noFollowUpDays} onChange={(value) => setSettings({ noFollowUpDays: number(value) })} aria-label="No follow-up alert after (days)" />
+            </SettingRow>
+            <SettingRow
+              title="High-value bill threshold"
+              description="Unpaid bills at or above this appear in Exceptions."
+              note={settings.highValueThreshold ? <span className="font-medium text-slate-700">Now {formatINR(settings.highValueThreshold)}</span> : undefined}
+            >
+              <AffixInput prefix="₹" inputMode="decimal" disabled={!manage} value={settings.highValueThreshold} onChange={(value) => setSettings({ highValueThreshold: number(value) })} aria-label="High-value bill threshold" />
+            </SettingRow>
+          </SettingsGroup>
+
+          <SettingsGroup icon={Hash} title="Numbering & markers" description="How new bills are numbered, and how proforma invoices are recognised.">
+            <SettingRow
+              title="Number new bills automatically"
+              description={
+                <>
+                  Tokens <code className="rounded bg-slate-100 px-1 text-[11px]">{'{FY}'}</code> and <code className="rounded bg-slate-100 px-1 text-[11px]">{'{SEQ}'}</code>, the sequence padded to the digits set. Imported bills always keep their own numbers.
+                </>
+              }
+            >
+              <Switch disabled={!manage} checked={settings.numbering.enabled} onCheckedChange={(value) => setSettings({ numbering: { ...settings.numbering, enabled: value } })} aria-label="Number new bills automatically" />
+            </SettingRow>
+            {settings.numbering.enabled ? (
+              <div className="grid grid-cols-1 gap-3 border-t border-slate-100 px-4 py-3.5 sm:grid-cols-[minmax(0,1fr)_8rem] sm:px-5">
+                <FormField label="Pattern" htmlFor="numbering-pattern">
+                  <Input id="numbering-pattern" className="font-mono text-[13px]" disabled={!manage} value={settings.numbering.pattern} onChange={(event) => setSettings({ numbering: { ...settings.numbering, pattern: event.target.value } })} />
+                </FormField>
+                <FormField label="Sequence digits" htmlFor="numbering-padding">
+                  <Input id="numbering-padding" inputMode="numeric" className="text-right tabular-nums" disabled={!manage} value={settings.numbering.padding} onChange={(event) => setSettings({ numbering: { ...settings.numbering, padding: number(event.target.value) } })} />
+                </FormField>
+                <p className="flex flex-wrap items-center gap-2 text-xs text-slate-500 sm:col-span-2">
+                  Next number looks like
+                  <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[12px] font-medium text-emerald-800">
+                    {formatBillNumber(settings.numbering.pattern, lookups.currentFy, 1, settings.numbering.padding)}
+                  </span>
+                </p>
+              </div>
+            ) : null}
+            <SettingRow title="PI marker" description="The “Bill / PI” value (legacy TAXABLE / ADVANCE) that marks a proforma invoice for the PI report.">
+              <Input className="text-center font-medium uppercase" disabled={!manage} value={settings.piMarker} onChange={(event) => setSettings({ piMarker: event.target.value.toUpperCase() })} aria-label="PI marker" />
+            </SettingRow>
+          </SettingsGroup>
         </TabsContent>
 
         <TabsContent value="workflow">
@@ -196,7 +231,7 @@ export default function SettingsPage() {
         <TabsContent value="ageing">
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
-              <SectionHeader title="Ageing buckets" as="h3" description="Contiguous from day 0; the last bucket is open-ended. Changing them re-buckets every report immediately." />
+              <SectionHeader descriptionAs="info" title="Ageing buckets" as="h3" description="Contiguous from day 0; the last bucket is open-ended. Changing them re-buckets every report immediately." />
               {settings.ageingBuckets.map((bucket, index) => (
                 <div key={index} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2">
                   <Input aria-label="From day" inputMode="numeric" disabled={!manage} value={bucket.from} onChange={(event) => setSettings({ ageingBuckets: settings.ageingBuckets.map((entry, position) => (position === index ? { ...entry, from: number(event.target.value) } : entry)) })} />
@@ -224,7 +259,7 @@ export default function SettingsPage() {
         <TabsContent value="deductions">
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
-              <SectionHeader
+              <SectionHeader descriptionAs="info"
                 title="Deduction type master"
                 as="h3"
                 description="Add a new deduction head here — no code change. Kind decides how it is reported (statutory, retention ledger…). Codes BCESS … OTHER are what the importer posts legacy columns to."
@@ -304,7 +339,7 @@ export default function SettingsPage() {
         <TabsContent value="stages">
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
-              <SectionHeader title="Bill stage master" as="h3" description="Free-form stages (the legacy STAGES column) shown on the bill — separate from the approval workflow." actions={manage ? <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setConfig((current) => ({ ...current, stages: [...current.stages, { id: newId('st'), name: '', sequence: current.stages.length + 1, active: true }] }))}><Plus className="h-4 w-4" /> Add stage</Button> : null} />
+              <SectionHeader descriptionAs="info" title="Bill stage master" as="h3" description="Free-form stages (the legacy STAGES column) shown on the bill — separate from the approval workflow." actions={manage ? <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setConfig((current) => ({ ...current, stages: [...current.stages, { id: newId('st'), name: '', sequence: current.stages.length + 1, active: true }] }))}><Plus className="h-4 w-4" /> Add stage</Button> : null} />
               <MasterTable
                 rows={config.stages}
                 disabled={!manage}
@@ -323,7 +358,7 @@ export default function SettingsPage() {
         <TabsContent value="projects">
           <Card className="border-slate-200 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
-              <SectionHeader title="Project attributes for billing" as="h3" description="The project master has no DGM office, and its client link is optional — set them here (keyed to the master's project, never a second project list). Credit days override the client's payment terms." />
+              <SectionHeader descriptionAs="info" title="Project attributes for billing" as="h3" description="The project master has no DGM office, and its client link is optional — set them here (keyed to the master's project, never a second project list). Credit days override the client's payment terms." />
               <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-200">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
@@ -375,7 +410,7 @@ export default function SettingsPage() {
                 </datalist>
               </div>
               {lookups.allProjects ? null : <p className="text-xs text-muted-foreground">Only your assigned projects are listed.</p>}
-              <SectionHeader title={`Remembered import mappings (${config.projectMappings.length})`} as="h3" description="Excel project names the importer maps without asking." />
+              <SectionHeader descriptionAs="info" title={`Remembered import mappings (${config.projectMappings.length})`} as="h3" description="Excel project names the importer maps without asking." />
               {config.projectMappings.length === 0 ? <p className="text-sm text-muted-foreground">None yet — they are saved when you confirm a mapping during import.</p> : null}
               <ul className="divide-y divide-slate-100 text-sm">
                 {config.projectMappings.map((mapping) => (
@@ -439,6 +474,54 @@ function BaseLessPicker({ type, types, onChange, disabled }: { type: DeductionTy
         </ul>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** A titled group of settings: a card with an icon header and its rows. */
+function SettingsGroup({ icon: Icon, title, description, children }: { icon: typeof Coins; title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex items-start gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700" aria-hidden="true">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+            {title}
+            <InfoTip label={`About “${title}”`}>{description}</InfoTip>
+          </h3>
+
+        </div>
+      </header>
+      <div className="divide-y divide-slate-100">{children}</div>
+    </section>
+  );
+}
+
+/** One setting: its name and (i) on the left, its control on the right (beneath it on a phone). */
+function SettingRow({ title, description, note, children }: { title: string; description?: React.ReactNode; /** Shown under the name — for a live figure, not an explanation. */ note?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2.5 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6 sm:px-5">
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
+          {title}
+          {description ? <InfoTip label={`About “${title}”`}>{description}</InfoTip> : null}
+        </p>
+        {note ? <p className="mt-0.5 text-xs text-slate-600">{note}</p> : null}
+      </div>
+      <div className="flex shrink-0 sm:w-56 sm:justify-end [&>button[role=switch]]:ml-auto sm:[&>button[role=switch]]:ml-0">{children}</div>
+    </div>
+  );
+}
+
+/** A number with its unit beside it: ₹ before an amount, % or "days" after. */
+function AffixInput({ prefix, suffix, value, onChange, ...props }: { prefix?: string; suffix?: string; value: string | number; onChange: (value: string) => void; disabled?: boolean; inputMode?: 'decimal' | 'numeric'; 'aria-label': string }) {
+  return (
+    <div className="relative w-full">
+      {prefix ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">{prefix}</span> : null}
+      <Input {...props} value={value} onChange={(event) => onChange(event.target.value)} className={cn('text-right tabular-nums', prefix && 'pl-7', suffix && (suffix.length > 1 ? 'pr-12' : 'pr-7'))} />
+      {suffix ? <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">{suffix}</span> : null}
+    </div>
   );
 }
 
@@ -511,7 +594,7 @@ function MonthClosure() {
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Month closure" as="h3" description="A closed month accepts no new, changed, deleted or cancelled bills and receipts dated in it — except by someone holding Close Month. Reopening needs a reason; both are audited." actions={<FySelect value={fy} onChange={setFy} allowAll={false} />} />
+        <SectionHeader descriptionAs="info" title="Month closure" as="h3" description="A closed month accepts no new, changed, deleted or cancelled bills and receipts dated in it — except by someone holding Close Month. Reopening needs a reason; both are audited." actions={<FySelect value={fy} onChange={setFy} allowAll={false} />} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {financialYearMonths(fy).map((month) => {
             const isClosed = closed.includes(month);
@@ -541,7 +624,7 @@ function DataQuality() {
   return (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
-        <SectionHeader title="Data quality" icon={Database} as="h3" description={data ? `Checks over all ${data.billCount} live bills in your scope — most useful straight after a workbook migration.` : undefined} />
+        <SectionHeader descriptionAs="info" title="Data quality" icon={Database} as="h3" description={data ? `Checks over all ${data.billCount} live bills in your scope — most useful straight after a workbook migration.` : undefined} />
         <BtError message={error} onRetry={reload} />
         <ul className="divide-y divide-slate-100">
           {data?.checks.map((check) => (
@@ -602,7 +685,7 @@ function SecurityPanel() {
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <SectionHeader title="Check security rules" icon={ShieldCheck} as="h3" description="Bill Tracking reads and writes only through its API. This tries each collection directly from your browser — every one should be closed. If any answer, copy the Bill Tracking blocks from firestore.rules into the Firebase console." />
+          <SectionHeader descriptionAs="info" title="Check security rules" icon={ShieldCheck} as="h3" description="Bill Tracking reads and writes only through its API. This tries each collection directly from your browser — every one should be closed. If any answer, copy the Bill Tracking blocks from firestore.rules into the Firebase console." />
           <Button size="sm" variant="outline" disabled={running} onClick={() => void run()}>
             {running ? 'Checking…' : 'Check security rules'}
           </Button>
@@ -621,7 +704,7 @@ function SecurityPanel() {
       </Card>
       <Card className="border-slate-200 bg-white shadow-sm">
         <CardContent className="space-y-3 p-4">
-          <SectionHeader title="Permissions" as="h3" description="Granted per role in Settings → Access Management under “Bill Tracking”. Project-scoped grants limit a user to those projects." />
+          <SectionHeader descriptionAs="info" title="Permissions" as="h3" description="Granted per role in Settings → Access Management under “Bill Tracking”. Project-scoped grants limit a user to those projects." />
           <table className="w-full text-xs">
             <tbody>
               {PERMISSION_MAP.map(([spec, actual]) => (

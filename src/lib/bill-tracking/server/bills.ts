@@ -19,7 +19,6 @@ import {
   addDays,
   deriveBillTotals,
   financialYearOf,
-  isPastApproval,
   isRetentionKind,
   isoWeekOf,
   monthKeyOf,
@@ -27,13 +26,12 @@ import {
 } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
 import { isNoteType } from '../certification.ts';
-import { WORKFLOW_ACTION_RULES, actionBlocked, nextStepAfter, resubmitTo, stepDoers, workflowStep, type WorkflowActor } from '../workflow.ts';
+import { actionBlocked, isPastApproval, isRoleStep, moveTarget, nextStepAfter, stepDoers, stepLabel, workflowStep, type WorkflowActor, type WorkflowMove } from '../workflow.ts';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
 import { roundMoney } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { BillInput, WorkflowAction } from '../schemas';
-import { WORKFLOW_STATUS_LABELS } from '../types.ts';
 import type {
   Bill,
   BillDeduction,
@@ -479,9 +477,9 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
     const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, gstSetup });
 
     const protectedChange = PROTECTED_FIELDS.filter((key) => JSON.stringify(current[key] ?? null) !== JSON.stringify((composed as Record<string, unknown>)[key] ?? null));
-    if (protectedChange.length && isPastApproval(current.workflowStatus)) {
+    if (protectedChange.length && isPastApproval(current.workflowStatus, config.settings)) {
       if (!context.can('Bills', 'Edit After Approval', current.projectId)) {
-        throw new BtError(`This bill is ${current.workflowStatus.replace(/_/g, ' ')}; changing ${protectedChange.join(', ')} needs Edit After Approval.`, 403);
+        throw new BtError(`This bill is at “${stepLabel(config.settings, current.workflowStatus)}”; changing ${protectedChange.join(', ')} needs Edit After Approval.`, 403);
       }
       if (!input.changeReason) throw new BtError('Give a reason for changing financial details of an approved bill.');
     }
@@ -543,7 +541,7 @@ export const workflowActor = (context: BtContext): WorkflowActor => ({ userId: c
  * notifies — or, with nobody named, the roles holding that stage's permission (the early stages).
  * Best-effort: delivery never undoes the step, which the audit trail already records.
  */
-export async function notifyWaiting(context: BtContext, bill: StoredBill, settings: BillTrackingConfig['settings'], status: BillWorkflowStatus, remarks?: string): Promise<void> {
+export async function notifyWaiting(context: BtContext, bill: StoredBill, settings: BillTrackingConfig['settings'], status: BillWorkflowStatus, remarks?: string, previousStatus: BillWorkflowStatus = bill.workflowStatus): Promise<void> {
   const reference = bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
   const base = { module: ACTIVITY_MODULES.BILL_TRACKING, itemId: bill.id, itemRef: reference, link: `/bill-tracking/bills/${bill.id}`, organizationId: context.organizationId };
   const others = (ids: (string | undefined)[]) => [...new Set(ids.filter((id): id is string => Boolean(id) && id !== context.userId))];
@@ -552,29 +550,34 @@ export async function notifyWaiting(context: BtContext, bill: StoredBill, settin
       await dispatchNotificationServer({ userIds: others([bill.createdBy, bill.collectionOwnerId]) }, { ...base, type: 'step_entry', severity: 'WARNING', title: 'Bill returned for correction', body: `${reference} · ${remarks ?? bill.projectNameSnapshot}` });
       return;
     }
-    if (status === 'approved') {
-      await dispatchNotificationServer({ userIds: others([bill.createdBy, bill.collectionOwnerId]) }, { ...base, type: 'step_entry', severity: 'INFO', title: 'Bill approved', body: `${reference} · ${remarks ?? bill.projectNameSnapshot}` });
+    // Reaching the step that locks the amounts (Approved, by default) is news for the preparer.
+    const entered = workflowStep(settings, status);
+    if (!isRoleStep(status) && entered.locksAmounts && !isPastApproval(previousStatus, settings)) {
+      await dispatchNotificationServer({ userIds: others([bill.createdBy, bill.collectionOwnerId]) }, { ...base, type: 'step_entry', severity: 'INFO', title: `Bill ${entered.label.toLowerCase()}`, body: `${reference} · ${remarks ?? bill.projectNameSnapshot}` });
     }
     const next = nextStepAfter(status, settings);
     if (!next) return;
     const step = workflowStep(settings, next);
     const named = others(stepDoers(step, bill));
     if (named.length) {
-      if (step.notify) await dispatchNotificationServer({ userIds: named }, { ...base, type: 'approval_required', title: `Bill waiting for you · ${WORKFLOW_STATUS_LABELS[next]}`, body: `${reference} · ${bill.projectNameSnapshot} · net ₹${bill.netReceivable.toLocaleString('en-IN')}` });
+      if (step.notify) await dispatchNotificationServer({ userIds: named }, { ...base, type: 'approval_required', title: `Bill waiting for you · ${step.label}`, body: `${reference} · ${bill.projectNameSnapshot} · net ₹${bill.netReceivable.toLocaleString('en-IN')}` });
       return;
     }
-    const permission = next === 'under_verification' || next === 'verified' ? 'Verify' : next === 'approved' ? 'Approve' : null;
-    if (!permission) return;
-    const userIds = (await resolveRoleRecipientsServer(await rolesHolding('Bills', permission))).filter((id) => id !== context.userId);
-    await dispatchNotificationServer({ userIds }, { ...base, type: 'approval_required', title: permission === 'Verify' ? 'Bill waiting for verification' : 'Bill waiting for approval', body: `${reference} · ${bill.projectNameSnapshot} · net ₹${bill.netReceivable.toLocaleString('en-IN')}` });
+    // With nobody named, the roles holding the step's permission hear of it — for the review steps
+    // before the bill is raised that wait on Verify or Approve; Add and Edit are nearly everyone's, so not told.
+    const alerting = step.permissions.filter((permission) => permission === 'Verify' || permission === 'Approve');
+    if (isRoleStep(next) || !alerting.length) return;
+    const roles = [...new Set((await Promise.all(alerting.map((permission) => rolesHolding('Bills', permission)))).flat())];
+    const userIds = (await resolveRoleRecipientsServer(roles)).filter((id) => id !== context.userId);
+    await dispatchNotificationServer({ userIds }, { ...base, type: 'approval_required', title: `Bill waiting · ${step.label}`, body: `${reference} · ${bill.projectNameSnapshot} · net ₹${bill.netReceivable.toLocaleString('en-IN')}` });
   } catch {
     // Delivery is best-effort; the audit trail already records the step.
   }
 }
 
-export async function applyWorkflowAction(context: BtContext, billId: string, action: WorkflowAction, remarks?: string): Promise<{ status: BillWorkflowStatus }> {
+export async function applyWorkflowAction(context: BtContext, billId: string, action: WorkflowAction, remarks?: string, toStep?: BillWorkflowStatus): Promise<{ status: BillWorkflowStatus }> {
   const { settings } = await loadConfig(context.organizationId);
-  const rule = WORKFLOW_ACTION_RULES[action];
+  const move: WorkflowMove = { action, to: toStep };
   const ref = db().collection(BT_COLLECTIONS.bills).doc(billId);
   let result = 'draft' as BillWorkflowStatus;
   let bill: StoredBill | undefined;
@@ -584,13 +587,15 @@ export async function applyWorkflowAction(context: BtContext, billId: string, ac
     bill = { ...(snapshot.data() as StoredBill), id: snapshot.id };
     if (bill.organizationId !== context.organizationId || bill.isDeleted) throw new BtError('Bill not found.', 404);
     // Named on the stage, or holding its permission on the bill's project (unless only the named may).
-    const blocked = actionBlocked(action, bill, settings, workflowActor(context));
-    if (blocked) throw new BtError(blocked, rule.from.includes(bill.workflowStatus) ? 403 : 409);
+    const blocked = actionBlocked(move, bill, settings, workflowActor(context));
+    // A permission refusal is 403; a move that does not fit where the bill stands is a conflict.
+    if (blocked) throw new BtError(blocked, /permission|assigned/.test(blocked) ? 403 : 409);
     if (action === 'return' && !remarks) throw new BtError('Say what needs correcting when returning a bill.');
-    if (action === 'close' && bill.paymentStatus !== 'received' && bill.paymentStatus !== 'adjusted') {
+    const to = moveTarget(move, bill, settings);
+    if (!to) throw new BtError('Say which step to move the bill into.');
+    if (to === 'closed' && bill.paymentStatus !== 'received' && bill.paymentStatus !== 'adjusted') {
       throw new BtError('Only a fully received or adjusted bill can be closed. Record the remaining receipt or override the status with a reason.', 409);
     }
-    const to: BillWorkflowStatus = rule.to === 'resubmit' ? resubmitTo(bill.returnedFrom, settings) : rule.to;
     result = to;
     transaction.update(ref, clean({
       workflowStatus: to,
@@ -606,7 +611,7 @@ export async function applyWorkflowAction(context: BtContext, billId: string, ac
       billId,
       projectId: bill.projectId,
       action: `workflow_${action}`,
-      summary: `Bill ${bill.billSerialNumber ?? ''}: ${bill.workflowStatus.replace(/_/g, ' ')} → ${to.replace(/_/g, ' ')}`,
+      summary: `Bill ${bill.billSerialNumber ?? ''}: ${stepLabel(settings, bill.workflowStatus)} → ${stepLabel(settings, to)}`,
       previous: { workflowStatus: bill.workflowStatus },
       next: { workflowStatus: to },
       reason: remarks,
@@ -614,7 +619,7 @@ export async function applyWorkflowAction(context: BtContext, billId: string, ac
   });
 
   // After commit: a failed notification must never roll back a workflow step.
-  if (bill) await notifyWaiting(context, bill, settings, result, remarks);
+  if (bill) await notifyWaiting(context, bill, settings, result, remarks, bill.workflowStatus);
   return { status: result };
 }
 

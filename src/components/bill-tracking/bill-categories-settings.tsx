@@ -106,7 +106,7 @@ export function BillCategoriesEditor({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
         <Card className="border-slate-200 bg-white shadow-sm">
           <CardContent className="space-y-2 p-3">
-            <SectionHeader title="Main categories" icon={FolderTree} as="h3" description="Shared by all projects." />
+            <SectionHeader descriptionAs="info" title="Main categories" icon={FolderTree} as="h3" description="Shared by all projects." />
             <ul className="space-y-1" role="listbox" aria-label="Main categories">
               {ordered.map((category) => {
                 const active = category.id === selectedId;
@@ -202,7 +202,7 @@ export function BillCategoriesEditor({
 
             {selected || showingOrphans ? (
               <>
-                <SectionHeader
+                <SectionHeader descriptionAs="info"
                   title={showingOrphans ? 'Sub categories' : `Sub categories of ${selected?.name || 'this category'}`}
                   as="h3"
                   description="Enable each for all projects, or only the projects that bill it."

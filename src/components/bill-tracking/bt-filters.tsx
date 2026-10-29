@@ -21,8 +21,8 @@ import {
   AGEING_BASIS_LABELS,
   PAYMENT_STATUS_LABELS,
   TRANSACTION_TYPE_LABELS,
-  WORKFLOW_STATUS_LABELS,
 } from '@/lib/bill-tracking/types';
+import { stepLabel, workflowPath } from '@/lib/bill-tracking/workflow';
 
 import { btFetch, useBtQuery, useLookups } from './bt-client';
 import { BtToolbar, DrawerInput, DrawerSelect, ToolbarSearch, ToolbarSelect } from './bt-toolbar';
@@ -106,6 +106,8 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
     .map((name) => ({ value: name, label: name }));
   const buckets = lookups.config.settings.ageingBuckets.map((bucket) => ({ value: bucket.label, label: `${bucket.label} days` }));
   const ownerOptions = lookups.users.map((user) => ({ value: user.id, label: user.name }));
+  // The workflow's steps as configured (Settings → Workflow), and the returned side state.
+  const workflowOptions = [...workflowPath(lookups.config.settings), 'returned'].map((status) => ({ value: status, label: stepLabel(lookups.config.settings, status) }));
 
   // Filters set in the drawer, as chips under the toolbar — so nothing filters the list unseen.
   const nameOf = (options: { value: string; label: string }[], value: string) => options.find((option) => option.value === value)?.label ?? value;
@@ -115,7 +117,7 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
     ['category', 'Main category', (value) => nameOf(categoryOptions, value)],
     ['billType', 'Sub category', (value) => value],
     ['txn', 'Type', (value) => nameOf(entries(TRANSACTION_TYPE_LABELS), value)],
-    ['workflow', 'Workflow', (value) => nameOf(entries(WORKFLOW_STATUS_LABELS), value)],
+    ['workflow', 'Workflow', (value) => nameOf(workflowOptions, value)],
     ['ageing', 'Ageing', (value) => `${value} days`],
     ['basis', 'Aged from', (value) => nameOf(entries(AGEING_BASIS_LABELS), value)],
     ['owner', 'Owner', (value) => nameOf(ownerOptions, value)],
@@ -187,7 +189,7 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
                 <DrawerSelect label="Main category" value={filters.get('category')} onChange={(value) => filters.set({ category: value, billType: undefined })} options={categoryOptions} placeholder="All" />
                 <DrawerSelect label="Sub category" value={filters.get('billType')} onChange={(value) => filters.set({ billType: value })} options={billTypes} placeholder="All" />
                 <DrawerSelect label="Transaction type" value={filters.get('txn')} onChange={(value) => filters.set({ txn: value })} options={entries(TRANSACTION_TYPE_LABELS)} />
-                <DrawerSelect label="Workflow status" value={filters.get('workflow')} onChange={(value) => filters.set({ workflow: value })} options={entries(WORKFLOW_STATUS_LABELS)} />
+                <DrawerSelect label="Workflow status" value={filters.get('workflow')} onChange={(value) => filters.set({ workflow: value })} options={workflowOptions} />
               </div>
               <DrawerSelect label="Collection owner" value={filters.get('owner')} onChange={(value) => filters.set({ owner: value })} options={ownerOptions} placeholder="Anyone" />
             </fieldset>

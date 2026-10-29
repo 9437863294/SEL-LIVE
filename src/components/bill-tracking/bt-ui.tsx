@@ -7,14 +7,16 @@
  */
 
 import Link from 'next/link';
-import { AlertTriangle, CalendarRange, Download, FileSpreadsheet, FileText, Inbox, Loader2, Printer, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CalendarRange, ChevronDown, Download, FileSpreadsheet, FileText, Inbox, Loader2, Printer, ShieldAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KpiCard, type Tone } from '@/components/shared/kpi-card';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
+import { InfoTip } from '@/components/shared/info-tip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatINR, formatINRCompact } from '@/lib/bill-tracking/money';
 import { financialYearOptions } from '@/lib/bill-tracking/calculations';
@@ -22,13 +24,14 @@ import {
   CERTIFICATION_STATE_LABELS,
   PAYMENT_STATUS_LABELS,
   TRANSACTION_TYPE_LABELS,
-  WORKFLOW_STATUS_LABELS,
   type BillPaymentStatus,
   type BillTransactionType,
   type BillWorkflowStatus,
   type CertificationState,
+  type KnownWorkflowStatus,
 } from '@/lib/bill-tracking/types';
 import { exportWorkbook } from '@/lib/report-excel';
+import { useStepLabel } from './bt-client';
 import { DEFAULT_COMPANY_PROFILE, type CompanyProfile } from '@/lib/company-profile';
 import { useCompanyProfile, useUiText } from '@/hooks/use-company-profile';
 import { openPrintWindow } from '@/lib/open-print-window';
@@ -83,7 +86,7 @@ export function PaymentStatusBadge({ status, overridden }: { status: BillPayment
   );
 }
 
-const WORKFLOW_TONES: Record<BillWorkflowStatus, StatusTone> = {
+const WORKFLOW_TONES: Record<KnownWorkflowStatus, StatusTone> = {
   draft: 'neutral',
   submitted: 'info',
   under_verification: 'info',
@@ -120,8 +123,10 @@ export function CertificationBadge({ state }: { state: CertificationState }) {
   );
 }
 
+/** A step's badge, named as configured; a step added in Settings → Workflow reads as in progress. */
 export function WorkflowStatusBadge({ status }: { status: BillWorkflowStatus }) {
-  return <StatusBadge tone={WORKFLOW_TONES[status]}>{WORKFLOW_STATUS_LABELS[status]}</StatusBadge>;
+  const label = useStepLabel();
+  return <StatusBadge tone={(WORKFLOW_TONES as Record<string, StatusTone>)[status] ?? 'info'}>{label(status)}</StatusBadge>;
 }
 
 const AGEING_TONES: StatusTone[] = ['success', 'info', 'warning', 'warning', 'danger', 'danger'];
@@ -154,6 +159,9 @@ export function Term({ children, tip }: { children: React.ReactNode; tip: string
   );
 }
 
+/** The (i) note, shared app-wide; re-exported so the module imports it from its kit. */
+export { InfoTip };
+
 /**
  * Long text kept to one line in a table cell — cut with "…" at `className`'s max width — with the
  * whole text in a popup on hover (or keyboard focus).
@@ -174,8 +182,8 @@ export function TruncatedText({ text, className }: { text: string | null | undef
 
 /* ── KPI ─────────────────────────────────────────────────────────────────── */
 
-export function MoneyKpi({ label, value, hint, icon, tone = 'slate', href, compact = true }: { label: string; value: number | null | undefined; hint?: string; icon?: React.ElementType; tone?: Tone; href?: string; compact?: boolean }) {
-  return <KpiCard label={label} value={<Amount value={value} compact={compact} />} hint={hint} icon={icon} tone={tone} href={href} />;
+export function MoneyKpi({ label, value, hint, info, icon, tone = 'slate', href, compact = true }: { label: string; value: number | null | undefined; hint?: string; /** What the figure means, behind an (i). */ info?: React.ReactNode; icon?: React.ElementType; tone?: Tone; href?: string; compact?: boolean }) {
+  return <KpiCard label={label} value={<Amount value={value} compact={compact} />} hint={hint} info={info} icon={icon} tone={tone} href={href} />;
 }
 
 export interface StatItem {
@@ -231,6 +239,7 @@ export function FormSection({
   children,
   className,
   bodyClassName,
+  collapsible,
 }: {
   step?: number;
   icon?: React.ElementType;
@@ -240,10 +249,16 @@ export function FormSection({
   children: React.ReactNode;
   className?: string;
   bodyClassName?: string;
+  /**
+   * An optional section, folded until opened: the header toggles it, and while folded `summary`
+   * says what is set inside — so nothing set there is hidden from view.
+   */
+  collapsible?: { open: boolean; onOpenChange: (open: boolean) => void; summary?: React.ReactNode };
 }) {
+  const folded = collapsible ? !collapsible.open : false;
   return (
     <section className={cn('min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm', className)}>
-      <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-slate-100 px-4 py-3">
+      <header className={cn('flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 py-3', !folded && 'border-b border-slate-100')}>
         <div className="flex min-w-0 flex-1 basis-56 items-start gap-2.5">
           {step !== undefined ? (
             <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-semibold text-white" aria-hidden="true">
@@ -255,13 +270,27 @@ export function FormSection({
             </span>
           ) : null}
           <div className="min-w-0">
-            <h3 className="text-[15px] font-semibold leading-6 text-slate-900">{title}</h3>
-            {description ? <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p> : null}
+            {/* What the section is for opens from the (i), so the form reads as its fields. */}
+            <h3 className="flex items-center gap-1.5 text-[15px] font-semibold leading-6 text-slate-900">
+              {title}
+              {description ? <InfoTip label={`About “${typeof title === 'string' ? title : 'this section'}”`}>{description}</InfoTip> : null}
+            </h3>
           </div>
         </div>
-        {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions || collapsible ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {actions}
+            {collapsible ? (
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" aria-expanded={collapsible.open} onClick={() => collapsible.onOpenChange(!collapsible.open)}>
+                <ChevronDown className={cn('h-4 w-4 transition-transform', collapsible.open && 'rotate-180')} aria-hidden="true" />
+                {collapsible.open ? 'Hide' : 'Add details'}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {folded && collapsible?.summary ? <div className="w-full pl-[2.125rem] text-xs text-slate-600">{collapsible.summary}</div> : null}
       </header>
-      <div className={cn('space-y-4 p-4', bodyClassName)}>{children}</div>
+      {folded ? null : <div className={cn('space-y-4 p-4', bodyClassName)}>{children}</div>}
     </section>
   );
 }
@@ -292,22 +321,43 @@ export const FIELD_ROW = 'flex flex-wrap items-start gap-x-4 gap-y-4';
 
 /**
  * A labelled field. A label written as "Project *" shows a red required marker instead of the
- * asterisk text; the hint sits under the control. `width` sizes it inside a `FIELD_ROW`.
+ * asterisk text. A hint in words opens from an (i) beside the label; a hint that is more than words
+ * (a figure, a warning, a button) sits under the control. `width` sizes it inside a `FIELD_ROW`.
  */
-export function FormField({ label, hint, htmlFor, children, className, width }: { label: React.ReactNode; hint?: React.ReactNode; htmlFor?: string; children: React.ReactNode; className?: string; width?: FieldWidth }) {
+export function FormField({ label, hint, info, htmlFor, children, className, width }: { label: React.ReactNode; hint?: React.ReactNode; /** A note behind an (i) beside the label, in place of a hint that stays open. */ info?: React.ReactNode; htmlFor?: string; children: React.ReactNode; className?: string; width?: FieldWidth }) {
   const required = typeof label === 'string' && label.endsWith(' *');
+  // A note in words goes behind the (i) rather than sitting open under the field. A hint that is
+  // more than words stays in view: the raised figure and its change, a validation message, a button
+  // that corrects the value, a second input — things to see change or to act on.
+  const note = info ?? (typeof hint === 'string' && hint ? hint : undefined);
+  const shownHint = typeof hint === 'string' ? undefined : hint;
   return (
     <div className={cn('min-w-0 space-y-1.5', width && FIELD_WIDTHS[width], className)}>
-      <Label htmlFor={htmlFor} className="flex min-h-4 items-center gap-0.5 text-xs font-medium leading-4 text-slate-700">
-        {required ? (label as string).slice(0, -2) : label}
-        {required ? (
-          <span className="text-rose-600" aria-hidden="true">
-            *
-          </span>
-        ) : null}
-      </Label>
+      <div className="flex min-h-4 items-center gap-1">
+        <Label htmlFor={htmlFor} className="flex min-h-4 items-center gap-0.5 text-xs font-medium leading-4 text-slate-700">
+          {required ? (label as string).slice(0, -2) : label}
+          {required ? (
+            <span className="text-rose-600" aria-hidden="true">
+              *
+            </span>
+          ) : null}
+        </Label>
+        {note ? <InfoTip>{note}</InfoTip> : null}
+      </div>
       {children}
-      {hint ? <div className="text-[11px] leading-snug text-slate-500">{hint}</div> : null}
+      {shownHint ? <div className="text-[11px] leading-snug text-slate-500">{shownHint}</div> : null}
+    </div>
+  );
+}
+
+/** An amount typed in rupees: the ₹ before it, the figure to the right in even-width digits. */
+export function RupeeInput({ value, onChange, className, ...props }: { value: string; onChange: (value: string) => void; id?: string; required?: boolean; disabled?: boolean; className?: string; 'aria-label'?: string }) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">
+        ₹
+      </span>
+      <Input {...props} inputMode="decimal" className={cn('bg-white pl-7 text-right tabular-nums', className)} value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }

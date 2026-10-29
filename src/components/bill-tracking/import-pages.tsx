@@ -228,7 +228,7 @@ export function ReconciliationPage({ jobId }: { jobId: string }) {
   const lineTable = (title: string, lines: ReconciliationLine[], filterKey: 'project' | 'billType' | 'month') => (
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-2 p-4">
-        <SectionHeader title={title} as="h3" />
+        <SectionHeader descriptionAs="info" title={title} as="h3" />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">

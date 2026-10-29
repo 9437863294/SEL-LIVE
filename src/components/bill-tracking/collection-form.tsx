@@ -25,8 +25,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { accountLabel } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { roundMoney, subtractMoney, sumMoney } from '@/lib/bill-tracking/money';
-import { PAYMENT_MODES } from '@/lib/bill-tracking/types';
+import { roundMoney, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { PAYMENT_MODES, type BillTransactionType } from '@/lib/bill-tracking/types';
 import type { BankAccount } from '@/lib/types';
 
 import { btFetch, useBt, useBtQuery, useDebounced, useLookups } from './bt-client';
@@ -35,6 +35,9 @@ import { Amount, BtError, FormField, FormSection, Notice, dateText, FIELD_ROW } 
 
 interface OpenBill {
   id: string;
+  transactionType: BillTransactionType;
+  /** A credit / debit note: the invoice it adjusts. */
+  againstBillId?: string;
   billSerialNumber?: string;
   gstInvoiceNumber?: string;
   billDate: string;
@@ -58,6 +61,17 @@ const num = (value: string) => {
   const parsed = Number(String(value).replace(/[,₹\s]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const isNote = (bill: OpenBill) => bill.transactionType === 'credit_note' || bill.transactionType === 'debit_note';
+
+/** The open credit / debit notes raised against these invoices (none on a failed read — the receipt still works). */
+async function openNotesAgainst(invoiceIds: string[]): Promise<OpenBill[]> {
+  try {
+    return (await btFetch<{ bills: OpenBill[] }>(`bills/open?against=${invoiceIds.join(',')}`)).bills;
+  } catch {
+    return [];
+  }
+}
 
 /** Radix Select cannot hold an empty value, so "no account" needs a sentinel. */
 const NO_ACCOUNT = '__none__';
@@ -95,6 +109,15 @@ export default function CollectionForm() {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time fill once the preselected bill has loaded
       setLines([{ bill, amount: String(bill.outstandingAmount) }]);
       setAmount(String(bill.outstandingAmount));
+      // The client pays the invoice less its credit notes: set those off in the same receipt, so the
+      // amount expected is what actually arrives and every bill involved is settled.
+      if (!isNote(bill)) {
+        void openNotesAgainst([bill.id]).then((notes) => {
+          if (!notes.length) return;
+          setLines((current) => [...current, ...notes.filter((note) => !current.some((line) => line.bill.id === note.id)).map((note) => ({ bill: note, amount: String(note.outstandingAmount) }))]);
+          setAmount(String(sumMoney([bill.outstandingAmount, ...notes.map((note) => note.outstandingAmount)])));
+        });
+      }
     }
     // Only on first load of the preselected bill.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,15 +165,25 @@ export default function CollectionForm() {
     if (lines.some((line) => line.bill.id === bill.id)) return;
     const remaining = Math.max(0, Math.min(bill.outstandingAmount, receipt ? subtractMoney(receipt, allocated) : bill.outstandingAmount));
     setLines((current) => [...current, { bill, amount: String(remaining || bill.outstandingAmount) }]);
+    if (!isNote(bill)) {
+      void openNotesAgainst([bill.id]).then((notes) =>
+        setLines((current) => [...current, ...notes.filter((note) => !current.some((line) => line.bill.id === note.id)).map((note) => ({ bill: note, amount: String(note.outstandingAmount) }))]),
+      );
+    }
   };
+
+  /** Removes a bill — and, for an invoice, the notes that were set off against it. */
+  const removeBill = (billId: string) => setLines((current) => current.filter((entry) => entry.bill.id !== billId && entry.bill.againstBillId !== billId));
 
   /** Fills the receipt across the chosen bills oldest-first, up to each bill's outstanding. */
   const autoAllocate = () => {
-    let left = receipt;
+    // Notes set off keep their amounts; the bills share the receipt plus what the notes take off.
+    let left = subtractMoney(receipt, sumMoney(lines.filter((line) => isNote(line.bill) && Math.sign(num(line.amount)) !== Math.sign(receipt)).map((line) => num(line.amount))));
     setLines((current) =>
       [...current]
         .sort((a, b) => a.bill.billDate.localeCompare(b.bill.billDate))
         .map((line) => {
+          if (isNote(line.bill) && Math.sign(line.bill.outstandingAmount) !== Math.sign(receipt)) return line;
           const take = Math.max(0, Math.min(line.bill.outstandingAmount, left));
           left = subtractMoney(left, take);
           return { ...line, amount: String(take) };
@@ -158,7 +191,13 @@ export default function CollectionForm() {
     );
   };
 
-  const overAllocated = lines.filter((line) => num(line.amount) > line.bill.outstandingAmount + lookups.config.settings.tolerance);
+  // More than a bill's open balance (a note's balance is negative, so compared by size and sign).
+  const overAllocated = lines.filter((line) => {
+    const value = num(line.amount);
+    const open = line.bill.outstandingAmount;
+    return Math.abs(value) > Math.abs(open) + lookups.config.settings.tolerance || (value !== 0 && open !== 0 && Math.sign(value) !== Math.sign(open));
+  });
+  const setOff = sumMoney(lines.filter((line) => isNote(line.bill)).map((line) => num(line.amount)));
 
   const submit = async () => {
     setSaving(true);
@@ -287,15 +326,22 @@ export default function CollectionForm() {
                   <div key={line.bill.id} className="grid grid-cols-[minmax(0,1fr)_40px] items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_160px_40px]">
                     <div className="min-w-0 text-sm">
                       <p className="truncate font-medium text-slate-800">
+                        {isNote(line.bill) ? (
+                          <span className="mr-1.5 rounded bg-rose-50 px-1.5 py-0.5 text-[11px] font-semibold text-rose-700">{line.bill.transactionType === 'credit_note' ? 'Credit note' : 'Debit note'}</span>
+                        ) : null}
                         {line.bill.gstInvoiceNumber || line.bill.billSerialNumber} · {line.bill.projectNameSnapshot}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {dateText(line.bill.billDate)} · net <Amount value={line.bill.netReceivable} /> · outstanding <Amount value={line.bill.outstandingAmount} className="font-medium text-rose-700" />
                         {line.bill.isRetentionBill ? ' · retention bill (posts a retention release)' : ''}
+                        {isNote(line.bill) && line.bill.againstBillId ? ` · set off against ${(() => {
+                          const invoice = lines.find((entry) => entry.bill.id === line.bill.againstBillId)?.bill;
+                          return invoice ? invoice.gstInvoiceNumber || invoice.billSerialNumber : 'its invoice';
+                        })()}` : ''}
                       </p>
                     </div>
                     <Input inputMode="decimal" aria-label="Allocated amount" className="col-start-1 row-start-2 text-right tabular-nums sm:col-start-auto sm:row-start-auto" value={line.amount} onChange={(event) => setLines((current) => current.map((entry) => (entry.bill.id === line.bill.id ? { ...entry, amount: event.target.value } : entry)))} />
-                    <Button variant="ghost" size="icon" className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto" aria-label="Remove bill" onClick={() => setLines((current) => current.filter((entry) => entry.bill.id !== line.bill.id))}>
+                    <Button variant="ghost" size="icon" className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto" aria-label="Remove bill" onClick={() => removeBill(line.bill.id)}>
                       <Trash2 className="h-4 w-4 text-rose-600" />
                     </Button>
                   </div>
@@ -341,6 +387,18 @@ export default function CollectionForm() {
                 <span>Receipt</span>
                 <Amount value={receipt} className="font-semibold" />
               </div>
+              {toPaise(setOff) !== 0 ? (
+                <>
+                  <div className="flex justify-between text-slate-600">
+                    <span>Bills paid</span>
+                    <Amount value={subtractMoney(allocated, setOff)} />
+                  </div>
+                  <div className="flex justify-between text-rose-700">
+                    <span>Notes set off</span>
+                    <Amount value={setOff} signed />
+                  </div>
+                </>
+              ) : null}
               <div className="flex justify-between">
                 <span>Allocated</span>
                 <Amount value={allocated} />

@@ -64,6 +64,11 @@ written and served only by the API.
     offers *Raise credit note*.
   - **Receivables.** Each note keeps its own receivable: its gross, less any deduction the client
     makes on the note itself.
+  - **Receiving against an invoice with notes.** The client pays the invoice less its credit notes.
+    The receipt form adds the open notes against an invoice beside it, as negative allocations
+    ("set off"), and expects the invoice less those notes. Saving settles the invoice and its notes
+    together, and the bank is credited what actually arrived. Only a note's own open balance can be
+    set off, and never more of it than the bills it pays (`createCollection`).
 
 ### Bill categories
 
@@ -141,12 +146,31 @@ Where it shows:
 | Dashboard | *Awaiting certification* and *Notes to raise* cards |
 | Exceptions | *Certified — credit note pending* |
 
-- **Workflow.** Draft → Submitted → Under verification → Verified → Approved → Bill raised →
-  **Certified by client** → Payment follow-up → Reconciliation → Closed. The stages and their
-  order are fixed. Everything else is set per stage in Settings → **Workflow**
-  (`settings.workflowSteps`, rules in `src/lib/bill-tracking/workflow.ts`):
-  - **Used or skipped.** Submitted, Under verification, Verified and Approved can be switched off.
-    A skipped stage gets no button, and a returned bill steps back past it. Up to Bill raised the
+- **Workflow.** The default is Draft → Submitted → Under verification → Verified → Approved → Bill
+  raised → **Certified by client** → Payment follow-up → Reconciliation → Closed. Since 2026-10-28
+  the steps are configuration in Settings → **Workflow** (`settings.workflowSteps`, an ordered list;
+  rules in `src/lib/bill-tracking/workflow.ts`):
+  - **Review steps** (the four defaults before Bill raised, and any added) can be added, renamed,
+    removed and moved anywhere between Draft and Closed. Each has a name, button text, a
+    description, the permission that moves a bill in (Bills · Edit / Verify / Approve), *locks the
+    amounts* (Approved by default; the amounts lock at the first such step, and at Bill raised at
+    the latest) and *can be returned for correction*.
+  - **Role steps** — Bill raised, Certified by client, Payment follow-up, Reconciliation, Closed —
+    can be renamed and moved among the review steps, but not removed; they keep their order among
+    themselves and Closed is last. Payment follow-up and Reconciliation can be switched off.
+  - A step's id is what a bill stores as `workflowStatus`; the defaults keep their keys, so bills
+    stored before need nothing. Settings saved before (flags only, no names) read as overrides on
+    the default list. The server refuses a save that breaks these rules (`workflowProblem`) or that
+    removes a step bills are still on (or were returned from).
+  - A step's permission is any of Bills · Add / Submit / Edit / Verify / Approve / Raise / Certify /
+    Edit After Approval / Override Status. **Submit** and **Raise** were added to the registry for
+    this (2026-10-28); Submitted and Bill raised still default to Edit, because no role holds the new
+    ones until an administrator grants them. Certified by client defaults to Certify.
+  - The workflow API takes `{ action: 'advance', to: '<step id>' }`; the old names (`submit`,
+    `approve`, `raise`, …) still work for the default steps.
+  Per step, as before:
+  - **Used or skipped.** Any step but Bill raised, Certified by client and Closed can be switched
+    off. A skipped stage gets no button, and a returned bill steps back past it. Up to Bill raised the
     stages are taken strictly in order (2026-10-28): a bill moves only into the next stage in use,
     so it cannot be raised without being submitted, or approved without being verified, while those
     stages are on. After Bill raised the moves stay free (a note is never certified; a paid bill may

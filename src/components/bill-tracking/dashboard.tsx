@@ -116,17 +116,17 @@ export default function BillTrackingDashboard() {
             <MoneyKpi label="Net receivable" value={data.kpis.net} icon={Coins} tone="teal" href={link('/bill-tracking/bills')} />
             <MoneyKpi label="Total collection" value={data.kpis.received} icon={Wallet} tone="emerald" href={link('/bill-tracking/reports/collections')} />
             <MoneyKpi label="Total outstanding" value={data.kpis.outstanding} icon={Clock} tone="rose" href={link('/bill-tracking/outstanding')} />
-            <KpiCard label="Collection %" value={percentText(data.kpis.collectionPercent)} icon={Gauge} tone="cyan" hint="Received ÷ net receivable" href={link('/bill-tracking/reports/project-wise')} />
+            <KpiCard label="Collection %" value={percentText(data.kpis.collectionPercent)} icon={Gauge} tone="cyan" info="Received ÷ net receivable." href={link('/bill-tracking/reports/project-wise')} />
             <MoneyKpi label="Retention deducted" value={data.kpis.retention} icon={PiggyBank} tone="violet" href={link('/bill-tracking/retention')} />
             <MoneyKpi label="Retention released" value={data.kpis.retentionReleased} icon={HandCoins} tone="emerald" href={link('/bill-tracking/retention')} />
             <MoneyKpi label="Retention balance" value={data.kpis.retentionBalance} icon={PiggyBank} tone="amber" href={link('/bill-tracking/retention')} />
-            <MoneyKpi label="Overdue amount" value={data.kpis.overdue} icon={AlertTriangle} tone="rose" hint="Past due date" href={link('/bill-tracking/outstanding', { chip: 'overdue' })} />
+            <MoneyKpi label="Overdue amount" value={data.kpis.overdue} icon={AlertTriangle} tone="rose" info="Outstanding on bills past their due date." href={link('/bill-tracking/outstanding', { chip: 'overdue' })} />
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <KpiCard label="Collected this month" value={<Amount value={data.kpis.collectionThisMonth} compact />} icon={TrendingUp} tone="emerald" href={link('/bill-tracking/reports/collections')} />
-            <KpiCard label="Promised this week" value={<Amount value={data.kpis.promisedThisWeek} compact />} icon={CalendarClock} tone="blue" hint="Open client commitments due this week" href={link('/bill-tracking/targets')} />
-            <KpiCard label="Missed commitments" value={data.kpis.missedCommitments.toLocaleString('en-IN')} icon={CircleDollarSign} tone="rose" hint="Commitment date passed, still outstanding" href={link('/bill-tracking/outstanding', { chip: 'commitment_missed' })} />
+            <KpiCard label="Promised this week" value={<Amount value={data.kpis.promisedThisWeek} compact />} icon={CalendarClock} tone="blue" info="Open client payment commitments due this week." href={link('/bill-tracking/targets')} />
+            <KpiCard label="Missed commitments" value={data.kpis.missedCommitments.toLocaleString('en-IN')} icon={CircleDollarSign} tone="rose" info="Commitment date passed and the bill is still outstanding." href={link('/bill-tracking/outstanding', { chip: 'commitment_missed' })} />
             <KpiCard label="Awaiting certification" value={data.certification.awaiting.toLocaleString('en-IN')} icon={ClipboardCheck} tone="amber" hint={`of ${data.certification.count.toLocaleString('en-IN')} bills — not yet certified by the client`} href={link('/bill-tracking/bills', { view: 'certified', cert: 'awaiting' })} />
             {/* Credit and debit notes, by invoice value: only a changed taxable or GST needs one — the certified deductions apply to the bill directly. */}
             <KpiCard

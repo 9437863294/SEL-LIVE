@@ -31,7 +31,7 @@ import { deriveBillTotals, financialYearOf } from '../calculations.ts';
 import { subtractMoney, sumMoney, toPaise } from '../money.ts';
 import type { CollectionInput } from '../schemas';
 import type { Bill, BillCollection, BillCollectionRef, BillTrackingConfig, CollectionStatus, RetentionRelease } from '../types';
-import { receiptBlockReason } from '../certification.ts';
+import { isNoteType, receiptBlockReason } from '../certification.ts';
 import { assertMonthOpen, calculationOptions, totalsUpdate } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
@@ -132,8 +132,12 @@ export async function createCollection(context: BtContext, input: CollectionInpu
   if (new Set(billIds).size !== billIds.length) throw new BtError('Each bill can appear only once in an allocation.');
   const allocated = sumMoney(input.allocations.map((entry) => entry.amount));
   const unallocated = subtractMoney(input.amount, allocated);
-  const sameSign = input.allocations.every((entry) => Math.sign(entry.amount) === Math.sign(input.amount));
-  if (!sameSign) throw new BtError('Allocations must have the same sign as the receipt.');
+  // An allocation of the opposite sign sets a credit (or debit) note's balance off inside the receipt:
+  // the client pays the invoice less the credit note, so the receipt carries the invoice in full and
+  // the note's negative balance — each settled, the bank credited the difference. Which bills those
+  // may be is checked against the bills themselves below.
+  const offsets = input.allocations.filter((entry) => Math.sign(entry.amount) !== Math.sign(input.amount));
+  if (offsets.length && Math.sign(allocated) !== Math.sign(input.amount)) throw new BtError('The notes set off in a receipt cannot exceed the bills it pays.');
   if (Math.abs(toPaise(allocated)) > Math.abs(toPaise(input.amount))) throw new BtError(`Allocations (₹${allocated}) exceed the receipt amount (₹${input.amount}).`);
   if (toPaise(unallocated) !== 0) {
     if (!input.allowUnallocated) throw new BtError(`Allocations total ₹${allocated} but the receipt is ₹${input.amount}. Allocate the full amount or hold the difference as unallocated.`);
@@ -152,6 +156,17 @@ export async function createCollection(context: BtContext, input: CollectionInpu
       if (verify) context.require('Collections', 'Verify', bill.projectId);
       const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
       if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
+    }
+    for (const entry of offsets) {
+      const bill = bills.get(entry.billId)?.bill as StoredBill;
+      const reference = bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
+      // Only a note's own balance can be set off, and no more of it than is still open.
+      if (!isNoteType(bill.transactionType) || Math.sign(bill.outstandingAmount) !== Math.sign(entry.amount)) {
+        throw new BtError(`${reference}: only a credit or debit note's open balance can be set off against a receipt.`);
+      }
+      if (Math.abs(toPaise(entry.amount)) > Math.abs(toPaise(bill.outstandingAmount)) + toPaise(Math.abs(config.settings.tolerance))) {
+        throw new BtError(`${reference}: ₹${Math.abs(entry.amount)} is more than its open balance of ₹${Math.abs(bill.outstandingAmount)}.`);
+      }
     }
     const first = bills.get(billIds[0])?.bill as StoredBill;
     const collection: StoredCollection = clean({

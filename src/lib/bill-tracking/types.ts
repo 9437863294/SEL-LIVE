@@ -67,8 +67,10 @@ export const PAYMENT_STATUS_LABELS: Record<BillPaymentStatus, string> = {
 };
 
 /**
- * The default bill workflow. `returned` is a side state: a returned bill remembers the stage it was
- * returned from (`returnedFrom`) and goes back to the step before it once corrected.
+ * The default bill workflow — the steps a new configuration starts with (Settings → Workflow can
+ * rename, add, remove and reorder them; see `workflow.ts`). `returned` is a side state: a returned
+ * bill remembers the step it was returned from (`returnedFrom`) and goes back to the step before it
+ * once corrected.
  */
 export const WORKFLOW_STATUSES = [
   'draft',
@@ -83,9 +85,31 @@ export const WORKFLOW_STATUSES = [
   'closed',
   'returned',
 ] as const;
-export type BillWorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+export type KnownWorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+/**
+ * The step a bill is at: a default step's key, or the id of a step added in Settings → Workflow.
+ * The `string & {}` keeps the default keys suggested while allowing any configured id.
+ */
+export type BillWorkflowStatus = KnownWorkflowStatus | (string & {});
 
-export const WORKFLOW_STATUS_LABELS: Record<BillWorkflowStatus, string> = {
+/**
+ * The steps with a job of their own — certification, receipts, closing and reports read them — so a
+ * configuration may rename them but never removes them (payment follow-up and reconciliation can be
+ * switched off). Every other step is a review step, free to add, rename, remove and reorder.
+ */
+export const WORKFLOW_ROLES = ['raised', 'certified', 'payment_followup', 'reconciliation', 'closed'] as const;
+export type WorkflowRole = (typeof WORKFLOW_ROLES)[number];
+
+/**
+ * The role permission a step falls back to (Bill Tracking · Bills · …) when nobody is named on it —
+ * the Bills actions of the permission registry (`src/lib/permissions.ts`) that make sense for moving
+ * a bill on. Certified by Client starts on Certify.
+ */
+export const WORKFLOW_STEP_PERMISSIONS = ['Add', 'Submit', 'Edit', 'Verify', 'Approve', 'Raise', 'Certify', 'Edit After Approval', 'Override Status'] as const;
+export type WorkflowStepPermission = (typeof WORKFLOW_STEP_PERMISSIONS)[number];
+
+/** The default steps' names; a configured step's own `label` wins (`stepLabel` in workflow.ts). */
+export const WORKFLOW_STATUS_LABELS: Record<KnownWorkflowStatus, string> = {
   draft: 'Draft',
   submitted: 'Submitted',
   under_verification: 'Under Verification',
@@ -294,10 +318,26 @@ export interface CertificationReceiptRule {
 export const WORKFLOW_ASSIGNMENTS = ['permission', 'users', 'collection_owner'] as const;
 export type WorkflowAssignment = (typeof WORKFLOW_ASSIGNMENTS)[number];
 
-/** One stage's settings (Settings → Workflow); see `workflow.ts`. */
+/** One step of the workflow (Settings → Workflow), in order; see `workflow.ts`. */
 export interface WorkflowStepSetting {
+  /** The step's id, stored on a bill as its `workflowStatus`. A default step keeps its key. */
   status: BillWorkflowStatus;
-  /** False skips the stage (optional stages only). */
+  /** Its name ("Submitted", "Site check"). */
+  label: string;
+  /** The button that moves a bill into it ("Submit", "Mark bill raised"). */
+  actionLabel: string;
+  /** What being at this step means, shown in Settings and on hover. */
+  description: string;
+  /**
+   * The role permissions that move a bill in when nobody is named — any one of them is enough
+   * (Bills · Verify or Approve). Never empty.
+   */
+  permissions: WorkflowStepPermission[];
+  /** Reaching this step locks amounts, GST and deductions (Edit After Approval and a reason to change). */
+  locksAmounts: boolean;
+  /** A bill at this step can be returned to its preparer for correction. */
+  canReturn: boolean;
+  /** False skips the step — any step but Bill Raised, Certified by Client and Closed. */
   enabled: boolean;
   assignment: WorkflowAssignment;
   /** Named people (with `users`), or backups to the collection owner. */
