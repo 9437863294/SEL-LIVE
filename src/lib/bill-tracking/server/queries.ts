@@ -287,10 +287,15 @@ export async function openBillsForAllocation(context: BtContext, params: URLSear
   const all = await loadScopedBills(context);
   const rc = reportContext(config, context.today);
   const filters: BillFilters = { search: params.get('q') || undefined, projectIds: list(params, 'project'), clientIds: list(params, 'client'), billIds: list(params, 'ids') };
-  const bills = filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
+  // `against`: the open credit / debit notes raised against these invoices — the receipt form adds
+  // them beside their invoice, so the client's payment (invoice less credit note) allocates in full.
+  const against = list(params, 'against');
+  const bills = against.length
+    ? all.filter((bill) => bill.againstBillId && against.includes(bill.againstBillId) && isNoteType(bill.transactionType) && isOpen(bill))
+    : filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
   return sortBills(bills, 'billDate', 'asc', rc)
     .slice(0, 200)
-    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings.certificationBeforeReceipt) }));
+    .map((bill) => ({ id: bill.id, transactionType: bill.transactionType, againstBillId: bill.againstBillId, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings.certificationBeforeReceipt) }));
 }
 
 /**

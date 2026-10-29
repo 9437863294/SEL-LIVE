@@ -64,6 +64,11 @@ written and served only by the API.
     offers *Raise credit note*.
   - **Receivables.** Each note keeps its own receivable: its gross, less any deduction the client
     makes on the note itself.
+  - **Receiving against an invoice with notes.** The client pays the invoice less its credit notes.
+    The receipt form adds the open notes against an invoice beside it, as negative allocations
+    ("set off"), and expects the invoice less those notes. Saving settles the invoice and its notes
+    together, and the bank is credited what actually arrived. Only a note's own open balance can be
+    set off, and never more of it than the bills it pays (`createCollection`).
 
 ### Bill categories
 
