@@ -98,6 +98,22 @@ export function DailyWorkflowCard({ item }: DailyWorkflowCardProps) {
   );
 }
 
+/**
+ * A queue page's tabs and figures as one row of cells across its header card (the workflow stages,
+ * Manage Documents), split by hairlines like the totals strip. Each tab: name and count, the amount
+ * under them; the open one tinted and underlined in the app's tab accent. Fills are solid (mixed into
+ * the card colour) so the hairline background never shows through; theme tokens, so it reads in
+ * dark mode as well. The list takes `gridTemplateColumns` for its number of tabs.
+ */
+export const dailyQueueTabListClass = 'grid h-auto w-full max-w-none items-stretch gap-px rounded-none bg-border p-0';
+export const dailyQueueTabClass =
+  'group/tab flex min-w-0 flex-col items-start justify-center gap-1 whitespace-normal rounded-none bg-card px-4 py-2.5 text-left active:scale-100 sm:px-5 ' +
+  'hover:bg-[color-mix(in_srgb,hsl(var(--muted))_45%,hsl(var(--card)))] ' +
+  'group-data-[indicator=off]/tabs:data-[state=active]:bg-[color-mix(in_srgb,hsl(var(--muted))_70%,hsl(var(--card)))] group-data-[indicator=off]/tabs:data-[state=active]:shadow-none ' +
+  'after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:bg-[image:var(--sel-tab-gradient)] after:opacity-0 after:transition-opacity data-[state=active]:after:opacity-100';
+/** A figure cell beside the queue tabs. */
+export const dailyQueueStatClass = 'min-w-0 bg-card px-4 py-2.5 sm:px-5';
+
 export interface DailyStat {
   label: string;
   value: ReactNode;

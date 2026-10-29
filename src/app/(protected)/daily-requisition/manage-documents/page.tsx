@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Upload, Files, ShieldAlert, MoreHorizontal } from 'lucide-react';
+import { Upload, Files, ShieldAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,15 +16,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RequisitionDocumentDialog } from '@/components/daily-requisition/RequisitionDocumentDialog';
 import { format } from 'date-fns';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth/AuthProvider';
 import {
   dailyPageContainerClass,
+  dailyQueueStatClass,
+  dailyQueueTabClass,
+  dailyQueueTabListClass,
   dailySurfaceCardClass,
-  dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
+import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { PageHeader } from '@/components/shared/page-header';
-import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import { BtToolbar, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
@@ -34,6 +35,12 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 type DocumentsTab = 'pending' | 'uploaded' | 'missing';
 
+/** A row of the lists: tight and striped, like the module's other registers. A click opens its documents. */
+const STRIPED_ROW = 'cursor-pointer border-slate-100 even:bg-slate-50 hover:bg-emerald-50';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
   projectName: string;
@@ -42,6 +49,8 @@ type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   dateKey?: string;
   createdAtText?: string;
   documentStatusUpdatedAtText?: string;
+  /** When its document status last changed, as a local yyyy-MM-dd; '' if never. */
+  documentStatusUpdatedKey?: string;
 };
 
 export default function ManageDocumentsPage() {
@@ -60,6 +69,7 @@ export default function ManageDocumentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [rangePreset, setRangePreset] = useState<DRDatePreset>('all');
+  const [todayKey] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [selectedRequisition, setSelectedRequisition] = useState<DailyRequisitionEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -108,6 +118,7 @@ export default function ManageDocumentsPage() {
           dateKey: dateObj ? format(dateObj, 'yyyy-MM-dd') : '',
           createdAtText: createdAtObj ? format(createdAtObj, 'dd MMM, yyyy HH:mm') : data.createdAt ? String(data.createdAt) : '',
           documentStatusUpdatedAtText: docUpdatedAtObj ? format(docUpdatedAtObj, 'dd MMM, yy HH:mm') : undefined,
+          documentStatusUpdatedKey: docUpdatedAtObj ? format(docUpdatedAtObj, 'yyyy-MM-dd') : '',
         };
       });
 
@@ -222,7 +233,8 @@ export default function ManageDocumentsPage() {
 
     return (
       <TableCard>
-          <Table>
+          {/* Tight rows, one line each: the app's compact table density, whatever the Table rows setting. */}
+          <Table className="[--table-cell-py:0.375rem] [--table-head-h:2.25rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>Reception No.</TableHead>
@@ -247,12 +259,20 @@ export default function ManageDocumentsPage() {
                 ))
               ) : data.length > 0 ? (
                 data.map((req) => (
-                  <TableRow key={req.id}>
+                  <TableRow key={req.id} className={STRIPED_ROW}>
                     <TableCell className="whitespace-nowrap font-medium" onClick={() => openDialog(req)}>
                       {req.receptionNo}
                     </TableCell>
-                    <TableCell onClick={() => openDialog(req)}>{req.projectName || '—'}</TableCell>
-                    <TableCell onClick={() => openDialog(req)}>{req.partyName}</TableCell>
+                    <TableCell onClick={() => openDialog(req)}>
+                      <span className="block max-w-[220px] truncate" title={req.projectName || undefined}>
+                        {req.projectName || '—'}
+                      </span>
+                    </TableCell>
+                    <TableCell onClick={() => openDialog(req)}>
+                      <span className="block max-w-[240px] truncate" title={req.partyName || undefined}>
+                        {req.partyName}
+                      </span>
+                    </TableCell>
                     <TableCell className="whitespace-nowrap" onClick={() => openDialog(req)}>{req.dateText}</TableCell>
                     {type === 'uploaded' && <TableCell className="tabular-nums" onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>}
                     {(type === 'missing' || type === 'uploaded') && (
@@ -264,51 +284,61 @@ export default function ManageDocumentsPage() {
                       </TableCell>
                     )}
                     {type === 'missing' && (
-                      <TableCell onClick={() => openDialog(req)}>
+                      <TableCell className="whitespace-nowrap" onClick={() => openDialog(req)}>
                         {req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}
                       </TableCell>
                     )}
                     <TableCell className="text-right">
                       {type === 'pending' ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <span className="sr-only">Open menu</span>
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => openDialog(req)} disabled={!canUpload}>
-                              <Upload className="mr-2 h-4 w-4" /> Upload
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.stopPropagation();
-                                handleUpdateStatus(req.id, 'Missing');
-                              }}
-                              disabled={!canMarkMissing}
-                            >
-                              Mark as Missing
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onSelect={(e) => {
-                                e.stopPropagation();
-                                handleUpdateStatus(req.id, 'Not Required');
-                              }}
-                              disabled={!canMarkNotRequired}
-                            >
-                              Mark as Not Required
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        // The three actions in the row itself, one click each. Short labels keep the
+                        // row on one line; the full wording is on hover. One the user may not take
+                        // stays in place, greyed, so every row lines up.
+                        <div className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-xs"
+                            title={canUpload ? 'Upload documents' : 'You do not have permission to upload'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDialog(req);
+                            }}
+                            disabled={!canUpload}
+                          >
+                            <Upload className="mr-1.5 h-3.5 w-3.5" /> Upload
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-xs"
+                            title={canMarkMissing ? 'Mark as Missing' : 'You do not have permission to mark as missing'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpdateStatus(req.id, 'Missing');
+                            }}
+                            disabled={!canMarkMissing}
+                          >
+                            Missing
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-xs"
+                            title={canMarkNotRequired ? 'Mark as Not Required' : 'You do not have permission to mark as not required'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUpdateStatus(req.id, 'Not Required');
+                            }}
+                            disabled={!canMarkNotRequired}
+                          >
+                            Not required
+                          </Button>
+                        </div>
                       ) : type === 'missing' ? (
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-7 px-2.5 text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleUpdateStatus(req.id, 'Pending');
@@ -321,12 +351,13 @@ export default function ManageDocumentsPage() {
                         <Button
                           size="sm"
                           variant="outline"
+                          className="h-7 px-2.5 text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
                             openDialog(req);
                           }}
                         >
-                          <Files className="mr-2 h-4 w-4" /> Manage
+                          <Files className="mr-1.5 h-3.5 w-3.5" /> Manage
                         </Button>
                       )}
                     </TableCell>
@@ -351,13 +382,9 @@ export default function ManageDocumentsPage() {
   // Header, then the tabs-and-search row, then the register: the page's real layout.
   if (isAuthLoading || (canViewPage && !hasLoaded)) {
     return (
-      <div className={dailyPageContainerClass}>
-        <Skeleton className="mb-4 h-10 w-full max-w-80" />
-        <div className="flex flex-col gap-3 lg:flex-row lg:justify-between">
-          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
-          <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
-        </div>
-        <Skeleton className="mt-3 h-96 w-full rounded-2xl" />
+      <div className={`${dailyPageContainerClass} space-y-3`}>
+        <Skeleton className="h-44 w-full rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-xl" />
       </div>
     );
   }
@@ -382,35 +409,84 @@ export default function ManageDocumentsPage() {
     );
   }
 
+  // The figures beside the tabs read what the tabs show, filters applied.
+  const shown = [...pendingUploads, ...uploadedList, ...missingList];
+  const updatedToday = shown.filter((req) => req.documentStatusUpdatedKey === todayKey).length;
+  const todayMs = new Date(`${todayKey}T00:00`).getTime();
+  const oldestPendingDays = pendingUploads.reduce<number | null>((oldest, req) => {
+    if (!req.dateKey) return oldest;
+    const days = Math.max(0, Math.round((todayMs - new Date(`${req.dateKey}T00:00`).getTime()) / DAY_MS));
+    return oldest === null || days > oldest ? days : oldest;
+  }, null);
+  const filesOnRecord = uploadedList.reduce((sum, req) => sum + (req.attachments?.length || 0), 0);
+
+  const documentTabs = [
+    { value: 'pending', label: 'Pending', list: pendingUploads, hint: 'Documents still to upload' },
+    { value: 'uploaded', label: 'Uploaded', list: uploadedList, hint: 'Documents on file' },
+    { value: 'missing', label: 'Missing / N.R.', list: missingList, hint: 'Marked missing or not required' },
+  ] as const;
+
   return (
     <>
       <div className={dailyPageContainerClass}>
-        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition"
-          title="Manage Documents"
-          description="Keep attachments organized, highlight missing paperwork, and move resolved items back into the normal flow."
-          badge={<Badge variant="neutral">Support workflow</Badge>}
-        />
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DocumentsTab)} className="space-y-3">
+          {/* One card, as on the workflow stages: the page; its tabs and figures as one row of cells;
+              then Bill Tracking's filter toolbar, as on the Bill Register. */}
+          <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+            {/* A `space-y-*` parent: globals.css then drops the header's own bottom margin. */}
+            <div className="space-y-0 px-4 pb-1 pt-3 sm:px-5 sm:pt-4">
+              <PageHeader
+                backHref="/daily-requisition"
+                breadcrumbs={[{ label: 'Daily Requisition', href: '/daily-requisition' }, { label: 'Manage Documents' }]}
+                title="Manage Documents"
+              />
+            </div>
 
-        {/* The counts live on the tabs; a card row repeating them only pushed the list down. */}
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DocumentsTab)}>
-          {/* The tabs (with their counts), then Bill Tracking's filter toolbar, as on the Bill
-              Register. On a phone the strip scrolls sideways instead of squeezing three labels. */}
-          <div className="space-y-3">
-            <TabsList className={`${dailyTabsListClass} flex w-full overflow-x-auto lg:inline-flex lg:w-auto`}>
-              {(
-                [
-                  { value: 'pending', label: 'Pending', count: pendingUploads.length, hint: 'Documents still to upload' },
-                  { value: 'uploaded', label: 'Uploaded', count: uploadedList.length, hint: 'Documents on file' },
-                  { value: 'missing', label: 'Missing / N.R.', count: missingList.length, hint: 'Marked missing or not required' },
-                ] as const
-              ).map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="flex-1 whitespace-nowrap px-4 py-1.5 lg:flex-none" title={tab.hint}>
-                  <span>{tab.label}</span>
-                  <span className="ml-1.5 rounded-full bg-black/5 px-1.5 text-xs font-semibold tabular-nums">{tab.count}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            <div className="grid gap-px border-y bg-border lg:grid-cols-[3fr_2fr]">
+              <TabsList
+                indicator={false}
+                className={dailyQueueTabListClass}
+                style={{ gridTemplateColumns: `repeat(${documentTabs.length}, minmax(0, 1fr))` }}
+              >
+                {documentTabs.map((tab) => {
+                  const amount = tab.list.reduce((sum, req) => sum + (Number(req.netAmount) || 0), 0);
+                  return (
+                    <TabsTrigger key={tab.value} value={tab.value} className={dailyQueueTabClass} title={tab.hint}>
+                      <span className="flex max-w-full items-center gap-2">
+                        <span className="truncate text-sm font-medium text-muted-foreground group-data-[state=active]/tab:text-primary">{tab.label}</span>
+                        <span className="shrink-0 rounded-full bg-muted px-2 text-xs font-semibold leading-5 tabular-nums text-foreground group-data-[state=active]/tab:bg-[image:var(--sel-tab-gradient)] group-data-[state=active]/tab:text-[color:var(--sel-tab-on)]">
+                          {tab.list.length.toLocaleString('en-IN')}
+                        </span>
+                      </span>
+                      {/* To the paisa from `sm`; shortened on a phone, where a third of the width can't hold it. */}
+                      <span
+                        className="max-w-full truncate font-mono text-base font-semibold leading-tight tabular-nums text-muted-foreground group-data-[state=active]/tab:text-foreground"
+                        title={formatCurrency(amount)}
+                      >
+                        <span className="sm:hidden">{formatINRCompact(amount)}</span>
+                        <span className="hidden sm:inline">{formatCurrency(amount)}</span>
+                      </span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+              <dl className="grid grid-cols-3 gap-px">
+                {[
+                  { label: 'Updated today', value: updatedToday.toLocaleString('en-IN') },
+                  { label: 'Oldest pending', value: oldestPendingDays === null ? '—' : `${oldestPendingDays} d` },
+                  { label: 'Files on record', value: filesOnRecord.toLocaleString('en-IN') },
+                ].map((stat) => (
+                  <div key={stat.label} className={dailyQueueStatClass}>
+                    <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{stat.label}</dt>
+                    <dd className="mt-1 truncate font-mono text-base font-semibold leading-tight tabular-nums text-foreground">{stat.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            <div className="bg-muted/40 px-4 py-2.5 sm:px-5">
             <BtToolbar
+              framed={false}
               search={
                 <ToolbarSearch
                   className="flex-1 sm:w-72 sm:flex-none"
@@ -438,14 +514,15 @@ export default function ManageDocumentsPage() {
                 setRangePreset('all');
               }}
             />
-          </div>
-          <TabsContent value="pending" className="mt-3">
+            </div>
+          </section>
+          <TabsContent value="pending" className="mt-0">
             {renderTable(pendingUploads, 'pending')}
           </TabsContent>
-          <TabsContent value="uploaded" className="mt-3">
+          <TabsContent value="uploaded" className="mt-0">
             {renderTable(uploadedList, 'uploaded')}
           </TabsContent>
-          <TabsContent value="missing" className="mt-3">
+          <TabsContent value="missing" className="mt-0">
             {renderTable(missingList, 'missing')}
           </TabsContent>
         </Tabs>
