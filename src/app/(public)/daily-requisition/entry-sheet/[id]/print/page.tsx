@@ -25,6 +25,7 @@ import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUiText } from '@/hooks/use-company-profile';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
+import { readChecklistPrintBatch } from '@/lib/checklist-print-batch';
 
 const inr = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -167,9 +168,21 @@ function ChecklistPrint() {
   const { user } = useAuth();
   const t = useUiText();
 
+  // A long selection arrives as a `?batch=` key to this browser's storage (checklist-print-batch.ts).
+  // Storage is read after mount, so the server render and the first client render agree; `null`
+  // until then, so the page waits instead of reporting nothing chosen.
+  const batch = searchParams.get('batch');
+  const [batchIds, setBatchIds] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!batch) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is read after mount, so the server render and the first client render agree
+    setBatchIds(readChecklistPrintBatch(batch));
+  }, [batch]);
+  const waitingForBatch = Boolean(batch) && batchIds === null;
+
   // Keyed on the joined string, not a fresh array per render — an array in the effect's
   // dependencies re-ran the fetch after every render.
-  const idsKey = searchParams.get('ids') || (typeof params?.id === 'string' ? params.id : '');
+  const idsKey = batch ? (batchIds ?? []).join(',') : searchParams.get('ids') || (typeof params?.id === 'string' ? params.id : '');
   const ids = useMemo(
     () => idsKey.split(',').map((value) => value.trim()).filter(Boolean),
     [idsKey],
@@ -184,8 +197,13 @@ function ChecklistPrint() {
 
   useEffect(() => {
     let cancelled = false;
+    if (waitingForBatch) return;
     if (!ids.length) {
-      setError('No requisition was chosen to print.');
+      setError(
+        batch
+          ? 'This selection is no longer saved in this browser. Choose the entries again on the Entry Sheet.'
+          : 'No requisition was chosen to print.',
+      );
       setIsLoading(false);
       return;
     }
@@ -217,7 +235,7 @@ function ChecklistPrint() {
     return () => {
       cancelled = true;
     };
-  }, [ids]);
+  }, [ids, batch, waitingForBatch]);
 
   useEffect(() => {
     if (!entries.length) return;

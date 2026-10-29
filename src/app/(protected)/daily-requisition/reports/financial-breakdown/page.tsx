@@ -3,31 +3,29 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Banknote, Download, FileText, Receipt, Wallet } from 'lucide-react';
+import { Wallet } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
+import { SectionHeader } from '@/components/shared/page-header';
 import type { DailyRequisitionEntry } from '@/lib/types';
+import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import {
-  dailyPageContainerClass,
-  dailySurfaceCardClass,
-} from '@/components/daily-requisition/module-shell';
-import { PageHeader } from '@/components/shared/page-header';
-import {
-  KpiRow,
+  CellName,
+  ExportExcelButton,
+  REPORT_ROW,
+  REPORT_TABLE,
   ReportAccessDenied,
+  ReportHeaderCard,
+  ReportPeriodFilter,
   ReportSkeleton,
   dateKeyOf,
   inDateRange,
   inr,
   inrWhole,
   pctOf,
+  useReportPeriod,
 } from '../_components/report-kit';
 
 /** Verified and on: GST / TDS have been checked, and the entry is payable, part paid or paid. */
@@ -45,8 +43,8 @@ export default function FinancialBreakdownReportPage() {
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const period = useReportPeriod();
+  const { dateFrom, dateTo } = period;
 
   useEffect(() => {
     // Until permissions load `can` answers false — wait for them rather than fetch without them.
@@ -191,103 +189,58 @@ export default function FinancialBreakdownReportPage() {
   }
 
   return (
-    <div className={dailyPageContainerClass}>
-      <PageHeader eyebrow="Daily Requisition"
+    <div className={`${dailyPageContainerClass} space-y-3`}>
+      <ReportHeaderCard
+        icon={Wallet}
         title="Financial Breakdown"
         description="Gross vs net analysis with full deduction split — GST, TDS, retention, and other charges. Only Verified, Received for Payment, Partially Paid and Paid entries."
-        backHref="/daily-requisition/reports"
-        actions={
-          <Button
-            variant="outline"
-            onClick={exportExcel}
-            disabled={isExporting || filtered.length === 0}
-            className="bg-white/80 hover:bg-white border-white/70"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            {isExporting ? 'Exporting…' : 'Export Excel'}
-          </Button>
-        }
+        actions={<ExportExcelButton onClick={exportExcel} busy={isExporting} disabled={filtered.length === 0} />}
+        stats={[
+          {
+            label: 'Verified entries',
+            value: filtered.length.toLocaleString('en-IN'),
+            hint: partPaid > 0 ? `${period.label} · ${partPaid.toLocaleString('en-IN')} part paid` : period.label,
+          },
+          { label: 'Total gross', value: inrWhole(totals.gross) },
+          { label: 'Total net', value: inrWhole(totals.net), hint: `${pctOf(totals.net, totals.gross)} of gross`, tone: 'text-emerald-700' },
+          {
+            label: 'Total deductions',
+            value: inrWhole(totalDeductions),
+            hint: `${pctOf(totalDeductions, totals.gross)} of gross`,
+            tone: totalDeductions > 0 ? 'text-rose-700' : undefined,
+          },
+        ]}
       />
 
-      {/* Date range filter */}
-      <FilterBar
-        className="mb-6"
-        activeCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
-        onClear={() => { setDateFrom(''); setDateTo(''); }}
-        summary={`${filtered.length} verified entr${filtered.length === 1 ? 'y' : 'ies'} in range`}
-      >
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">From</span>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">To</span>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-        </label>
-      </FilterBar>
-
-      <KpiRow>
-        <KpiCard
-          label="Verified entries"
-          value={filtered.length}
-          hint={partPaid > 0 ? `${partPaid} part paid` : 'Verified through paid'}
-          icon={FileText}
-          tone="indigo"
-          accent
-        />
-        <KpiCard label="Total gross" value={inrWhole(totals.gross)} icon={Wallet} tone="blue" accent />
-        <KpiCard label="Total net" value={inrWhole(totals.net)} hint={`${pctOf(totals.net, totals.gross)} of gross`} icon={Banknote} tone="emerald" accent />
-        <KpiCard
-          label="Total deductions"
-          value={inrWhole(totalDeductions)}
-          hint={`${pctOf(totalDeductions, totals.gross)} of gross`}
-          icon={Receipt}
-          tone="rose"
-          accent
-        />
-      </KpiRow>
+      <ReportPeriodFilter state={period} />
 
       {/* Deduction breakdown */}
-      <Card className={`${dailySurfaceCardClass} mb-6`}>
-        <div className="h-1 w-full bg-gradient-to-r from-indigo-400 via-blue-400 to-cyan-400 opacity-70" />
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Deduction Breakdown</CardTitle>
-          <CardDescription>Each deduction component as a share of total gross.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {deductionRows.map((row) => {
-              const pct = totals.gross > 0 ? (row.value / totals.gross) * 100 : 0;
-              return (
-                // A phone gets two lines — label and amount, then the bar and its share; from `sm`
-                // one line: label, bar, share, amount.
-                <div
-                  key={row.label}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[140px_minmax(0,1fr)_64px_144px]"
-                >
-                  <span className="min-w-0 truncate text-sm font-medium text-slate-700 sm:order-1">{row.label}</span>
-                  <span className="whitespace-nowrap text-right text-sm tabular-nums font-medium sm:order-4">{inr(row.value)}</span>
-                  <div className="h-2 w-full rounded-full bg-slate-100 sm:order-2">
-                    <div
-                      className="h-2 rounded-full bg-gradient-to-r from-indigo-400 to-blue-500 transition-all"
-                      style={{ width: `${Math.min(pct, 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-right text-xs tabular-nums text-slate-500 sm:order-3">{pctOf(row.value, totals.gross)}</span>
+      <section className="rounded-xl border bg-card px-4 py-3 shadow-sm sm:px-5 sm:py-4">
+        <SectionHeader title="Deduction Breakdown" description="Each deduction component as a share of total gross." />
+        <div className="space-y-2">
+          {deductionRows.map((row) => {
+            const pct = totals.gross > 0 ? (row.value / totals.gross) * 100 : 0;
+            return (
+              // A phone gets two lines — label and amount, then the bar and its share; from `sm`
+              // one line: label, bar, share, amount.
+              <div
+                key={row.label}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[140px_minmax(0,1fr)_64px_144px]"
+              >
+                <span className="min-w-0 truncate text-sm font-medium text-slate-700 sm:order-1">{row.label}</span>
+                <span className="whitespace-nowrap text-right text-sm tabular-nums font-medium sm:order-4">{inr(row.value)}</span>
+                <div className="h-2 w-full rounded-full bg-slate-100 sm:order-2">
+                  <div
+                    className="h-2 rounded-full bg-gradient-to-r from-indigo-400 to-blue-500 transition-all"
+                    style={{ width: `${Math.min(pct, 100)}%` }}
+                  />
                 </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                <span className="text-right text-xs tabular-nums text-slate-500 sm:order-3">{pctOf(row.value, totals.gross)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Full detail table */}
       <TableCard
@@ -296,10 +249,10 @@ export default function FinancialBreakdownReportPage() {
       >
           {filtered.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              No verified entries found for the selected date range.
+              No verified entries found for the selected period.
             </div>
           ) : (
-              <Table>
+              <Table className={REPORT_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[120px]">Reception No</TableHead>
@@ -316,9 +269,11 @@ export default function FinancialBreakdownReportPage() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((e) => (
-                    <TableRow key={e.id}>
+                    <TableRow key={e.id} className={REPORT_ROW}>
                       <TableCell className="whitespace-nowrap font-mono">{e.receptionNo}</TableCell>
-                      <TableCell className="font-medium">{e.partyName}</TableCell>
+                      <TableCell className="font-medium">
+                        <CellName text={e.partyName || '—'} className="max-w-[220px]" />
+                      </TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.grossAmount)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.netAmount)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(e.igstAmount)}</TableCell>

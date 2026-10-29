@@ -29,14 +29,11 @@ import {
 } from '@/components/daily-requisition/dashboard-charts';
 import ViewDailyRequisitionDialog from '@/components/daily-requisition/ViewDailyRequisitionDialog';
 import { PageHeader } from '@/components/shared/page-header';
-import { FilterBar } from '@/components/shared/filter-bar';
+import { BtToolbar, ToolbarDate, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { dateKeyOf, formatDay, localDateKey, toJsDate } from '@/app/(protected)/daily-requisition/reports/_components/report-kit';
@@ -240,15 +237,77 @@ export default function DailyRequisitionDashboardPage() {
         }
       />
 
-      {/* Everything below reads only the requisitions these filters allow. */}
-      <FilterBar
-        className="rounded-xl border border-white/60 bg-white/70 p-2 shadow-sm backdrop-blur-sm"
-        search={{
-          value: filters.search,
-          onChange: (value) => setFilter('search', value),
-          placeholder: 'Reception No, DEP No, party or description',
-          label: 'Search requisitions',
-        }}
+      {/* Everything below reads only the requisitions these filters allow. Bill Tracking's filter
+          toolbar, as on the Bill Register: a control that is set is outlined. */}
+      <BtToolbar
+        search={
+          <ToolbarSearch
+            className="flex-1 sm:w-72 sm:flex-none"
+            value={filters.search}
+            placeholder="Reception No, DEP No, party or description"
+            onChange={(value) => setFilter('search', value)}
+          />
+        }
+        controls={
+          <>
+            <ToolbarSelect
+              label="Period"
+              value={period}
+              onChange={(value) => setPeriod(value as DashboardPeriod)}
+              options={DASHBOARD_PERIODS.map((option) => ({ value: option.value, label: option.label }))}
+              showAll={false}
+            />
+            {period === 'custom' && (
+              <>
+                <ToolbarDate label="From" value={customRange.from} onChange={(value) => setCustomRange((range) => ({ ...range, from: value }))} />
+                <ToolbarDate label="To" value={customRange.to} onChange={(value) => setCustomRange((range) => ({ ...range, to: value }))} />
+              </>
+            )}
+            <ToolbarSelect
+              label="Department"
+              value={filters.departmentId}
+              onChange={(value) => setFilter('departmentId', value)}
+              options={departmentOptions.map((d) => ({ value: d.id, label: d.name }))}
+              allLabel="All departments"
+            />
+            <ToolbarSelect
+              label="Project"
+              value={filters.projectId}
+              onChange={(value) => setFilter('projectId', value)}
+              options={projectOptions.map((p) => ({ value: p.id, label: p.projectName || p.id }))}
+              allLabel="All projects"
+            />
+            <ToolbarSelect
+              label="Documents"
+              value={filters.documentStatus}
+              onChange={(value) => setFilter('documentStatus', value)}
+              options={[
+                { value: 'Uploaded', label: 'Uploaded' },
+                { value: 'Pending', label: 'Pending' },
+                { value: 'Missing', label: 'Missing' },
+                { value: 'Not Required', label: 'Not required' },
+              ]}
+              allLabel="Any"
+            />
+            <ToolbarSelect
+              label="Amount"
+              value={filters.minAmount ? String(filters.minAmount) : ''}
+              onChange={(value) => setFilter('minAmount', Number(value) || 0)}
+              options={AMOUNT_OPTIONS.filter((option) => option.value > 0).map((option) => ({ value: String(option.value), label: option.label }))}
+              allLabel="Any amount"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-pressed={filters.dueOnly}
+              onClick={() => setFilter('dueOnly', !filters.dueOnly)}
+              className={cn('h-9 bg-white shadow-sm', filters.dueOnly && 'border-emerald-400 bg-emerald-50 text-emerald-900')}
+            >
+              Still due only
+            </Button>
+          </>
+        }
         activeCount={filterCount + (period === 'this-month' ? 0 : 1)}
         onClear={() => {
           setFilters(NO_FILTERS);
@@ -257,91 +316,12 @@ export default function DailyRequisitionDashboardPage() {
         }}
         summary={
           <span>
-            <span className="font-medium text-slate-700">{filtered.length.toLocaleString('en-IN')}</span>
+            <span className="font-semibold text-slate-700">{filtered.length.toLocaleString('en-IN')}</span>
             {filtered.length !== rows.length && <> of {rows.length.toLocaleString('en-IN')}</>} requisition
             {filtered.length === 1 ? '' : 's'} · <span className="whitespace-nowrap">{rangeLabel}</span>
           </span>
         }
-      >
-        <FilterSelect
-          label="Period"
-          value={period}
-          onChange={(value) => setPeriod(value as DashboardPeriod)}
-          className="w-[10.5rem]"
-          options={DASHBOARD_PERIODS.map((option) => ({ value: option.value, label: option.label }))}
-        />
-        {period === 'custom' && (
-          <div className="flex items-center gap-1.5">
-            <Label htmlFor="dash-from" className="sr-only">
-              From
-            </Label>
-            <Input
-              id="dash-from"
-              type="date"
-              value={customRange.from}
-              max={customRange.to || undefined}
-              onChange={(event) => setCustomRange((range) => ({ ...range, from: event.target.value }))}
-              className="h-9 w-[9.5rem] text-sm"
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <Label htmlFor="dash-to" className="sr-only">
-              To
-            </Label>
-            <Input
-              id="dash-to"
-              type="date"
-              value={customRange.to}
-              min={customRange.from || undefined}
-              onChange={(event) => setCustomRange((range) => ({ ...range, to: event.target.value }))}
-              className="h-9 w-[9.5rem] text-sm"
-            />
-          </div>
-        )}
-        <FilterSelect
-          label="Department"
-          value={filters.departmentId}
-          onChange={(value) => setFilter('departmentId', value)}
-          className="w-[11rem]"
-          options={[{ value: '', label: 'All departments' }, ...departmentOptions.map((d) => ({ value: d.id, label: d.name }))]}
-        />
-        <FilterSelect
-          label="Project"
-          value={filters.projectId}
-          onChange={(value) => setFilter('projectId', value)}
-          className="w-[11rem]"
-          options={[{ value: '', label: 'All projects' }, ...projectOptions.map((p) => ({ value: p.id, label: p.projectName || p.id }))]}
-        />
-        <FilterSelect
-          label="Documents"
-          value={filters.documentStatus}
-          onChange={(value) => setFilter('documentStatus', value)}
-          className="w-[10rem]"
-          options={[
-            { value: '', label: 'Any documents' },
-            { value: 'Uploaded', label: 'Uploaded' },
-            { value: 'Pending', label: 'Pending' },
-            { value: 'Missing', label: 'Missing' },
-            { value: 'Not Required', label: 'Not required' },
-          ]}
-        />
-        <FilterSelect
-          label="Amount"
-          value={String(filters.minAmount)}
-          onChange={(value) => setFilter('minAmount', Number(value) || 0)}
-          className="w-[10rem]"
-          options={AMOUNT_OPTIONS.map((option) => ({ value: String(option.value), label: option.label }))}
-        />
-        <Button
-          type="button"
-          variant={filters.dueOnly ? 'default' : 'outline'}
-          size="sm"
-          className="h-9"
-          aria-pressed={filters.dueOnly}
-          onClick={() => setFilter('dueOnly', !filters.dueOnly)}
-        >
-          Still due only
-        </Button>
-      </FilterBar>
+      />
 
       {loadError && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -567,38 +547,6 @@ export default function DailyRequisitionDashboardPage() {
         />
       )}
     </div>
-  );
-}
-
-/** One labelled filter control for the bar. The label shows above it from `sm` up. */
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-  className,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: ReadonlyArray<{ value: string; label: string }>;
-  className?: string;
-}) {
-  // Radix Select cannot hold '' as an item value, so "any" travels as a sentinel.
-  const ANY = '__any__';
-  return (
-    <Select value={value === '' ? ANY : value} onValueChange={(next) => onChange(next === ANY ? '' : next)}>
-      <SelectTrigger className={cn('h-9 bg-white text-sm', className)} aria-label={label}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value || ANY} value={option.value || ANY}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 

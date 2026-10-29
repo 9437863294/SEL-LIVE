@@ -4,24 +4,22 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { BarChart3, CheckCircle2, ChevronLeft, Download, FileText, Hourglass, Wallet } from 'lucide-react';
+import { BarChart3, ChevronLeft } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { balanceOf, paidOf } from '@/lib/requisition-progress';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DAILY_STATUS_TONE, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
-import { PageHeader } from '@/components/shared/page-header';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { KpiCard } from '@/components/shared/kpi-card';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import {
-  ChipStrip,
-  KpiRow,
+  ExportExcelButton,
+  REPORT_ROW,
+  REPORT_TABLE,
   ReportAccessDenied,
+  ReportHeaderCard,
+  ReportPeriodFilter,
   ReportSkeleton,
   addTo,
   dateKeyOf,
@@ -32,6 +30,7 @@ import {
   pctOf,
   round2,
   totalsOf,
+  useReportPeriod,
   type RequisitionTotals,
 } from '../_components/report-kit';
 
@@ -69,8 +68,8 @@ export default function StatusOverviewReportPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const period = useReportPeriod();
+  const { dateFrom, dateTo } = period;
 
   useEffect(() => {
     // Until permissions load `can` answers false — wait for them rather than fetch without them.
@@ -192,96 +191,45 @@ export default function StatusOverviewReportPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton strip />;
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton />;
 
   if (!canView) return <ReportAccessDenied title="Status Overview" description={DESCRIPTION} />;
 
   return (
-    <div className={dailyPageContainerClass}>
-      <PageHeader
-        eyebrow="Daily Requisition"
+    <div className={`${dailyPageContainerClass} space-y-3`}>
+      <ReportHeaderCard
+        icon={BarChart3}
         title="Status Overview"
         description={DESCRIPTION}
-        backHref="/daily-requisition/reports"
-        actions={
-          canExport ? (
-            <Button
-              variant="outline"
-              onClick={exportExcel}
-              disabled={isExporting}
-              className="bg-white/80 hover:bg-white border-white/70"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {isExporting ? 'Exporting...' : 'Export Excel'}
-            </Button>
-          ) : null
-        }
+        actions={canExport ? <ExportExcelButton onClick={exportExcel} busy={isExporting} /> : null}
+        stats={[
+          { label: 'Entries', value: grand.count.toLocaleString('en-IN'), hint: period.label },
+          { label: 'Net amount', value: inrWhole(grand.net), hint: `Gross ${inrWhole(grand.gross)}` },
+          {
+            label: 'Paid',
+            value: inrWhole(grand.paid),
+            hint: `${paidInFull.toLocaleString('en-IN')} paid in full`,
+            tone: grand.paid > 0 ? 'text-emerald-700' : undefined,
+          },
+          {
+            label: 'Outstanding',
+            value: inrWhole(grand.outstanding),
+            hint: grand.partPaid > 0 ? `${grand.partPaid.toLocaleString('en-IN')} part paid` : 'Still to pay',
+            tone: grand.outstanding > 0 ? 'text-amber-700' : undefined,
+          },
+        ]}
       />
 
-      {/* Date range filter */}
-      <FilterBar
-        className="mb-5"
-        activeCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
-        onClear={() => { setDateFrom(''); setDateTo(''); }}
-        summary={`${filtered.length} of ${entries.length} entries`}
-      >
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">From</span>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">To</span>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-        </label>
-      </FilterBar>
-
-      <KpiRow>
-        <KpiCard
-          label="Entries"
-          value={grand.count}
-          hint={dateFrom || dateTo ? 'In the selected range' : 'All time'}
-          icon={FileText}
-          tone="cyan"
-          accent
-        />
-        <KpiCard label="Net amount" value={inrWhole(grand.net)} hint={`Gross ${inrWhole(grand.gross)}`} icon={Wallet} tone="indigo" accent />
-        <KpiCard label="Paid" value={inrWhole(grand.paid)} hint={`${paidInFull} paid in full`} icon={CheckCircle2} tone="emerald" accent />
-        <KpiCard
-          label="Outstanding"
-          value={inrWhole(grand.outstanding)}
-          hint={grand.partPaid > 0 ? `${grand.partPaid} part paid` : 'Still to pay'}
-          icon={Hourglass}
-          tone="amber"
-          accent
-        />
-      </KpiRow>
-
-      <ChipStrip
-        label="Entries by status"
-        chips={statuses.map((s) => ({ key: s, label: s, count: stats.get(s)?.count ?? 0, tone: DAILY_STATUS_TONE[s] }))}
-      />
+      <ReportPeriodFilter state={period} />
 
       {/* Summary table */}
-      <TableCard
-        icon={BarChart3}
-        title="Summary by Status"
-        description={<>{grand.count} total entries · {inr(grand.net)} net · {inr(grand.outstanding)} outstanding</>}
-        scroll="natural"
-      >
+      <TableCard icon={BarChart3} title="Summary by Status" description="Each status's share of the net amount." scroll="natural">
           {grand.count === 0 ? (
             <div className="px-4 py-10 text-center text-muted-foreground">
-              No data found for selected date range.
+              No data found for the selected period.
             </div>
           ) : (
-              <Table>
+              <Table className={REPORT_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[11rem]">Status</TableHead>
@@ -298,7 +246,7 @@ export default function StatusOverviewReportPage() {
                     const row = stats.get(s) ?? emptyTotals();
                     const pct = grand.net > 0 ? (row.net / grand.net) * 100 : 0;
                     return (
-                      <TableRow key={s}>
+                      <TableRow key={s} className={REPORT_ROW}>
                         <TableCell className="whitespace-nowrap">
                           <StatusBadge status={s} tone={DAILY_STATUS_TONE[s]}>{s}</StatusBadge>
                         </TableCell>

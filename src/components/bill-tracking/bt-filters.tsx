@@ -15,9 +15,6 @@ import { Bookmark, BookmarkPlus, SlidersHorizontal, Trash2, X } from 'lucide-rea
 
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -28,7 +25,7 @@ import {
 } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBtQuery, useLookups } from './bt-client';
-import { BtToolbar, ToolbarSearch, ToolbarSelect } from './bt-toolbar';
+import { BtToolbar, DrawerInput, DrawerSelect, ToolbarSearch, ToolbarSelect } from './bt-toolbar';
 import { FySelect } from './bt-ui';
 
 /** Keys that are filters (counted as "active"); page, sort and size are not. */
@@ -74,37 +71,6 @@ export function useUrlFilters() {
 }
 
 export type UrlFilters = ReturnType<typeof useUrlFilters>;
-
-/** A labelled dropdown for the "More filters" drawer (a vertical form, so labels sit above). */
-function DrawerSelect({ label, value, onChange, options, placeholder = 'All' }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
-  return (
-    <div className="min-w-0 space-y-1.5">
-      <Label className="text-xs font-medium text-slate-700">{label}</Label>
-      <Select value={value || 'any'} onValueChange={(next) => onChange(next === 'any' ? '' : next)}>
-        <SelectTrigger className={value ? 'h-9 border-emerald-400 bg-emerald-50' : 'h-9'}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent className="max-h-72">
-          <SelectItem value="any">{placeholder}</SelectItem>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function DrawerInput({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div className="min-w-0 space-y-1.5">
-      <Label className="text-xs font-medium text-slate-700">{label}</Label>
-      <Input {...props} className={props.value ? 'h-9 border-emerald-400 bg-emerald-50' : 'h-9'} />
-    </div>
-  );
-}
 
 const entries = <K extends string>(labels: Record<K, string>) => (Object.entries(labels) as [K, string][]).map(([value, label]) => ({ value, label }));
 

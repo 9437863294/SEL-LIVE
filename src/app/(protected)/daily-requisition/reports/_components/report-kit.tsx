@@ -12,16 +12,26 @@
  *   the one reading Daily Requisition and Bank Balance share — so a requisition part paid through a
  *   voucher counts here exactly as it does on the entry sheet and in the cheque register.
  * - The loading, access-denied, KPI-row and chip-strip frames.
+ * - The redesigned report's parts, as on the Entry Sheet: one header card with the totals, a Period
+ *   filter (the Entry Sheet's presets or a range of your own), and tight striped table rows.
  */
 
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Timestamp } from 'firebase/firestore';
-import { ShieldAlert } from 'lucide-react';
+import { Download, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BtToolbar, ToolbarDate, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
-import { dailyPageContainerClass, dailySurfaceCardClass } from '@/components/daily-requisition/module-shell';
+import {
+  DailyStatStrip,
+  dailyPageContainerClass,
+  dailySurfaceCardClass,
+  type DailyStat,
+} from '@/components/daily-requisition/module-shell';
+import { DR_DATE_PRESETS, resolveDatePreset, type DRDatePreset } from '@/lib/daily-requisition-settings';
 import { balanceOf, paidOf } from '@/lib/requisition-progress';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -153,6 +163,169 @@ export function groupTotals(
     addTo(group, entry);
   }
   return Array.from(groups.values());
+}
+
+/* ── Period ───────────────────────────────────────────────────────────────────────────────── */
+
+export type ReportPeriod = DRDatePreset | 'custom';
+
+/** The Entry Sheet's date presets, then a range of your own. "All time" is the select's empty choice. */
+const PERIOD_OPTIONS = [
+  ...DR_DATE_PRESETS.filter((preset) => preset.value !== 'all'),
+  { value: 'custom', label: 'Custom range' },
+];
+
+export interface ReportPeriodState {
+  period: ReportPeriod;
+  setPeriod: (period: ReportPeriod) => void;
+  customFrom: string;
+  setCustomFrom: (value: string) => void;
+  customTo: string;
+  setCustomTo: (value: string) => void;
+  /** The period as an inclusive yyyy-MM-dd range; both empty for all time. */
+  dateFrom: string;
+  dateTo: string;
+  /** "This month", "01 Sep 2026 – 30 Sep 2026", "All time". */
+  label: string;
+  /** Back to all time. */
+  clear: () => void;
+}
+
+/** A report's period: a preset, or a from / to of your own. */
+export function useReportPeriod(initial: ReportPeriod = 'all'): ReportPeriodState {
+  const [period, setPeriod] = useState<ReportPeriod>(initial);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+
+  const { dateFrom, dateTo } = useMemo(() => {
+    if (period === 'custom') return { dateFrom: customFrom, dateTo: customTo };
+    const range = resolveDatePreset(period);
+    return range ? { dateFrom: localDateKey(range.from), dateTo: localDateKey(range.to) } : { dateFrom: '', dateTo: '' };
+  }, [period, customFrom, customTo]);
+
+  const label =
+    period !== 'custom'
+      ? (DR_DATE_PRESETS.find((preset) => preset.value === period)?.label ?? 'All time')
+      : dateFrom && dateTo
+        ? `${formatDay(dateFrom)} – ${formatDay(dateTo)}`
+        : dateFrom
+          ? `From ${formatDay(dateFrom)}`
+          : dateTo
+            ? `Until ${formatDay(dateTo)}`
+            : 'All time';
+
+  const clear = () => {
+    setPeriod('all');
+    setCustomFrom('');
+    setCustomTo('');
+  };
+
+  return { period, setPeriod, customFrom, setCustomFrom, customTo, setCustomTo, dateFrom, dateTo, label, clear };
+}
+
+/**
+ * The filter row under the header card — Bill Tracking's filter toolbar, as on the Bill Register:
+ * Period, its own From / To when custom, any `children` controls, and Clear.
+ */
+export function ReportPeriodFilter({ state, children }: { state: ReportPeriodState; children?: ReactNode }) {
+  return (
+    <BtToolbar
+      controls={
+        <>
+          <ToolbarSelect
+            label="Period"
+            value={state.period === 'all' ? '' : state.period}
+            onChange={(value) => state.setPeriod((value || 'all') as ReportPeriod)}
+            options={PERIOD_OPTIONS}
+            allLabel="All time"
+          />
+          {state.period === 'custom' ? (
+            <>
+              <ToolbarDate label="From" value={state.customFrom} onChange={state.setCustomFrom} />
+              <ToolbarDate label="To" value={state.customTo} onChange={state.setCustomTo} />
+            </>
+          ) : null}
+          {children}
+        </>
+      }
+      activeCount={state.period !== 'all' ? 1 : 0}
+      onClear={state.clear}
+    />
+  );
+}
+
+/* ── The redesigned report's frame ────────────────────────────────────────────────────────── */
+
+/**
+ * One card, as on the Entry Sheet: the report — back, icon, title, what it shows, its actions —
+ * then its totals as a strip of figures.
+ */
+export function ReportHeaderCard({
+  icon,
+  title,
+  description,
+  actions,
+  stats,
+}: {
+  icon: LucideIcon;
+  title: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  stats: DailyStat[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      {/* A `space-y-*` parent: globals.css then drops the header's own bottom margin. */}
+      <div className="space-y-0 px-4 py-3 sm:px-5 sm:py-4">
+        <PageHeader
+          eyebrow="Daily Requisition"
+          icon={icon}
+          title={title}
+          description={description}
+          backHref="/daily-requisition/reports"
+          actions={actions}
+        />
+      </div>
+      <DailyStatStrip flush items={stats} />
+    </section>
+  );
+}
+
+/** The header card's export button. */
+export function ExportExcelButton({ onClick, busy, disabled = false }: { onClick: () => void; busy: boolean; disabled?: boolean }) {
+  return (
+    <Button size="sm" variant="outline" className="gap-1.5" onClick={onClick} disabled={busy || disabled}>
+      <Download className="h-4 w-4" />
+      {busy ? 'Exporting…' : 'Export Excel'}
+    </Button>
+  );
+}
+
+/** A report table's rhythm: the app's compact table density, whatever the Table rows setting. */
+export const REPORT_TABLE = '[--table-cell-py:0.375rem] [--table-head-h:2.25rem]';
+
+/** A report table's row: striped like the module's registers. A totals row keeps its own fill. */
+export const REPORT_ROW = 'border-slate-100 even:bg-slate-50 hover:bg-emerald-50';
+
+/** A name in a report table, on one line: cut short with "…", the whole of it on hover. */
+export function CellName({ text, className }: { text: string; className?: string }) {
+  return (
+    <span className={cn('block max-w-[260px] truncate', className)} title={text}>
+      {text}
+    </span>
+  );
+}
+
+/** A count or amount with a small bar beside it — on the same line, so the row stays one line tall. */
+export function ValueBar({ value, share, barClassName }: { value: ReactNode; share: number; barClassName: string }) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <div className="h-1.5 w-20 shrink-0 rounded-full bg-slate-100" aria-hidden="true">
+        <div className={cn('h-1.5 rounded-full bg-gradient-to-r', barClassName)} style={{ width: `${Math.max(0, Math.min(share, 1)) * 100}%` }} />
+      </div>
+      <span className="whitespace-nowrap tabular-nums">{value}</span>
+    </div>
+  );
 }
 
 /* ── Frames ───────────────────────────────────────────────────────────────────────────────── */

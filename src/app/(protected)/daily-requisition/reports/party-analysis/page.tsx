@@ -3,22 +3,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Download, FileText, Hourglass, Users, Wallet } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
-import { PageHeader } from '@/components/shared/page-header';
 import {
-  KpiRow,
+  CellName,
+  ExportExcelButton,
+  REPORT_ROW,
+  REPORT_TABLE,
   ReportAccessDenied,
+  ReportHeaderCard,
+  ReportPeriodFilter,
   ReportSkeleton,
+  ValueBar,
   dateKeyOf,
   groupTotals,
   inDateRange,
@@ -26,6 +27,7 @@ import {
   inrWhole,
   round2,
   totalsOf,
+  useReportPeriod,
 } from '../_components/report-kit';
 
 const UNKNOWN_PARTY = '(Unknown)';
@@ -37,8 +39,8 @@ export default function PartyAnalysisReportPage() {
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const period = useReportPeriod();
+  const { dateFrom, dateTo } = period;
 
   useEffect(() => {
     // Until permissions load `can` answers false — wait for them rather than fetch without them.
@@ -136,95 +138,40 @@ export default function PartyAnalysisReportPage() {
   }
 
   return (
-    <div className={dailyPageContainerClass}>
-      <PageHeader eyebrow="Daily Requisition"
+    <div className={`${dailyPageContainerClass} space-y-3`}>
+      <ReportHeaderCard
+        icon={Users}
         title="Party / Vendor Analysis"
         description="Group requisitions by party name — count, gross, net, paid and still outstanding."
-        backHref="/daily-requisition/reports"
-        actions={
-          <Button
-            variant="outline"
-            onClick={exportExcel}
-            disabled={isExporting || rows.length === 0}
-            className="bg-white/80 hover:bg-white border-white/70"
-          >
-            <Download className="mr-2 h-4 w-4" />
-            {isExporting ? 'Exporting…' : 'Export Excel'}
-          </Button>
-        }
+        actions={<ExportExcelButton onClick={exportExcel} busy={isExporting} disabled={rows.length === 0} />}
+        stats={[
+          { label: 'Unique parties', value: rows.length.toLocaleString('en-IN'), hint: topParty ? `Top: ${topParty.name}` : undefined },
+          { label: 'Entries', value: totals.count.toLocaleString('en-IN'), hint: period.label },
+          { label: 'Net amount', value: inrWhole(totals.net), hint: `Gross ${inrWhole(totals.gross)}` },
+          {
+            label: 'Outstanding',
+            value: inrWhole(totals.outstanding),
+            hint: `${inrWhole(totals.paid)} paid`,
+            tone: totals.outstanding > 0 ? 'text-amber-700' : undefined,
+          },
+        ]}
       />
 
-      {/* Date range filter */}
-      <FilterBar
-        className="mb-6"
-        activeCount={(dateFrom ? 1 : 0) + (dateTo ? 1 : 0)}
-        onClear={() => { setDateFrom(''); setDateTo(''); }}
-        summary={`${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'} in range`}
-      >
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">From</span>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">To</span>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-          />
-        </label>
-      </FilterBar>
+      <ReportPeriodFilter state={period} />
 
-      <KpiRow>
-        <KpiCard
-          label="Unique parties"
-          value={rows.length}
-          hint={topParty ? `Top: ${topParty.name}` : undefined}
-          icon={Users}
-          tone="rose"
-          accent
-        />
-        <KpiCard
-          label="Entries"
-          value={totals.count}
-          hint={totals.partPaid > 0 ? `${totals.partPaid} part paid` : 'In range'}
-          icon={FileText}
-          tone="cyan"
-          accent
-        />
-        <KpiCard label="Net amount" value={inrWhole(totals.net)} hint={`Gross ${inrWhole(totals.gross)}`} icon={Wallet} tone="violet" accent />
-        <KpiCard
-          label="Outstanding"
-          value={inrWhole(totals.outstanding)}
-          hint={`${inrWhole(totals.paid)} paid`}
-          icon={Hourglass}
-          tone="amber"
-          accent
-        />
-      </KpiRow>
-
-      {/* Table */}
-      <TableCard
-        title="Party Breakdown"
-        description="Sorted by total net amount descending. Bar shows proportion of max."
-        count={rows.length}
-      >
+      <TableCard icon={Users} title="Party Breakdown" description="Largest net amount first; the bar compares each with the largest.">
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              No entries found for the selected date range.
+              No entries found for the selected period.
             </div>
           ) : (
-              <Table>
+              <Table className={REPORT_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[10rem]">Party Name</TableHead>
                     <TableHead className="text-right">Count</TableHead>
                     <TableHead className="text-right">Total Gross</TableHead>
-                    <TableHead className="min-w-[180px]">Total Net</TableHead>
+                    <TableHead className="text-right">Total Net</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead className="text-right">Outstanding</TableHead>
                     <TableHead className="text-right">Part paid</TableHead>
@@ -232,37 +179,28 @@ export default function PartyAnalysisReportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => {
-                    const pct = maxNet > 0 ? (row.net / maxNet) * 100 : 0;
-                    return (
-                      <TableRow key={row.key}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-right tabular-nums">{row.count}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.gross)}</TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <span className="whitespace-nowrap tabular-nums">{inr(row.net)}</span>
-                            <div className="h-1.5 w-full max-w-[160px] rounded-full bg-slate-100">
-                              <div
-                                className="h-1.5 rounded-full bg-gradient-to-r from-rose-400 to-pink-500 transition-all"
-                                style={{ width: `${pct}%` }}
-                              />
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.paid)}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.outstanding)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{row.partPaid}</TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.avgNet)}</TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {rows.map((row) => (
+                    <TableRow key={row.key} className={REPORT_ROW}>
+                      <TableCell className="font-medium">
+                        <CellName text={row.name} />
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.gross)}</TableCell>
+                      <TableCell className="text-right">
+                        <ValueBar value={inr(row.net)} share={maxNet > 0 ? row.net / maxNet : 0} barClassName="from-rose-400 to-pink-500" />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.paid)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.outstanding)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.partPaid}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.avgNet)}</TableCell>
+                    </TableRow>
+                  ))}
                   {/* Totals row */}
                   <TableRow className="bg-muted/50 font-medium">
                     <TableCell>Total</TableCell>
                     <TableCell className="text-right tabular-nums">{totals.count}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.gross)}</TableCell>
-                    <TableCell className="whitespace-nowrap tabular-nums">{inr(totals.net)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.net)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.paid)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.outstanding)}</TableCell>
                     <TableCell className="text-right tabular-nums">{totals.partPaid}</TableCell>

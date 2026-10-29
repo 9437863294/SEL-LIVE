@@ -27,7 +27,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
-import { SearchInput } from '@/components/shared/filter-bar';
+import { BtToolbar, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
+import { DR_DATE_PRESETS, resolveDatePreset, type DRDatePreset } from '@/lib/daily-requisition-settings';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
@@ -37,6 +38,8 @@ type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
   projectName: string;
   dateText?: string;
+  /** Its date as a local yyyy-MM-dd, for the Period filter; '' without one. */
+  dateKey?: string;
   createdAtText?: string;
   documentStatusUpdatedAtText?: string;
 };
@@ -55,6 +58,8 @@ export default function ManageDocumentsPage() {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<DocumentsTab>('pending');
   const [searchTerm, setSearchTerm] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
+  const [rangePreset, setRangePreset] = useState<DRDatePreset>('all');
   const [selectedRequisition, setSelectedRequisition] = useState<DailyRequisitionEntry | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
@@ -100,6 +105,7 @@ export default function ManageDocumentsPage() {
           projectName: projectNames.get(data.projectId) || '',
           documentStatus,
           dateText: dateObj ? format(dateObj, 'dd MMM, yyyy') : data.date ? String(data.date) : '',
+          dateKey: dateObj ? format(dateObj, 'yyyy-MM-dd') : '',
           createdAtText: createdAtObj ? format(createdAtObj, 'dd MMM, yyyy HH:mm') : data.createdAt ? String(data.createdAt) : '',
           documentStatusUpdatedAtText: docUpdatedAtObj ? format(docUpdatedAtObj, 'dd MMM, yy HH:mm') : undefined,
         };
@@ -125,11 +131,24 @@ export default function ManageDocumentsPage() {
     if (!isAuthLoading && canViewPage) void fetchRequisitions();
   }, [isAuthLoading, canViewPage, fetchRequisitions]);
 
+  /** The projects the requisitions belong to, for the Project filter. */
+  const projectOptions = useMemo(
+    () =>
+      [...new Map(requisitions.filter((req) => req.projectId).map((req) => [req.projectId, req.projectName || req.projectId])).entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label, 'en-IN')),
+    [requisitions],
+  );
+
   const { pendingUploads, uploadedList, missingList } = useMemo(() => {
     const pending: EnrichedDailyRequisitionEntry[] = [];
     const uploaded: EnrichedDailyRequisitionEntry[] = [];
     const missing: EnrichedDailyRequisitionEntry[] = [];
     const needle = searchTerm.trim().toLowerCase();
+    // The period as an inclusive yyyy-MM-dd range on the requisition's date; none for all time.
+    const range = resolveDatePreset(rangePreset);
+    const from = range ? format(range.from, 'yyyy-MM-dd') : '';
+    const to = range ? format(range.to, 'yyyy-MM-dd') : '';
 
     requisitions.forEach((req) => {
       if (
@@ -140,6 +159,8 @@ export default function ManageDocumentsPage() {
       ) {
         return;
       }
+      if (projectFilter && req.projectId !== projectFilter) return;
+      if (range && (!req.dateKey || req.dateKey < from || req.dateKey > to)) return;
       switch (req.documentStatus) {
         case 'Uploaded':
           uploaded.push(req);
@@ -155,7 +176,8 @@ export default function ManageDocumentsPage() {
       }
     });
     return { pendingUploads: pending, uploadedList: uploaded, missingList: missing };
-  }, [requisitions, searchTerm]);
+  }, [requisitions, searchTerm, projectFilter, rangePreset]);
+  const activeFilterCount = [searchTerm.trim(), projectFilter, rangePreset !== 'all'].filter(Boolean).length;
 
   const openDialog = (req: DailyRequisitionEntry) => {
     setSelectedRequisition(req);
@@ -371,9 +393,9 @@ export default function ManageDocumentsPage() {
 
         {/* The counts live on the tabs; a card row repeating them only pushed the list down. */}
         <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DocumentsTab)}>
-          {/* Tabs (with their counts) and search share one row, as on the workflow stage pages. On
-              a phone the strip scrolls sideways instead of squeezing three labels into thirds. */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          {/* The tabs (with their counts), then Bill Tracking's filter toolbar, as on the Bill
+              Register. On a phone the strip scrolls sideways instead of squeezing three labels. */}
+          <div className="space-y-3">
             <TabsList className={`${dailyTabsListClass} flex w-full overflow-x-auto lg:inline-flex lg:w-auto`}>
               {(
                 [
@@ -388,11 +410,33 @@ export default function ManageDocumentsPage() {
                 </TabsTrigger>
               ))}
             </TabsList>
-            <SearchInput
-              className="w-full lg:w-96"
-              placeholder="Search reception no., project, party…"
-              value={searchTerm}
-              onChange={setSearchTerm}
+            <BtToolbar
+              search={
+                <ToolbarSearch
+                  className="flex-1 sm:w-72 sm:flex-none"
+                  placeholder="Search reception no., project, party…"
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                />
+              }
+              controls={
+                <>
+                  <ToolbarSelect
+                    label="Period"
+                    value={rangePreset === 'all' ? '' : rangePreset}
+                    onChange={(value) => setRangePreset((value || 'all') as DRDatePreset)}
+                    options={DR_DATE_PRESETS.filter((preset) => preset.value !== 'all')}
+                    allLabel="All time"
+                  />
+                  <ToolbarSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={projectOptions} allLabel="All projects" />
+                </>
+              }
+              activeCount={activeFilterCount}
+              onClear={() => {
+                setSearchTerm('');
+                setProjectFilter('');
+                setRangePreset('all');
+              }}
             />
           </div>
           <TabsContent value="pending" className="mt-3">

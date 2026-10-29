@@ -3,30 +3,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { Download, FileText, Hourglass, Layers, Wallet } from 'lucide-react';
+import { Layers } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
-import { PageHeader } from '@/components/shared/page-header';
 import {
-  KpiRow,
+  CellName,
+  ExportExcelButton,
+  REPORT_ROW,
+  REPORT_TABLE,
   ReportAccessDenied,
+  ReportHeaderCard,
+  ReportPeriodFilter,
   ReportSkeleton,
+  ValueBar,
   dateKeyOf,
   groupTotals,
   inDateRange,
   inr,
   inrWhole,
-  localDateKey,
   round2,
   totalsOf,
+  useReportPeriod,
 } from '../_components/report-kit';
 
 const NO_DEPARTMENT = '__unknown__';
@@ -42,12 +43,9 @@ export default function DepartmentAnalysisPage() {
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [deptNameMap, setDeptNameMap] = useState<Record<string, string>>({});
 
-  // This month so far, in local days (toISOString would give the UTC day — a day early here).
-  const [fromDate, setFromDate] = useState(() => {
-    const now = new Date();
-    return localDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
-  });
-  const [toDate, setToDate] = useState(() => localDateKey(new Date()));
+  // This month, as the report always opened.
+  const period = useReportPeriod('this-month');
+  const { dateFrom, dateTo } = period;
 
   useEffect(() => {
     // Until permissions load `can` answers false — wait for them rather than fetch without them.
@@ -85,8 +83,8 @@ export default function DepartmentAnalysisPage() {
 
   // `date` is a Firestore Timestamp on entries from the entry sheet and the importer.
   const filtered = useMemo(
-    () => entries.filter((e) => inDateRange(dateKeyOf(e.date), fromDate, toDate)),
-    [entries, fromDate, toDate]
+    () => entries.filter((e) => inDateRange(dateKeyOf(e.date), dateFrom, dateTo)),
+    [entries, dateFrom, dateTo]
   );
 
   const rows = useMemo(
@@ -136,7 +134,7 @@ export default function DepartmentAnalysisPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `department-analysis-${fromDate || 'all'}-to-${toDate || 'all'}.xlsx`;
+      a.download = `department-analysis-${dateFrom || 'all'}-to-${dateTo || 'all'}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -151,87 +149,38 @@ export default function DepartmentAnalysisPage() {
   if (!canView) return <ReportAccessDenied title="Department Analysis" description="Requisitions grouped by department." />;
 
   return (
-    <div className={dailyPageContainerClass}>
-      <PageHeader
+    <div className={`${dailyPageContainerClass} space-y-3`}>
+      <ReportHeaderCard
+        icon={Layers}
         title="Department Analysis"
-        description="Requisitions grouped by department for the selected date range — net, paid and still outstanding."
-        backHref="/daily-requisition/reports"
-        eyebrow="Daily Requisition"
-        actions={
-          canExport ? (
-            <Button
-              variant="outline"
-              onClick={exportExcel}
-              disabled={isExporting || rows.length === 0}
-              className="bg-white/80 hover:bg-white border-white/70"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              {isExporting ? 'Exporting…' : 'Export Excel'}
-            </Button>
-          ) : null
-        }
+        description="Requisitions grouped by department for the selected period — net, paid and still outstanding."
+        actions={canExport ? <ExportExcelButton onClick={exportExcel} busy={isExporting} disabled={rows.length === 0} /> : null}
+        stats={[
+          {
+            label: 'Departments',
+            value: rows.length.toLocaleString('en-IN'),
+            hint: topDept ? `Top: ${topDept.name} (${topDept.count.toLocaleString('en-IN')})` : undefined,
+          },
+          { label: 'Entries', value: totals.count.toLocaleString('en-IN'), hint: period.label },
+          { label: 'Net amount', value: inrWhole(totals.net), hint: `Gross ${inrWhole(totals.gross)}` },
+          {
+            label: 'Outstanding',
+            value: inrWhole(totals.outstanding),
+            hint: `${inrWhole(totals.paid)} paid`,
+            tone: totals.outstanding > 0 ? 'text-amber-700' : undefined,
+          },
+        ]}
       />
 
-      {/* Date filters */}
-      <FilterBar className="mb-4" summary={`${filtered.length} entr${filtered.length === 1 ? 'y' : 'ies'} in range`}>
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">From</span>
-          <Input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">To</span>
-          <Input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-          />
-        </label>
-      </FilterBar>
+      <ReportPeriodFilter state={period} />
 
-      <KpiRow>
-        <KpiCard
-          label="Departments"
-          value={rows.length}
-          hint={topDept ? `Top: ${topDept.name} (${topDept.count})` : undefined}
-          icon={Layers}
-          tone="emerald"
-          accent
-        />
-        <KpiCard
-          label="Entries"
-          value={totals.count}
-          hint={totals.partPaid > 0 ? `${totals.partPaid} part paid` : 'In range'}
-          icon={FileText}
-          tone="cyan"
-          accent
-        />
-        <KpiCard label="Net amount" value={inrWhole(totals.net)} hint={`Gross ${inrWhole(totals.gross)}`} icon={Wallet} tone="violet" accent />
-        <KpiCard
-          label="Outstanding"
-          value={inrWhole(totals.outstanding)}
-          hint={`${inrWhole(totals.paid)} paid`}
-          icon={Hourglass}
-          tone="amber"
-          accent
-        />
-      </KpiRow>
-
-      {/* Table */}
-      <TableCard
-        icon={Layers}
-        title="Department Breakdown"
-        description={<>{rows.length} department{rows.length !== 1 ? 's' : ''} · {totals.count} entries in range</>}
-      >
+      <TableCard icon={Layers} title="Department Breakdown" description="Most requisitions first; the bar compares each with the busiest.">
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              No entries found for the selected date range.
+              No entries found for the selected period.
             </div>
           ) : (
-              <Table>
+              <Table className={REPORT_TABLE}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[10rem]">Department</TableHead>
@@ -245,27 +194,19 @@ export default function DepartmentAnalysisPage() {
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => (
-                    <TableRow key={row.key}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableRow key={row.key} className={REPORT_ROW}>
+                      <TableCell className="font-medium">
+                        <CellName text={row.name} />
+                      </TableCell>
                       <TableCell className="text-right">
-                        <div className="space-y-1">
-                          <div className="tabular-nums">{row.count}</div>
-                          <div className="ml-auto h-1.5 w-32 rounded-full bg-slate-100">
-                            <div
-                              className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-all"
-                              style={{
-                                width: `${maxCount > 0 ? (row.count / maxCount) * 100 : 0}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
+                        <ValueBar
+                          value={row.count.toLocaleString('en-IN')}
+                          share={maxCount > 0 ? row.count / maxCount : 0}
+                          barClassName="from-emerald-500 to-teal-600"
+                        />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-right tabular-nums">
-                        {inr(row.gross)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                        {inr(row.net)}
-                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.gross)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{inr(row.net)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.paid)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.outstanding)}</TableCell>
                       <TableCell className="text-right tabular-nums">{row.partPaid}</TableCell>
@@ -274,7 +215,7 @@ export default function DepartmentAnalysisPage() {
                   {/* Totals row */}
                   <TableRow className="bg-muted/50 font-medium">
                     <TableCell>Total</TableCell>
-                    <TableCell className="text-right tabular-nums">{totals.count}</TableCell>
+                    <TableCell className="text-right tabular-nums">{totals.count.toLocaleString('en-IN')}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.gross)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.net)}</TableCell>
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(totals.paid)}</TableCell>

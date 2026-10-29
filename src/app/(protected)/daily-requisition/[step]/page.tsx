@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import React, { Suspense, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import {
   MoreHorizontal,
@@ -11,20 +11,39 @@ import {
   Check,
   Loader2,
   AlertTriangle,
+  Download,
+  Search,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { SearchInput } from '@/components/shared/filter-bar';
 import { TableCard } from '@/components/shared/table-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+// Bill Tracking's filter toolbar, so this list filters exactly like the Bill Register.
+import { BtToolbar, DrawerInput, DrawerSelect, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, runTransaction, Timestamp, query, where, type DocumentReference } from 'firebase/firestore';
-import type { DailyRequisitionEntry, Project, User, WorkflowStep } from '@/lib/types';
+import {
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  onSnapshot,
+  runTransaction,
+  Timestamp,
+  query,
+  where,
+  type DocumentReference,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore';
+import type { DailyRequisitionEntry, Department, Project, User, WorkflowStep } from '@/lib/types';
+import { formatINRCompact } from '@/lib/bill-tracking/money';
+import { cn } from '@/lib/utils';
 import { balanceOf, isPaymentLocked, paidOf, payRequisitionsHref, voucherHref } from '@/lib/requisition-progress';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { diffFields, type FieldChange } from '@/lib/activity-logger';
@@ -54,7 +73,6 @@ import { GstTdsVerificationDialog } from '@/components/daily-requisition/GstTdsV
 import {
   dailyPageContainerClass,
   dailySurfaceCardClass,
-  dailyTabsListClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
 import { dailyStepSlug } from '@/lib/daily-requisition-settings';
@@ -75,6 +93,101 @@ const formatCurrency = (amount: number) =>
 // striped. Plain and hover: classes, so the dark theme's compat layer remaps them.
 const STRIPED_ROW = 'border-slate-100 even:bg-slate-50 hover:bg-emerald-50';
 const SELECTED_ROW = 'border-slate-100 bg-emerald-50';
+
+// The stage's tabs and today's figures as one row of cells across the card, split by hairlines like
+// the Entry Sheet's totals. Each tab: name and count, the amount under them; the open one tinted and
+// underlined in the app's tab accent. Fills are solid (mixed into the card colour) so the hairline
+// background never shows through, and theme tokens, so it reads in dark mode as well.
+const STAGE_TAB_LIST = 'grid h-auto w-full max-w-none items-stretch gap-px rounded-none bg-border p-0';
+const STAGE_TAB =
+  'group/tab flex min-w-0 flex-col items-start justify-center gap-1 whitespace-normal rounded-none bg-card px-4 py-2.5 text-left active:scale-100 sm:px-5 ' +
+  'hover:bg-[color-mix(in_srgb,hsl(var(--muted))_45%,hsl(var(--card)))] ' +
+  'group-data-[indicator=off]/tabs:data-[state=active]:bg-[color-mix(in_srgb,hsl(var(--muted))_70%,hsl(var(--card)))] group-data-[indicator=off]/tabs:data-[state=active]:shadow-none ' +
+  'after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:bg-[image:var(--sel-tab-gradient)] after:opacity-0 after:transition-opacity data-[state=active]:after:opacity-100';
+const STAGE_STAT = 'min-w-0 bg-card px-4 py-2.5 sm:px-5';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** A requisition waiting longer than this at a stage is overdue. */
+const OVERDUE_DAYS = 30;
+/** The Age filter's choices: waiting more than this many days. */
+const AGE_OPTIONS = [7, 15, 30, 60, 90];
+
+/** The selection bar's tint, mixed into the card colour so it stays solid in the dark theme too. */
+const SELECTION_BAR = 'bg-[color-mix(in_srgb,theme(colors.emerald.500)_8%,hsl(var(--card)))]';
+/** A keyboard shortcut's key, on a button or in the search box. */
+const KBD = 'rounded border px-1.5 font-mono text-[11px] leading-4';
+
+/** The Indian financial year (April–March) a day falls in, by the year it starts. */
+const fyStartOf = (date: Date) => (date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1);
+/** "FY 26-27". */
+const fyLabel = (start: number) => `FY ${String(start % 100).padStart(2, '0')}-${String((start + 1) % 100).padStart(2, '0')}`;
+const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const asDate = (value: unknown): Date | undefined => {
+  const maybe = value as { toDate?: () => Date } | null | undefined;
+  if (maybe && typeof maybe.toDate === 'function') return maybe.toDate();
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+  return undefined;
+};
+
+/**
+ * How long a stage's queue has waited, as a ring: up to a week in green, then amber to a month,
+ * overdue in red. Saturated colours, legible on either theme; the figures are also given in text.
+ */
+function WaitRing({ fresh, aging, overdue }: { fresh: number; aging: number; overdue: number }) {
+  const total = fresh + aging + overdue;
+  // r = 100 / 2π: the circumference is 100, so a share is its own dash length.
+  const r = 15.9155;
+  let offset = 25; // start at the top
+  const arcs = [
+    { value: fresh, color: '#14b8a6' },
+    { value: aging, color: '#f59e0b' },
+    { value: overdue, color: '#ef4444' },
+  ]
+    .filter((arc) => arc.value > 0)
+    .map((arc) => {
+      const share = total ? (arc.value / total) * 100 : 0;
+      const out = { ...arc, share, offset };
+      offset -= share;
+      return out;
+    });
+  return (
+    <svg viewBox="0 0 36 36" className="h-11 w-11 shrink-0" aria-hidden="true">
+      <circle cx="18" cy="18" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="4.5" />
+      {arcs.map((arc) => (
+        <circle
+          key={arc.color}
+          cx="18"
+          cy="18"
+          r={r}
+          fill="none"
+          stroke={arc.color}
+          strokeWidth="4.5"
+          strokeDasharray={`${arc.share} ${100 - arc.share}`}
+          strokeDashoffset={arc.offset}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/** Whether the list is in step with the database right now. */
+function LiveBadge({ live }: { live: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium',
+        live ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600',
+      )}
+      title={live ? 'Changes made by anyone show here as they happen.' : 'Not connected — the list may be out of date.'}
+    >
+      <span className={cn('h-1.5 w-1.5 rounded-full', live ? 'animate-pulse bg-emerald-500' : 'bg-slate-400')} aria-hidden="true" />
+      {live ? 'Live' : 'Offline'}
+    </span>
+  );
+}
 
 /**
  * Only a requisition awaiting payment with nothing paid on it yet can be marked Paid by hand. Once a
@@ -188,13 +301,10 @@ function moveToast(
 
 function StepPageSkeleton() {
   return (
-    <div className={dailyPageContainerClass}>
-      <Skeleton className="mb-4 h-10 w-80" />
-      <div className="flex flex-col gap-3 lg:flex-row lg:justify-between">
-        <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
-        <Skeleton className="h-10 w-full rounded-xl lg:w-96" />
-      </div>
-      <Skeleton className="mt-3 h-96 w-full rounded-2xl" />
+    <div className={`${dailyPageContainerClass} space-y-3`}>
+      <Skeleton className="h-44 w-full rounded-xl" />
+      <Skeleton className="h-9 w-full sm:w-96" />
+      <Skeleton className="h-96 w-full rounded-xl" />
     </div>
   );
 }
@@ -216,7 +326,11 @@ interface StepConfig {
     label: string;
     newStatus: string;
     extraFields?: Record<string, any>;
+    /** The key that runs it on the selection (lower case). */
+    shortcut: string;
   };
+  /** What "done today" means at this stage, beside the tabs. */
+  doneTodayLabel: string;
   /** Step descriptions shown in the page header */
   description: string;
   /** Metric hints per tab index */
@@ -237,7 +351,8 @@ function getStepConfig(dynamicIndex: number): StepConfig {
           { key: 'received', label: 'Received', statuses: ['Received'] },
           { key: 'cancelled', label: 'Cancelled', statuses: ['Cancelled'] },
         ],
-        bulkAction: { tabKey: 'pending', label: 'Mark as Received', newStatus: 'Received' },
+        bulkAction: { tabKey: 'pending', label: 'Mark as Received', newStatus: 'Received', shortcut: 'r' },
+        doneTodayLabel: 'Received today',
         description: 'Receive incoming entries, keep exceptions visible, and pass the right set forward to verification.',
         metricHints: ['Waiting to be received', 'Ready for verification', 'Requires follow-up'],
       };
@@ -249,7 +364,8 @@ function getStepConfig(dynamicIndex: number): StepConfig {
           { key: 'verified', label: 'Verified', statuses: ['Verified'], showBulkCheckbox: true },
           { key: 'needs-review', label: 'Needs Review', statuses: ['Needs Review'] },
         ],
-        bulkAction: { tabKey: 'verified', label: 'Send for Payment', newStatus: 'Received for Payment' },
+        bulkAction: { tabKey: 'verified', label: 'Send for Payment', newStatus: 'Received for Payment', shortcut: 's' },
+        doneTodayLabel: 'Verified today',
         description: 'Validate deductions, rework mismatches, and hand verified entries to the payment stage.',
         metricHints: ['Awaiting verification', 'Ready for payment', 'Mismatch or follow-up required'],
       };
@@ -261,7 +377,8 @@ function getStepConfig(dynamicIndex: number): StepConfig {
           { key: 'pending', label: 'Pending', statuses: ['Received for Payment', 'Partially Paid'], showBulkCheckbox: true },
           { key: 'paid', label: 'Paid', statuses: ['Paid'] },
         ],
-        bulkAction: { tabKey: 'pending', label: 'Mark as Paid', newStatus: 'Paid' },
+        bulkAction: { tabKey: 'pending', label: 'Mark as Paid', newStatus: 'Paid', shortcut: 'p' },
+        doneTodayLabel: 'Paid today',
         description: 'Manage verified entries that are waiting for final payment and keep paid items visible for traceability.',
         metricHints: ['Awaiting final confirmation', 'Completed disbursements'],
       };
@@ -269,6 +386,7 @@ function getStepConfig(dynamicIndex: number): StepConfig {
       return {
         queryStatuses: ['Pending'],
         tabs: [{ key: 'all', label: 'All Entries', statuses: ['Pending'] }],
+        doneTodayLabel: 'Done today',
         description: 'View and manage entries at this workflow stage.',
         metricHints: ['Total entries'],
       };
@@ -280,12 +398,28 @@ function getStepConfig(dynamicIndex: number): StepConfig {
 type EnrichedEntry = DailyRequisitionEntry & {
   id: string;
   projectName: string;
+  departmentName: string;
   receivedByName?: string;
   dateText: string;
+  /** Its date as a local yyyy-MM-dd, for the date filter; '' without one. */
+  dateKey: string;
   receivedAtText?: string;
   verifiedAtText?: string;
   paidAtText?: string;
+  /** Whole days it has waited at this stage — since its date, receipt or verification — or null. */
+  ageDays: number | null;
+  /** The financial year its date falls in, by the year it starts; null without a date. */
+  fyStart: number | null;
+  /** When this stage's own step was done today (received, verified, paid). */
+  doneToday: boolean;
 };
+
+/** Names for the ids a requisition carries. */
+interface Lookups {
+  projects: Map<string, string>;
+  departments: Map<string, string>;
+  users: Map<string, string>;
+}
 
 /* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
@@ -308,12 +442,30 @@ function DynamicWorkflowStepContent() {
   const [workflowNotFound, setWorkflowNotFound] = useState(false);
 
   /* ── entries state ── */
-  const [entries, setEntries] = useState<EnrichedEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [lookups, setLookups] = useState<Lookups | null>(null);
+  const [requisitionDocs, setRequisitionDocs] = useState<QueryDocumentSnapshot[] | null>(null);
+  /** In step with the database right now (not from the offline cache) — the Live badge. */
+  const [isLive, setIsLive] = useState(false);
+  const [today] = useState(() => startOfDay(new Date()));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isUpdating, setIsUpdating] = useState(false);
   const [isMarkPaidOpen, setIsMarkPaidOpen] = useState(false);
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [activeTab, setActiveTab] = useState('');
+
+  /* ── filters ── */
+  const [fyFilter, setFyFilter] = useState('all');
+  const [ageFilter, setAgeFilter] = useState<number | null>(null);
+  const [projectFilter, setProjectFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  // Behind "More filters": the requisition's date range and its net amount.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // A `?q=` in the URL, from a link in another module, fills the search. A later link to this page
   // with a different `?q=` replaces it. This is adjusted during render, not in an effect.
@@ -364,111 +516,193 @@ function DynamicWorkflowStepContent() {
     })();
   }, [stepSlug]);
 
-  /* ──────────── 2 ─ fetch entries ──────────── */
-  const fetchData = useCallback(async () => {
-    if (!stepConfig) return;
-    setIsLoading(true);
-    try {
-      const queryStatuses = stepConfig.queryStatuses;
+  /* ──────────── 2 ─ entries, live ──────────── */
 
-      const [reqsSnap, projectsSnap, usersSnap] = await Promise.all([
-        queryStatuses.length <= 10
-          ? getDocs(query(collection(db, 'dailyRequisitions'), where('status', 'in', queryStatuses)))
-          : getDocs(collection(db, 'dailyRequisitions')),
-        getDocs(collection(db, 'projects')),
-        getDocs(collection(db, 'users')),
-      ]);
+  const canLoad = !workflowLoading && !isAuthLoading && canViewPage && Boolean(stepConfig);
 
-      const projectsMap = new Map(projectsSnap.docs.map((d) => [d.id, (d.data() as Project).projectName]));
-      const usersMap = new Map(
-        usersSnap.docs.map((d) => {
-          const u = d.data() as User;
-          return [d.id, u.name || u.email || d.id];
-        })
-      );
-
-      const data: EnrichedEntry[] = reqsSnap.docs
-        .filter((d) => queryStatuses.includes((d.data() as any).status))
-        .map((d) => {
-          const raw = d.data() as DailyRequisitionEntry & {
-            receivedById?: string;
-            receivedAt?: any;
-            date?: any;
-            createdAt?: any;
-            verifiedAt?: any;
-            paidAt?: any;
-          };
-
-          const dateTs =
-            raw.date?.toDate instanceof Function
-              ? raw.date.toDate()
-              : typeof raw.date === 'string' || typeof raw.date === 'number'
-                ? new Date(raw.date as any)
-                : raw.createdAt?.toDate instanceof Function
-                  ? raw.createdAt.toDate()
-                  : undefined;
-
-          const receivedAtTs = raw.receivedAt?.toDate instanceof Function ? raw.receivedAt.toDate() : undefined;
-          const verifiedAtTs = raw.verifiedAt?.toDate instanceof Function ? raw.verifiedAt.toDate() : undefined;
-          const paidAtTs = raw.paidAt?.toDate instanceof Function ? raw.paidAt.toDate() : undefined;
-
-          return {
-            ...(raw as DailyRequisitionEntry),
-            id: d.id,
-            projectName: projectsMap.get(raw.projectId) || 'N/A',
-            receivedByName: raw.receivedById ? usersMap.get(raw.receivedById) : undefined,
-            dateText: dateTs ? format(dateTs, 'dd MMM, yyyy') : raw.date ? String(raw.date) : '',
-            receivedAtText: receivedAtTs ? format(receivedAtTs, 'PPpp') : undefined,
-            verifiedAtText: verifiedAtTs ? format(verifiedAtTs, 'PPpp') : undefined,
-            paidAtText: paidAtTs ? format(paidAtTs, 'dd MMM, yyyy HH:mm') : undefined,
-          };
+  // Names for projects, departments and users, read once.
+  useEffect(() => {
+    if (!canLoad) return;
+    let active = true;
+    (async () => {
+      try {
+        const [projectsSnap, departmentsSnap, usersSnap] = await Promise.all([
+          getDocs(collection(db, 'projects')),
+          getDocs(collection(db, 'departments')),
+          getDocs(collection(db, 'users')),
+        ]);
+        if (!active) return;
+        setLookups({
+          projects: new Map(projectsSnap.docs.map((d) => [d.id, (d.data() as Project).projectName])),
+          departments: new Map(departmentsSnap.docs.map((d) => [d.id, (d.data() as Department).name])),
+          users: new Map(
+            usersSnap.docs.map((d) => {
+              const u = d.data() as User;
+              return [d.id, u.name || u.email || d.id];
+            }),
+          ),
         });
+      } catch (error) {
+        console.error('Error loading names:', error);
+        // The list still shows, with ids where names would be.
+        if (active) setLookups({ projects: new Map(), departments: new Map(), users: new Map() });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [canLoad]);
 
-      // Sort by most recent timestamp
-      data.sort((a, b) => {
-        const aMs =
-          (a as any).paidAt?.toDate?.()?.getTime?.() ||
-          (a as any).verifiedAt?.toDate?.()?.getTime?.() ||
-          (a as any).receivedAt?.toDate?.()?.getTime?.() ||
-          (a as any).createdAt?.toDate?.()?.getTime?.() ||
-          0;
-        const bMs =
-          (b as any).paidAt?.toDate?.()?.getTime?.() ||
-          (b as any).verifiedAt?.toDate?.()?.getTime?.() ||
-          (b as any).receivedAt?.toDate?.()?.getTime?.() ||
-          (b as any).createdAt?.toDate?.()?.getTime?.() ||
-          0;
-        return bMs - aMs;
+  // The stage's requisitions, live: a change anyone makes — here, on the Entry Sheet, or a voucher
+  // in Bank Balance — shows without a reload. Metadata changes too, so the badge knows when the
+  // list is only the offline cache.
+  useEffect(() => {
+    if (!canLoad || !stepConfig) return;
+    const statuses = stepConfig.queryStatuses;
+    const source =
+      statuses.length <= 10
+        ? query(collection(db, 'dailyRequisitions'), where('status', 'in', statuses))
+        : collection(db, 'dailyRequisitions');
+    return onSnapshot(
+      source,
+      { includeMetadataChanges: true },
+      (snap) => {
+        setRequisitionDocs(snap.docs);
+        setIsLive(!snap.metadata.fromCache);
+      },
+      (error) => {
+        console.error('Error fetching entries:', error);
+        setIsLive(false);
+        setRequisitionDocs((current) => current ?? []);
+        if (error.code === 'failed-precondition') {
+          toast({
+            title: 'Database Index Required',
+            description: 'This query requires a composite index. Check your Firebase console.',
+            variant: 'destructive',
+            duration: 10000,
+          });
+        } else {
+          toast({ title: 'Error', description: 'Failed to fetch entries.', variant: 'destructive' });
+        }
+      },
+    );
+  }, [canLoad, stepConfig, toast]);
+
+  const isLoading = canLoad && (!requisitionDocs || !lookups);
+
+  const entries = useMemo<EnrichedEntry[]>(() => {
+    if (!requisitionDocs || !lookups || !stepConfig) return [];
+    const queryStatuses = stepConfig.queryStatuses;
+    const todayMs = today.getTime();
+    const isToday = (date: Date | undefined) => Boolean(date) && startOfDay(date as Date).getTime() === todayMs;
+
+    const data: EnrichedEntry[] = requisitionDocs
+      .filter((d) => queryStatuses.includes((d.data() as any).status))
+      .map((d) => {
+        const raw = d.data() as DailyRequisitionEntry;
+        const dateTs = asDate(raw.date) ?? asDate(raw.createdAt);
+        const receivedAtTs = asDate(raw.receivedAt);
+        const verifiedAtTs = asDate(raw.verifiedAt);
+        const paidAtTs = asDate(raw.paidAt) ?? asDate(raw.lastPaidAt);
+
+        // How long it has waited at this stage: since its date at Receiving, since it was received at
+        // Verification, since it was verified at Payment.
+        const since = dynamicIndex === 0 ? dateTs : dynamicIndex === 1 ? receivedAtTs ?? dateTs : verifiedAtTs ?? receivedAtTs ?? dateTs;
+        const doneAt = dynamicIndex === 0 ? receivedAtTs : dynamicIndex === 1 ? verifiedAtTs : paidAtTs;
+
+        return {
+          ...raw,
+          id: d.id,
+          projectName: lookups.projects.get(raw.projectId) || 'N/A',
+          departmentName: lookups.departments.get(raw.departmentId) || raw.departmentId || '(No department)',
+          receivedByName: raw.receivedById ? lookups.users.get(raw.receivedById) : undefined,
+          dateText: dateTs ? format(dateTs, 'dd MMM, yyyy') : raw.date ? String(raw.date) : '',
+          dateKey: dateTs ? format(dateTs, 'yyyy-MM-dd') : '',
+          receivedAtText: receivedAtTs ? format(receivedAtTs, 'PPpp') : undefined,
+          verifiedAtText: verifiedAtTs ? format(verifiedAtTs, 'PPpp') : undefined,
+          paidAtText: asDate(raw.paidAt) ? format(asDate(raw.paidAt) as Date, 'dd MMM, yyyy HH:mm') : undefined,
+          ageDays: since ? Math.max(0, Math.round((todayMs - startOfDay(since).getTime()) / DAY_MS)) : null,
+          fyStart: dateTs ? fyStartOf(dateTs) : null,
+          doneToday: isToday(doneAt),
+        };
       });
 
-      setEntries(data);
-    } catch (error: any) {
-      console.error('Error fetching entries:', error);
-      if (error.code === 'failed-precondition') {
-        toast({
-          title: 'Database Index Required',
-          description: 'This query requires a composite index. Check your Firebase console.',
-          variant: 'destructive',
-          duration: 10000,
-        });
-      } else {
-        toast({ title: 'Error', description: 'Failed to fetch entries.', variant: 'destructive' });
-      }
-    }
-    setIsLoading(false);
-  }, [stepConfig, toast]);
+    // Most recent first: paid, verified, received or created, whichever is latest to have happened.
+    const latest = (entry: EnrichedEntry) =>
+      (asDate(entry.paidAt) ?? asDate(entry.verifiedAt) ?? asDate(entry.receivedAt) ?? asDate(entry.createdAt))?.getTime() ?? 0;
+    data.sort((a, b) => latest(b) - latest(a));
+    return data;
+  }, [requisitionDocs, lookups, stepConfig, dynamicIndex, today]);
 
-  useEffect(() => {
-    if (!workflowLoading && !isAuthLoading && canViewPage && stepConfig) {
-      fetchData();
-    } else if (!workflowLoading && !isAuthLoading) {
-      setIsLoading(false);
-    }
-  }, [workflowLoading, isAuthLoading, canViewPage, stepConfig, fetchData]);
+  /* ──────────── 3 ─ what each tab shows ──────────── */
 
-  /* ──────────── 3 ─ action handlers ──────────── */
+  // The FY picker scopes the whole page: the tabs, their figures and the header's.
+  const scoped = useMemo(
+    () => (fyFilter === 'all' ? entries : entries.filter((entry) => String(entry.fyStart) === fyFilter)),
+    [entries, fyFilter],
+  );
+  const fyOptions = useMemo(
+    () => [...new Set(entries.map((entry) => entry.fyStart).filter((fy): fy is number => fy !== null))].sort((a, b) => b - a),
+    [entries],
+  );
+  // The projects and departments the stage holds, for Add filter.
+  const projectOptions = useMemo(
+    () =>
+      [...new Map(scoped.map((entry) => [entry.projectId, entry.projectName])).entries()]
+        .filter(([id]) => Boolean(id))
+        .sort((a, b) => a[1].localeCompare(b[1])),
+    [scoped],
+  );
+  const departmentOptions = useMemo(
+    () =>
+      [...new Map(scoped.map((entry) => [entry.departmentId, entry.departmentName])).entries()]
+        .filter(([id]) => Boolean(id))
+        .sort((a, b) => a[1].localeCompare(b[1])),
+    [scoped],
+  );
 
-  const selectedEntries = useMemo(() => entries.filter((entry) => selectedIds.has(entry.id)), [entries, selectedIds]);
+  const tabEntries = useMemo(() => {
+    if (!stepConfig) return {};
+    const map: Record<string, EnrichedEntry[]> = {};
+    const t = searchTerm.trim().toLowerCase();
+    const min = minAmount === '' ? null : Number(minAmount);
+    const max = maxAmount === '' ? null : Number(maxAmount);
+    const passesFilters = (entry: EnrichedEntry) =>
+      (ageFilter === null || (entry.ageDays ?? 0) > ageFilter) &&
+      (!projectFilter || entry.projectId === projectFilter) &&
+      (!departmentFilter || entry.departmentId === departmentFilter) &&
+      // An undated requisition only shows while no date range is set.
+      (!dateFrom || (Boolean(entry.dateKey) && entry.dateKey >= dateFrom)) &&
+      (!dateTo || (Boolean(entry.dateKey) && entry.dateKey <= dateTo)) &&
+      (min === null || Number.isNaN(min) || (Number(entry.netAmount) || 0) >= min) &&
+      (max === null || Number.isNaN(max) || (Number(entry.netAmount) || 0) <= max);
+
+    stepConfig.tabs.forEach((tab) => {
+      map[tab.key] = scoped.filter(
+        (entry) =>
+          tab.statuses.includes(entry.status) &&
+          passesFilters(entry) &&
+          ((entry.receptionNo || '').toLowerCase().includes(t) ||
+            // The Expenses request no., so a link from a request finds its requisition.
+            (entry.depNo || '').toLowerCase().includes(t) ||
+            entry.projectName.toLowerCase().includes(t) ||
+            (entry.partyName || '').toLowerCase().includes(t) ||
+            (entry.receivedByName || '').toLowerCase().includes(t) ||
+            (entry.payments ?? []).some((payment) => (payment.voucherNo || '').toLowerCase().includes(t)))
+      );
+    });
+    return map;
+  }, [scoped, stepConfig, searchTerm, ageFilter, projectFilter, departmentFilter, dateFrom, dateTo, minAmount, maxAmount]);
+
+  // The open tab: the first until one is chosen.
+  const tabValue = stepConfig?.tabs.some((tab) => tab.key === activeTab) ? activeTab : (stepConfig?.tabs[0]?.key ?? '');
+  const openTab = stepConfig?.tabs.find((tab) => tab.key === tabValue);
+  const visibleEntries = useMemo(() => tabEntries[tabValue] ?? [], [tabEntries, tabValue]);
+
+  /* ──────────── 4 ─ action handlers ──────────── */
+
+  /** The ticked rows the list shows. A bulk action takes only these — never a row a filter hides. */
+  const selectedEntries = useMemo(() => visibleEntries.filter((entry) => selectedIds.has(entry.id)), [visibleEntries, selectedIds]);
   /** The selected rows Mark as Paid would take. Part-paid ones stay selectable for Pay via voucher. */
   const markPaidTargets = useMemo(() => selectedEntries.filter(isManuallyPayable), [selectedEntries]);
 
@@ -648,7 +882,7 @@ function DynamicWorkflowStepContent() {
     toast(moveToast(targets, moved.length, to, skipped, failed));
     setSelectedIds(new Set());
     setIsUpdating(false);
-    fetchData();
+    // No reload: the live list already shows the move.
   };
 
   /** The step's bulk action (Mark as Received, Send for Payment) on the selected rows of its tab. */
@@ -684,6 +918,10 @@ function DynamicWorkflowStepContent() {
   const handleCancel = (entry: EnrichedEntry) =>
     void moveRequisitions([entry], 'Cancelled', { refusePaid: true, expenseLink: 'release' });
 
+  /** Receiving at Finance: cancel the selected pending entries, once confirmed, freeing their requests. */
+  const handleCancelSelected = () =>
+    void moveRequisitions(selectedEntries, 'Cancelled', { refusePaid: true, expenseLink: 'release' });
+
   /** Return to the previous stage. On GST & TDS Verification that also clears the verification. */
   const handleReturnToPending = (entry: EnrichedEntry) =>
     void (dynamicIndex === 1
@@ -709,7 +947,7 @@ function DynamicWorkflowStepContent() {
     setIsVerifyDialogOpen(true);
   };
 
-  /* ──────────── 4 ─ permission helpers ──────────── */
+  /* ──────────── 5 ─ permission helpers ──────────── */
 
   const stepActions = useMemo(() => new Set(currentStep?.actions || []), [currentStep]);
 
@@ -736,41 +974,162 @@ function DynamicWorkflowStepContent() {
     }
   }, [dynamicIndex, canMarkAsReceived, canSendForPayment, canMarkAsPaid, canPayViaVoucher, stepConfig]);
 
-  /* ──────────── 5 ─ filtered entry sets per tab ──────────── */
+  const isBulkTab = Boolean(stepConfig?.bulkAction && openTab && stepConfig.bulkAction.tabKey === openTab.key);
+  const canCancelSelected = dynamicIndex === 0 && isBulkTab && canCancel;
 
-  const tabEntries = useMemo(() => {
-    if (!stepConfig) return {};
-    const map: Record<string, EnrichedEntry[]> = {};
-    const t = searchTerm.trim().toLowerCase();
-
-    stepConfig.tabs.forEach((tab) => {
-      map[tab.key] = entries.filter(
-        (entry) =>
-          tab.statuses.includes(entry.status) &&
-          ((entry.receptionNo || '').toLowerCase().includes(t) ||
-            // The Expenses request no., so a link from a request finds its requisition.
-            (entry.depNo || '').toLowerCase().includes(t) ||
-            entry.projectName.toLowerCase().includes(t) ||
-            (entry.partyName || '').toLowerCase().includes(t) ||
-            (entry.receivedByName || '').toLowerCase().includes(t) ||
-            (entry.payments ?? []).some((payment) => (payment.voucherNo || '').toLowerCase().includes(t)))
-      );
-    });
-    return map;
-  }, [entries, stepConfig, searchTerm]);
+  // Keyboard: `/` to search; on the bulk tab, with rows ticked, the stage's own key (R, S or P) for
+  // its action and C to cancel. Never while typing, in a menu or in a dialog. Re-bound each render,
+  // so it always acts on what is ticked now.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const busy = target?.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]');
+      if (busy) return;
+      if (event.key === '/') {
+        event.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      const bulk = stepConfig?.bulkAction;
+      if (!bulk || !isBulkTab || isUpdating || selectedEntries.length === 0) return;
+      const key = event.key.toLowerCase();
+      if (key === 'c' && canCancelSelected) {
+        event.preventDefault();
+        setIsCancelOpen(true);
+      } else if (key === bulk.shortcut) {
+        event.preventDefault();
+        if (dynamicIndex === 2) {
+          if (markPaidTargets.length > 0 && canMarkAsPaid) setIsMarkPaidOpen(true);
+        } else if (canBulkAction) {
+          handleBulkAction();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   /* ──────────── 6 ─ table render ──────────── */
 
-  const renderTable = (tabKey: string, tab: TabDef) => {
+  /**
+   * The bar under the filters on the bulk tab: what is ticked out of what the list shows, and its
+   * amount; then the stage's actions, each with its key.
+   */
+  const renderSelectionBar = () => {
+    const bulk = stepConfig?.bulkAction;
+    if (!bulk || !isBulkTab) return null;
+    const isPaymentStep = dynamicIndex === 2;
+    // On the payment step a selection can hold part-paid rows. Pay via voucher takes them, but
+    // Mark as Paid doesn't.
+    const voucherIds = isPaymentStep ? selectedEntries.filter((entry) => balanceOf(entry) > 0).map((entry) => entry.id) : [];
+    const voucherOnly = isPaymentStep ? selectedEntries.filter((entry) => !isManuallyPayable(entry)).length : 0;
+    const amount = selectedEntries.reduce((sum, entry) => sum + (isPaymentStep ? balanceOf(entry) : Number(entry.netAmount) || 0), 0);
+    const allTicked = visibleEntries.length > 0 && selectedEntries.length === visibleEntries.length;
+    const actionIcon = isUpdating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Check className="mr-1.5 h-4 w-4" />;
+    const shortcutKey = bulk.shortcut.toUpperCase();
+
+    return (
+      <div className={cn('flex flex-col gap-2 border-t px-4 py-2 print:hidden sm:flex-row sm:flex-wrap sm:items-center sm:px-5', SELECTION_BAR)}>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <Checkbox
+            aria-label={allTicked ? 'Untick every row shown' : 'Tick every row shown'}
+            disabled={!canBulkAction || visibleEntries.length === 0}
+            checked={allTicked ? true : selectedEntries.length > 0 ? 'indeterminate' : false}
+            onCheckedChange={(checked) => setSelectedIds(checked === true ? new Set(visibleEntries.map((entry) => entry.id)) : new Set())}
+          />
+          <span>
+            <span className="font-semibold tabular-nums">{selectedEntries.length.toLocaleString('en-IN')}</span>
+            <span className="text-muted-foreground"> of {visibleEntries.length.toLocaleString('en-IN')} selected · </span>
+            <span className="font-mono font-semibold tabular-nums">{formatCurrency(amount)}</span>
+          </span>
+          {!allTicked && visibleEntries.length > 0 && canBulkAction ? (
+            <button
+              type="button"
+              className="font-medium text-emerald-700 hover:underline"
+              onClick={() => setSelectedIds(new Set(visibleEntries.map((entry) => entry.id)))}
+            >
+              Select all {visibleEntries.length.toLocaleString('en-IN')}
+            </button>
+          ) : null}
+          {selectedEntries.length > 0 ? (
+            <>
+              <span className="h-4 w-px bg-border" aria-hidden="true" />
+              <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </button>
+            </>
+          ) : null}
+          {voucherOnly > 0 && <span className="text-xs text-muted-foreground">{voucherOnly} part paid, voucher only</span>}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {canCancelSelected ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-card"
+              onClick={() => setIsCancelOpen(true)}
+              disabled={selectedEntries.length === 0 || isUpdating}
+            >
+              Cancel…
+              <kbd className={cn(KBD, 'ml-2 border-border text-muted-foreground')}>C</kbd>
+            </Button>
+          ) : null}
+          {isPaymentStep ? (
+            <>
+              {/* Paid outside Bank Balance. No bank entry is made, so it is confirmed first. */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-card"
+                onClick={() => setIsMarkPaidOpen(true)}
+                disabled={markPaidTargets.length === 0 || !canMarkAsPaid || isUpdating}
+              >
+                {actionIcon}
+                Mark as Paid ({markPaidTargets.length})
+                <kbd className={cn(KBD, 'ml-2 border-border text-muted-foreground')}>{shortcutKey}</kbd>
+              </Button>
+              {/* Pay through a Bank Balance voucher (cheque / e-cheque / RTGS), in full or in part */}
+              {canPayViaVoucher && (
+                <Button size="sm" asChild>
+                  <Link href={payRequisitionsHref(voucherIds)}>
+                    {voucherIds.length > 0 ? `Pay selected via voucher (${voucherIds.length})` : 'Pay via voucher'}
+                  </Link>
+                </Button>
+              )}
+            </>
+          ) : (
+            <Button size="sm" onClick={handleBulkAction} disabled={selectedEntries.length === 0 || !canBulkAction || isUpdating}>
+              {actionIcon}
+              {bulk.label}
+              {selectedEntries.length > 0 ? ` (${selectedEntries.length})` : ''}
+              <kbd className={cn(KBD, 'ml-2 border-white/40 text-white/90')}>{shortcutKey}</kbd>
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTable = (tabKey: string) => {
     const data = tabEntries[tabKey] || [];
-    const isBulkTab = stepConfig?.bulkAction?.tabKey === tabKey;
     const isVerificationStep = dynamicIndex === 1;
     const isPaymentStep = dynamicIndex === 2;
+    const showCheckbox = stepConfig?.bulkAction?.tabKey === tabKey || (isVerificationStep && tabKey === 'verified');
+    // The stage's own queue says how long each has waited there.
+    const showAge = tabKey === stepConfig?.tabs[0]?.key;
+    const showPaidVia = isPaymentStep && tabKey === 'paid';
+    // "Received By" for the GST step and the non-pending tabs of step 0
+    const showReceivedBy = isVerificationStep || (dynamicIndex === 0 && tabKey !== 'pending');
 
     // For the "received" and "cancelled" tabs in step 0 (Receiving at Finance), show actions
     const showRowActions =
       (dynamicIndex === 0 && (tabKey === 'received' || tabKey === 'cancelled')) ||
       (dynamicIndex === 1);
+
+    const columnCount =
+      (showCheckbox ? 1 : 0) + 2 + (showAge ? 1 : 0) + (showPaidVia ? 1 : 0) + 2 + (showReceivedBy ? 1 : 0) + 1 + (isPaymentStep ? 2 : 0) + (showRowActions ? 1 : 0);
 
     const handleSelectAll = (checked: boolean | 'indeterminate') => {
       if (checked === true) setSelectedIds(new Set(data.map((item) => item.id)));
@@ -782,60 +1141,15 @@ function DynamicWorkflowStepContent() {
     const allHereSelected = data.length > 0 && data.every((item) => selectedIds.has(item.id));
     const someHereSelected = data.some((item) => selectedIds.has(item.id));
 
-    const showBulkHeader = Boolean(isBulkTab && stepConfig?.bulkAction);
-    // On the payment step a selection can hold part-paid rows. Pay via voucher takes them, but
-    // Mark as Paid doesn't.
-    const selectedHere = selectedEntries.filter((entry) => tab.statuses.includes(entry.status));
-    const voucherIds = isPaymentStep ? selectedHere.filter((entry) => balanceOf(entry) > 0).map((entry) => entry.id) : [];
-    const voucherOnly = isPaymentStep ? selectedHere.filter((entry) => !isManuallyPayable(entry)).length : 0;
-    const selectionText =
-      selectedIds.size > 0
-        ? `${selectedIds.size} selected${voucherOnly > 0 ? ` · ${voucherOnly} part paid, voucher only` : ''}`
-        : 'Select entries for bulk action';
-    const actionIcon = isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />;
-
     return (
-      <TableCard
-        // No title: the active tab above already names the list. The strip shows only when there
-        // is something to act on — the selection hint beside the bulk actions.
-        description={showBulkHeader ? selectionText : undefined}
-        actions={
-          showBulkHeader && stepConfig?.bulkAction ? (
-            isPaymentStep ? (
-              <>
-                {/* Paid outside Bank Balance. No bank entry is made, so it is confirmed first. */}
-                <Button
-                  variant="outline"
-                  onClick={() => setIsMarkPaidOpen(true)}
-                  disabled={markPaidTargets.length === 0 || !canMarkAsPaid || isUpdating}
-                >
-                  {actionIcon}
-                  Mark as Paid ({markPaidTargets.length})
-                </Button>
-                {/* Pay through a Bank Balance voucher (cheque / e-cheque / RTGS), in full or in part */}
-                {canPayViaVoucher && (
-                  <Button asChild>
-                    <Link href={payRequisitionsHref(voucherIds)}>
-                      {voucherIds.length > 0 ? `Pay selected via voucher (${voucherIds.length})` : 'Pay via voucher'}
-                    </Link>
-                  </Button>
-                )}
-              </>
-            ) : (
-              <Button onClick={handleBulkAction} disabled={selectedIds.size === 0 || !canBulkAction || isUpdating}>
-                {actionIcon}
-                {stepConfig.bulkAction.label} ({selectedIds.size})
-              </Button>
-            )
-          ) : undefined
-        }
-      >
+      // No title or strip of its own: the card above names the list and holds its filters and actions.
+      <TableCard>
           {/* Tight rows, one line each: the app's compact table density, whatever the Table rows setting. */}
           <Table className="[--table-cell-py:0.375rem] [--table-head-h:2.25rem]">
             <TableHeader>
               <TableRow>
                 {/* Checkbox column */}
-                {(isBulkTab || (isVerificationStep && tabKey === 'verified')) && (
+                {showCheckbox && (
                   <TableHead className="w-[50px]">
                     <Checkbox
                       disabled={!canBulkAction}
@@ -852,13 +1166,11 @@ function DynamicWorkflowStepContent() {
                       ? 'Date'
                       : 'Received At'}
                 </TableHead>
-                {isPaymentStep && tabKey === 'paid' && <TableHead>Paid via</TableHead>}
+                {showAge && <TableHead>Waiting</TableHead>}
+                {showPaidVia && <TableHead>Paid via</TableHead>}
                 <TableHead>Project</TableHead>
                 <TableHead>Party Name</TableHead>
-                {/* Show "Received By" for GST step and non-pending tabs of step 0 */}
-                {(isVerificationStep || (dynamicIndex === 0 && tabKey !== 'pending')) && (
-                  <TableHead>Received By</TableHead>
-                )}
+                {showReceivedBy && <TableHead>Received By</TableHead>}
                 <TableHead className="text-right">Net Amount</TableHead>
                 {isPaymentStep && (
                   <>
@@ -874,7 +1186,7 @@ function DynamicWorkflowStepContent() {
               {isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={8}>
+                    <TableCell colSpan={columnCount}>
                       <Skeleton className="h-8" />
                     </TableCell>
                   </TableRow>
@@ -883,7 +1195,7 @@ function DynamicWorkflowStepContent() {
                 data.map((entry) => (
                   <TableRow key={entry.id} className={selectedIds.has(entry.id) ? SELECTED_ROW : STRIPED_ROW}>
                     {/* Checkbox cell */}
-                    {(isBulkTab || (isVerificationStep && tabKey === 'verified')) && (
+                    {showCheckbox && (
                       <TableCell>
                         <Checkbox
                           disabled={!canBulkAction}
@@ -905,7 +1217,14 @@ function DynamicWorkflowStepContent() {
                           ? entry.dateText
                           : entry.receivedAtText ?? '—'}
                     </TableCell>
-                    {isPaymentStep && tabKey === 'paid' && (
+                    {showAge && (
+                      <TableCell
+                        className={cn('whitespace-nowrap tabular-nums', (entry.ageDays ?? 0) > OVERDUE_DAYS && 'font-medium text-red-600')}
+                      >
+                        {entry.ageDays === null ? '—' : `${entry.ageDays} d`}
+                      </TableCell>
+                    )}
+                    {showPaidVia && (
                       <TableCell className="whitespace-nowrap">
                         <PaidVia entry={entry} />
                       </TableCell>
@@ -920,9 +1239,7 @@ function DynamicWorkflowStepContent() {
                         {entry.partyName}
                       </span>
                     </TableCell>
-                    {(isVerificationStep || (dynamicIndex === 0 && tabKey !== 'pending')) && (
-                      <TableCell className="whitespace-nowrap">{entry.receivedByName || 'N/A'}</TableCell>
-                    )}
+                    {showReceivedBy && <TableCell className="whitespace-nowrap">{entry.receivedByName || 'N/A'}</TableCell>}
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
                     {isPaymentStep && (() => {
                       // Paid through Bank Balance vouchers (paidAmount), or marked Paid here in full.
@@ -948,7 +1265,7 @@ function DynamicWorkflowStepContent() {
                   </TableRow>
                 ))
               ) : (
-                <TableEmpty colSpan={8}>No entries found.</TableEmpty>
+                <TableEmpty colSpan={columnCount}>No entries found.</TableEmpty>
               )}
             </TableBody>
           </Table>
@@ -1091,10 +1408,6 @@ function DynamicWorkflowStepContent() {
     );
   }
 
-  // Total workflow stages (Entry Sheet is separate and not counted here)
-  const totalSteps = workflowSteps.length;
-  const stageNumber = dynamicIndex + 1;
-
   // What each tab holds in rupees. On the payment step's Pending tab that is what is still due,
   // since part-paid requisitions sit there too.
   const tabAmount = (tabKey: string) =>
@@ -1103,58 +1416,292 @@ function DynamicWorkflowStepContent() {
       return sum + (entry.netAmount || 0);
     }, 0);
 
-  // Kept across the refresh after an action, which re-mounts the tabs behind the loading skeleton.
-  const tabValue = stepConfig.tabs.some((tab) => tab.key === activeTab) ? activeTab : stepConfig.tabs[0]?.key;
   const markPaidTotal = markPaidTargets.reduce((sum, entry) => sum + (entry.netAmount || 0), 0);
   const markPaidLeftOut = selectedEntries.filter(
     (entry) => entry.status === 'Partially Paid' || (entry.status === 'Received for Payment' && !isManuallyPayable(entry)),
   ).length;
+  const cancelAmount = selectedEntries.reduce((sum, entry) => sum + (Number(entry.netAmount) || 0), 0);
+
+  // The header's figures read the stage's own queue — its first tab — in the chosen FY, whatever
+  // the search and filters show.
+  const queueTab = stepConfig.tabs[0];
+  const queue = scoped.filter((entry) => queueTab?.statuses.includes(entry.status));
+  const waits = queue.map((entry) => entry.ageDays).filter((days): days is number => days !== null);
+  const overdueCount = waits.filter((days) => days > OVERDUE_DAYS).length;
+  const agingCount = waits.filter((days) => days > 7 && days <= OVERDUE_DAYS).length;
+  const freshCount = waits.length - overdueCount - agingCount;
+  const overduePct = queue.length ? Math.round((overdueCount / queue.length) * 100) : 0;
+  const avgWait = waits.length ? Math.round(waits.reduce((sum, days) => sum + days, 0) / waits.length) : null;
+  const largestWaiting = queue.reduce((max, entry) => Math.max(max, dynamicIndex === 2 ? balanceOf(entry) : Number(entry.netAmount) || 0), 0);
+  const doneTodayCount = scoped.filter((entry) => entry.doneToday).length;
+
+  // What "More filters" holds, as removable chips under the toolbar, so nothing filters the list unseen.
+  const moreChips = [
+    ...(departmentFilter
+      ? [{ key: 'department', label: 'Department', value: lookups?.departments.get(departmentFilter) || departmentFilter, onRemove: () => setDepartmentFilter('') }]
+      : []),
+    ...(dateFrom ? [{ key: 'from', label: 'Date from', value: format(new Date(`${dateFrom}T00:00`), 'dd MMM yyyy'), onRemove: () => setDateFrom('') }] : []),
+    ...(dateTo ? [{ key: 'to', label: 'Date to', value: format(new Date(`${dateTo}T00:00`), 'dd MMM yyyy'), onRemove: () => setDateTo('') }] : []),
+    ...(minAmount ? [{ key: 'min', label: 'Net ≥', value: formatCurrency(Number(minAmount) || 0), onRemove: () => setMinAmount('') }] : []),
+    ...(maxAmount ? [{ key: 'max', label: 'Net ≤', value: formatCurrency(Number(maxAmount) || 0), onRemove: () => setMaxAmount('') }] : []),
+  ];
+  const activeFilterCount =
+    [fyFilter !== 'all', projectFilter, ageFilter !== null, searchTerm.trim()].filter(Boolean).length + moreChips.length;
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFyFilter('all');
+    setProjectFilter('');
+    setAgeFilter(null);
+    setDepartmentFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setMinAmount('');
+    setMaxAmount('');
+  };
+
+  /** The open tab's list, as shown — search and filters applied — to Excel. */
+  const exportList = async () => {
+    if (isExporting || !openTab) return;
+    setIsExporting(true);
+    try {
+      // Loaded on demand: most visits never export.
+      const ExcelJS = (await import('exceljs')).default;
+      const isPaymentStep = dynamicIndex === 2;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet(openTab.label.slice(0, 31));
+      ws.columns = [
+        { header: 'Reception No', key: 'receptionNo', width: 16 },
+        { header: 'Request No', key: 'depNo', width: 16 },
+        { header: 'Date', key: 'date', width: 14 },
+        { header: 'Waiting (days)', key: 'age', width: 14 },
+        { header: 'Project', key: 'project', width: 30 },
+        { header: 'Department', key: 'department', width: 22 },
+        { header: 'Party', key: 'party', width: 30 },
+        { header: 'Status', key: 'status', width: 20 },
+        { header: 'Net (INR)', key: 'net', width: 16 },
+        ...(isPaymentStep
+          ? [
+              { header: 'Paid (INR)', key: 'paid', width: 16 },
+              { header: 'Balance (INR)', key: 'balance', width: 16 },
+            ]
+          : []),
+      ];
+      visibleEntries.forEach((entry) =>
+        ws.addRow({
+          receptionNo: entry.receptionNo || '',
+          depNo: entry.depNo || '',
+          date: entry.dateText,
+          age: entry.ageDays ?? '',
+          project: entry.projectName,
+          department: entry.departmentName,
+          party: entry.partyName || '',
+          status: entry.status,
+          net: Number(entry.netAmount) || 0,
+          paid: paidOf(entry),
+          balance: balanceOf(entry),
+        }),
+      );
+      const buffer = await wb.xlsx.writeBuffer();
+      const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${stepSlug}-${openTab.key}-${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+      toast({ title: 'Export failed', description: 'The list could not be exported.', variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <>
-      <div className={`${dailyPageContainerClass} space-y-4`}>
-        {/* One compact header: title, stage and a one-line purpose. The counts live on the tabs. */}
-        <PageHeader
-          backHref="/daily-requisition"
-          eyebrow="Daily Requisition"
-          title={currentStep.name}
-          badge={
-            <Badge variant="neutral">
-              Stage {stageNumber} of {totalSteps}
-            </Badge>
-          }
-          description={stepConfig.description}
-        />
-
+      <div className={dailyPageContainerClass}>
         <Tabs
           value={tabValue}
           onValueChange={(value) => {
             setActiveTab(value);
             setSelectedIds(new Set());
           }}
+          className="space-y-3"
         >
-          {/* Tabs (with count and amount) and search share one row */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <TabsList className={`${dailyTabsListClass} flex w-full overflow-x-auto lg:inline-flex lg:w-auto`}>
-              {stepConfig.tabs.map((tab, i) => (
-                <TabsTrigger key={tab.key} value={tab.key} className="flex-1 whitespace-nowrap px-4 py-1.5 lg:flex-none" title={stepConfig.metricHints[i] || undefined}>
-                  <span>{tab.label}</span>
-                  <span className="ml-1.5 rounded-full bg-black/5 px-1.5 text-xs font-semibold tabular-nums">{(tabEntries[tab.key] || []).length}</span>
-                  <span className="ml-1.5 hidden text-xs font-normal tabular-nums opacity-80 sm:inline">{formatCurrency(tabAmount(tab.key))}</span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <SearchInput
-              className="w-full lg:w-96"
-              placeholder="Search reception or request no., project, party…"
-              value={searchTerm}
-              onChange={setSearchTerm}
-            />
-          </div>
+          {/* One card: the stage and how long its queue has waited; its tabs and today's figures;
+              search and filters; then, on the bulk tab, the selection and its actions. */}
+          <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+            {/* A `space-y-*` parent: globals.css then drops the header's own bottom margin. */}
+            <div className="space-y-0 px-4 pb-1 pt-3 sm:px-5 sm:pt-4">
+              <PageHeader
+                backHref="/daily-requisition"
+                breadcrumbs={[{ label: 'Daily Requisition', href: '/daily-requisition' }, { label: currentStep.name }]}
+                title={currentStep.name}
+                badge={<LiveBadge live={isLive} />}
+                actions={
+                  <>
+                    {/* A row of its own on a phone, where the header's actions otherwise share one. */}
+                    <div
+                      className="flex min-w-0 items-center gap-3 rounded-xl border bg-card px-3 py-1.5 shadow-sm max-sm:!min-w-full"
+                      title={`Waiting in ${queueTab?.label ?? 'the queue'}: ${freshCount} up to 7 days · ${agingCount} for 8–${OVERDUE_DAYS} days · ${overdueCount} for more than ${OVERDUE_DAYS} days`}
+                    >
+                      <WaitRing fresh={freshCount} aging={agingCount} overdue={overdueCount} />
+                      <div className="min-w-0 leading-tight">
+                        {queue.length ? (
+                          <>
+                            <p className="text-sm font-semibold text-foreground">{overduePct}% overdue</p>
+                            <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
+                              <span className="font-semibold text-red-600">{overdueCount.toLocaleString('en-IN')}</span>{' '}
+                              {overdueCount === 1 ? 'entry' : 'entries'} waiting &gt;{OVERDUE_DAYS} days
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-sm font-semibold text-foreground">Nothing waiting</p>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 gap-1.5 bg-white shadow-sm"
+                      onClick={() => void exportList()}
+                      disabled={isExporting || visibleEntries.length === 0}
+                      title="The list shown, to Excel"
+                    >
+                      {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Export
+                    </Button>
+                  </>
+                }
+              />
+            </div>
+
+            {/* The tabs and today's figures, as one row of cells across the card: the tabs a little
+                wider, for their amounts. On narrower screens the figures take a row of their own. */}
+            <div className="grid gap-px border-y bg-border lg:grid-cols-[3fr_2fr]">
+              <TabsList
+                indicator={false}
+                className={STAGE_TAB_LIST}
+                style={{ gridTemplateColumns: `repeat(${stepConfig.tabs.length}, minmax(0, 1fr))` }}
+              >
+                {stepConfig.tabs.map((tab, i) => {
+                  const amount = tabAmount(tab.key);
+                  return (
+                    <TabsTrigger key={tab.key} value={tab.key} className={STAGE_TAB} title={stepConfig.metricHints[i] || undefined}>
+                      <span className="flex max-w-full items-center gap-2">
+                        <span className="truncate text-sm font-medium text-muted-foreground group-data-[state=active]/tab:text-primary">{tab.label}</span>
+                        <span className="shrink-0 rounded-full bg-muted px-2 text-xs font-semibold leading-5 tabular-nums text-foreground group-data-[state=active]/tab:bg-[image:var(--sel-tab-gradient)] group-data-[state=active]/tab:text-[color:var(--sel-tab-on)]">
+                          {(tabEntries[tab.key] || []).length.toLocaleString('en-IN')}
+                        </span>
+                      </span>
+                      {/* To the paisa from `sm`; shortened on a phone, where a third of the width can't hold it. */}
+                      <span
+                        className="max-w-full truncate font-mono text-base font-semibold leading-tight tabular-nums text-muted-foreground group-data-[state=active]/tab:text-foreground"
+                        title={formatCurrency(amount)}
+                      >
+                        <span className="sm:hidden">{formatINRCompact(amount)}</span>
+                        <span className="hidden sm:inline">{formatCurrency(amount)}</span>
+                      </span>
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+              <dl className="grid grid-cols-3 gap-px">
+                {[
+                  { label: stepConfig.doneTodayLabel, value: doneTodayCount.toLocaleString('en-IN') },
+                  { label: 'Avg. wait', value: avgWait === null ? '—' : `${avgWait} d` },
+                  {
+                    label: dynamicIndex === 2 ? 'Largest due' : 'Largest pending',
+                    value: queue.length ? <span title={formatCurrency(largestWaiting)}>{formatINRCompact(largestWaiting)}</span> : '—',
+                  },
+                ].map((stat) => (
+                  <div key={stat.label} className={STAGE_STAT}>
+                    <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{stat.label}</dt>
+                    <dd className="mt-1 truncate font-mono text-base font-semibold leading-tight tabular-nums text-foreground">{stat.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            {/* Bill Tracking's filter toolbar, as on the Bill Register: search, FY, project and age
+                inline; department, dates and amount behind More filters, as chips once set. On a
+                phone the dropdowns fold behind "Filters". */}
+            <div className="bg-muted/40 px-4 py-2.5 sm:px-5">
+              <BtToolbar
+                framed={false}
+                search={
+              <div className="relative min-w-0 flex-1 sm:w-72 sm:flex-none">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search reception, request no., project, party"
+                  aria-label="Search reception, request no., project, party"
+                  aria-keyshortcuts="/"
+                  className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-9 text-sm shadow-sm outline-none transition placeholder:text-muted-foreground focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/20 [&::-webkit-search-cancel-button]:hidden"
+                />
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm('')}
+                    aria-label="Clear search"
+                    className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : (
+                  <kbd className={cn(KBD, 'pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 border-border bg-card text-muted-foreground')} aria-hidden="true">
+                    /
+                  </kbd>
+                )}
+              </div>
+                }
+                controls={
+                  <>
+                    <ToolbarSelect
+                      label="FY"
+                      value={fyFilter === 'all' ? '' : fyFilter}
+                      onChange={(value) => setFyFilter(value || 'all')}
+                      options={fyOptions.map((fy) => ({ value: String(fy), label: fyLabel(fy) }))}
+                      allLabel="All years"
+                    />
+                    <ToolbarSelect
+                      label="Project"
+                      value={projectFilter}
+                      onChange={setProjectFilter}
+                      options={projectOptions.map(([value, label]) => ({ value, label }))}
+                      allLabel="All projects"
+                    />
+                    <ToolbarSelect
+                      label="Age"
+                      value={ageFilter === null ? '' : String(ageFilter)}
+                      onChange={(value) => setAgeFilter(value ? Number(value) : null)}
+                      options={AGE_OPTIONS.map((days) => ({ value: String(days), label: `More than ${days} days` }))}
+                      allLabel="Any age"
+                    />
+                  </>
+                }
+                chips={moreChips}
+                activeCount={activeFilterCount}
+                onClear={clearFilters}
+                actions={
+                  <Button variant="outline" size="sm" className="h-9 gap-1.5 bg-white shadow-sm" onClick={() => setIsMoreFiltersOpen(true)}>
+                    <SlidersHorizontal className="h-4 w-4" /> More filters
+                    {moreChips.length ? (
+                      <span className="rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold leading-4 text-white">{moreChips.length}</span>
+                    ) : null}
+                  </Button>
+                }
+              />
+            </div>
+
+            {renderSelectionBar()}
+          </section>
 
           {stepConfig.tabs.map((tab) => (
-            <TabsContent key={tab.key} value={tab.key} className="mt-3">
-              {renderTable(tab.key, tab)}
+            <TabsContent key={tab.key} value={tab.key} className="mt-0">
+              {renderTable(tab.key)}
             </TabsContent>
           ))}
         </Tabs>
@@ -1166,8 +1713,79 @@ function DynamicWorkflowStepContent() {
           isOpen={isVerifyDialogOpen}
           onOpenChange={setIsVerifyDialogOpen}
           entry={selectedEntry}
-          onSuccess={fetchData}
+          // Nothing to reload: the live list shows the verification as soon as it is saved.
+          onSuccess={() => undefined}
         />
+      )}
+
+      {/* More filters, as on the Bill Register: a drawer, its choices shown as chips once set. */}
+      <Sheet open={isMoreFiltersOpen} onOpenChange={setIsMoreFiltersOpen}>
+        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b border-slate-100 px-5 py-4">
+            <SheetTitle>More filters</SheetTitle>
+            <SheetDescription>Applied to the list, the tab figures, the selection and any export.</SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who</legend>
+              <DrawerSelect
+                label="Department"
+                value={departmentFilter}
+                onChange={setDepartmentFilter}
+                options={departmentOptions.map(([value, label]) => ({ value, label }))}
+                placeholder="All departments"
+              />
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Requisition date</legend>
+              <div className="grid grid-cols-2 gap-3">
+                <DrawerInput label="Date from" type="date" value={dateFrom} max={dateTo || undefined} onChange={(event) => setDateFrom(event.target.value)} />
+                <DrawerInput label="Date to" type="date" value={dateTo} min={dateFrom || undefined} onChange={(event) => setDateTo(event.target.value)} />
+              </div>
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Net amount</legend>
+              <div className="grid grid-cols-2 gap-3">
+                <DrawerInput label="At least (₹)" type="number" inputMode="decimal" min={0} value={minAmount} onChange={(event) => setMinAmount(event.target.value)} />
+                <DrawerInput label="At most (₹)" type="number" inputMode="decimal" min={0} value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} />
+              </div>
+            </fieldset>
+          </div>
+          <SheetFooter className="flex-row justify-end gap-2 border-t border-slate-100 px-5 py-3">
+            <Button variant="outline" onClick={clearFilters}>
+              Reset all
+            </Button>
+            <Button onClick={() => setIsMoreFiltersOpen(false)}>Done</Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      {/* Cancel the selected pending entries (Receiving at Finance): confirmed first, since it frees their requests */}
+      {dynamicIndex === 0 && (
+        <AlertDialog open={isCancelOpen} onOpenChange={setIsCancelOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                Cancel {selectedEntries.length} {selectedEntries.length === 1 ? 'requisition' : 'requisitions'} ({formatCurrency(cancelAmount)})?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                They are marked <b>Cancelled</b> and their expense requests are released, so they can be received again.
+                You can return them to Pending later from the Cancelled tab, unless a request has been received again by
+                then.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Keep them</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleCancelSelected}
+                disabled={selectedEntries.length === 0 || isUpdating}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Cancel {selectedEntries.length}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
 
       {/* Manual Mark as Paid (payment step): no bank entry is made, so it is confirmed first */}

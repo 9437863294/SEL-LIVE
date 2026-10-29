@@ -47,13 +47,10 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { chartChrome } from '@/components/ui/chart';
-import { FilterBar } from '@/components/shared/filter-bar';
+import { BtToolbar, ToolbarDate, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
@@ -620,75 +617,68 @@ export default function GstByRegistrationReportPage() {
         }
       />
 
-      <FilterBar
-        className="mb-5"
-        search={{
-          value: search,
-          onChange: setSearch,
-          placeholder: 'Reception no, DEP no, party, invoice no, GSTIN…',
-          label: 'Search bills',
-        }}
-        activeCount={activeFilterCount}
-        onClear={clearFilters}
-        summary={`${bills.length} bill${bills.length === 1 ? '' : 's'} · ${itcBills} purchase · ${rcmBills} reverse charge`}
-      >
-        <label className="flex items-center gap-2">
-          <span className="whitespace-nowrap text-sm text-muted-foreground">From</span>
-          <Input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="whitespace-nowrap text-sm text-muted-foreground">To</span>
-          <Input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-        </label>
-        <Select value={registrationFilter} onValueChange={setRegistrationFilter}>
-          <SelectTrigger aria-label="Registration">
-            <SelectValue placeholder="All registrations" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All registrations</SelectItem>
-            {registrationsDoc.registrations.map((registration) => (
-              <SelectItem key={registration.id} value={registration.id}>
-                {registration.label?.trim() || registration.stateName || registration.gstin}
-              </SelectItem>
-            ))}
-            <SelectItem value={UNATTRIBUTED_OPTION}>Not attributed</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger aria-label="Project">
-            <SelectValue placeholder="All projects" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All projects</SelectItem>
-            {projectOptions.map((project) => (
-              <SelectItem key={project.id} value={project.id}>
-                {project.name}
-              </SelectItem>
-            ))}
-            <SelectItem value={NO_PROJECT}>(No project)</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-          <SelectTrigger aria-label="Department">
-            <SelectValue placeholder="All departments" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All departments</SelectItem>
-            {departmentOptions.map((department) => (
-              <SelectItem key={department.id} value={department.id}>
-                {department.name}
-              </SelectItem>
-            ))}
-            <SelectItem value={NO_DEPARTMENT}>(No department)</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="flex items-center gap-2">
-          <Switch id="rcm-only" checked={rcmOnly} onCheckedChange={setRcmOnly} />
-          <Label htmlFor="rcm-only" className="cursor-pointer whitespace-nowrap text-sm text-muted-foreground">
-            Reverse charge only
-          </Label>
-        </div>
-      </FilterBar>
+      {/* Bill Tracking's filter toolbar, as on the Bill Register. The selects' "all" is '' there and ALL here. */}
+      <div className="mb-5">
+        <BtToolbar
+          search={
+            <ToolbarSearch
+              className="flex-1 sm:w-72 sm:flex-none"
+              value={search}
+              placeholder="Reception no, DEP no, party, invoice no, GSTIN…"
+              onChange={setSearch}
+            />
+          }
+          controls={
+            <>
+              <ToolbarDate label="From" value={dateFrom} onChange={setDateFrom} />
+              <ToolbarDate label="To" value={dateTo} onChange={setDateTo} />
+              <ToolbarSelect
+                label="Registration"
+                value={registrationFilter === ALL ? '' : registrationFilter}
+                onChange={(value) => setRegistrationFilter(value || ALL)}
+                options={[
+                  ...registrationsDoc.registrations.map((registration) => ({
+                    value: registration.id,
+                    label: registration.label?.trim() || registration.stateName || registration.gstin,
+                  })),
+                  { value: UNATTRIBUTED_OPTION, label: 'Not attributed' },
+                ]}
+                allLabel="All registrations"
+              />
+              <ToolbarSelect
+                label="Project"
+                value={projectFilter === ALL ? '' : projectFilter}
+                onChange={(value) => setProjectFilter(value || ALL)}
+                options={[...projectOptions.map((project) => ({ value: project.id, label: project.name })), { value: NO_PROJECT, label: '(No project)' }]}
+                allLabel="All projects"
+              />
+              <ToolbarSelect
+                label="Department"
+                value={departmentFilter === ALL ? '' : departmentFilter}
+                onChange={(value) => setDepartmentFilter(value || ALL)}
+                options={[
+                  ...departmentOptions.map((department) => ({ value: department.id, label: department.name })),
+                  { value: NO_DEPARTMENT, label: '(No department)' },
+                ]}
+                allLabel="All departments"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-pressed={rcmOnly}
+                onClick={() => setRcmOnly(!rcmOnly)}
+                className={cn('h-9 bg-white shadow-sm', rcmOnly && 'border-emerald-400 bg-emerald-50 text-emerald-900')}
+              >
+                Reverse charge only
+              </Button>
+            </>
+          }
+          activeCount={activeFilterCount}
+          onClear={clearFilters}
+          summary={`${bills.length} bill${bills.length === 1 ? '' : 's'} · ${itcBills} purchase · ${rcmBills} reverse charge`}
+        />
+      </div>
 
       {!hasRegistrations && (
         <Card className={cn(dailySurfaceCardClass, 'mb-5 border-amber-300 bg-amber-50/70')}>

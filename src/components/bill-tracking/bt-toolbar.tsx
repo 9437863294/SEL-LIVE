@@ -15,10 +15,44 @@ import { useState } from 'react';
 import { CalendarRange, Search, SlidersHorizontal, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 export const TOOLBAR_CONTROL = 'h-9 text-sm';
+
+/** A labelled dropdown for a "More filters" drawer (a vertical form, so labels sit above). */
+export function DrawerSelect({ label, value, onChange, options, placeholder = 'All' }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; placeholder?: string }) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label className="text-xs font-medium text-slate-700">{label}</Label>
+      <Select value={value || 'any'} onValueChange={(next) => onChange(next === 'any' ? '' : next)}>
+        <SelectTrigger className={value ? 'h-9 border-emerald-400 bg-emerald-50' : 'h-9'}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent className="max-h-72">
+          <SelectItem value="any">{placeholder}</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** A labelled input for a "More filters" drawer. */
+export function DrawerInput({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label className="text-xs font-medium text-slate-700">{label}</Label>
+      <Input {...props} className={props.value ? 'h-9 border-emerald-400 bg-emerald-50' : 'h-9'} />
+    </div>
+  );
+}
 
 export function ToolbarSearch({ value, onChange, placeholder, className }: { value: string; onChange: (value: string) => void; placeholder: string; className?: string }) {
   return (
@@ -140,6 +174,7 @@ export function BtToolbar({
   chips = [],
   activeCount = 0,
   onClear,
+  framed = true,
 }: {
   search?: React.ReactNode;
   controls?: React.ReactNode;
@@ -148,10 +183,12 @@ export function BtToolbar({
   chips?: FilterChipItem[];
   activeCount?: number;
   onClear?: () => void;
+  /** False inside a card that already frames it: no border, fill or padding of its own. */
+  framed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <section className="rounded-xl border border-slate-200 bg-white/90 p-2.5 shadow-sm print:hidden" aria-label="Filters">
+    <section className={cn(framed && 'rounded-xl border border-slate-200 bg-white/90 p-2.5 shadow-sm', 'print:hidden')} aria-label="Filters">
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
         <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="flex items-center gap-2 sm:contents">

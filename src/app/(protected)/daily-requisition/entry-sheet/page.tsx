@@ -28,13 +28,16 @@ import {
   Inbox,
   SlidersHorizontal,
   Columns,
+  CheckCheck,
+  EyeOff,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 // Bill Tracking's register parts, so this register reads exactly like the Bill Register.
 import { BtTable, Pager, type BtColumn } from '@/components/bill-tracking/bt-table';
-import { ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
+import { BtToolbar, DrawerInput, DrawerSelect, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -116,6 +119,7 @@ import {
   requisitionProgress,
   voucherHref,
 } from '@/lib/requisition-progress';
+import { checklistPrintHref } from '@/lib/checklist-print-batch';
 import { ReceiveMultiplePanel, carriedStatutory } from '@/components/daily-requisition/receive-multiple';
 import { FORM_LABEL } from '@/components/expenses/statutory-section';
 import { useForm } from 'react-hook-form';
@@ -336,7 +340,7 @@ function EntrySheetPageComponent() {
   const [departmentFilter, setDepartmentFilter] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('');
   /** On a phone the filter controls fold behind a "Filters" button. */
-  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = React.useState(false);
   /** Field Control decides which columns exist; this browser may hide some of the unlocked ones. */
   const [hiddenColumns, setHiddenColumns] = React.useState<Set<string>>(readHiddenColumns);
 
@@ -1137,8 +1141,12 @@ function EntrySheetPageComponent() {
   };
 
   const handlePrintSelected = () => {
-    const idsToPrint = Array.from(selectedIds).join(',');
-    window.open(`/daily-requisition/entry-sheet/print?ids=${idsToPrint}`, '_blank');
+    window.open(checklistPrintHref(Array.from(selectedIds)), '_blank');
+  };
+
+  /** Ticks every entry the filters show, on every page, keeping any already ticked. */
+  const handleSelectAll = () => {
+    setSelectedIds((current) => new Set([...current, ...filteredEntries.map((entry) => entry.id)]));
   };
 
   if (isAuthLoading || isLoading || isSettingsLoading) {
@@ -1303,6 +1311,7 @@ function EntrySheetPageComponent() {
   // menu of its own, which would bring back the bar over the table: the filter row has this page's.
   // A locked column always shows, even if this browser hid it before it was locked.
   const hideableColumns = columns.filter((column) => !column.locked);
+  const hiddenList = hideableColumns.filter((column) => hiddenColumns.has(column.key));
   const tableColumns = columns
     .filter((column) => column.locked || !hiddenColumns.has(column.key))
     .map((column): BtColumn<EnrichedDailyRequisitionEntry> => {
@@ -1449,28 +1458,19 @@ function EntrySheetPageComponent() {
           />
         </section>
 
-        <div className="space-y-2 print:hidden" role="group" aria-label="Filters">
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="flex items-center gap-2 sm:contents">
-              <ToolbarSearch
-                className="flex-1 sm:w-80 sm:flex-none"
-                value={filterText}
-                placeholder="Search reception no, party, amount…"
-                onChange={setFilterText}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 sm:hidden"
-                aria-expanded={filtersOpen}
-                onClick={() => setFiltersOpen((open) => !open)}
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
-              </Button>
-            </div>
-            <div className={cn('flex-col gap-2 sm:flex sm:flex-row sm:flex-wrap sm:items-center', filtersOpen ? 'flex' : 'hidden')}>
+        {/* Bill Tracking's filter toolbar, as on the Bill Register: search, period, project and
+            status inline; department and date behind More filters, as chips once set. */}
+        <BtToolbar
+          search={
+            <ToolbarSearch
+              className="flex-1 sm:w-72 sm:flex-none"
+              value={filterText}
+              placeholder="Search reception no, party, amount…"
+              onChange={setFilterText}
+            />
+          }
+          controls={
+            <>
               <ToolbarSelect
                 label="Period"
                 value={rangePreset === 'all' ? '' : rangePreset}
@@ -1480,102 +1480,121 @@ function EntrySheetPageComponent() {
               />
               <ToolbarSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={projectOptions} allLabel="All projects" />
               <ToolbarSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} />
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn('h-9 gap-1.5 bg-white shadow-sm', moreChips.length > 0 && 'border-emerald-400 bg-emerald-50 text-emerald-900')}
-                  >
-                    <SlidersHorizontal className="h-4 w-4" /> More filters
-                    {moreChips.length ? (
-                      <span className="rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold leading-4 text-white">{moreChips.length}</span>
-                    ) : null}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto space-y-3 p-3">
-                  <ToolbarSelect
-                    label="Department"
-                    value={departmentFilter}
-                    onChange={setDepartmentFilter}
-                    options={departmentOptions}
-                    allLabel="All departments"
-                    className="sm:w-full sm:max-w-none"
-                  />
-                  <div>
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Reception date</p>
-                    <Calendar mode="single" selected={dateFilter} onSelect={setDateFilter} className="rounded-md border" />
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            {activeFilterCount ? (
-              <Button type="button" variant="ghost" size="sm" className="h-9 gap-1 self-start text-muted-foreground sm:self-auto" onClick={clearFilters}>
-                <X className="h-4 w-4" /> Clear
+            </>
+          }
+          chips={moreChips}
+          activeCount={activeFilterCount}
+          onClear={clearFilters}
+          actions={
+            <>
+              <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setIsMoreFiltersOpen(true)}>
+                <SlidersHorizontal className="h-4 w-4" /> More filters
+                {moreChips.length ? (
+                  <span className="rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold leading-4 text-white">{moreChips.length}</span>
+                ) : null}
               </Button>
-            ) : null}
             {/* Desktop only, as in Bill Tracking: a phone shows the register as cards. */}
             {hideableColumns.length ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="sm" className="hidden h-9 gap-1.5 bg-white shadow-sm sm:ml-auto sm:inline-flex">
-                    <Columns className="h-4 w-4" /> Columns
-                    {hideableColumns.some((column) => hiddenColumns.has(column.key)) ? (
-                      <span className="rounded-full bg-slate-200 px-1.5 text-[11px] font-semibold leading-4 text-slate-700">
-                        {hideableColumns.filter((column) => hiddenColumns.has(column.key)).length} hidden
-                      </span>
-                    ) : null}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
-                  <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {hideableColumns.map((column) => (
-                    <DropdownMenuCheckboxItem
-                      key={column.key}
-                      checked={!hiddenColumns.has(column.key)}
-                      onCheckedChange={() => toggleColumn(column.key)}
-                      // Keep the menu open, so several columns can be switched in one go.
-                      onSelect={(event) => event.preventDefault()}
-                    >
-                      {column.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  {hiddenColumns.size ? (
-                    <>
+              <div className="hidden items-center gap-2 sm:flex">
+                {/* Every column, ticked or not. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-white shadow-sm">
+                      <Columns className="h-4 w-4" /> Columns
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
+                    <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {hideableColumns.map((column) => (
+                      <DropdownMenuCheckboxItem
+                        key={column.key}
+                        checked={!hiddenColumns.has(column.key)}
+                        onCheckedChange={() => toggleColumn(column.key)}
+                        // Keep the menu open, so several columns can be switched in one go.
+                        onSelect={(event) => event.preventDefault()}
+                      >
+                        {column.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {/* Only what is hidden, each one a click from coming back. */}
+                {hiddenList.length ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-white shadow-sm">
+                        <EyeOff className="h-4 w-4" /> {hiddenList.length} hidden
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
+                      <DropdownMenuLabel>Hidden columns</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => saveHiddenColumns(new Set())}>Show all columns</DropdownMenuItem>
-                    </>
-                  ) : null}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      {hiddenList.map((column) => (
+                        <DropdownMenuItem
+                          key={column.key}
+                          // Keep the menu open, so several can be brought back in one go.
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            toggleColumn(column.key);
+                          }}
+                        >
+                          <EyeOff className="mr-2 h-4 w-4 text-muted-foreground" />
+                          {column.label}
+                          <span className="ml-auto text-xs font-medium text-emerald-700">Show</span>
+                        </DropdownMenuItem>
+                      ))}
+                      {hiddenList.length > 1 ? (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onSelect={() => saveHiddenColumns(new Set())}>Show all columns</DropdownMenuItem>
+                        </>
+                      ) : null}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
             ) : null}
-          </div>
-          {/* What "More filters" holds, shown as chips so nothing filters the list unseen. */}
-          {moreChips.length ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Also filtered by</span>
-              {moreChips.map((chip) => (
-                <span
-                  key={chip.key}
-                  className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 py-0.5 pl-2.5 pr-1 text-xs text-emerald-900"
-                >
-                  <span className="text-emerald-700/80">{chip.label}:</span>
-                  <span className="max-w-[14rem] truncate font-medium">{chip.value}</span>
-                  <button
-                    type="button"
-                    onClick={chip.onRemove}
-                    aria-label={`Remove ${chip.label} filter`}
-                    className="flex h-4 w-4 items-center justify-center rounded-full hover:bg-emerald-200"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
+            </>
+          }
+        />
+
+        {/* More filters, as on the Bill Register: a drawer, its choices shown as chips once set. */}
+        <Sheet open={isMoreFiltersOpen} onOpenChange={setIsMoreFiltersOpen}>
+          <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+            <SheetHeader className="border-b border-slate-100 px-5 py-4">
+              <SheetTitle>More filters</SheetTitle>
+              <SheetDescription>Applied to the register, its totals and the checklists you print from it.</SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+              <fieldset className="space-y-3">
+                <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who</legend>
+                <DrawerSelect
+                  label="Department"
+                  value={departmentFilter}
+                  onChange={setDepartmentFilter}
+                  options={departmentOptions}
+                  placeholder="All departments"
+                />
+              </fieldset>
+              <fieldset className="space-y-3">
+                <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Date</legend>
+                <DrawerInput
+                  label="Reception date"
+                  type="date"
+                  value={dateFilter ? format(dateFilter, 'yyyy-MM-dd') : ''}
+                  onChange={(event) => setDateFilter(event.target.value ? new Date(`${event.target.value}T00:00`) : undefined)}
+                />
+              </fieldset>
             </div>
-          ) : null}
-        </div>
+            <SheetFooter className="flex-row justify-end gap-2 border-t border-slate-100 px-5 py-3">
+              <Button variant="outline" onClick={clearFilters}>
+                Reset all
+              </Button>
+              <Button onClick={() => setIsMoreFiltersOpen(false)}>Done</Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
 
         <TooltipProvider>
           <BtTable
@@ -1601,6 +1620,13 @@ function EntrySheetPageComponent() {
               isSelectionMode ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">{selectedIds.size} selected</span>
+                  {/* The header checkbox ticks this page; this ticks every page the filters show. */}
+                  {filteredEntries.some((entry) => !selectedIds.has(entry.id)) ? (
+                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleSelectAll}>
+                      <CheckCheck className="h-4 w-4" />
+                      Select all {filteredEntries.length.toLocaleString('en-IN')}
+                    </Button>
+                  ) : null}
                   {selectedIds.size > 0 ? (
                     <Button size="sm" variant="ghost" className="h-8" onClick={() => setSelectedIds(new Set())}>
                       Clear
