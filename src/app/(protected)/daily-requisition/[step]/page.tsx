@@ -71,6 +71,11 @@ const toSlug = dailyStepSlug;
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
 
+// A stage list's rows: striped like Bill Tracking's registers, a ticked row tinted green instead of
+// striped. Plain and hover: classes, so the dark theme's compat layer remaps them.
+const STRIPED_ROW = 'border-slate-100 even:bg-slate-50 hover:bg-emerald-50';
+const SELECTED_ROW = 'border-slate-100 bg-emerald-50';
+
 /**
  * Only a requisition awaiting payment with nothing paid on it yet can be marked Paid by hand. Once a
  * voucher has paid part of it, the rest has to be paid by voucher too.
@@ -825,7 +830,8 @@ function DynamicWorkflowStepContent() {
           ) : undefined
         }
       >
-          <Table>
+          {/* Tight rows, one line each: the app's compact table density, whatever the Table rows setting. */}
+          <Table className="[--table-cell-py:0.375rem] [--table-head-h:2.25rem]">
             <TableHeader>
               <TableRow>
                 {/* Checkbox column */}
@@ -875,10 +881,7 @@ function DynamicWorkflowStepContent() {
                 ))
               ) : data.length > 0 ? (
                 data.map((entry) => (
-                  <TableRow
-                    key={entry.id}
-                    data-state={selectedIds.has(entry.id) ? 'selected' : undefined}
-                  >
+                  <TableRow key={entry.id} className={selectedIds.has(entry.id) ? SELECTED_ROW : STRIPED_ROW}>
                     {/* Checkbox cell */}
                     {(isBulkTab || (isVerificationStep && tabKey === 'verified')) && (
                       <TableCell>
@@ -907,10 +910,18 @@ function DynamicWorkflowStepContent() {
                         <PaidVia entry={entry} />
                       </TableCell>
                     )}
-                    <TableCell>{entry.projectName}</TableCell>
-                    <TableCell>{entry.partyName}</TableCell>
+                    <TableCell>
+                      <span className="block max-w-[220px] truncate" title={entry.projectName}>
+                        {entry.projectName}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="block max-w-[240px] truncate" title={entry.partyName}>
+                        {entry.partyName}
+                      </span>
+                    </TableCell>
                     {(isVerificationStep || (dynamicIndex === 0 && tabKey !== 'pending')) && (
-                      <TableCell>{entry.receivedByName || 'N/A'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{entry.receivedByName || 'N/A'}</TableCell>
                     )}
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
                     {isPaymentStep && (() => {
@@ -921,8 +932,8 @@ function DynamicWorkflowStepContent() {
                         <>
                           <TableCell className="whitespace-nowrap text-right tabular-nums">{paid ? formatCurrency(paid) : '—'}</TableCell>
                           <TableCell className="whitespace-nowrap text-right tabular-nums">
+                            {entry.status === 'Partially Paid' && <span className="mr-1.5 text-[11px] text-sky-700">Part paid</span>}
                             {formatCurrency(balance)}
-                            {entry.status === 'Partially Paid' && <span className="block text-[11px] text-sky-700">Part paid</span>}
                           </TableCell>
                         </>
                       );
@@ -952,7 +963,7 @@ function DynamicWorkflowStepContent() {
     if (dynamicIndex === 1) {
       if (tabKey === 'pending' || tabKey === 'needs-review') {
         return (
-          <Button size="sm" onClick={() => handleOpenVerifyDialog(entry)} disabled={!canVerify}>
+          <Button size="sm" className="h-7" onClick={() => handleOpenVerifyDialog(entry)} disabled={!canVerify}>
             {tabKey === 'pending' ? 'Verify' : 'Review & Verify'}
           </Button>
         );
@@ -961,7 +972,7 @@ function DynamicWorkflowStepContent() {
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-7 w-7">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -985,7 +996,7 @@ function DynamicWorkflowStepContent() {
         <AlertDialog>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-7 w-7">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -1216,7 +1227,7 @@ function PaidVia({ entry }: { entry: Pick<DailyRequisitionEntry, 'payments' | 'm
     return (
       <span>
         Marked paid
-        {entry.paidByName && <span className="block text-[11px] text-muted-foreground">by {entry.paidByName}</span>}
+        {entry.paidByName && <span className="ml-1 text-[11px] text-muted-foreground">by {entry.paidByName}</span>}
       </span>
     );
   }

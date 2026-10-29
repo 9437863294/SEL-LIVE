@@ -80,6 +80,9 @@ const AMOUNT_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-IN')} ${n === 1 ? one : many}`;
 
+/** A row of the dashboard's tables: tight and striped, like Bill Tracking's dashboard, so each line reads across. */
+const STRIPED_ROW = 'border-slate-100 even:bg-slate-50 hover:bg-emerald-50';
+
 /** When money went out on a requisition: each voucher line on its instrument date, else the day it was marked paid. */
 function paidEventsOf(entry: DailyRequisitionEntry, paid: number, receptionKey: string): PaidEvent[] {
   const payments = entry.payments ?? [];
@@ -430,23 +433,23 @@ export default function DailyRequisitionDashboardPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="h-9 pl-4 text-xs">Party</TableHead>
-                        <TableHead className="h-9 text-right text-xs">Requisitions</TableHead>
-                        <TableHead className="h-9 text-right text-xs">Oldest</TableHead>
-                        <TableHead className="h-9 pr-4 text-right text-xs">Still due</TableHead>
+                        <TableHead className="h-8 pl-4 text-xs">Party</TableHead>
+                        <TableHead className="h-8 text-right text-xs">Requisitions</TableHead>
+                        <TableHead className="h-8 text-right text-xs">Oldest</TableHead>
+                        <TableHead className="h-8 pr-4 text-right text-xs">Still due</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {waitingParties.map((party) => (
-                        <TableRow key={party.key}>
-                          <TableCell className="max-w-[16rem] truncate py-2 pl-4 font-medium" title={party.key}>
+                        <TableRow key={party.key} className={STRIPED_ROW}>
+                          <TableCell className="max-w-[16rem] truncate py-1.5 pl-4 font-medium" title={party.key}>
                             {party.key}
                           </TableCell>
-                          <TableCell className="py-2 text-right tabular-nums">{party.count}</TableCell>
-                          <TableCell className={cn('py-2 text-right tabular-nums', (party.oldestDays ?? 0) > 30 && 'font-medium text-amber-700')}>
+                          <TableCell className="py-1.5 text-right tabular-nums">{party.count}</TableCell>
+                          <TableCell className={cn('py-1.5 text-right tabular-nums', (party.oldestDays ?? 0) > 30 && 'font-medium text-amber-700')}>
                             {party.oldestDays === null ? '—' : `${party.oldestDays} d`}
                           </TableCell>
-                          <TableCell className="py-2 pr-4 text-right font-semibold tabular-nums">{formatInr(party.balance)}</TableCell>
+                          <TableCell className="py-1.5 pr-4 text-right font-semibold tabular-nums">{formatInr(party.balance)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -507,11 +510,11 @@ export default function DailyRequisitionDashboardPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="h-9 pl-4 text-xs">Reception No</TableHead>
-                        <TableHead className="h-9 text-xs">Date</TableHead>
-                        <TableHead className="h-9 text-xs">Party</TableHead>
-                        <TableHead className="h-9 text-xs">Status</TableHead>
-                        <TableHead className="h-9 pr-4 text-right text-xs">Net</TableHead>
+                        <TableHead className="h-8 pl-4 text-xs">Reception No</TableHead>
+                        <TableHead className="h-8 text-xs">Date</TableHead>
+                        <TableHead className="h-8 text-xs">Party</TableHead>
+                        <TableHead className="h-8 text-xs">Status</TableHead>
+                        <TableHead className="h-8 pr-4 text-right text-xs">Net</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -520,7 +523,7 @@ export default function DailyRequisitionDashboardPage() {
                         return (
                           <TableRow
                             key={entry.id}
-                            className="cursor-pointer"
+                            className={cn('cursor-pointer', STRIPED_ROW)}
                             tabIndex={0}
                             onClick={() => setSelected(entry)}
                             onKeyDown={(event) => {
@@ -530,15 +533,15 @@ export default function DailyRequisitionDashboardPage() {
                               }
                             }}
                           >
-                            <TableCell className="whitespace-nowrap py-2 pl-4 font-mono text-xs font-medium">{entry.receptionNo}</TableCell>
-                            <TableCell className="whitespace-nowrap py-2 text-sm">{formatDay(entry.date)}</TableCell>
-                            <TableCell className="max-w-[14rem] truncate py-2 text-sm" title={entry.partyName}>
+                            <TableCell className="whitespace-nowrap py-1.5 pl-4 font-mono text-xs font-medium">{entry.receptionNo}</TableCell>
+                            <TableCell className="whitespace-nowrap py-1.5 text-sm">{formatDay(entry.date)}</TableCell>
+                            <TableCell className="max-w-[14rem] truncate py-1.5 text-sm" title={entry.partyName}>
                               {entry.partyName || '—'}
                             </TableCell>
-                            <TableCell className="py-2">
+                            <TableCell className="py-1.5">
                               <StatusBadge tone={progress.tone}>{progress.label}</StatusBadge>
                             </TableCell>
-                            <TableCell className="whitespace-nowrap py-2 pr-4 text-right tabular-nums">{formatInr(entry.netAmount)}</TableCell>
+                            <TableCell className="whitespace-nowrap py-1.5 pr-4 text-right tabular-nums">{formatInr(entry.netAmount)}</TableCell>
                           </TableRow>
                         );
                       })}

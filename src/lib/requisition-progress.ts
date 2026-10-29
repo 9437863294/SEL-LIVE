@@ -88,6 +88,11 @@ const STAGES: Record<string, { stage: ProgressStage; label: string; tone: Progre
   Cancelled: { stage: 'cancelled', label: 'Cancelled', tone: 'danger' },
 };
 
+/** Every stage a requisition can be at, in workflow order — the choices of a status filter. */
+export const REQUISITION_STAGES: ReadonlyArray<{ stage: ProgressStage; label: string }> = Object.values(STAGES).map(
+  ({ stage, label }) => ({ stage, label }),
+);
+
 /** The stage of a requisition — or of an expense request that has none yet (`undefined`). */
 export function requisitionProgress(req: ProgressRequisition | undefined): RequisitionProgress {
   if (!req) return { stage: 'not-received', label: 'Not received', tone: 'neutral', net: 0, paid: 0, balance: 0 };

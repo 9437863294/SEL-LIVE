@@ -98,23 +98,52 @@ export function DailyWorkflowCard({ item }: DailyWorkflowCardProps) {
   );
 }
 
-export function DailyMetricCard({
-  label,
-  value,
-  hint,
-}: {
+export interface DailyStat {
   label: string;
-  value: string | number;
-  hint?: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  /** Text colour of the value, e.g. `text-emerald-700`. */
+  tone?: string;
+}
+
+// Columns per item count, and a span for the last item where a row would otherwise end short and
+// show the hairline background as an empty cell. Static strings so Tailwind sees them all.
+const STAT_GRID: Record<number, { grid: string; last?: string }> = {
+  2: { grid: 'grid-cols-2' },
+  3: { grid: 'grid-cols-2 sm:grid-cols-3', last: 'col-span-2 sm:col-span-1' },
+  4: { grid: 'grid-cols-2 sm:grid-cols-4' },
+  5: { grid: 'grid-cols-2 sm:grid-cols-5', last: 'col-span-2 sm:col-span-1' },
+};
+
+/**
+ * The figures above a register in one frame, split by hairlines — lighter than a row of cards, and
+ * the same shape as Bill Tracking's totals strip. Theme tokens, so it reads in dark mode as well.
+ */
+export function DailyStatStrip({
+  items,
+  flush = false,
+  className,
+}: {
+  items: DailyStat[];
+  /** Inside another card (a page's header card): no frame of its own, only a rule above it. */
+  flush?: boolean;
+  className?: string;
 }) {
+  const layout = STAT_GRID[items.length] ?? { grid: 'grid-cols-2 sm:grid-cols-4' };
   return (
-    // Compact on purpose: a row of these sits above a register, and the register is the page.
-    <div className="min-w-0 rounded-xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm backdrop-blur">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <p className="shrink-0 text-lg font-semibold tabular-nums text-slate-900">{value}</p>
-      </div>
-      {hint ? <p className="truncate text-[11px] text-slate-500">{hint}</p> : null}
-    </div>
+    <dl className={cn('grid gap-px overflow-hidden bg-border', flush ? 'border-t' : 'rounded-xl border shadow-sm', layout.grid, className)}>
+      {items.map((item, index) => (
+        <div
+          key={item.label}
+          className={cn('min-w-0 bg-card', flush ? 'px-4 py-3 sm:px-5' : 'px-3.5 py-2.5', index === items.length - 1 && layout.last)}
+        >
+          <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</dt>
+          <dd className={cn('mt-0.5 truncate text-lg font-semibold leading-tight tabular-nums', item.tone ?? 'text-foreground')}>
+            {item.value}
+          </dd>
+          {item.hint ? <dd className="mt-0.5 truncate text-[11px] text-muted-foreground">{item.hint}</dd> : null}
+        </div>
+      ))}
+    </dl>
   );
 }
