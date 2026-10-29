@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
+import { BtToolbar, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { balanceOf, paidOf } from '@/lib/requisition-progress';
 import { DAILY_STATUS_TONE, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
@@ -77,6 +78,13 @@ export default function AgeingReportPage() {
   // Every row ages against the same clock: when the page opened.
   const [now] = useState(() => Date.now());
 
+  // Bill Tracking's filter toolbar, as on the Bill Register. Filters narrow the table, its totals,
+  // the figures above it and the export alike.
+  const [search, setSearch] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [bracketFilter, setBracketFilter] = useState('');
+
   useEffect(() => {
     // Until permissions load `can` answers false — wait for them rather than fetch without them.
     if (isAuthLoading || !canView) return;
@@ -107,7 +115,7 @@ export default function AgeingReportPage() {
     };
   }, [isAuthLoading, canView]);
 
-  const rows = useMemo(
+  const openRows = useMemo(
     (): AgeingRow[] =>
       entries
         .filter((e) => !CLOSED_STATUSES.includes(e.status))
@@ -118,6 +126,43 @@ export default function AgeingReportPage() {
         .sort((a, b) => b.age - a.age || b.outstanding - a.outstanding),
     [entries, now]
   );
+
+  const deptName = (id: string) => (id ? deptNameMap[id] || id : '—');
+
+  // Only what the open requisitions carry, so no choice comes up empty.
+  const departmentOptions = useMemo(
+    () =>
+      [...new Set(openRows.map((r) => r.entry.departmentId).filter(Boolean))]
+        .map((id) => ({ value: id, label: deptNameMap[id] || id }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [openRows, deptNameMap]
+  );
+  const statusOptions = useMemo(
+    () => [...new Set(openRows.map((r) => r.entry.status).filter(Boolean))].sort().map((status) => ({ value: status, label: status })),
+    [openRows]
+  );
+
+  const needle = search.trim().toLowerCase();
+  const rows = useMemo(
+    () =>
+      openRows.filter(
+        (r) =>
+          (!departmentFilter || r.entry.departmentId === departmentFilter) &&
+          (!statusFilter || r.entry.status === statusFilter) &&
+          (!bracketFilter || r.bracket.label === bracketFilter) &&
+          (!needle ||
+            [r.entry.receptionNo, r.entry.partyName, deptNameMap[r.entry.departmentId], r.entry.status]
+              .some((text) => String(text ?? '').toLowerCase().includes(needle)))
+      ),
+    [openRows, departmentFilter, statusFilter, bracketFilter, needle, deptNameMap]
+  );
+  const activeFilterCount = [needle, departmentFilter, statusFilter, bracketFilter].filter(Boolean).length;
+  const clearFilters = () => {
+    setSearch('');
+    setDepartmentFilter('');
+    setStatusFilter('');
+    setBracketFilter('');
+  };
 
   const summary = useMemo(() => {
     const byBracket = new Map(
@@ -155,8 +200,6 @@ export default function AgeingReportPage() {
       oldestAge: rows[0]?.age ?? 0,
     };
   }, [rows]);
-
-  const deptName = (id: string) => (id ? deptNameMap[id] || id : '—');
 
   const exportExcel = async () => {
     if (isExporting) return;
@@ -207,7 +250,7 @@ export default function AgeingReportPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton filters={false} strip />;
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton strip />;
 
   if (!canView) {
     return (
@@ -241,6 +284,29 @@ export default function AgeingReportPage() {
           </Button>
         }
       />
+
+      <div className="mb-4">
+        <BtToolbar
+          search={
+            <ToolbarSearch
+              className="flex-1 sm:w-64 sm:flex-none"
+              value={search}
+              onChange={setSearch}
+              placeholder="Search reception no, party, department…"
+            />
+          }
+          controls={
+            <>
+              <ToolbarSelect label="Department" value={departmentFilter} onChange={setDepartmentFilter} options={departmentOptions} allLabel="All departments" />
+              <ToolbarSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
+              <ToolbarSelect label="Age" value={bracketFilter} onChange={setBracketFilter} options={BRACKETS.map((b) => ({ value: b.label, label: b.label }))} allLabel="Any age" />
+            </>
+          }
+          activeCount={activeFilterCount}
+          onClear={clearFilters}
+          summary={activeFilterCount > 0 ? `${rows.length.toLocaleString('en-IN')} of ${openRows.length.toLocaleString('en-IN')} open` : undefined}
+        />
+      </div>
 
       <KpiRow>
         <KpiCard
@@ -293,7 +359,9 @@ export default function AgeingReportPage() {
       >
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              No open requisitions found — everything is up to date.
+              {openRows.length > 0
+                ? 'No open requisition matches these filters.'
+                : 'No open requisitions found — everything is up to date.'}
             </div>
           ) : (
               <Table>

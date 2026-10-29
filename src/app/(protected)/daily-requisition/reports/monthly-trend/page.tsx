@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
+import { BtToolbar, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
 import {
@@ -36,7 +37,14 @@ function formatMonthLabel(ym: string): string {
   return d.toLocaleString('en-IN', { month: 'short', year: '2-digit' });
 }
 
-const DESCRIPTION = 'Volume and value of requisitions month-over-month — last 6 months.';
+const DESCRIPTION = 'Volume and value of requisitions month-over-month — the last 6, 12 or 24 months.';
+
+const DEFAULT_SPAN = '6';
+const SPAN_OPTIONS = [
+  { value: '6', label: 'Last 6 months' },
+  { value: '12', label: 'Last 12 months' },
+  { value: '24', label: 'Last 24 months' },
+];
 
 export default function MonthlyTrendReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -46,12 +54,20 @@ export default function MonthlyTrendReportPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
+  const [deptNameMap, setDeptNameMap] = useState<Record<string, string>>({});
+  const [projectNameMap, setProjectNameMap] = useState<Record<string, string>>({});
 
-  // Last 6 calendar months (oldest → newest), fixed when the page opens.
-  const [months] = useState(() => {
-    const base = new Date();
-    return Array.from({ length: 6 }, (_, i) => monthKeyOf(new Date(base.getFullYear(), base.getMonth() - (5 - i), 1)));
-  });
+  // Bill Tracking's filter toolbar, as on the Bill Register: how many months, and whose.
+  const [span, setSpan] = useState(DEFAULT_SPAN);
+  const [departmentFilter, setDepartmentFilter] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
+
+  // The months count back from the month the page opened in (oldest → newest).
+  const [today] = useState(() => new Date());
+  const months = useMemo(() => {
+    const length = Number(span);
+    return Array.from({ length }, (_, i) => monthKeyOf(new Date(today.getFullYear(), today.getMonth() - (length - 1 - i), 1)));
+  }, [span, today]);
 
   useEffect(() => {
     // Until permissions load `can` answers false — wait for them rather than fetch without them.
@@ -59,8 +75,25 @@ export default function MonthlyTrendReportPage() {
     let active = true;
     const load = async () => {
       try {
-        const snap = await getDocs(collection(db, 'dailyRequisitions'));
-        if (active) setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
+        const [snap, deptsSnap, projectsSnap] = await Promise.all([
+          getDocs(collection(db, 'dailyRequisitions')),
+          // Names are a nicety: without them a choice falls back to the id.
+          getDocs(collection(db, 'departments')).catch(() => null),
+          getDocs(collection(db, 'projects')).catch(() => null),
+        ]);
+        if (!active) return;
+        setEntries(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DailyRequisitionEntry)));
+        const depts: Record<string, string> = {};
+        deptsSnap?.docs.forEach((d) => {
+          depts[d.id] = (d.data().name as string) || d.id;
+        });
+        setDeptNameMap(depts);
+        const projects: Record<string, string> = {};
+        projectsSnap?.docs.forEach((d) => {
+          const data = d.data();
+          projects[d.id] = (data.projectName as string) || (data.name as string) || d.id;
+        });
+        setProjectNameMap(projects);
       } catch (err) {
         console.error('Failed to load monthly trend report', err);
       } finally {
@@ -76,9 +109,39 @@ export default function MonthlyTrendReportPage() {
   const currentMonth = months[months.length - 1];
   const prevMonth = months[months.length - 2];
 
+  // Only what the requisitions carry, so no choice comes up empty.
+  const departmentOptions = useMemo(
+    () =>
+      [...new Set(entries.map((e) => e.departmentId).filter(Boolean))]
+        .map((id) => ({ value: id, label: deptNameMap[id] || id }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [entries, deptNameMap]
+  );
+  const projectOptions = useMemo(
+    () =>
+      [...new Set(entries.map((e) => e.projectId).filter(Boolean))]
+        .map((id) => ({ value: id, label: projectNameMap[id] || id }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [entries, projectNameMap]
+  );
+
+  const filtered = useMemo(
+    () =>
+      entries.filter(
+        (e) => (!departmentFilter || e.departmentId === departmentFilter) && (!projectFilter || e.projectId === projectFilter)
+      ),
+    [entries, departmentFilter, projectFilter]
+  );
+  const activeFilterCount = [departmentFilter, projectFilter].filter(Boolean).length;
+  const clearFilters = () => {
+    setSpan(DEFAULT_SPAN);
+    setDepartmentFilter('');
+    setProjectFilter('');
+  };
+
   const trends = useMemo(() => {
     const byMonth = new Map<string, DailyRequisitionEntry[]>();
-    for (const e of entries) {
+    for (const e of filtered) {
       // `date` is a Firestore Timestamp on entries from the entry sheet and the importer.
       const month = dateKeyOf(e.date).slice(0, 7);
       if (!month) continue;
@@ -94,7 +157,7 @@ export default function MonthlyTrendReportPage() {
       const avgNet = count > 0 ? totalNet / count : 0;
       return { month: m, count, totalGross, totalNet, avgNet };
     });
-  }, [months, entries]);
+  }, [months, filtered]);
 
   const maxCount = useMemo(() => trends.reduce((mx, r) => Math.max(mx, r.count), 0), [trends]);
   const maxNet = useMemo(() => trends.reduce((mx, r) => Math.max(mx, r.totalNet), 0), [trends]);
@@ -137,7 +200,7 @@ export default function MonthlyTrendReportPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `daily-requisition-monthly-trend.xlsx`;
+      a.download = `daily-requisition-monthly-trend-${span}-months.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
@@ -147,7 +210,7 @@ export default function MonthlyTrendReportPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton filters={false} panel />;
+  if (isAuthLoading || (isLoading && canView)) return <ReportSkeleton panel />;
 
   if (!canView) return <ReportAccessDenied title="Monthly Trend" description={DESCRIPTION} />;
 
@@ -175,6 +238,20 @@ export default function MonthlyTrendReportPage() {
           ) : null
         }
       />
+
+      <div className="mb-4">
+        <BtToolbar
+          controls={
+            <>
+              <ToolbarSelect label="Months" value={span} onChange={setSpan} options={SPAN_OPTIONS} showAll={false} />
+              <ToolbarSelect label="Department" value={departmentFilter} onChange={setDepartmentFilter} options={departmentOptions} allLabel="All departments" />
+              <ToolbarSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={projectOptions} allLabel="All projects" />
+            </>
+          }
+          activeCount={activeFilterCount}
+          onClear={clearFilters}
+        />
+      </div>
 
       <KpiRow>
         <KpiCard
@@ -211,12 +288,12 @@ export default function MonthlyTrendReportPage() {
         />
       </KpiRow>
 
-      {/* 6-month bar visualisation */}
+      {/* Month-by-month bar visualisation */}
       <Card className="mb-5 overflow-hidden border border-white/70 bg-white/70 backdrop-blur shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-violet-500" />
-            <CardTitle className="text-base">6-Month Trend</CardTitle>
+            <CardTitle className="text-base">{span}-Month Trend</CardTitle>
           </div>
           <CardDescription>
             Count (violet) and Net Amount (cyan) — stacked bars scaled to monthly maximum.
@@ -268,12 +345,14 @@ export default function MonthlyTrendReportPage() {
       {/* Summary table */}
       <TableCard
         title="Month-by-Month Summary"
-        description="Gross, net, and average net per entry for the last 6 months."
+        description={`Gross, net, and average net per entry for the last ${span} months.`}
         scroll="natural"
       >
           {trends.every((r) => r.count === 0) ? (
             <div className="px-4 py-10 text-center text-muted-foreground">
-              No requisition data found for the last 6 months.
+              {activeFilterCount > 0
+                ? `No requisition matches these filters in the last ${span} months.`
+                : `No requisition data found for the last ${span} months.`}
             </div>
           ) : (
               <Table>

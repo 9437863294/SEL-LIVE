@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import {
   BarChart3, Clock,
@@ -7,8 +8,10 @@ import {
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BtToolbar, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
 import { ReportAccessDenied } from './_components/report-kit';
@@ -21,17 +24,17 @@ const REPORTS = [
     icon: BarChart3,
     color: 'from-cyan-500 to-sky-500',
     iconBg: 'bg-cyan-50 text-cyan-600',
-    scope: 'All time',
-    scopeColor: 'bg-slate-100 text-slate-600',
+    scope: 'Date range',
+    scopeColor: 'bg-sky-50 text-sky-700',
   },
   {
     href: '/daily-requisition/reports/monthly-trend',
     title: 'Monthly Trend',
-    description: 'Volume and value of requisitions month-over-month for the last 6 months.',
+    description: 'Volume and value of requisitions month-over-month for the last 6, 12 or 24 months.',
     icon: TrendingUp,
     color: 'from-violet-500 to-purple-600',
     iconBg: 'bg-violet-50 text-violet-600',
-    scope: '6 Months',
+    scope: 'Monthly',
     scopeColor: 'bg-violet-50 text-violet-700',
   },
   {
@@ -99,9 +102,24 @@ const REPORTS = [
 
 const DESCRIPTION = 'Select a report to view focused analytics and export to Excel.';
 
+const SCOPE_OPTIONS = [...new Set(REPORTS.map((report) => report.scope))].map((scope) => ({ value: scope, label: scope }));
+
 export default function DailyRequisitionReportsHubPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Daily Requisition.Reports') || can('View', 'Daily Requisition.Entry Sheet') || can('View', 'Daily Requisition.Settings');
+
+  // Bill Tracking's filter toolbar, as on the Bill Register: a search over each report's name and
+  // what it shows, and its scope.
+  const [search, setSearch] = useState('');
+  const [scope, setScope] = useState('');
+  const needle = search.trim().toLowerCase();
+  const shown = REPORTS.filter(
+    (report) => (!scope || report.scope === scope) && (!needle || `${report.title} ${report.description}`.toLowerCase().includes(needle))
+  );
+  const clearFilters = () => {
+    setSearch('');
+    setScope('');
+  };
 
   // Until permissions load `can` answers false — show the grid's outline, not a refusal.
   if (!isAuthLoading && !canView) {
@@ -114,12 +132,17 @@ export default function DailyRequisitionReportsHubPage() {
         title="Reports"
         description={DESCRIPTION}
         backHref="/daily-requisition"
-        meta={
-          <Badge variant="neutral">
-            {REPORTS.length} reports available
-          </Badge>
-        }
       />
+
+      <div className="mb-4">
+        <BtToolbar
+          search={<ToolbarSearch className="flex-1 sm:w-64 sm:flex-none" value={search} onChange={setSearch} placeholder="Search reports…" />}
+          controls={<ToolbarSelect label="Scope" value={scope} onChange={setScope} options={SCOPE_OPTIONS} allLabel="All scopes" />}
+          activeCount={(needle ? 1 : 0) + (scope ? 1 : 0)}
+          onClear={clearFilters}
+          summary={`${shown.length} of ${REPORTS.length} reports`}
+        />
+      </div>
 
       {isAuthLoading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-busy="true">
@@ -127,9 +150,16 @@ export default function DailyRequisitionReportsHubPage() {
             <Skeleton key={report.href} className="h-44 w-full rounded-xl" />
           ))}
         </div>
+      ) : shown.length === 0 ? (
+        <div className="rounded-xl border border-dashed bg-card px-6 py-12 text-center">
+          <p className="text-sm text-muted-foreground">No report matches these filters.</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {REPORTS.map((report) => {
+          {shown.map((report) => {
             const Icon = report.icon;
             return (
               <Link key={report.href} href={report.href} className="group block">

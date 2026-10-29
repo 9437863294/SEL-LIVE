@@ -5,19 +5,13 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import {
   Banknote,
   BarChart3,
-  Clock,
   FileBarChart,
   FilePlus,
   Files,
-  FolderOpen,
   Landmark,
-  Layers,
   LayoutDashboard,
   Receipt,
   Settings,
-  TrendingUp,
-  Users,
-  Wallet,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
@@ -47,15 +41,12 @@ export function dailyStageIcon(index: number): LucideIcon {
   return (STAGE_LOOKS[index] ?? LATER_STAGE_LOOK).icon;
 }
 
-/** The module's reports, in the order the Reports page lists them. */
+/**
+ * The reports the menu names under "All Reports". The rest (Monthly Trend, the Department, Project
+ * and Party analyses, Financial Breakdown, Ageing) open from the All Reports page, and light its entry.
+ */
 export const DAILY_REQUISITION_REPORTS: ReadonlyArray<{ href: string; label: string; icon: LucideIcon; color: string; bg: string }> = [
   { href: `${DAILY_REQUISITION_BASE}/reports/status-overview`, label: 'Status Overview', icon: BarChart3, color: 'text-cyan-700', bg: 'bg-cyan-50' },
-  { href: `${DAILY_REQUISITION_BASE}/reports/monthly-trend`, label: 'Monthly Trend', icon: TrendingUp, color: 'text-violet-700', bg: 'bg-violet-50' },
-  { href: `${DAILY_REQUISITION_BASE}/reports/department-analysis`, label: 'Department Analysis', icon: Layers, color: 'text-emerald-700', bg: 'bg-emerald-50' },
-  { href: `${DAILY_REQUISITION_BASE}/reports/project-analysis`, label: 'Project Analysis', icon: FolderOpen, color: 'text-amber-700', bg: 'bg-amber-50' },
-  { href: `${DAILY_REQUISITION_BASE}/reports/party-analysis`, label: 'Party Analysis', icon: Users, color: 'text-rose-700', bg: 'bg-rose-50' },
-  { href: `${DAILY_REQUISITION_BASE}/reports/financial-breakdown`, label: 'Financial Breakdown', icon: Wallet, color: 'text-indigo-700', bg: 'bg-indigo-50' },
-  { href: `${DAILY_REQUISITION_BASE}/reports/ageing`, label: 'Ageing Report', icon: Clock, color: 'text-red-700', bg: 'bg-red-50' },
   { href: `${DAILY_REQUISITION_BASE}/reports/gst-by-registration`, label: 'GST & TDS by Registration', icon: Landmark, color: 'text-teal-700', bg: 'bg-teal-50' },
 ];
 
@@ -218,8 +209,8 @@ export function groupDailyRequisitionNav(items: DailyRequisitionNavItem[]): Arra
 }
 
 /**
- * The menu entry a path belongs to: the longest matching href, so /daily-requisition/reports/ageing
- * lights "Ageing Report" rather than "All Reports". The dashboard matches only itself.
+ * The menu entry a path belongs to: the longest matching href, so /daily-requisition/reports/status-overview
+ * lights "Status Overview" rather than "All Reports". The dashboard matches only itself.
  */
 export function activeDailyRequisitionHref(
   pathname: string,
