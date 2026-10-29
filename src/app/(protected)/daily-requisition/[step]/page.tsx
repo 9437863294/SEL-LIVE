@@ -72,6 +72,9 @@ import {
 import { GstTdsVerificationDialog } from '@/components/daily-requisition/GstTdsVerificationDialog';
 import {
   dailyPageContainerClass,
+  dailyQueueStatClass,
+  dailyQueueTabClass,
+  dailyQueueTabListClass,
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
@@ -94,17 +97,6 @@ const formatCurrency = (amount: number) =>
 const STRIPED_ROW = 'border-slate-100 even:bg-slate-50 hover:bg-emerald-50';
 const SELECTED_ROW = 'border-slate-100 bg-emerald-50';
 
-// The stage's tabs and today's figures as one row of cells across the card, split by hairlines like
-// the Entry Sheet's totals. Each tab: name and count, the amount under them; the open one tinted and
-// underlined in the app's tab accent. Fills are solid (mixed into the card colour) so the hairline
-// background never shows through, and theme tokens, so it reads in dark mode as well.
-const STAGE_TAB_LIST = 'grid h-auto w-full max-w-none items-stretch gap-px rounded-none bg-border p-0';
-const STAGE_TAB =
-  'group/tab flex min-w-0 flex-col items-start justify-center gap-1 whitespace-normal rounded-none bg-card px-4 py-2.5 text-left active:scale-100 sm:px-5 ' +
-  'hover:bg-[color-mix(in_srgb,hsl(var(--muted))_45%,hsl(var(--card)))] ' +
-  'group-data-[indicator=off]/tabs:data-[state=active]:bg-[color-mix(in_srgb,hsl(var(--muted))_70%,hsl(var(--card)))] group-data-[indicator=off]/tabs:data-[state=active]:shadow-none ' +
-  'after:absolute after:inset-x-0 after:bottom-0 after:h-[3px] after:bg-[image:var(--sel-tab-gradient)] after:opacity-0 after:transition-opacity data-[state=active]:after:opacity-100';
-const STAGE_STAT = 'min-w-0 bg-card px-4 py-2.5 sm:px-5';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** A requisition waiting longer than this at a stage is overdue. */
@@ -1580,13 +1572,13 @@ function DynamicWorkflowStepContent() {
             <div className="grid gap-px border-y bg-border lg:grid-cols-[3fr_2fr]">
               <TabsList
                 indicator={false}
-                className={STAGE_TAB_LIST}
+                className={dailyQueueTabListClass}
                 style={{ gridTemplateColumns: `repeat(${stepConfig.tabs.length}, minmax(0, 1fr))` }}
               >
                 {stepConfig.tabs.map((tab, i) => {
                   const amount = tabAmount(tab.key);
                   return (
-                    <TabsTrigger key={tab.key} value={tab.key} className={STAGE_TAB} title={stepConfig.metricHints[i] || undefined}>
+                    <TabsTrigger key={tab.key} value={tab.key} className={dailyQueueTabClass} title={stepConfig.metricHints[i] || undefined}>
                       <span className="flex max-w-full items-center gap-2">
                         <span className="truncate text-sm font-medium text-muted-foreground group-data-[state=active]/tab:text-primary">{tab.label}</span>
                         <span className="shrink-0 rounded-full bg-muted px-2 text-xs font-semibold leading-5 tabular-nums text-foreground group-data-[state=active]/tab:bg-[image:var(--sel-tab-gradient)] group-data-[state=active]/tab:text-[color:var(--sel-tab-on)]">
@@ -1614,7 +1606,7 @@ function DynamicWorkflowStepContent() {
                     value: queue.length ? <span title={formatCurrency(largestWaiting)}>{formatINRCompact(largestWaiting)}</span> : '—',
                   },
                 ].map((stat) => (
-                  <div key={stat.label} className={STAGE_STAT}>
+                  <div key={stat.label} className={dailyQueueStatClass}>
                     <dt className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{stat.label}</dt>
                     <dd className="mt-1 truncate font-mono text-base font-semibold leading-tight tabular-nums text-foreground">{stat.value}</dd>
                   </div>
