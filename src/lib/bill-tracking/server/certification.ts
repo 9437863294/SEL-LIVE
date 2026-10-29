@@ -19,9 +19,9 @@ import { deriveBillTotals, grossAmount, netReceivable, totalDeduction } from '..
 import { canBeCertified } from '../certification.ts';
 import { roundMoney, toPaise } from '../money.ts';
 import type { CertificationInput } from '../schemas';
-import type { Bill, BillCertification, BillWorkflowStatus } from '../types';
+import type { Bill, BillCertification } from '../types';
 import { certificationAdvances, certificationBlocked } from '../workflow.ts';
-import { calculationOptions, composeGst, derivedFields, notifyWaiting, resolveDeductions, totalsUpdate, workflowActor } from './bills';
+import { assertMonthOpen, calculationOptions, composeGst, derivedFields, notifyWaiting, resolveDeductions, totalsUpdate, workflowActor } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadConfig, logActivityTx, nowIso } from './store';
 
@@ -52,6 +52,8 @@ export async function recordCertification(context: BtContext, billId: string, in
     const blocked = certificationBlocked(bill, config.settings, workflowActor(context));
     if (blocked) throw new BtError(blocked, 403);
     if (!canBeCertified(bill)) throw new BtError('Credit and debit notes are not certified by the client — certify the invoice they adjust.');
+    // The certified deductions change what a bill dated in a closed month is paid.
+    assertMonthOpen(context, config, [bill.billDate], 'Recording the client’s certification of a bill dated in it');
     const previous = bill.certification;
     if (input.expectedRevision !== undefined && input.expectedRevision !== (previous?.revision ?? 0)) {
       throw new BtError('Someone else changed this certification while you were editing it. Reload to see their changes, then edit again.', 409);
@@ -147,6 +149,7 @@ export async function removeCertification(context: BtContext, billId: string, re
     if (blocked) throw new BtError(blocked, 403);
     const previous = bill.certification;
     if (!previous) throw new BtError('This bill has no client certification to remove.', 409);
+    assertMonthOpen(context, config, [bill.billDate], 'Removing the client’s certification of a bill dated in it');
     // Without the certification the bill is paid against its raised deductions again.
     const totals = deriveBillTotals({ ...bill, certification: undefined }, calculationOptions(config));
     const now = nowIso();

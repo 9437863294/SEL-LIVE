@@ -141,10 +141,10 @@ export default function BillTrackingDashboard() {
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <ChartPanel title="Billing vs collection" description="Net billed and collected each month; the line is outstanding at month end. Click a bar to open those bills.">
-              <BillingCollectionChart data={data.monthly} fy={data.financialYear} />
+              <BillingCollectionChart data={data.monthly} fy={data.financialYear} link={link} />
             </ChartPanel>
             <ChartPanel title="Ageing of outstanding" description={`As on ${dateText(data.asOf)}. Click a bucket to open those bills.`} footer={`Total ${data.ageing.count} bills · ${new Intl.NumberFormat('en-IN').format(Math.round(data.ageing.grandTotal))} outstanding`}>
-              <AgeingChart data={data.ageing.totals} fy={data.financialYear} asOf={data.asOf} />
+              <AgeingChart data={data.ageing.totals} fy={data.financialYear} asOf={data.ageing.asOf || data.asOf} basis={data.ageing.basis} link={link} />
             </ChartPanel>
             <ChartPanel title="Project-wise outstanding" description="Top projects by outstanding.">
               <RankedBars valueLabel="Outstanding" data={data.projects.filter((row) => row.outstanding > 0).slice(0, 10).map((row) => ({ key: row.key, label: row.label, value: row.outstanding, href: link('/bill-tracking/outstanding', { project: row.key }) }))} />
@@ -156,7 +156,7 @@ export default function BillTrackingDashboard() {
               <RankedBars valueLabel="Net billing" data={data.billTypes.map((row) => ({ key: row.key, label: categoryName(row.key, lookups.config.billCategories, row.label), value: row.net, href: link('/bill-tracking/bills', { category: row.key }) }))} />
             </ChartPanel>
             <ChartPanel title="Collection target vs actual" description="Last 12 weeks (ISO weeks).">
-              <TargetActualChart data={data.targets} />
+              <TargetActualChart data={data.targets} link={link} />
             </ChartPanel>
           </div>
 

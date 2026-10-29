@@ -62,6 +62,17 @@ const WAITING_ITEM: NavItem = { href: '/bill-tracking/bills?mine=1', label: 'Wai
 const matchesPath = (pathname: string, href: string) =>
   href === '/bill-tracking/dashboard' ? pathname === '/bill-tracking' || pathname.startsWith(href) : pathname === href || pathname.startsWith(`${href}/`);
 
+/**
+ * Where `/bill-tracking` lands: the Dashboard for whoever may see it; else, for someone named on a
+ * workflow step, their queue; else the first page they may open. Null when there is none.
+ */
+export function landingPage(can: (resource: string, action: string) => boolean, workflowAssigned: boolean): string | null {
+  const allowed = NAV.filter((item) => can(item.resource, item.action ?? 'View'));
+  if (allowed[0]?.href === '/bill-tracking/dashboard') return allowed[0].href;
+  if (workflowAssigned) return WAITING_ITEM.href;
+  return allowed[0]?.href ?? null;
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '';
   const { lookups, loading, error, reload, can } = useBt();
@@ -115,7 +126,8 @@ function Shell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const pageAllowed = navItems.some((item) => matchesPath(pathname, item.href.split('?')[0]));
+  // The module's own address only forwards to the first page allowed (`landingPage`), so it is never refused.
+  const pageAllowed = pathname === '/bill-tracking' || navItems.some((item) => matchesPath(pathname, item.href.split('?')[0]));
   const isVisible = (href: string) => navItems.some((item) => item.href === href);
   const bottomTabs: ModuleNavTab[] = [
     ...(isVisible('/bill-tracking/dashboard') ? [{ href: '/bill-tracking/dashboard', label: 'Home', icon: LayoutDashboard, match: (path: string) => matchesPath(path, '/bill-tracking/dashboard') }] : []),

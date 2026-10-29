@@ -46,7 +46,7 @@ interface WorkbookState {
 
 export default function ImportWizard() {
   const lookups = useLookups();
-  const { can } = useBt();
+  const { can, reload } = useBt();
   const { toast } = useToast();
   const [step, setStep] = useState<Step>(1);
   const [workbook, setWorkbook] = useState<WorkbookState | null>(null);
@@ -76,6 +76,18 @@ export default function ImportWizard() {
     return map;
   }, [layout, overrides]);
 
+  /**
+   * Row actions are keyed by sheet row number and fuzzy confirmations by Excel name: another file,
+   * sheet or header row means other rows, so none of them may carry over ("Update" on row 15 of one
+   * sheet must not update whatever row 15 of the next is). A new file also forgets the projects chosen.
+   */
+  const resetDecisions = (newFile: boolean) => {
+    setRowActions({});
+    setConfirmedFuzzy([]);
+    if (newFile) setProjectOverrides({});
+    setPreview(null);
+  };
+
   /* step 1 */
   const readFile = async (file: File | undefined) => {
     if (!file) return;
@@ -93,7 +105,7 @@ export default function ImportWizard() {
       setSheetName(chosen);
       setHeaderRow(detectHeaderRow(sheets.find((entry) => entry.name === chosen)?.grid ?? []));
       setOverrides({});
-      setPreview(null);
+      resetDecisions(true);
       setStep(2);
     } catch (caught) {
       setError(caught instanceof Error ? `Could not read the workbook: ${caught.message}` : 'Could not read the workbook.');
@@ -153,9 +165,12 @@ export default function ImportWizard() {
   const runImport = async () => {
     setStep(5);
     setError(null);
+    let configChanged = false;
     try {
       setBusy('Creating the import job…');
       const started = await btFetch<{ jobId: string }>('import/start', { body: payload({ rememberMappings, addUnknownBillTypes }) });
+      // Starting may add sub categories and remember mappings: the forms and Settings must see them.
+      configChanged = true;
       if (workbook) {
         setBusy('Keeping the original workbook with the job…');
         const form = new FormData();
@@ -173,6 +188,7 @@ export default function ImportWizard() {
       setError(caught instanceof Error ? caught.message : 'Import failed.');
     } finally {
       setBusy(null);
+      if (configChanged) void reload();
     }
   };
 
@@ -261,6 +277,7 @@ export default function ImportWizard() {
                     setSheetName(value);
                     setHeaderRow(detectHeaderRow(workbook.sheets.find((entry) => entry.name === value)?.grid ?? []));
                     setOverrides({});
+                    resetDecisions(false);
                   }}
                 >
                   <SelectTrigger>
@@ -277,7 +294,13 @@ export default function ImportWizard() {
               </div>
               <div className="space-y-1">
                 <Label>Headings are on row</Label>
-                <Select value={String(headerRow)} onValueChange={(value) => setHeaderRow(Number(value))}>
+                <Select
+                  value={String(headerRow)}
+                  onValueChange={(value) => {
+                    setHeaderRow(Number(value));
+                    resetDecisions(false);
+                  }}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>

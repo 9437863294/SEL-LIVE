@@ -213,3 +213,20 @@ test('a retention bill certified for a smaller release holds the certified claim
   const result = retentionBifurcation([claim], [], types);
   assert.deepEqual(result.byBill[0].cells, { 'dt-ret-inv|amount': -250000 }, 'no taxable to read a rate against: a fixed amount');
 });
+
+test('a credit note reversing a balance debit note’s retention lands in that note’s rates', () => {
+  const ret = (id, deductionTypeId, amount, extra = {}) => line(id, deductionTypeId, amount, extra);
+  const invoice = bill('inv', [], { taxableAmount: 600, grossAmount: 600, billTypeName: 'SUPPLY-60%' });
+  // The balance note holds 20% and 10% of ₹600 + ₹300 (a note rule).
+  const debit = bill('dn', [ret('a', 'dt-ret-inv', 180, { percentage: 20, invoiceBase: 900 }), ret('b', 'dt-ret-cpbg', 90, { percentage: 10, invoiceBase: 900 })], { transactionType: 'debit_note', againstBillId: 'inv', taxableAmount: 300, grossAmount: 300 });
+  // Reversed in full by a credit note typed as amounts — on its own value that reads as 60% and 30%.
+  const credit = bill('cn', [ret('a', 'dt-ret-inv', -180), ret('b', 'dt-ret-cpbg', -90)], { transactionType: 'credit_note', againstBillId: 'inv', taxableAmount: -300, grossAmount: -300 });
+  const result = retentionBifurcation([invoice, debit, credit], [], types);
+  assert.deepEqual(
+    result.slabs.map((total) => [total.slab.label, total.held]),
+    [
+      ['Retention Against CPBG @ 10%', 0],
+      ['Retention Against Invoice @ 20%', 0],
+    ],
+  );
+});

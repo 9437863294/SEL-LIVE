@@ -128,8 +128,9 @@ export const isOverdue = (bill: Bill, asOf: string): boolean => isOpen(bill) && 
 export const commitmentMissed = (bill: Bill, asOf: string): boolean =>
   isOpen(bill) && Boolean(bill.nextCommitmentDate) && (bill.nextCommitmentDate as string) < asOf;
 
-const matchesChip = (bill: Bill, chip: OutstandingChip, context: ReportContext): boolean => {
-  const days = billAgeingDays(bill, context);
+/** `basis` is the "Aged from" chosen on the bar, so a "> 90 days" chip agrees with the days the row shows. */
+const matchesChip = (bill: Bill, chip: OutstandingChip, context: ReportContext, basis?: AgeingBasis): boolean => {
+  const days = billAgeingDays(bill, context, basis);
   switch (chip) {
     case 'not_received':
       return bill.paymentStatus === 'not_received';
@@ -176,7 +177,7 @@ export function filterBills(bills: readonly Bill[], filters: BillFilters, contex
     if (filters.outstandingMin !== undefined && bill.outstandingAmount < filters.outstandingMin) return false;
     if (filters.outstandingMax !== undefined && bill.outstandingAmount > filters.outstandingMax) return false;
     if (filters.ageingBucket && (!isOpen(bill) || billAgeingBucket(bill, context, filters.ageingBasis).label !== filters.ageingBucket)) return false;
-    if (filters.chips?.length && !filters.chips.every((chip) => matchesChip(bill, chip, context))) return false;
+    if (filters.chips?.length && !filters.chips.every((chip) => matchesChip(bill, chip, context, filters.ageingBasis))) return false;
     if (search) {
       const tokenHit = bill.searchTokens?.some((token) => token.includes(search));
       // The raised net too: a certified bill's net has moved, but the invoice copy shows the raised one.
@@ -202,10 +203,11 @@ export function buildSearchTokens(bill: Pick<Bill, 'billSerialNumber' | 'gstInvo
 export const BILL_SORT_KEYS = ['billDate', 'serialNumber', 'billSerialNumber', 'gstInvoiceNumber', 'projectNameSnapshot', 'netReceivable', 'outstandingAmount', 'totalReceived', 'taxableAmount', 'ageing', 'updatedAt'] as const;
 export type BillSortKey = (typeof BILL_SORT_KEYS)[number];
 
-export function sortBills(bills: readonly Bill[], key: BillSortKey, direction: 'asc' | 'desc', context: ReportContext): Bill[] {
+/** `basis` is the "Aged from" chosen on the bar: the ageing sort follows the days the rows show. */
+export function sortBills(bills: readonly Bill[], key: BillSortKey, direction: 'asc' | 'desc', context: ReportContext, basis?: AgeingBasis): Bill[] {
   const factor = direction === 'asc' ? 1 : -1;
   const value = (bill: Bill): string | number => {
-    if (key === 'ageing') return billAgeingDays(bill, context);
+    if (key === 'ageing') return billAgeingDays(bill, context, basis);
     const raw = bill[key as keyof Bill];
     if (typeof raw === 'number') return raw;
     return String(raw ?? '');
@@ -218,7 +220,19 @@ export function sortBills(bills: readonly Bill[], key: BillSortKey, direction: '
   });
 }
 
-export function paginate<T>(rows: readonly T[], page: number, pageSize: number): { rows: T[]; page: number; pageSize: number; total: number; pages: number } {
+/** The most rows one "all" request returns — every row an export needs, with a ceiling against runaway memory. */
+export const ALL_ROWS_CEILING = 20000;
+
+/**
+ * One page of `rows` (at most 500 to a page) — or, with `all`, every row on one page, whatever page was
+ * asked for, up to `ALL_ROWS_CEILING`: what an export fetches, so it never stops at the page cap.
+ * `total` is always the full count, so a caller can tell when the ceiling cut it short.
+ */
+export function paginate<T>(rows: readonly T[], page: number, pageSize: number, all = false): { rows: T[]; page: number; pageSize: number; total: number; pages: number } {
+  if (all) {
+    const every = rows.slice(0, ALL_ROWS_CEILING);
+    return { rows: every, page: 1, pageSize: Math.max(every.length, 1), total: rows.length, pages: 1 };
+  }
   const size = Math.min(Math.max(pageSize, 1), 500);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const current = Math.min(Math.max(page, 1), pages);
@@ -334,15 +348,37 @@ export function groupBills(
     if (release.status !== 'active') continue;
     releasedByProject.set(release.projectId, sumMoney([releasedByProject.get(release.projectId) ?? 0, release.amount]));
   }
+  // By client or DGM office, a release counts once: in the group of the bill it names, else (no bill
+  // named, or one not in view) in the group holding most of its project's retention — a project whose
+  // bills fall under two clients would otherwise count it under both.
+  const releasedByGroup = new Map<string, number>();
+  if (dimension === 'client' || dimension === 'dgmOffice') {
+    const groupOfBill = new Map<string, string>();
+    const heldByProject = new Map<string, Map<string, number>>();
+    for (const [key, group] of groups) {
+      for (const bill of group.bills) {
+        groupOfBill.set(bill.id, key);
+        const held = heldByProject.get(bill.projectId) ?? new Map<string, number>();
+        held.set(key, sumMoney([held.get(key) ?? 0, bill.retentionDeducted ?? 0]));
+        heldByProject.set(bill.projectId, held);
+      }
+    }
+    for (const release of releases) {
+      if (release.status !== 'active') continue;
+      const named = (release.againstBillId && groupOfBill.get(release.againstBillId)) || (release.retentionBillId && groupOfBill.get(release.retentionBillId));
+      const projectGroups = [...(heldByProject.get(release.projectId)?.entries() ?? [])];
+      const key = named || projectGroups.sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (key) releasedByGroup.set(key, sumMoney([releasedByGroup.get(key) ?? 0, release.amount]));
+    }
+  }
 
   return [...groups.entries()]
     .map(([key, group]) => {
       const totals = billTotals(group.bills);
       const open = group.bills.filter(isOpen);
       const oldest = open.map((bill) => bill.billDate).sort()[0];
-      const projectIds = new Set(group.bills.map((bill) => bill.projectId));
-      // Releases are recorded per project; they attribute cleanly only to project-shaped groups.
-      const released = dimension === 'project' ? (releasedByProject.get(key) ?? 0) : dimension === 'client' || dimension === 'dgmOffice' ? sumMoney([...projectIds].map((id) => releasedByProject.get(id) ?? 0)) : 0;
+      // Releases are recorded per project; by client or office they follow their bills (above).
+      const released = dimension === 'project' ? (releasedByProject.get(key) ?? 0) : dimension === 'client' || dimension === 'dgmOffice' ? (releasedByGroup.get(key) ?? 0) : 0;
       return {
         key,
         label: group.label,

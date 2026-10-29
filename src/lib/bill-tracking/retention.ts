@@ -24,6 +24,11 @@
  *     each holds;
  *   - a note whose invoice holds nothing under that head, or is not found, is read on its own base.
  *
+ * A debit note under a note rule (`note-rules.ts`) is different: it adds retention for the whole value
+ * rather than adjusting the invoice's. A line taken of the invoice plus its notes (`invoiceBase`)
+ * counts at its own rate — 20% of ₹600 + ₹300 is the 20% slab — and is never shared over the
+ * invoice's; an amount is read against that base, so ₹180 on it reads as 20%, not 60% of the note.
+ *
  * A certified bill holds what the client certified: its certified retention lines, read against the
  * certified taxable (`retentionSource`), since the certified deductions replace the raised ones. A
  * note against a certified invoice therefore lands in the slabs the invoice holds as certified.
@@ -66,15 +71,16 @@ export const formatRate = (rate: number): string => String(roundRate(rate));
 
 /**
  * The rate a retention line was deducted at. `type` tells whether the head is taken on taxable
- * (the default) or gross, which is the base an amount is read against.
+ * (the default) or gross, which is the base an amount is read against — or, on a debit note under a
+ * note rule, the invoice plus its notes the line was taken of (`invoiceBase`).
  */
-export function retentionLineRate(line: Pick<BillDeduction, 'percentage' | 'amount' | 'baseAmount'>, bill: Pick<Bill, 'taxableAmount' | 'grossAmount'>, type?: Pick<DeductionTypeMaster, 'percentBase'>): LineRate {
+export function retentionLineRate(line: Pick<BillDeduction, 'percentage' | 'amount' | 'baseAmount' | 'invoiceBase'>, bill: Pick<Bill, 'taxableAmount' | 'grossAmount'>, type?: Pick<DeductionTypeMaster, 'percentBase'>): LineRate {
   if (typeof line.percentage === 'number' && Number.isFinite(line.percentage)) {
     // Counted as typed — but only a real rate: 0, a negative or over 100 is an adjustment, not a slab.
     const rate = roundRate(line.percentage);
     return { rate: isRate(rate) ? rate : null, basis: 'percent' };
   }
-  const base = type?.percentBase === 'gross' ? bill.grossAmount : bill.taxableAmount;
+  const base = line.invoiceBase ?? (type?.percentBase === 'gross' ? bill.grossAmount : bill.taxableAmount);
   if (!base || !Number.isFinite(base)) return { rate: null, basis: 'amount' };
   const implied = ((line.baseAmount ?? line.amount) / base) * 100;
   const half = Math.round(implied * 2) / 2;
@@ -171,7 +177,8 @@ export function billRetentionSlabs(bill: SlabSource, types: readonly DeductionTy
     const { rate, basis } = retentionLineRate(line, bill, types.find((type) => type.id === line.deductionTypeId));
     const own = slabOf(line.deductionTypeId, line.deductionTypeName, line.kind, rate, types);
     const held = invoiceSlabs.filter((entry) => entry.slab.deductionTypeId === line.deductionTypeId && toPaise(entry.held) > 0);
-    if (!held.length || held.some((entry) => entry.slab.key === own.key)) {
+    // A line taken of the invoice plus its notes (a note rule) adds retention at its own rate.
+    if (line.invoiceBase !== undefined || !held.length || held.some((entry) => entry.slab.key === own.key)) {
       put(own, line.amount, basis);
       continue;
     }
@@ -183,6 +190,14 @@ export function billRetentionSlabs(bill: SlabSource, types: readonly DeductionTy
   }
   return [...slabs.values()].sort((a, b) => compareSlabs(a.slab, b.slab));
 }
+
+/**
+ * An invoice's slab source with the lines its debit notes took of the invoice plus its notes (a note
+ * rule) added: those notes hold retention for the whole value, so a credit note reversing it is read
+ * against their rates. Such lines carry their own base (`invoiceBase`), so they read the same here.
+ */
+export const withRuleLines = (source: SlabSource, ruleLines: readonly BillDeduction[] | undefined): SlabSource =>
+  ruleLines?.length ? { ...source, deductions: [...source.deductions, ...ruleLines] } : source;
 
 /**
  * The slab a release names. With its head, that slab — whether or not any bill holds it. With only
@@ -264,6 +279,15 @@ const add = (cells: Record<string, number>, key: string, amount: number) => {
  */
 export function retentionBifurcation(bills: readonly Bill[], releases: readonly RetentionRelease[], types: readonly DeductionTypeMaster[], invoices: readonly Bill[] = []): RetentionBifurcation {
   const byId = new Map([...invoices, ...bills].map((bill) => [bill.id, bill]));
+  // Retention a debit note adds under a note rule is held on the note, not its invoice; a credit note
+  // reversing it must find those rates too, so the invoice's slabs are read with those lines added.
+  const ruleLines = new Map<string, BillDeduction[]>();
+  for (const bill of byId.values()) {
+    if (bill.isDeleted || !bill.againstBillId || !isNoteType(bill.transactionType)) continue;
+    const lines = (bill.deductions ?? []).filter((line) => line.invoiceBase !== undefined);
+    if (lines.length) ruleLines.set(bill.againstBillId, [...(ruleLines.get(bill.againstBillId) ?? []), ...lines]);
+  }
+  const invoiceSource = (invoice: Bill) => withRuleLines(retentionSource(invoice), ruleLines.get(invoice.id));
   const columns = new Map<string, RetentionSlab>();
   const byBill: BifurcationBillRow[] = [];
   const projects = new Map<string, BifurcationProjectRow>();
@@ -280,7 +304,7 @@ export function retentionBifurcation(bills: readonly Bill[], releases: readonly 
   for (const bill of bills) {
     if (bill.isDeleted) continue;
     const invoice = bill.againstBillId && isNoteType(bill.transactionType) ? byId.get(bill.againstBillId) : undefined;
-    const slabs = billRetentionSlabs(retentionSource(bill), types, invoice ? retentionSource(invoice) : undefined);
+    const slabs = billRetentionSlabs(retentionSource(bill), types, invoice ? invoiceSource(invoice) : undefined);
     if (!slabs.length) continue;
     const row: BifurcationBillRow = {
       id: bill.id,

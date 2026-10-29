@@ -314,6 +314,26 @@ export interface CertificationReceiptRule {
   fromDate?: string;
 }
 
+/**
+ * A note rule (Settings → Note rules; see `note-rules.ts`): a debit note against an invoice of these
+ * sub categories — a SUPPLY-60% or SUPPLY-70% invoice, its balance billed by the note — takes these
+ * deductions of the invoice plus its notes rather than of the note alone.
+ */
+export interface NoteRule {
+  id: string;
+  name: string;
+  active: boolean;
+  /** Sub categories of the invoice the debit note is raised against. */
+  billTypeIds: string[];
+  /** Deduction heads taken of the invoice plus its notes; any other head stays on the note's own value. */
+  deductionTypeIds: string[];
+  /**
+   * Whether such notes count in the invoice's raised-vs-certified comparison. Off by default: they
+   * bill the balance of the value, while the client certifies the invoice at its own value.
+   */
+  countInCertification: boolean;
+}
+
 /** Who does a workflow stage: anyone with the role permission, named people, or the bill's collection owner. */
 export const WORKFLOW_ASSIGNMENTS = ['permission', 'users', 'collection_owner'] as const;
 export type WorkflowAssignment = (typeof WORKFLOW_ASSIGNMENTS)[number];
@@ -369,6 +389,8 @@ export interface BillTrackingSettings {
   numbering: BillNumberingConfig;
   /** Receipts only against bills the client has certified (Settings → Workflow). */
   certificationBeforeReceipt: CertificationReceiptRule;
+  /** Debit notes whose deductions are taken of the invoice plus its notes (Settings → Note rules). */
+  noteRules: NoteRule[];
   /** Per-stage workflow settings, one per stage after Draft. */
   workflowSteps: WorkflowStepSetting[];
   /** Month keys (`yyyy-MM`) closed for normal editing. */
@@ -447,6 +469,19 @@ export interface BillDeduction {
   percentage?: number;
   /** What the percentage was taken of (taxable or gross, less any configured deductions). */
   calculationBase?: number;
+  /**
+   * On a debit note under a note rule: the invoice plus its notes up to this one (taxable, or gross for
+   * a head taken on gross), as it stood when the note was saved. A percentage line is taken of it; an
+   * amount line is read against it for its retention rate (`note-rules.ts`).
+   */
+  invoiceBase?: number;
+  /**
+   * With `invoiceBase`: what the invoice and the earlier notes already hold at this head and rate,
+   * taken off the line — so two balance notes never hold the same retention twice.
+   */
+  heldBefore?: number;
+  /** Taken of the note's own value although a note rule covers its head — chosen on the line. */
+  ownBase?: boolean;
   remarks?: string;
   deductionDate?: string;
 }
@@ -532,6 +567,11 @@ export interface Bill {
   /** Snapshot of that invoice's reference and date, so the link reads even if it is later edited. */
   againstBillRef?: string;
   againstBillDate?: string;
+  /**
+   * A debit note a note rule leaves out of its invoice's raised-vs-certified comparison: it bills the
+   * balance of the value rather than correcting the invoice. Set when the note is saved.
+   */
+  outsideCertification?: boolean;
   /** `undefined` for non-GST rows (the legacy sheet writes `NA`). */
   gstInvoiceNumber?: string;
   billDate: string;

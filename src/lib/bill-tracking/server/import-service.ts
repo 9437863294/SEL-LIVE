@@ -23,7 +23,9 @@ import { FieldValue, type DocumentReference } from 'firebase-admin/firestore';
 
 import { getFirebaseAdminBucket } from '@/lib/firebase-admin';
 
-import { RETENTION_KINDS, deductionsOfKind, deriveBillTotals, financialYearOf, monthKeyOf } from '../calculations.ts';
+import { RETENTION_KINDS, deductionsOfKind, deriveBillTotals, financialYearOf, monthKeyOf, protectedChanges } from '../calculations.ts';
+import { withConfigDefaults } from '../defaults.ts';
+import { amountsLocked, stepLabel } from '../workflow.ts';
 import {
   classifyDuplicate,
   defaultRowAction,
@@ -43,7 +45,7 @@ import {
   type ProjectMatch,
 } from '../import.ts';
 import { deductionsByType } from '../certification.ts';
-import { subtractMoney, sumMoney, toPaise } from '../money.ts';
+import { roundMoney, subtractMoney, sumMoney, toPaise } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { ImportPreviewInput } from '../schemas';
 import type {
@@ -63,7 +65,8 @@ import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadClients, loadConfig, loadProjects, loadScopedBills, logActivity, nowIso, type ProjectRecord } from './store';
 
 type StoredBill = Bill & { organizationId: string };
-type StoredJob = BillImportJob & { organizationId: string; columnMap: ImportColumnMap; headerRow: number };
+/** `headings`: the sheet's own column headings, so the error-rows CSV labels its cells as the sheet did. */
+type StoredJob = BillImportJob & { organizationId: string; columnMap: ImportColumnMap; headerRow: number; headings?: string[] };
 
 export interface PreviewRow extends Omit<ParsedImportRow, 'projectMatch' | 'raw'> {
   duplicate: ReturnType<typeof classifyDuplicate>;
@@ -128,11 +131,31 @@ const asRaised = (bill: Bill) => {
   };
 };
 
-/** The same deduction amounts per head, in any order — a sheet row carries only heads and amounts. */
+/**
+ * The same deduction amounts per head, in any order — a sheet row carries only heads and amounts. A
+ * head at ₹0 deducts nothing, so a certified ₹0 line and a sheet with no such column agree.
+ */
 const sameDeductionAmounts = (a: readonly BillDeduction[], b: readonly BillDeduction[]) => {
-  const byHead = (lines: readonly BillDeduction[]) => JSON.stringify([...deductionsByType(lines).entries()].map(([id, entry]) => [id, toPaise(entry.amount)]).sort());
+  const byHead = (lines: readonly BillDeduction[]) =>
+    JSON.stringify([...deductionsByType(lines).entries()].filter(([, entry]) => toPaise(entry.amount) !== 0).map(([id, entry]) => [id, toPaise(entry.amount)]).sort());
   return byHead(a) === byHead(b);
 };
+
+/**
+ * A bill's GST parts for the sheet's GST total, split the way the bill is: CGST + SGST halves (an odd
+ * paisa to SGST) or all IGST. A "No GST" bill the sheet gives GST keeps it as one unsplit figure, as an
+ * imported legacy bill does. Nothing changes while the total is the same.
+ */
+function gstPartsFor(bill: Pick<Bill, 'gstType' | 'gstAmount'>, gstAmount: number): Partial<Pick<Bill, 'gstType' | 'cgstAmount' | 'sgstAmount' | 'igstAmount'>> {
+  if (toPaise(gstAmount) === toPaise(bill.gstAmount ?? 0)) return {};
+  if (bill.gstType === 'cgst-sgst') {
+    const cgstAmount = roundMoney(gstAmount / 2);
+    return { cgstAmount, sgstAmount: subtractMoney(gstAmount, cgstAmount), igstAmount: 0 };
+  }
+  if (bill.gstType === 'igst') return { cgstAmount: 0, sgstAmount: 0, igstAmount: roundMoney(gstAmount) };
+  if (bill.gstType === 'none') return { gstType: undefined, cgstAmount: 0, sgstAmount: 0, igstAmount: 0 };
+  return {};
+}
 
 const existingKeys = (bills: readonly Bill[]): ExistingBillKey[] =>
   bills.map((bill) => ({
@@ -265,9 +288,13 @@ export async function startImport(context: BtContext, input: ImportPreviewInput,
     throw new BtError(`${blocking.length} selected row(s) still have errors or an undecided duplicate (rows ${blocking.slice(0, 12).map((row) => row.row).join(', ')}${blocking.length > 12 ? '…' : ''}). Fix or skip them first.`, 422);
   }
   if (!preview.rows.some((row) => row.action !== 'skip')) throw new BtError('Every row is set to skip — there is nothing to import.');
-  const closedRows = preview.rows.filter((row) => row.action !== 'skip' && row.billDate && config.settings.closedMonths.includes(monthKeyOf(row.billDate)));
+  // A row's bill date, and the date of the receipt it brings in, must both be in open months.
+  const closedMonth = (dateKey: string | undefined) => (dateKey && config.settings.closedMonths.includes(monthKeyOf(dateKey)) ? monthKeyOf(dateKey) : null);
+  const closedOf = (row: PreviewRow) =>
+    [closedMonth(row.billDate), row.action !== 'update' && toPaise(row.calculated.received) !== 0 ? closedMonth(row.receiptDate ?? row.billDate) : null].filter((month): month is string => Boolean(month));
+  const closedRows = preview.rows.filter((row) => row.action !== 'skip' && closedOf(row).length);
   if (closedRows.length && !context.can('Settings', 'Close Month')) {
-    throw new BtError(`${closedRows.length} row(s) are dated in closed months (${[...new Set(closedRows.map((row) => monthKeyOf(row.billDate as string)))].join(', ')}). Reopen those months or skip the rows.`, 423);
+    throw new BtError(`${closedRows.length} row(s) are dated, or bring a receipt dated, in closed months (${[...new Set(closedRows.flatMap(closedOf))].join(', ')}). Reopen those months or skip the rows.`, 423);
   }
 
   const firestore = db();
@@ -281,30 +308,47 @@ export async function startImport(context: BtContext, input: ImportPreviewInput,
   // projects that use it; a known one used on a project it is not enabled for is enabled there.
   const imported = preview.rows.filter((row) => row.action !== 'skip' && row.billTypeName && row.projectId);
   const projectsUsing = (name: string) => [...new Set(imported.filter((row) => row.billTypeName === name).map((row) => row.projectId as string))];
-  const billTypes: BillTypeMaster[] = config.billTypes.map((type) => ({ ...type, projectIds: [...type.projectIds] }));
-  if (options.addUnknownBillTypes) {
-    for (const name of preview.unknownBillTypes) {
-      billTypes.push({ id: `bt-imp-${projectKey(name)}-${Date.now().toString(36)}`, ...provisionalBillType(name, config.billCategories, projectsUsing(name)) });
-    }
-    for (const row of imported) {
-      if (!row.billTypeId) continue;
-      const type = billTypes.find((entry) => entry.id === row.billTypeId);
-      if (type && type.projectIds.length && !type.projectIds.includes(row.projectId as string)) type.projectIds.push(row.projectId as string);
-    }
-  }
-  const mappings: ProjectNameMapping[] = [...config.projectMappings];
-  if (options.rememberMappings) {
-    for (const match of preview.projects) {
-      if (!match.project || match.kind === 'exact' || match.kind === 'remembered') continue;
-      const index = mappings.findIndex((entry) => entry.key === match.key);
-      const entry: ProjectNameMapping = { key: match.key, excelName: match.excelName, projectId: match.project.id, projectName: match.project.name, createdBy: context.userId, createdAt: nowIso() };
-      if (index >= 0) mappings[index] = entry;
-      else mappings.push(entry);
-    }
-  }
-  if (options.addUnknownBillTypes || mappings.length !== config.projectMappings.length || options.rememberMappings) {
-    await configRef(firestore, context.organizationId).set(clean({ ...config, billTypes, projectMappings: mappings, updatedAt: nowIso(), updatedBy: context.userId }), { merge: true });
-    invalidateConfig(context.organizationId);
+  // Remembered for the next workbook: a project chosen by hand, or a suggestion the user confirmed — and
+  // only for an Excel name some imported row uses. An unconfirmed guess, or one whose rows were all
+  // skipped, is never remembered.
+  const importedNames = new Set(imported.map((row) => projectKey(row.projectExcelName)));
+  const confirmed = new Set(input.confirmedFuzzy);
+  const toRemember = options.rememberMappings
+    ? preview.projects.filter((match) => match.project && importedNames.has(match.key) && (match.kind === 'override' || (match.kind === 'fuzzy' && confirmed.has(match.key))))
+    : [];
+  if (options.addUnknownBillTypes || toRemember.length) {
+    // Read fresh in a transaction, never the cached copy, and write only these two lists: a month closed
+    // or a setting saved meanwhile is never reverted. `settings.updatedAt` moves on, so a Settings page
+    // opened before the import is refused as stale instead of deleting what the import added.
+    const ref = configRef(firestore, context.organizationId);
+    const changed = await firestore.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(ref);
+      const fresh = withConfigDefaults(snapshot.exists ? (snapshot.data() as Partial<BillTrackingConfig>) : null);
+      const billTypes: BillTypeMaster[] = fresh.billTypes.map((type) => ({ ...type, projectIds: [...type.projectIds] }));
+      if (options.addUnknownBillTypes) {
+        for (const name of preview.unknownBillTypes) {
+          billTypes.push({ id: `bt-imp-${projectKey(name)}-${Date.now().toString(36)}`, ...provisionalBillType(name, fresh.billCategories, projectsUsing(name)) });
+        }
+        for (const row of imported) {
+          if (!row.billTypeId) continue;
+          const type = billTypes.find((entry) => entry.id === row.billTypeId);
+          if (type && type.projectIds.length && !type.projectIds.includes(row.projectId as string)) type.projectIds.push(row.projectId as string);
+        }
+      }
+      const mappings: ProjectNameMapping[] = [...fresh.projectMappings];
+      for (const match of toRemember) {
+        const project = match.project as NonNullable<typeof match.project>;
+        const index = mappings.findIndex((entry) => entry.key === match.key);
+        if (index >= 0 && mappings[index].projectId === project.id) continue;
+        const entry: ProjectNameMapping = { key: match.key, excelName: match.excelName, projectId: project.id, projectName: project.name, createdBy: context.userId, createdAt: nowIso() };
+        if (index >= 0) mappings[index] = entry;
+        else mappings.push(entry);
+      }
+      if (JSON.stringify(billTypes) === JSON.stringify(fresh.billTypes) && JSON.stringify(mappings) === JSON.stringify(fresh.projectMappings)) return false;
+      transaction.set(ref, clean({ billTypes, projectMappings: mappings, settings: { updatedAt: nowIso(), updatedBy: context.userId } }), { merge: true });
+      return true;
+    });
+    if (changed) invalidateConfig(context.organizationId);
   }
 
   const jobNumber = await firestore.runTransaction(async (transaction) => {
@@ -322,6 +366,7 @@ export async function startImport(context: BtContext, input: ImportPreviewInput,
     checksum: input.checksum,
     sheetName: input.sheetName,
     headerRow: preview.headerRow,
+    headings: preview.headings,
     columnMap: preview.columnMap,
     financialYear: financialYears.length === 1 ? financialYears[0] : financialYears.join(', '),
     rowsDetected: preview.summary.detected,
@@ -421,8 +466,12 @@ function deductionsOf(row: StoredRow['parsed'], config: BillTrackingConfig): Bil
   });
 }
 
-/** The source values an "update existing" row writes — never receipts, never workflow. */
-const SOURCE_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billSerialNumber', 'serialNumber', 'billDate', 'financialYear', 'description', 'billTypeId', 'billTypeName', 'billCategory', 'billCategoryName', 'isRetentionBill', 'transactionType', 'legacyStatus', 'importedNetAmount', 'importedTotalDeduction', 'importedReceived', 'targetWeek', 'receivedWeek', 'currentStage', 'remarks', 'typeV2', 'taxableOrAdvance', 'netMismatch'] as const;
+/**
+ * The source values an "update existing" row writes, kept for the rollback — never receipts, never
+ * workflow, never the transaction type (SEL LIVE knows a debit note or an advance better than the
+ * sheet does, and a certified invoice may not become a note). The GST parts follow the GST total.
+ */
+const SOURCE_FIELDS = ['taxableAmount', 'gstAmount', 'gstType', 'cgstAmount', 'sgstAmount', 'igstAmount', 'deductions', 'gstInvoiceNumber', 'billSerialNumber', 'serialNumber', 'billDate', 'financialYear', 'description', 'billTypeId', 'billTypeName', 'billCategory', 'billCategoryName', 'isRetentionBill', 'legacyStatus', 'importedNetAmount', 'importedTotalDeduction', 'importedReceived', 'targetWeek', 'receivedWeek', 'currentStage', 'remarks', 'typeV2', 'taxableOrAdvance', 'netMismatch'] as const;
 
 export async function processImport(context: BtContext, jobId: string, chunkSize: number, retryFailed = false): Promise<{ job: BillImportJob; processed: number }> {
   context.require('Import', 'Import');
@@ -513,16 +562,31 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
           const bill = { ...(billSnapshot.data() as StoredBill), id: billId };
           if (!billSnapshot.exists || bill.organizationId !== context.organizationId || bill.isDeleted) throw new BtError('The bill to update no longer exists.');
           context.require('Bills', 'Edit', bill.projectId);
+          // The month the bill is dated in now must be open too, not only the sheet's date for it.
+          if (config.settings.closedMonths.includes(monthKeyOf(bill.billDate)) && !context.can('Settings', 'Close Month')) {
+            throw new BtError(`This bill is dated in ${monthKeyOf(bill.billDate)}, which is closed.`, 423);
+          }
           const previous = Object.fromEntries(SOURCE_FIELDS.map((key) => [key, bill[key] ?? null]));
+          const { transactionType: _sheetType, ...sheetValues } = sourceValues;
           // The stored bill's certification is kept, and with it its certified deductions. A sheet
           // exported from SEL LIVE carries those certified lines: they must not overwrite the lines
           // as raised, which the raised-vs-certified comparison still needs.
-          const update = bill.certification && sameDeductionAmounts(sourceValues.deductions, bill.certification.deductions ?? []) ? { ...sourceValues, deductions: bill.deductions } : sourceValues;
+          const lines = bill.certification && sameDeductionAmounts(sheetValues.deductions, bill.certification.deductions ?? []) ? { ...sheetValues, deductions: bill.deductions } : sheetValues;
+          const update = { ...lines, ...gstPartsFor(bill, sheetValues.gstAmount) };
           const merged = { ...bill, ...update };
+          // The same lock as the bill form's: a bill past its amount-lock step changes its figures only
+          // with Edit After Approval. Without it the row is left, failed, for someone who holds it.
+          const changes = protectedChanges(bill, merged);
+          if (changes.length && amountsLocked(bill, config.settings) && !context.can('Bills', 'Edit After Approval', bill.projectId)) {
+            const at = bill.workflowStatus === 'returned' ? (bill.returnedFrom ?? 'draft') : bill.workflowStatus;
+            throw new BtError(`This bill is at “${stepLabel(config.settings, at)}”: changing ${changes.join(', ')} needs Edit After Approval, so the row was left for someone who holds it.`, 403);
+          }
           const totals = deriveBillTotals(merged, options);
           const version = (bill.version ?? 1) + 1;
           transaction.update(billRef, clean({
             ...update,
+            // A "No GST" bill the sheet gives GST becomes one unsplit figure (`gstPartsFor`).
+            ...('gstType' in update && update.gstType === undefined ? { gstType: FieldValue.delete() } : {}),
             netMismatch: sourceValues.netMismatch ?? FieldValue.delete(),
             ...derivedFields(totals),
             searchTokens: buildSearchTokens(merged),
@@ -550,6 +614,9 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
       const isNote = row.transactionType === 'credit_note' || row.transactionType === 'debit_note';
       const againstInvoice = isNote ? await findInvoice(project.id, againstInvoiceFromDescription(row.description)) : undefined;
       const hasReceipt = toPaise(row.calculated.received) !== 0;
+      // The receipt is checked against its own date, as a receipt recorded by hand is.
+      const receiptMonth = hasReceipt ? monthKeyOf(row.receiptDate ?? (row.billDate as string)) : null;
+      if (receiptMonth && config.settings.closedMonths.includes(receiptMonth) && !context.can('Settings', 'Close Month')) throw new BtError(`The receipt is dated in ${receiptMonth}, which is closed.`, 423);
       const collectionRef = firestore.collection(BT_COLLECTIONS.collections).doc(`${billId}-c`);
       await firestore.runTransaction(async (transaction) => {
         const [existing, rowSnapshot] = await transaction.getAll(billRef, rowDoc.ref);
@@ -698,8 +765,11 @@ export async function rollbackImport(context: BtContext, jobId: string, reason: 
   if (job.status === 'importing') throw new BtError('Finish or abandon the running import before rolling it back.', 409);
   const touched = rows.filter((row) => row.state === 'imported' || row.state === 'updated');
 
-  // Refuse if anything the import wrote has been worked on since.
+  // Refuse if anything the import wrote has been worked on since. A bill it updated may have had
+  // receipts before the import — its version alone says whether anything happened since.
   const changed: string[] = [];
+  const closed = new Set<string>();
+  const isClosed = (dateKey: unknown) => typeof dateKey === 'string' && config.settings.closedMonths.includes(monthKeyOf(dateKey));
   for (const group of chunked(touched, 100)) {
     const snapshots = await firestore.getAll(...group.map((row) => firestore.collection(BT_COLLECTIONS.bills).doc(row.billId as string)));
     snapshots.forEach((snapshot, index) => {
@@ -707,13 +777,19 @@ export async function rollbackImport(context: BtContext, jobId: string, reason: 
       const bill = snapshot.data() as StoredBill | undefined;
       if (!bill) return;
       context.requireProject(bill.projectId);
-      if ((bill.version ?? 1) !== (row.importVersion ?? 1) || bill.collections.some((entry) => !entry.collectionId.startsWith(`imp-${jobId}`))) {
+      if ((bill.version ?? 1) !== (row.importVersion ?? 1) || (row.state === 'imported' && bill.collections.some((entry) => !entry.collectionId.startsWith(`imp-${jobId}`)))) {
         changed.push(`row ${row.row} (${bill.gstInvoiceNumber || bill.billSerialNumber || snapshot.id})`);
       }
+      // Rolling back deletes or rewrites records dated in these months: a month closed since is respected.
+      const dates = row.state === 'imported' ? [bill.billDate, row.collectionId ? (row.parsed.receiptDate ?? row.parsed.billDate) : undefined] : [bill.billDate, row.previous?.billDate];
+      for (const date of dates) if (isClosed(date)) closed.add(monthKeyOf(date as string));
     });
   }
   if (changed.length) {
     throw new BtError(`${changed.length} bill(s) from this import have been changed since (${changed.slice(0, 8).join(', ')}${changed.length > 8 ? '…' : ''}). Roll back is refused so that later work is not lost.`, 409, { changed });
+  }
+  if (closed.size && !context.can('Settings', 'Close Month')) {
+    throw new BtError(`Rolling back would change bills or receipts dated in closed months (${[...closed].sort().join(', ')}). Reopen those months first.`, 423);
   }
 
   let deleted = 0;

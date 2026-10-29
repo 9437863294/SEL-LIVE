@@ -20,6 +20,7 @@ import { CheckCircle2, ClipboardCheck, Plus, ReceiptIndianRupee, Scale } from 'l
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
+import { useToast } from '@/hooks/use-toast';
 import type { CertificationSummary, CertificationTotals } from '@/lib/bill-tracking/certification';
 import { CERTIFICATION_STATE_LABELS, type Bill } from '@/lib/bill-tracking/types';
 import type { BillTotals } from '@/lib/bill-tracking/reports';
@@ -87,6 +88,7 @@ const COMPARE_FILTERS = [
 export default function CertificationRegister({ view }: { view: 'certified' | 'compare' }) {
   const lookups = useLookups();
   const { can } = useBt();
+  const { toast } = useToast();
   const actor = useWorkflowActor();
   const filters = useUrlFilters();
   const compare = view === 'compare';
@@ -206,7 +208,12 @@ export default function CertificationRegister({ view }: { view: 'certified' | 'c
         actions,
       ];
 
-  const loadAll = async () => (await btFetch<CertificationResponse>(`bills?${filters.apiQuery({ view, cert: cert || undefined, sort, dir, all: '1' })}`)).rows;
+  // Every row the filters match — never just the page on screen — and a warning if any are missing.
+  const loadAll = async () => {
+    const all = await btFetch<CertificationResponse>(`bills?${filters.exportQuery({ view, cert: cert || undefined, sort, dir })}`);
+    if (all.total > all.rows.length) toast({ title: 'Export incomplete', description: `Only ${all.rows.length.toLocaleString('en-IN')} of ${all.total.toLocaleString('en-IN')} bills came back — narrow the filters and export again.`, variant: 'destructive' });
+    return all.rows;
+  };
   const exportColumns: ExportColumn<CertificationRow>[] = [
     { key: 'gstInvoiceNumber', label: 'GST Invoice', value: (row) => row.gstInvoiceNumber ?? 'NA' },
     { key: 'billSerialNumber', label: 'Bill No', value: (row) => row.billSerialNumber },

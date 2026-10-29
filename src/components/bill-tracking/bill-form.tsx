@@ -28,18 +28,19 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
 import { useToast } from '@/hooks/use-toast';
-import { addDays, deriveBillTotals, financialYearOf, isRetentionKind } from '@/lib/bill-tracking/calculations';
-import { isPastApproval, stepLabel } from '@/lib/bill-tracking/workflow';
+import { addDays, deriveBillTotals, financialYearOf, isRetentionKind, protectedChanges } from '@/lib/bill-tracking/calculations';
+import { amountsLocked, stepLabel } from '@/lib/bill-tracking/workflow';
 import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tracking/categories';
 import type { CertificationComparison, SuggestedNote } from '@/lib/bill-tracking/certification';
-import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
-import { formatINR, subtractMoney, toPaise } from '@/lib/bill-tracking/money';
+import { computeDeductions, keepsIssuedLines, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
+import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { noteDeductionBase, type GroupNote } from '@/lib/bill-tracking/note-rules';
 import { formatRate } from '@/lib/bill-tracking/retention';
 import { GST_RATES } from '@/lib/statutory';
 import { cn } from '@/lib/utils';
-import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
+import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillDeduction, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
 
-import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
+import { btFetch, useBt, useBtQuery, useLookups, type Lookups } from './bt-client';
 import { Amount, BtError, BtLoading, FormField, FormSection, Notice, RupeeInput, Term, dateText, type FieldWidth } from './bt-ui';
 
 /**
@@ -52,6 +53,7 @@ const FORM_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3';
 /** The amounts row: taxable, the GST components, total GST and gross — all on one line when there is room. */
 const AMOUNT_GRID = { 'cgst-sgst': 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5', igst: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', other: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3' } as const;
 import { DeductionEditor, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
+import { listNames } from './note-rules-settings';
 
 /** `legacy` = a bill imported with a single GST figure, not yet split. */
 type GstChoice = GstType | 'legacy';
@@ -71,6 +73,9 @@ interface FormState {
   projectId: string;
   clientId: string;
   dgmOffice: string;
+  /** Picked by hand: a change of project keeps them. Otherwise they follow the project. */
+  clientPicked: boolean;
+  dgmPicked: boolean;
   description: string;
   /** Main category, chosen before the sub category. */
   categoryId: string;
@@ -123,6 +128,10 @@ interface InvoiceOption {
   netReceivable: number;
   /** The client has certified it — the note can be filled to match. */
   certified?: boolean;
+  /** The deductions that apply to it (the certified ones once certified): what a note rule counts as held. */
+  deductions?: BillDeduction[];
+  /** The live notes against it, with their deductions: a note rule takes a debit note's of the invoice plus them. */
+  notes?: GroupNote[];
 }
 
 /** What the bill page returns that the note form needs to match a certification. */
@@ -133,7 +142,8 @@ interface CertifiedInvoice {
 
 const isNote = (type: BillTransactionType) => type === 'credit_note' || type === 'debit_note';
 
-function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
+function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups, 'projects' | 'gstSetup'>): FormState {
+  const project = lookups.projects.find((entry) => entry.id === bill.projectId);
   return {
     billSerialNumber: bill.billSerialNumber ?? '',
     autoNumber: false,
@@ -141,7 +151,8 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
     againstBillId: bill.againstBillId ?? '',
     gstInvoiceNumber: bill.gstInvoiceNumber ?? '',
     billDate: bill.billDate,
-    financialYear: bill.financialYear,
+    // Only a year that differs from the bill date's is an override; otherwise a new date sets the year.
+    financialYear: bill.financialYear && bill.financialYear !== financialYearOf(bill.billDate) ? bill.financialYear : '',
     submissionDate: bill.submissionDate ?? '',
     passedDate: bill.passedDate ?? '',
     dueDate: bill.dueDate ?? '',
@@ -149,13 +160,19 @@ function fromBill(bill: Bill, config: BillTrackingConfig): FormState {
     projectId: bill.projectId,
     clientId: bill.clientId ?? '',
     dgmOffice: bill.dgmOffice ?? '',
+    // Saved values that differ from the project's were picked by hand.
+    clientPicked: Boolean(bill.clientId) && bill.clientId !== project?.clientId,
+    dgmPicked: Boolean(bill.dgmOffice) && bill.dgmOffice !== project?.dgmOffice,
     description: bill.description ?? '',
     categoryId: config.billTypes.find((type) => type.id === bill.billTypeId)?.categoryId ?? bill.billCategory ?? '',
     billTypeId: bill.billTypeId ?? '',
     taxableAmount: String(bill.taxableAmount ?? ''),
-    gstType: bill.gstType ?? (bill.gstAmount ? 'legacy' : ''),
+    // A bill saved without a GST type keeps its single figure (none, for a non-GST row): never the
+    // suggested type and rate, which would change it on a save that only meant to edit remarks.
+    gstType: bill.gstType ?? 'legacy',
     gstRate: str(bill.gstPercent ?? config.settings.defaultGstRate),
-    gstRegistrationId: '',
+    // The registration that raised it stays chosen (if still set up), so a save keeps it.
+    gstRegistrationId: bill.gstRegistrationId && lookups.gstSetup?.registrations.some((entry) => entry.id === bill.gstRegistrationId) ? bill.gstRegistrationId : '',
     gstManual: Boolean(bill.gstType),
     gstRateCustom: bill.gstPercent !== undefined && !(GST_RATES as readonly number[]).includes(bill.gstPercent),
     cgstAmount: str(bill.cgstAmount),
@@ -204,6 +221,28 @@ function withSuggestedNote(state: FormState, note: SuggestedNote, invoice: Pick<
   };
 }
 
+/**
+ * The suggested note with a saved note's own figures added back. The suggestion is what is still
+ * unmatched with that note already counted, so the note itself must carry the suggestion plus what it
+ * holds now. Null when the two cancel out: without the note the invoice already matches.
+ */
+function withSavedNote(note: SuggestedNote, saved: Bill): SuggestedNote | null {
+  const add = (a: number | undefined, b: number | undefined) => (a === undefined && b === undefined ? undefined : sumMoney([a ?? 0, b ?? 0]));
+  const taxableAmount = sumMoney([note.taxableAmount, saved.taxableAmount]);
+  const gstAmount = sumMoney([note.gstAmount, saved.gstAmount]);
+  if (toPaise(taxableAmount) === 0 && toPaise(gstAmount) === 0) return null;
+  return {
+    ...note,
+    transactionType: taxableAmount < 0 || (toPaise(taxableAmount) === 0 && gstAmount < 0) ? 'credit_note' : 'debit_note',
+    taxableAmount,
+    gstAmount,
+    cgstAmount: add(note.cgstAmount, saved.cgstAmount),
+    sgstAmount: add(note.sgstAmount, saved.sgstAmount),
+    igstAmount: add(note.igstAmount, saved.igstAmount),
+    netAmount: sumMoney([taxableAmount, gstAmount]),
+  };
+}
+
 export default function BillForm({ billId }: { billId?: string }) {
   const params = useSearchParams();
   const editing = Boolean(billId);
@@ -229,7 +268,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const activeTypes = config.deductionTypes.filter((type) => type.active || existing?.deductions.some((line) => line.deductionTypeId === type.id));
 
   const [form, setForm] = useState<FormState>(() => {
-    if (existing) return fromBill(existing, config);
+    if (existing) return fromBill(existing, config, lookups);
     const blank: FormState = {
           billSerialNumber: '',
           autoNumber: config.settings.numbering.enabled,
@@ -245,6 +284,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           projectId: params.get('project') ?? (lookups.projects.length === 1 ? lookups.projects[0].id : ''),
           clientId: '',
           dgmOffice: '',
+          clientPicked: false,
+          dgmPicked: false,
           description: '',
           categoryId: '',
           billTypeId: '',
@@ -293,9 +334,9 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       return {
         ...current,
         projectId,
-        // Fill blanks from the project; never overwrite a choice.
-        clientId: current.clientId || next?.clientId || '',
-        dgmOffice: current.dgmOffice || next?.dgmOffice || '',
+        // The client and DGM office follow the project unless picked by hand; blank = the project's.
+        clientId: current.clientPicked ? current.clientId : next?.clientId || '',
+        dgmOffice: current.dgmPicked ? current.dgmOffice : next?.dgmOffice || '',
         billTypeId: subCategoriesFor(config.billTypes, current.categoryId, projectId, keepTypeFor(projectId)).some((type) => type.id === current.billTypeId) ? current.billTypeId : '',
         againstBillId: '',
       };
@@ -325,18 +366,53 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       [key]: value,
     }));
 
+  /* ── credit / debit note: the invoice it is against ───────────────────── */
+  const note = isNote(form.transactionType);
+  // The invoice the note was opened with is always listed, however old (the list holds the 200 latest).
+  // Fixed for the form's life, so picking another invoice does not reload the list.
+  const [linkedInvoiceId] = useState(() => existing?.againstBillId ?? prefill?.invoice.id ?? (params.get('against') || ''));
+  const { data: invoiceData, loading: invoicesLoading } = useBtQuery<{ bills: InvoiceOption[] }>(
+    note && form.projectId ? `bills/invoices?project=${form.projectId}${existing ? `&exclude=${existing.id}` : ''}${linkedInvoiceId ? `&include=${linkedInvoiceId}` : ''}` : null,
+  );
+  const invoices = invoiceData?.bills ?? [];
+  const againstInvoice = invoices.find((invoice) => invoice.id === form.againstBillId);
+  const againstReference = againstInvoice ? againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber : undefined;
+
   /* ── deductions ───────────────────────────────────────────────────────── */
   const gross = Math.round((taxable + gstTotal) * 100) / 100;
   const deductionInputs = toDeductionInputs(form.deductions);
   // GST on a deduction is split like the bill's own: IGST on an IGST bill, otherwise CGST + SGST.
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
-  const deductionLines = computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
+  // A debit note under a note rule takes the rule's heads of the invoice plus its notes, as the server will.
+  const noteBase = noteDeductionBase(config.settings.noteRules, { id: existing?.id, transactionType: form.transactionType, billDate: form.billDate, createdAt: existing?.createdAt, taxableAmount: taxable, gstAmount: gstTotal }, againstInvoice, againstInvoice?.notes ?? [], config.deductionTypes);
+  // An edit that changes neither the lines nor the figures they were worked out on keeps them as issued,
+  // as the server will (`keepsIssuedLines`) — so the preview shows what will actually be saved.
+  const keepLines =
+    existing !== undefined &&
+    keepsIssuedLines(
+      existing,
+      {
+        transactionType: form.transactionType,
+        billDate: form.billDate,
+        againstBillId: note ? form.againstBillId || undefined : undefined,
+        gstType: gstChoice === 'legacy' ? undefined : gstChoice,
+        taxableAmount: taxable,
+        gstAmount: gstTotal,
+        cgstAmount: components.cgstAmount,
+        sgstAmount: components.sgstAmount,
+        igstAmount: components.igstAmount,
+      },
+      deductionInputs,
+    );
+  const deductionLines = keepLines && existing ? existing.deductions : computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: noteBase });
+  const ruleHeadNames = (noteBase?.deductionTypeIds ?? []).flatMap((id) => config.deductionTypes.find((type) => type.id === id)?.name ?? []);
+  const ruleHeads = listNames(ruleHeadNames, Infinity) || 'Its deductions';
 
   // The rows are the deductions as raised. Once the client has certified the bill its certified
   // deductions apply instead, so the net and outstanding previewed follow them, as the server's will.
   const certification = existing?.certification;
   const totals = deriveBillTotals(
-    { taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [], certification },
+    { taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [], certification, paymentStatusOverride: existing?.paymentStatusOverride },
     { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee },
   );
 
@@ -344,11 +420,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const setDeductionRows = (update: (rows: DeductionRow[]) => DeductionRow[]) => setForm((current) => ({ ...current, deductions: update(current.deductions) }));
 
   /* ── credit / debit note ──────────────────────────────────────────────── */
-  const note = isNote(form.transactionType);
-  const { data: invoiceData, loading: invoicesLoading } = useBtQuery<{ bills: InvoiceOption[] }>(note && form.projectId ? `bills/invoices?project=${form.projectId}${existing ? `&exclude=${existing.id}` : ''}` : null);
-  const invoices = invoiceData?.bills ?? [];
-  const againstInvoice = invoices.find((invoice) => invoice.id === form.againstBillId);
-  const againstReference = againstInvoice ? againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber : undefined;
   const creditFullInvoice = (invoice: InvoiceOption) =>
     setForm((current) => {
       const type = config.billTypes.find((entry) => entry.id === invoice.billTypeId);
@@ -381,7 +452,16 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
         });
         return;
       }
-      setForm((current) => withSuggestedNote(current, suggestion, detail.bill, config));
+      // Editing a note already counted against this invoice: the suggestion leaves its saved figures in,
+      // so add them back — the note carries the whole difference, not just what is left over.
+      const counted = existing && isNote(existing.transactionType) && existing.againstBillId === invoice.id && !existing.outsideCertification;
+      const target = counted ? withSavedNote(suggestion, existing) : suggestion;
+      if (!target) {
+        toast({ title: 'This note is not needed', description: 'Without it, the invoice and its other notes already match the client certification in taxable and GST.' });
+        return;
+      }
+      // Only the taxable and GST are filled: deduction lines and a description already entered stay.
+      setForm((current) => ({ ...withSuggestedNote(current, target, detail.bill, config), deductions: current.deductions, description: current.description || target.description }));
       setMatchedFrom(invoice.gstInvoiceNumber || invoice.billSerialNumber || 'the invoice');
     } catch (caught) {
       toast({ title: 'Could not load the certification', description: caught instanceof Error ? caught.message : String(caught), variant: 'destructive' });
@@ -412,16 +492,27 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const computedDue = form.billDate ? addDays(form.submissionDate || form.billDate, creditDays) : '';
   const derivedFy = form.billDate ? financialYearOf(form.billDate) : '';
 
-  const protectedChanged =
-    existing &&
-    isPastApproval(existing.workflowStatus, config.settings) &&
-    (taxable !== existing.taxableAmount ||
-      gstTotal !== existing.gstAmount ||
-      form.billDate !== existing.billDate ||
-      form.projectId !== existing.projectId ||
-      (form.gstInvoiceNumber || undefined) !== existing.gstInvoiceNumber ||
-      (form.againstBillId || undefined) !== existing.againstBillId ||
-      JSON.stringify(deductionLines.map((line) => [line.deductionTypeId, line.amount])) !== JSON.stringify(existing.deductions.map((line) => [line.deductionTypeId, line.amount])));
+  // The lock and the change check are the server's own (`amountsLocked`, `protectedChanges`), run on the
+  // bill as this form will send it — so the reason box shows exactly when the server will ask for one.
+  const locked = Boolean(existing && amountsLocked(existing, config.settings));
+  const preview = {
+    taxableAmount: taxable,
+    gstType: gstChoice === 'legacy' ? undefined : gstChoice,
+    gstAmount: gstTotal,
+    cgstAmount: gstChoice === 'cgst-sgst' ? components.cgstAmount : 0,
+    sgstAmount: gstChoice === 'cgst-sgst' ? components.sgstAmount : 0,
+    igstAmount: gstChoice === 'igst' ? components.igstAmount : 0,
+    // The server stores the registration the attribution chain resolves — the chosen one, if any — but
+    // leaves a bill stored without one (imported rows) without, until someone chooses one.
+    gstRegistrationId: existing && !existing.gstRegistrationId && !form.gstRegistrationId ? undefined : suggestion.registration?.id,
+    deductions: deductionLines,
+    gstInvoiceNumber: form.gstInvoiceNumber,
+    billDate: form.billDate,
+    projectId: form.projectId,
+    transactionType: form.transactionType,
+    againstBillId: note ? form.againstBillId || undefined : undefined,
+  };
+  const protectedChanged = existing && locked ? protectedChanges(existing, preview).length > 0 : false;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -537,7 +628,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
         </Notice>
       ) : null}
 
-      {existing && isPastApproval(existing.workflowStatus, config.settings) ? (
+      {existing && locked ? (
         <Notice tone="amber" title={`This bill is at “${stepLabel(config.settings, existing.workflowStatus)}”`}>
           Once a bill reaches the step that locks its amounts (Approved, by default) or is raised, changing amounts, GST, deductions, the invoice number, date, project or the invoice a note is against needs the <b>Edit After Approval</b> permission and a reason. Other fields can be edited freely.
         </Notice>
@@ -665,7 +756,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 )}
                 {field(
                   'Client',
-                  <Select value={form.clientId || 'none'} onValueChange={(value) => set('clientId', value === 'none' ? '' : value)}>
+                  <Select value={form.clientId || 'none'} onValueChange={(value) => setForm((current) => ({ ...current, clientId: value === 'none' ? '' : value, clientPicked: value !== 'none' }))}>
                     <SelectTrigger aria-label="Client">
                       <SelectValue placeholder="From project" />
                     </SelectTrigger>
@@ -682,7 +773,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                   undefined,
                   'wide',
                 )}
-                {field('DGM office', <Input value={form.dgmOffice} onChange={(event) => set('dgmOffice', event.target.value)} placeholder={project?.dgmOffice ?? 'e.g. Rayagada'} list="bt-dgm-offices" />, undefined, undefined, 'medium')}
+                {field('DGM office', <Input value={form.dgmOffice} onChange={(event) => setForm((current) => ({ ...current, dgmOffice: event.target.value, dgmPicked: event.target.value.trim() !== '' }))} placeholder={project?.dgmOffice ?? 'e.g. Rayagada'} list="bt-dgm-offices" />, undefined, undefined, 'medium')}
                 <datalist id="bt-dgm-offices">
                   {lookups.dgmOffices.map((office) => (
                     <option key={office} value={office} />
@@ -861,9 +952,21 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 <div className={gstChoice === 'cgst-sgst' ? AMOUNT_GRID['cgst-sgst'] : gstChoice === 'igst' ? AMOUNT_GRID.igst : AMOUNT_GRID.other}>
                   {field(
                     <Term tip="Pre-GST value of the work or supply billed. Negative for a credit note.">Taxable amount *</Term>,
-                    <RupeeInput required aria-label="Taxable amount" value={form.taxableAmount} onChange={(value) => set('taxableAmount', value)} />,
+                    // A new taxable recomputes the GST components, as the certification form does: typed ones
+                    // would otherwise stay at the old figure.
+                    <RupeeInput required aria-label="Taxable amount" value={form.taxableAmount} onChange={(value) => setForm((current) => ({ ...current, taxableAmount: value, gstManual: false }))} />,
                     form.transactionType === 'credit_note' && taxable > 0 ? (
-                      <button type="button" className="font-medium text-violet-700 hover:underline" onClick={() => set('taxableAmount', String(-taxable))}>
+                      <button
+                        type="button"
+                        className="font-medium text-violet-700 hover:underline"
+                        onClick={() =>
+                          setForm((current) => {
+                            // Typed GST turns negative with the taxable, so the note stays one consistent credit.
+                            const negative = (value: string) => (num(value) > 0 ? String(-num(value)) : value);
+                            return { ...current, taxableAmount: String(-taxable), cgstAmount: negative(current.cgstAmount), sgstAmount: negative(current.sgstAmount), igstAmount: negative(current.igstAmount), legacyGstAmount: negative(current.legacyGstAmount) };
+                          })
+                        }
+                      >
                         Credit notes are negative — make it −{formatINR(taxable)}
                       </button>
                     ) : undefined,
@@ -920,6 +1023,11 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               <Notice tone="blue" title="The client’s certified deductions apply">
                 These are the deductions as raised, kept as the bill was issued. What the client pays follows its certification — the certified deductions set the net receivable and outstanding, not these. To change them, edit the client’s certification (bill page → Certification).
               </Notice>
+            ) : noteBase ? (
+              <Notice tone="blue" title={`Note rule: ${noteBase.rule.name}`}>
+                {ruleHeads} {ruleHeadNames.length === 1 ? 'is' : 'are'} taken of {againstReference ? `invoice ${againstReference}` : 'the invoice'} plus its notes up to this one — {formatINR(noteBase.taxable)} taxable, {formatINR(noteBase.gross)} gross — not of this note alone. “Take of this note only” changes one line.
+                {noteBase.rule.countInCertification ? null : ' This note is left out of the invoice’s certification check: it bills the balance of the value.'}
+              </Notice>
             ) : note && againstInvoice?.certified ? (
               <Notice tone="blue">
                 The client’s certified deductions already apply to {againstReference ? `invoice ${againstReference}` : 'the invoice'} — this note adjusts only the taxable value and its GST. Add a deduction here only if the client deducts something on the note itself.
@@ -935,8 +1043,10 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               totalDeduction={totals.raisedTotalDeduction}
               defaultGstRate={config.settings.defaultGstRate}
               // No slab hint where it would mislead: a note follows its invoice's slabs, and a certified
-              // bill's raised lines no longer count in the slabs (its certified ones do).
+              // bill's raised lines no longer count in the slabs (its certified ones do). A line a note
+              // rule takes of the invoice plus its notes counts at its own rate, so it has a hint.
               bases={note || certification ? undefined : { taxable, gross }}
+              invoiceBase={noteBase ? { deductionTypeIds: noteBase.deductionTypeIds, reference: againstReference ?? 'the invoice' } : undefined}
             />
           </FormSection>
 

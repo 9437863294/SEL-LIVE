@@ -13,7 +13,10 @@
 export const toPaise = (rupees: number | null | undefined): number => {
   const value = Number(rupees ?? 0);
   if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 100);
+  // Half a paisa rounds away from zero, so a credit note mirrors its invoice to the paisa (Math.round
+  // alone takes −0.5 up to 0); the fixed-point step stops 1.005 × 100 = 100.4999… rounding down.
+  const paise = Math.round(Number((Math.abs(value) * 100).toFixed(6)));
+  return value < 0 ? -paise : paise;
 };
 
 export const fromPaise = (paise: number): number => paise / 100;

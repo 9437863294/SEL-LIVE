@@ -114,3 +114,10 @@ test('a negative receipt posts a negative credit, which the ledger subtracts', (
   assert.equal(draft.amount, -50000);
   assert.equal(draft.type, 'Credit');
 });
+
+test('an adjustment, or a receipt of ₹0, moves no money and posts nothing', () => {
+  assert.equal(bankCreditForCollection(receipt({ bankAccountId: 'acc-1', paymentMode: 'ADJUSTMENT', amount: 200000 })), null);
+  assert.equal(bankCreditForCollection(receipt({ bankAccountId: 'acc-1', amount: 0 })), null);
+  assert.equal(bankCreditForCollection(receipt({ bankAccountId: 'acc-1', paymentMode: 'RTGS', amount: 200000 })).amount, 200000);
+});
+

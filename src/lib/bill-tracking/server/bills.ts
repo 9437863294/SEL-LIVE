@@ -22,14 +22,16 @@ import {
   isRetentionKind,
   isoWeekOf,
   monthKeyOf,
+  protectedChanges,
   type BillDerivedTotals,
 } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
 import { isNoteType } from '../certification.ts';
-import { actionBlocked, isPastApproval, isRoleStep, moveTarget, nextStepAfter, stepDoers, stepLabel, workflowStep, type WorkflowActor, type WorkflowMove } from '../workflow.ts';
-import { computeDeductions, splitGst, suggestGst, totalFromComponents, type RegistrationSetup } from '../gst.ts';
+import { actionBlocked, amountsLocked, isPastApproval, isRoleStep, moveTarget, nextStepAfter, stepDoers, stepLabel, workflowStep, type WorkflowActor, type WorkflowMove } from '../workflow.ts';
+import { computeDeductions, keepsIssuedLines, splitGst, suggestGst, totalFromComponents, type DeductionContext, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
-import { roundMoney } from '../money.ts';
+import { noteDeductionBase } from '../note-rules.ts';
+import { roundMoney, toPaise } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { BillInput, WorkflowAction } from '../schemas';
 import type {
@@ -94,9 +96,6 @@ const AUDITED_FIELDS = [
   'releasesRetention',
 ] as const;
 
-/** Fields that, once a bill is approved, change only with `Edit After Approval` and a reason. */
-const PROTECTED_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId'] as const;
-
 export const calculationOptions = (config: BillTrackingConfig) => ({
   tolerance: config.settings.tolerance,
   roundNetToRupee: config.settings.roundNetToRupee,
@@ -143,10 +142,11 @@ export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, 
 
 /**
  * Deduction lines, recomputed from the bill's own figures with the configured formulas (a % of the
- * taxable or gross less other deductions; GST on GST-applicable deductions). The form's figures are a
- * preview only.
+ * taxable or gross less other deductions; GST on GST-applicable deductions) — or, for the heads a note
+ * rule covers on a debit note, from the invoice plus its notes (`invoiceBase`). The form's figures are
+ * a preview only.
  */
-export function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
+export function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType']; invoiceBase?: DeductionContext['invoiceBase'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
   for (const line of lines) {
     const type = config.deductionTypes.find((entry) => entry.id === line.deductionTypeId);
     // A type retired after a bill used it stays valid on that bill; a new line needs an active type.
@@ -239,11 +239,13 @@ interface ComposeArgs {
   ownerName?: string;
   /** The invoice a credit/debit note adjusts, loaded by the caller. */
   against?: StoredBill;
+  /** The live notes against that invoice: a note rule takes a debit note's deductions of the invoice plus them. */
+  invoiceNotes?: readonly StoredBill[];
   gstSetup?: RegistrationSetup;
 }
 
 /** Builds every stored field of a bill from validated input plus masters; derived totals included. */
-export function composeBill({ context, input, config, project, client, existing, ownerName, against, gstSetup }: ComposeArgs): Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
+export function composeBill({ context, input, config, project, client, existing, ownerName, against, invoiceNotes = [], gstSetup }: ComposeArgs):Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
   const billType = config.billTypes.find((entry) => entry.id === input.billTypeId);
   const keeping = existing?.billTypeId === input.billTypeId;
   if (!billType) throw new BtError(keeping ? 'This bill’s sub category was deleted from Settings — choose another.' : 'Choose a sub category.');
@@ -268,17 +270,53 @@ export function composeBill({ context, input, config, project, client, existing,
   // GST: from the type, rate and the components entered (the components decide the total); a bill
   // without a type (imported legacy rows) keeps its single GST figure.
   const gst = composeGst(input);
+  // A credit note takes value off its invoice and a debit note adds to it: a figure of the other sign
+  // would turn one into the other while it still counts as itself.
+  const figures = [input.taxableAmount, gst.gstAmount, gst.cgstAmount ?? 0, gst.sgstAmount ?? 0, gst.igstAmount ?? 0].map(toPaise);
+  if (input.transactionType === 'credit_note' && figures.some((value) => value > 0)) {
+    throw new BtError('A credit note carries negative figures: enter its taxable value and GST below zero (−10,000, not 10,000).');
+  }
+  if (input.transactionType === 'debit_note' && figures.some((value) => value < 0)) {
+    throw new BtError('A debit note carries positive figures: enter its taxable value and GST above zero. To reduce an invoice, raise a credit note.');
+  }
   const suggestion = suggestGst(gstSetup, { projectId: project.id, chosenRegistrationId: input.gstRegistrationId, clientGstin: client?.gstin });
   if (input.gstRegistrationId && !gstSetup?.registrations.some((entry) => entry.id === input.gstRegistrationId)) {
     throw new BtError('That GST registration is not in Expenses → GST registrations.');
   }
+  // A bill stored without a registration (imported rows) keeps none until someone chooses one: working
+  // one out on an unrelated edit would change a protected field behind the user's back.
+  const registration = existing && !existing.gstRegistrationId && !input.gstRegistrationId ? undefined : suggestion.registration;
 
   const note = composeNoteLink(input, against, existing, project.id);
   // The client's certification belongs to an invoice; a bill turned into a note cannot keep one.
   if (existing?.certification && isNoteType(input.transactionType)) {
     throw new BtError('This bill has a client certification. Remove the certification before turning it into a credit or debit note.', 409);
   }
-  const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType }, existing?.deductions);
+  // A debit note under a note rule takes the rule's heads of the invoice plus its notes up to it,
+  // fixed now so a later note does not move it.
+  const noteBase = note.againstBillId
+    ? noteDeductionBase(
+        config.settings.noteRules,
+        { id: existing?.id, transactionType: input.transactionType, billDate: input.billDate, createdAt: existing?.createdAt, taxableAmount: roundMoney(input.taxableAmount), gstAmount: gst.gstAmount },
+        against,
+        invoiceNotes,
+        config.deductionTypes,
+      )
+    : undefined;
+  // An edit that changes neither the lines nor the figures they are worked out from keeps the lines as
+  // issued: a later change to a deduction head in Settings, or a note added since, never alters an
+  // issued bill behind an unrelated edit (a remark, the stage, the owner).
+  const keepLines =
+    existing !== undefined &&
+    keepsIssuedLines(existing, { transactionType: input.transactionType, billDate: input.billDate, againstBillId: note.againstBillId, gstType: gst.gstType, taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount, cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount }, input.deductions);
+  const deductions =
+    keepLines && existing
+      ? (existing.deductions ?? []).map((line, index) => clean({ ...line, remarks: input.deductions[index].remarks, deductionDate: input.deductions[index].deductionDate }))
+      : resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType, invoiceBase: noteBase }, existing?.deductions);
+  // Left out of the invoice's certification check only when the note bills the balance under its
+  // rule — it carries lines taken of the invoice plus its notes. A note raised to match the client's
+  // certification carries none, so it counts there like any other.
+  const outsideCertification = noteBase && !noteBase.rule.countInCertification && deductions.some((line) => line.invoiceBase !== undefined) ? true : undefined;
   const collections = existing?.collections ?? [];
   const totals = deriveBillTotals(
     {
@@ -310,6 +348,7 @@ export function composeBill({ context, input, config, project, client, existing,
     billSerialNumber: input.billSerialNumber ?? existing?.billSerialNumber,
     transactionType: input.transactionType,
     ...note,
+    outsideCertification,
     gstInvoiceNumber: input.gstInvoiceNumber,
     billDate: input.billDate,
     submissionDate: input.submissionDate,
@@ -331,9 +370,9 @@ export function composeBill({ context, input, config, project, client, existing,
     isRetentionBill,
     taxableAmount: roundMoney(input.taxableAmount),
     ...gst,
-    gstRegistrationId: suggestion.registration?.id,
-    gstRegistrationLabel: suggestion.registration ? suggestion.registration.label || suggestion.registration.stateName : undefined,
-    gstRegistrationGstin: suggestion.registration?.gstin,
+    gstRegistrationId: registration?.id,
+    gstRegistrationLabel: registration ? registration.label || registration.stateName : undefined,
+    gstRegistrationGstin: registration?.gstin,
     clientGstin: client?.gstin,
     deductions,
     // Recorded separately (`certification.ts` on the server); an edit of the raised bill keeps it.
@@ -359,7 +398,8 @@ export function composeBill({ context, input, config, project, client, existing,
     nextCommitmentAmount: existing?.nextCommitmentAmount,
     remarks: input.remarks,
     typeV2: existing?.typeV2,
-    taxableOrAdvance: input.taxableOrAdvance ?? existing?.taxableOrAdvance,
+    // As sent: the bill form always sends it, so clearing "Bill / PI" clears it.
+    taxableOrAdvance: input.taxableOrAdvance,
     legacyStatus: existing?.legacyStatus,
     legacyTimestamp: existing?.legacyTimestamp,
     importedNetAmount: existing?.importedNetAmount,
@@ -389,6 +429,38 @@ async function loadAgainst(context: BtContext, billId: string | undefined): Prom
   return bill.organizationId === context.organizationId ? bill : undefined;
 }
 
+/**
+ * The live notes against the invoice a debit note names — the base a note rule takes its deductions
+ * of. Read only for a debit note against an invoice while some rule is active.
+ */
+async function loadInvoiceNotes(context: BtContext, input: BillInput, config: BillTrackingConfig): Promise<StoredBill[]> {
+  if (input.transactionType !== 'debit_note' || !input.againstBillId || !config.settings.noteRules?.some((rule) => rule.active)) return [];
+  const snapshot = await db().collection(BT_COLLECTIONS.bills).where('againstBillId', '==', input.againstBillId).get();
+  return snapshot.docs.map((doc) => ({ ...(doc.data() as StoredBill), id: doc.id })).filter((bill) => bill.organizationId === context.organizationId && !bill.isDeleted);
+}
+
+/**
+ * What still points at a bill — live notes against it, receipts allocated to it, retention released
+ * against it — in words, so it is not deleted or moved to another project from under them.
+ */
+async function dependentsOf(context: BtContext, bill: StoredBill): Promise<string[]> {
+  const firestore = db();
+  const [notes, releasedAgainst, releasedBy] = await Promise.all([
+    firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', bill.id).get(),
+    firestore.collection(BT_COLLECTIONS.retention).where('againstBillId', '==', bill.id).get(),
+    firestore.collection(BT_COLLECTIONS.retention).where('retentionBillId', '==', bill.id).get(),
+  ]);
+  const ours = (doc: FirebaseFirestore.QueryDocumentSnapshot) => doc.data().organizationId === context.organizationId;
+  const liveNotes = notes.docs.filter((doc) => ours(doc) && !doc.data().isDeleted).length;
+  const releases = new Set([...releasedAgainst.docs, ...releasedBy.docs].filter((doc) => ours(doc) && doc.data().status === 'active').map((doc) => doc.id)).size;
+  const receipts = (bill.collections ?? []).filter((entry) => entry.status !== 'cancelled').length;
+  const count = (n: number, one: string, many: string) => (n ? `${n} ${n === 1 ? one : many}` : '');
+  return [count(liveNotes, 'credit/debit note against it', 'credit/debit notes against it'), count(receipts, 'receipt', 'receipts'), count(releases, 'retention release', 'retention releases')].filter(Boolean);
+}
+
+/** "a, b and c". */
+const inWords = (parts: readonly string[]) => (parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : (parts[0] ?? ''));
+
 /** Rejects a second live bill with the same non-empty GST invoice number in the same project. */
 async function assertUniqueInvoice(context: BtContext, projectId: string, invoice: string | undefined, ignoreId?: string): Promise<void> {
   if (!invoice) return;
@@ -412,12 +484,12 @@ export async function createBill(context: BtContext, input: BillInput): Promise<
   const client = await loadClient(input.clientId ?? project.clientId);
   await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber);
   const ownerName = await userName(input.collectionOwnerId);
-  const [against, gstSetup] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup()]);
+  const [against, gstSetup, invoiceNotes] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), loadInvoiceNotes(context, input, config)]);
 
   const firestore = db();
   const ref = firestore.collection(BT_COLLECTIONS.bills).doc();
   await firestore.runTransaction(async (transaction) => {
-    const composed = composeBill({ context, input, config, project, client, ownerName, against, gstSetup });
+    const composed = composeBill({ context, input, config, project, client, ownerName, against, invoiceNotes, gstSetup });
     let billSerialNumber = composed.billSerialNumber;
     if ((input.autoNumber || !billSerialNumber) && config.settings.numbering.enabled) {
       const counterRef = firestore.collection(BT_COLLECTIONS.counters).doc(`${context.organizationId}_${composed.financialYear}`);
@@ -463,9 +535,18 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
 
   const project = await loadProject(input.projectId, config.projectProfiles);
   const client = await loadClient(input.clientId ?? project.clientId);
-  await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber, billId);
+  // Imported statements share one number across their Supply, Civil and Erection lines: check only a
+  // number (or project) that changes, so editing one line is not refused for its siblings.
+  if ((input.gstInvoiceNumber ?? '') !== (before.gstInvoiceNumber ?? '') || input.projectId !== before.projectId) {
+    await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber, billId);
+  }
+  // Its receipts, releases and notes stay on the old project: a bill with any of them cannot move.
+  if (input.projectId !== before.projectId) {
+    const blocking = await dependentsOf(context, before);
+    if (blocking.length) throw new BtError(`This bill has ${inWords(blocking)} on ${before.projectNameSnapshot}, so it cannot move to another project. Cancel or move those first.`, 409);
+  }
   const ownerName = await userName(input.collectionOwnerId);
-  const [against, gstSetup] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup()]);
+  const [against, gstSetup, invoiceNotes] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), loadInvoiceNotes(context, input, config)]);
 
   let version = 0;
   await firestore.runTransaction(async (transaction) => {
@@ -474,10 +555,12 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
     if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
       throw new BtError('Someone else changed this bill while you were editing it. Reload to see their changes, then edit again.', 409);
     }
-    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, gstSetup });
+    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, invoiceNotes, gstSetup });
 
-    const protectedChange = PROTECTED_FIELDS.filter((key) => JSON.stringify(current[key] ?? null) !== JSON.stringify((composed as Record<string, unknown>)[key] ?? null));
-    if (protectedChange.length && isPastApproval(current.workflowStatus, config.settings)) {
+    // Compared by value (`protectedChanges`, shared with the bill form): a renamed head or the key order
+    // Firestore returns is no change. A returned bill is locked when resubmitting it would skip approval.
+    const protectedChange = protectedChanges(current, composed);
+    if (protectedChange.length && amountsLocked(current, config.settings)) {
       if (!context.can('Bills', 'Edit After Approval', current.projectId)) {
         throw new BtError(`This bill is at “${stepLabel(config.settings, current.workflowStatus)}”; changing ${protectedChange.join(', ')} needs Edit After Approval.`, 403);
       }
@@ -508,6 +591,15 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
 export async function deleteBill(context: BtContext, billId: string, reason: string): Promise<void> {
   const config = await loadConfig(context.organizationId);
   const ref = db().collection(BT_COLLECTIONS.bills).doc(billId);
+  // A note against a deleted invoice would keep adjusting nothing, and a release would point at
+  // nothing: what depends on the bill goes first.
+  const preview = await ref.get();
+  const live = preview.exists ? { ...(preview.data() as StoredBill), id: preview.id } : undefined;
+  if (live && live.organizationId === context.organizationId && !live.isDeleted) {
+    context.require('Bills', 'Delete', live.projectId);
+    const blocking = await dependentsOf(context, live);
+    if (blocking.length) throw new BtError(`This bill still has ${inWords(blocking)}. Delete or re-link the notes, and cancel the receipts and releases, before deleting it.`, 409);
+  }
   await db().runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new BtError('Bill not found.', 404);
@@ -634,6 +726,7 @@ export async function overridePaymentStatus(context: BtContext, billId: string, 
     if (!snapshot.exists || bill.organizationId !== context.organizationId || bill.isDeleted) throw new BtError('Bill not found.', 404);
     context.require('Bills', 'Override Status', bill.projectId);
     if (status === 'cancelled') throw new BtError('Delete the bill instead of overriding it to cancelled.');
+    assertMonthOpen(context, config, [bill.billDate], 'Overriding the payment status of a bill dated in it');
     const override = status ? { status, reason, by: context.userId, at: nowIso() } : undefined;
     const totals = deriveBillTotals({ ...bill, paymentStatusOverride: override }, calculationOptions(config));
     transaction.update(ref, {

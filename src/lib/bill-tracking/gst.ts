@@ -11,14 +11,16 @@
  * gross — less other deductions on the same bill: Income TDS defaults to
  * (Taxable − Mobilisation Advance) × rate. A GST-applicable deduction (the client recovering testing
  * or LC charges with GST) adds GST on its base. The server runs `computeDeductions` on every save,
- * so the stored amounts always follow the bill's own figures.
+ * so the stored amounts always follow the bill's own figures — except on a debit note under a note
+ * rule, whose covered heads are taken of the invoice plus its notes (`note-rules.ts`).
  *
  * Pure — shared by the bill form, the API and `node --test`.
  */
 
 import { gstTypeFor, resolveAttribution, type GstAttributionConfig, type GstAttributionMaps, type GstRegistration } from '../gst-registrations.ts';
 import { checkGstin, type GstType } from '../statutory.ts';
-import { roundMoney, sumMoney } from './money.ts';
+import { roundMoney, subtractMoney, sumMoney, toPaise } from './money.ts';
+import { slabKey } from './retention.ts';
 import type { BillDeduction, DeductionTypeMaster } from './types';
 
 const round2 = (value: number) => roundMoney(value);
@@ -122,6 +124,8 @@ export interface DeductionLineInput {
   cgstAmount?: number;
   sgstAmount?: number;
   igstAmount?: number;
+  /** Take this line of the note's own value although a note rule covers its head. */
+  ownBase?: boolean;
   remarks?: string;
   deductionDate?: string;
 }
@@ -149,6 +153,18 @@ export interface DeductionContext {
    * CGST + SGST at half the rate each.
    */
   gstType?: GstType;
+  /**
+   * A debit note under a note rule (`note-rules.ts`): the invoice plus its notes up to this one, and
+   * the heads taken of it. A line of one of those heads, unless marked `ownBase`, is worked out on (or,
+   * as an amount, read against) that instead of the note's own taxable or gross.
+   */
+  invoiceBase?: {
+    taxable: number;
+    gross: number;
+    deductionTypeIds: readonly string[];
+    /** What the invoice and earlier notes already hold, by `slabKey` (head|rate): taken off a % line. */
+    held?: Readonly<Record<string, number>>;
+  };
 }
 
 /** GST on a deduction's base, split like the bill's: IGST on an IGST bill, else CGST + SGST halves. */
@@ -160,6 +176,65 @@ export function deductionGst(base: number, rate: number, billGstType: GstType | 
   }
   const half = round2((base * rate) / 2 / 100);
   return { gstAmount: sumMoney([half, half]), cgstRate: rate / 2, sgstRate: rate / 2, igstRate: 0, cgstAmount: half, sgstAmount: half, igstAmount: 0 };
+}
+
+/** A typed amount to the paisa, or null when it was not typed. */
+const typedPaise = (value: number | undefined) => (value === undefined ? null : toPaise(value));
+
+/**
+ * A saved deduction line as the bill form sends it back (`rowsFromDeductions` → `deductionInputs`):
+ * head, % or amount, GST rate, GST typed to match the client, and the note-rule opt-out. Remarks and
+ * the deduction date are left out — they change no figure.
+ */
+const savedLineInput = (line: BillDeduction) =>
+  JSON.stringify([line.id, line.deductionTypeId, line.percentage ?? null, line.percentage === undefined ? toPaise(line.baseAmount ?? line.amount) : null, line.gstRate || 0, line.gstManual ? [typedPaise(line.cgstAmount), typedPaise(line.sgstAmount), typedPaise(line.igstAmount)] : null, Boolean(line.ownBase)]);
+const sentLineInput = (line: DeductionLineInput) =>
+  JSON.stringify([
+    line.id,
+    line.deductionTypeId,
+    line.percentage ?? null,
+    line.percentage === undefined ? toPaise(line.baseAmount ?? line.amount ?? 0) : null,
+    line.gstRate || 0,
+    line.cgstAmount !== undefined || line.sgstAmount !== undefined || line.igstAmount !== undefined ? [typedPaise(line.cgstAmount), typedPaise(line.sgstAmount), typedPaise(line.igstAmount)] : null,
+    Boolean(line.ownBase),
+  ]);
+
+/** The figures a bill's deduction lines were worked out on. */
+export interface LineFigures {
+  transactionType: string;
+  billDate: string;
+  againstBillId?: string;
+  gstType?: GstType;
+  taxableAmount: number;
+  gstAmount: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+}
+
+/**
+ * Whether an edit keeps a bill's issued deduction lines as stored: it sends them back unchanged
+ * (remarks and dates aside) and changes none of the figures they were worked out on. A later Settings
+ * change to a head's formula, or a note saved since under a note rule, then never alters an issued
+ * bill on an unrelated edit. The server keeps the lines; the bill form previews them the same way.
+ */
+export function keepsIssuedLines(existing: LineFigures & { deductions?: readonly BillDeduction[] | null }, next: LineFigures, sent: readonly DeductionLineInput[]): boolean {
+  const saved = existing.deductions ?? [];
+  return (
+    existing.transactionType === next.transactionType &&
+    existing.billDate === next.billDate &&
+    (existing.againstBillId ?? null) === (next.againstBillId ?? null) &&
+    (existing.gstType ?? null) === (next.gstType ?? null) &&
+    [
+      [existing.taxableAmount, next.taxableAmount],
+      [existing.gstAmount, next.gstAmount],
+      [existing.cgstAmount ?? 0, next.cgstAmount ?? 0],
+      [existing.sgstAmount ?? 0, next.sgstAmount ?? 0],
+      [existing.igstAmount ?? 0, next.igstAmount ?? 0],
+    ].every(([before, after]) => toPaise(before) === toPaise(after)) &&
+    saved.length === sent.length &&
+    saved.every((line, index) => savedLineInput(line) === sentLineInput(sent[index]))
+  );
 }
 
 /** The base a percentage deduction is taken of: taxable or gross, less the configured deductions. */
@@ -177,7 +252,10 @@ export function deductionBase(type: Pick<DeductionTypeMaster, 'percentBase' | 'b
  */
 export function computeDeductions(inputs: readonly DeductionLineInput[], types: readonly DeductionTypeMaster[], context: DeductionContext): BillDeduction[] {
   const typeOf = (id: string) => types.find((type) => type.id === id);
-  const finish = (input: DeductionLineInput, base: number, calculationBase?: number): BillDeduction => {
+  // Under a note rule, a head it covers is taken of the invoice plus its notes, unless the line opts out.
+  const invoiceBase = context.invoiceBase;
+  const covered = (input: DeductionLineInput) => Boolean(invoiceBase?.deductionTypeIds.includes(input.deductionTypeId));
+  const finish = (input: DeductionLineInput, base: number, calculationBase?: number, held = 0): BillDeduction => {
     const type = typeOf(input.deductionTypeId);
     const gstRate = type?.gstApplicable ? (input.gstRate ?? type.gstRate ?? 0) : 0;
     const computed = deductionGst(base, gstRate, context.gstType);
@@ -209,6 +287,8 @@ export function computeDeductions(inputs: readonly DeductionLineInput[], types: 
       if (typed) Object.assign(line, { gstManual: true });
     }
     if (input.percentage !== undefined) Object.assign(line, { percentage: input.percentage, calculationBase });
+    if (invoiceBase && covered(input)) Object.assign(line, input.ownBase ? { ownBase: true } : { invoiceBase: type?.percentBase === 'gross' ? invoiceBase.gross : invoiceBase.taxable });
+    if (toPaise(held) !== 0) Object.assign(line, { heldBefore: held });
     return line;
   };
 
@@ -223,10 +303,16 @@ export function computeDeductions(inputs: readonly DeductionLineInput[], types: 
     for (const input of percentLines) {
       const type = typeOf(input.deductionTypeId);
       const others = [...lines.values()].filter((line) => line.id !== input.id);
-      const calculationBase = type ? deductionBase(type, context, others) : context.taxable;
-      const raw = (calculationBase * (input.percentage as number)) / 100;
-      const base = context.roundToRupee ? roundRupee(raw) : round2(raw);
-      const next = finish(input, base, calculationBase);
+      const figures = invoiceBase && covered(input) && !input.ownBase ? invoiceBase : context;
+      const calculationBase = type ? deductionBase(type, figures, others) : figures.taxable;
+      const rate = input.percentage as number;
+      const raw = (calculationBase * rate) / 100;
+      const full = context.roundToRupee ? roundRupee(raw) : round2(raw);
+      // Taken of the invoice plus its notes, a line holds what is still due at its rate: less what the
+      // invoice and the earlier notes already hold there (never below nothing).
+      const held = figures === invoiceBase && rate > 0 && rate <= 100 ? (invoiceBase?.held?.[slabKey(input.deductionTypeId, rate)] ?? 0) : 0;
+      const base = held ? Math.max(0, subtractMoney(full, held)) : full;
+      const next = finish(input, base, calculationBase, held);
       const previous = lines.get(input.id);
       if (!previous || previous.amount !== next.amount || previous.calculationBase !== next.calculationBase) changed = true;
       lines.set(input.id, next);

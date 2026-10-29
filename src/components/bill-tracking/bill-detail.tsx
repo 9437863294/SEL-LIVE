@@ -98,7 +98,7 @@ import {
 
 import { btDownload, btFetch, useBt, useBtQuery, useLookups, useStepLabel, useWorkflowActor } from './bt-client';
 import { billReference, type BillRow } from './bill-register';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, Notice, TransactionTypeBadge, dateText, dateTimeText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, Notice, TransactionTypeBadge, dateText, dateTimeText, paymentStatusText, BT_TAB, BT_TABS_LIST, StatStrip, TabCount } from './bt-ui';
 
 interface Detail {
   bill: BillRow;
@@ -111,8 +111,8 @@ interface Detail {
   retention: RetentionRelease[];
   /** Raised vs notes vs the client's certification; null for a credit / debit note. */
   certification: CertificationComparison | null;
-  /** Credit / debit notes raised against this invoice. */
-  notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number }[];
+  /** Credit / debit notes raised against this invoice — with their deductions, for the retention they hold. */
+  notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number; deductions?: Bill['deductions']; outsideCertification?: boolean }[];
   /**
    * For a note: its invoice's retention as the slabs read it (`retentionSource` — the certified lines
    * and taxable once the client has certified the invoice), which decides the slabs the note's lands in.
@@ -217,7 +217,8 @@ function billPipeline(bill: BillRow, certificationState: CertificationState | nu
     if (status === 'payment_followup') {
       // Following up is optional work, not a milestone: this place on the line shows the payment
       // itself — done once received, amber while part-paid or still unpaid after the bill moved on.
-      const caption = current ? `Following up · ${PAYMENT_STATUS_LABELS[bill.paymentStatus]}` : isAfterPayment(at) ? `${PAYMENT_STATUS_LABELS[bill.paymentStatus]} · ${stepLabel(settings, at)}` : PAYMENT_STATUS_LABELS[bill.paymentStatus];
+      const paymentText = paymentStatusText(bill);
+      const caption = current ? `Following up · ${paymentText}` : isAfterPayment(at) ? `${paymentText} · ${stepLabel(settings, at)}` : paymentText;
       const tone: StepTone = paid ? 'done' : partly || index < atIndex ? 'attention' : current ? 'current' : 'pending';
       return { status, label: 'Payment', caption, tone, current };
     }
@@ -400,10 +401,22 @@ function BillFacts({
  */
 const DETAIL_TAB = cn(BT_TAB, 'lg:flex-1');
 
+/**
+ * Permission checks on one bill, as the server makes them: the role permission and the bill's project
+ * in the user's scope. Someone named on a workflow step can open a bill outside their projects, but only
+ * their step's moves (`availableActions`) are theirs there — not edit, delete, notes or receipts.
+ */
+function useBillCan(bill: Pick<Bill, 'projectId'>) {
+  const { can } = useBt();
+  const lookups = useLookups();
+  const inScope = lookups.allProjects || lookups.projects.some((entry) => entry.id === bill.projectId);
+  return (resource: string, action: string) => inScope && can(resource, action);
+}
+
 function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: () => void; tab: string; setTab: (tab: string) => void }) {
   const { bill } = detail;
   const lookups = useLookups();
-  const { can } = useBt();
+  const can = useBillCan(bill);
   const router = useRouter();
   const { toast } = useToast();
   const [dialog, setDialog] = useState<null | 'workflow' | 'override' | 'due' | 'mismatch' | 'delete' | 'email'>(null);
@@ -620,7 +633,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
           <CollectionsTab detail={detail} reload={reload} />
         </TabsContent>
         <TabsContent value="retention">
-          <RetentionTab bill={bill} releases={detail.retention} invoice={detail.noteInvoice} />
+          <RetentionTab bill={bill} releases={detail.retention} invoice={detail.noteInvoice} notes={detail.notes} />
         </TabsContent>
         <TabsContent value="documents">
           <DocumentsTab bill={bill} documents={detail.documents} reload={reload} />
@@ -894,7 +907,7 @@ const matchNoteHref = (bill: Pick<Bill, 'id' | 'projectId'>) => `/bill-tracking/
 
 function CertificationTab({ detail, reload }: { detail: Detail; reload: () => void }) {
   const { bill, certification: comparison } = detail;
-  const { can } = useBt();
+  const can = useBillCan(bill);
   const lookups = useLookups();
   const actor = useWorkflowActor();
   const { toast } = useToast();
@@ -1130,6 +1143,11 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
                   {note.gstInvoiceNumber || note.billSerialNumber || 'Note'}
                 </Link>{' '}
                 · {note.transactionType === 'credit_note' ? 'Credit note' : 'Debit note'} · {dateText(note.billDate)}
+                {note.outsideCertification ? (
+                  <span className="ml-2 rounded bg-white px-1.5 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200" title="A note rule leaves this debit note out of the invoice’s certification check: it bills the balance of the value (Settings → Note rules).">
+                    Outside certification
+                  </span>
+                ) : null}
               </span>
               <Amount value={note.netReceivable} signed />
             </li>
@@ -1283,7 +1301,7 @@ function DeductionLines({ lines, emptyText }: { lines: readonly BillDeduction[];
 }
 
 function CollectionsTab({ detail, reload }: { detail: Detail; reload: () => void }) {
-  const { can } = useBt();
+  const can = useBillCan(detail.bill);
   const { toast } = useToast();
   const [cancelling, setCancelling] = useState<BillCollection | null>(null);
   const verify = async (id: string) => {
@@ -1418,11 +1436,19 @@ const SLAB_BASIS_LABELS: Record<LineBasis, string> = { percent: 'Typed %', amoun
  * which slab it releases; a note's retention lands in its invoice's slabs. A certified bill holds
  * the retention the client certified, read on the certified taxable (`retentionSource`).
  */
-function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: RetentionRelease[]; invoice?: Detail['noteInvoice'] }) {
+function RetentionTab({ bill, releases, invoice, notes = [] }: { bill: BillRow; releases: RetentionRelease[]; invoice?: Detail['noteInvoice']; notes?: Detail['notes'] }) {
   const { config } = useLookups();
-  const { can } = useBt();
+  const can = useBillCan(bill);
   const source = retentionSource(bill);
   const slabs = billRetentionSlabs(source, config.deductionTypes, invoice);
+  // An invoice also shows what its notes hold — a balance debit note's 20% and 10%, say (a note rule).
+  const noteRows = notes.flatMap((note) =>
+    billRetentionSlabs({ deductions: note.deductions ?? [], taxableAmount: note.taxableAmount, grossAmount: note.grossAmount }, config.deductionTypes, source).map((entry) => ({ note, entry })),
+  );
+  const notesHeld = sumMoney(noteRows.map((row) => row.entry.held));
+  // Lines a note rule took of the invoice plus its notes are read against that, not this bill's own
+  // figures — per head, since other heads (or a line taken of the note alone) keep the note's own base.
+  const ofInvoicePlusNotes = (deductionTypeId: string) => source.deductions.some((line) => line.deductionTypeId === deductionTypeId && line.invoiceBase !== undefined);
   const slabList = slabs.map((entry) => entry.slab);
   const typeOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
   const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
@@ -1439,7 +1465,9 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
   };
   const basisTip = (entry: BillSlab) => {
     const base = typeOf(entry.slab.deductionTypeId)?.percentBase === 'gross' ? 'gross' : 'taxable';
-    const fromAmount = `Worked out from the amount: read against the ${bill.certification ? 'client’s certified' : 'bill’s'} ${base} of ${formatINR(base === 'gross' ? source.grossAmount : source.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
+    const fromAmount = ofInvoicePlusNotes(entry.slab.deductionTypeId)
+      ? `Worked out from the amount: read against the invoice plus its notes this note’s deductions are taken of (a note rule, Settings → Note rules), and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`
+      : `Worked out from the amount: read against the ${bill.certification ? 'client’s certified' : 'bill’s'} ${base} of ${formatINR(base === 'gross' ? source.grossAmount : source.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
     const tips: Record<LineBasis, string> = {
       percent: 'The percentage typed on the deduction line (0, a negative or over 100 counts as a fixed amount).',
       amount: fromAmount,
@@ -1471,7 +1499,7 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
             </p>
           )
         ) : null}
-        {slabs.length === 0 && releases.length === 0 ? <p className="text-sm text-muted-foreground">No retention deducted on or released against this bill.</p> : null}
+        {slabs.length === 0 && releases.length === 0 && noteRows.length === 0 ? <p className="text-sm text-muted-foreground">No retention deducted on or released against this bill.</p> : null}
         {slabs.length ? (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
@@ -1511,6 +1539,52 @@ function RetentionTab({ bill, releases, invoice }: { bill: BillRow; releases: Re
                   </tr>
                 </tfoot>
               </table>
+            </div>
+          </div>
+        ) : null}
+        {noteRows.length ? (
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Held on notes against this invoice</p>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2.5 text-left">Note</th>
+                      <th className="px-3 py-2.5 text-left">Head</th>
+                      <th className="px-3 py-2.5 text-right">Rate</th>
+                      <th className="px-3 py-2.5 text-right">Held</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {noteRows.map(({ note, entry }) => (
+                      <tr key={`${note.id}-${entry.slab.key}`} className="border-t border-slate-100">
+                        <td className="whitespace-nowrap px-3 py-2">
+                          <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${note.id}`}>
+                            {note.gstInvoiceNumber || note.billSerialNumber || 'Note'}
+                          </Link>
+                          <span className="text-slate-500"> · {note.transactionType === 'credit_note' ? 'credit note' : 'debit note'}</span>
+                        </td>
+                        <td className="px-3 py-2">{entry.slab.name}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{entry.slab.rate === null ? <span className="text-slate-500">Fixed amount</span> : `${formatRate(entry.slab.rate)}%`}</td>
+                        <td className="px-3 py-2 text-right">
+                          <Amount value={entry.held} signed />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-50 font-semibold text-slate-900">
+                    <tr className="border-t border-slate-200">
+                      <td className="px-3 py-2" colSpan={3}>
+                        {slabs.length ? 'This invoice with its notes' : 'Held on its notes'}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Amount value={sumMoney([notesHeld, ...slabs.map((entry) => entry.held)])} signed />
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
           </div>
         ) : null}
@@ -1570,7 +1644,7 @@ function documentIcon(document: Pick<BillDocument, 'contentType' | 'fileName'>) 
  * beneath is a table of what is attached, with Open, Download and Remove on each row.
  */
 function DocumentsTab({ bill, documents, reload }: { bill: BillRow; documents: BillDocument[]; reload: () => void }) {
-  const { can } = useBt();
+  const can = useBillCan(bill);
   const { toast } = useToast();
   const [category, setCategory] = useState<BillDocumentCategory>('Invoice');
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -1759,7 +1833,7 @@ function DocumentsTab({ bill, documents, reload }: { bill: BillRow; documents: B
 
 function FollowUpTab({ bill, followUps, reload }: { bill: BillRow; followUps: BillFollowUp[]; reload: () => void }) {
   const lookups = useLookups();
-  const { can } = useBt();
+  const can = useBillCan(bill);
   const { toast } = useToast();
   const blank = { followUpDate: lookups.today, method: 'Phone', contactPerson: '', discussion: '', nextFollowUpDate: '', ownerId: bill.collectionOwnerId ?? '', commitmentDate: '', commitmentAmount: '', confidence: 'medium' };
   const [form, setForm] = useState(blank);
@@ -1932,6 +2006,10 @@ function FollowUpTab({ bill, followUps, reload }: { bill: BillRow; followUps: Bi
 
 function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: BillComment[]; reload: () => void }) {
   const lookups = useLookups();
+  // Commenting takes Bills · View on the bill's project, as the server checks — someone here only
+  // because a workflow step names them reads the comments but cannot add one.
+  const canComment = useBillCan(bill)('Bills', 'View');
+  const { toast } = useToast();
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const mentionable = lookups.users;
@@ -1943,6 +2021,9 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
       await btFetch(`bills/${bill.id}/comments`, { body: { text, mentions } });
       setText('');
       reload();
+    } catch (caught) {
+      // The text stays in the box, to post again.
+      toast({ title: 'Could not post the comment', description: caught instanceof Error ? caught.message : String(caught), variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -1951,6 +2032,7 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader descriptionAs="info" title="Internal comments" icon={MessageSquare} as="h3" description="Comments are kept in full — nothing overwrites an earlier remark. Type @Name to notify someone." />
+        {canComment ? (
         <div className="space-y-2">
           <Textarea rows={3} value={text} onChange={(event) => setText(event.target.value)} placeholder="Add a comment…" />
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1975,6 +2057,9 @@ function CommentsTab({ bill, comments, reload }: { bill: BillRow; comments: Bill
             </Button>
           </div>
         </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Adding a comment needs Bills · View on this bill’s project.</p>
+        )}
         <ul className="space-y-3">
           {comments.map((comment) => (
             <li key={comment.id} className="rounded-lg border border-slate-200 bg-white p-3">

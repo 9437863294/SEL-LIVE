@@ -15,12 +15,14 @@ import {
   legacyStatusMismatch,
   normaliseWeekKey,
   outstandingAsOf,
+  percentOf,
+  protectedChanges,
   resubmitTarget,
   roundToRupee,
   validateAgeingBuckets,
   DEFAULT_AGEING_BUCKETS,
 } from '../src/lib/bill-tracking/calculations.ts';
-import { formatINR, formatINRCompact, sumMoney } from '../src/lib/bill-tracking/money.ts';
+import { formatINR, formatINRCompact, sumMoney, toPaise } from '../src/lib/bill-tracking/money.ts';
 
 const deduction = (kind, amount, id = kind) => ({ id, deductionTypeId: id, deductionTypeName: kind, kind, amount });
 const receipt = (amount, receiptDate = '2026-04-10', status = 'verified', id = `c-${amount}-${receiptDate}`) => ({ collectionId: id, receiptDate, amount, status });
@@ -225,6 +227,9 @@ test('ISO weeks and legacy week numbers', () => {
   assert.equal(normaliseWeekKey('WK-41', '2026-08-01'), '2026-W41');
   assert.equal(normaliseWeekKey(41, '2026-08-01'), '2026-W41');
   assert.equal(normaliseWeekKey('', '2026-08-01'), undefined);
+  // Across the year end the week nearest the bill date wins.
+  assert.equal(normaliseWeekKey('2', '2026-12-20'), '2027-W02');
+  assert.equal(normaliseWeekKey('52', '2027-01-03'), '2026-W52');
 });
 
 /* ── ageing ──────────────────────────────────────────────────────────────── */
@@ -257,3 +262,37 @@ test('a returned bill goes back one step before the stage that returned it', () 
   assert.equal(resubmitTarget('submitted'), 'draft');
   assert.equal(resubmitTarget(undefined), 'draft');
 });
+
+test('half a paisa rounds away from zero, so a credit note mirrors its invoice', () => {
+  assert.equal(percentOf(10012.5, 1), 100.13);
+  assert.equal(percentOf(-10012.5, 1), -100.13);
+  assert.equal(toPaise(-0.005), -1);
+  // 1.005 × 100 is 100.4999… in floating point: still a paisa up.
+  assert.equal(toPaise(1.005), 101);
+  assert.equal(Object.is(toPaise(-0), 0), true);
+});
+
+test('as on a date: an override counts from the day it was set, and a cancelled bill owes nothing', () => {
+  const bill = { billDate: '2026-06-01', netReceivable: 118000, collections: [{ collectionId: 'c1', receiptDate: '2026-07-01', amount: 50000, status: 'verified' }], isDeleted: false };
+  const adjusted = { ...bill, paymentStatusOverride: { status: 'adjusted', reason: 'set off', by: 'u1', at: '2026-10-15T10:00:00.000Z' } };
+  assert.deepEqual([outstandingAsOf(adjusted, '2026-08-31', 1).outstanding, outstandingAsOf(adjusted, '2026-08-31', 1).status], [68000, 'partially_received']);
+  assert.deepEqual([outstandingAsOf(adjusted, '2026-10-20', 1).outstanding, outstandingAsOf(adjusted, '2026-10-20', 1).status], [0, 'adjusted']);
+  const cancelled = { ...bill, paymentStatusOverride: { status: 'cancelled', reason: 'raised in error', by: 'u1', at: '2026-07-10T10:00:00.000Z' } };
+  assert.equal(outstandingAsOf(cancelled, '2026-10-20', 1).outstanding, 0);
+});
+
+test('the amount lock compares what changed in value, not how it is stored', () => {
+  const stored = {
+    taxableAmount: 100000, gstType: 'cgst-sgst', gstAmount: 18000, cgstAmount: 9000, sgstAmount: 9000,
+    // Keys as Firestore returns them (sorted), and the head's old name.
+    deductions: [{ amount: 2000, calculationBase: 100000, deductionTypeId: 'dt-itds', deductionTypeName: 'TDS', id: 'd1', kind: 'statutory', percentage: 2, remarks: 'old' }],
+  };
+  const same = { ...stored, deductions: [{ id: 'd1', deductionTypeId: 'dt-itds', deductionTypeName: 'Income TDS', kind: 'statutory', amount: 2000, remarks: 'new', percentage: 2, calculationBase: 100000 }] };
+  assert.deepEqual(protectedChanges(stored, same), []);
+  assert.deepEqual(protectedChanges({ gstAmount: 0 }, { gstAmount: 0, gstType: 'none' }), []);
+  assert.deepEqual(protectedChanges({ gstInvoiceNumber: undefined }, { gstInvoiceNumber: '' }), []);
+  assert.deepEqual(protectedChanges(stored, { ...same, deductions: [{ ...same.deductions[0], amount: 2500 }] }), ['deductions']);
+  assert.deepEqual(protectedChanges(stored, { ...same, gstType: 'igst', cgstAmount: 0, sgstAmount: 0, igstAmount: 18000 }), ['gstType', 'cgstAmount', 'sgstAmount', 'igstAmount']);
+  assert.deepEqual(protectedChanges({ gstRegistrationId: 'reg-od' }, { gstRegistrationId: 'reg-jh' }), ['gstRegistrationId']);
+});
+

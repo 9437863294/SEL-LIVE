@@ -51,6 +51,8 @@ export const deductionLineSchema = z.object({
   sgstAmount: money.optional(),
   igstAmount: money.optional(),
   percentage: z.coerce.number().min(-100).max(100).optional(),
+  /** On a debit note under a note rule: take this line of the note's own value instead. */
+  ownBase: z.boolean().optional(),
   remarks: optionalText(300),
   deductionDate: optionalDate,
 });
@@ -89,7 +91,12 @@ export const billInputSchema = z.object({
    * The deductions as raised. A credit / debit note may carry its own (TDS on a debit note) but
    * needs none: a certification's deductions apply to the invoice itself, not through a note.
    */
-  deductions: z.array(deductionLineSchema).max(60).default([]),
+  // Line ids key the computed lines: two alike would collapse into one, stored twice.
+  deductions: z
+    .array(deductionLineSchema)
+    .max(60)
+    .default([])
+    .refine((lines) => new Set(lines.map((line) => line.id)).size === lines.length, 'Two deduction lines share an id — reload the form and enter them again.'),
   targetWeek: optionalText(10),
   collectionOwnerId: optionalText(128),
   currentStage: optionalText(120),
@@ -100,7 +107,8 @@ export const billInputSchema = z.object({
    * Retention bill only: the slab it releases (head + rate; rate null = the head's fixed amounts).
    * Not coerced — `z.coerce.number()` would turn null into 0%.
    */
-  releasesRetention: z.object({ deductionTypeId: z.string().min(1).max(64), rate: z.union([z.number().min(0).max(100), z.null()]) }).optional(),
+  // A slab's rate is above 0 and at most 100 (`retention.ts`); null is the head's fixed amounts.
+  releasesRetention: z.object({ deductionTypeId: z.string().min(1).max(64), rate: z.union([z.number().gt(0).max(100), z.null()]) }).optional(),
   taxableOrAdvance: optionalText(20),
   /** Required when a protected field changes on an approved bill, or the change lands in a closed month. */
   changeReason: optionalText(1000),
@@ -128,7 +136,11 @@ export const certificationInputSchema = z.object({
   cgstAmount: money.optional(),
   sgstAmount: money.optional(),
   igstAmount: money.optional(),
-  deductions: z.array(deductionLineSchema).max(60).default([]),
+  deductions: z
+    .array(deductionLineSchema)
+    .max(60)
+    .default([])
+    .refine((lines) => new Set(lines.map((line) => line.id)).size === lines.length, 'Two deduction lines share an id — reload the form and enter them again.'),
   remarks: optionalText(2000),
   /** Optimistic concurrency: the certification revision the form loaded (0 = none yet). */
   expectedRevision: z.coerce.number().int().min(0).optional(),
@@ -222,7 +234,7 @@ export const retentionReleaseSchema = z.object({
   kind: z.enum(DEDUCTION_KINDS).default('retention_invoice'),
   /** The slab released: the retention head and its rate (null = the head's fixed amounts). Both optional. */
   deductionTypeId: optionalText(64),
-  rate: z.union([z.number().min(0).max(100), z.null()]).optional(),
+  rate: z.union([z.number().gt(0).max(100), z.null()]).optional(),
   releaseDate: dateKey,
   amount: money.refine((value) => value > 0, 'Release amount must be positive.'),
   remarks: optionalText(1000),
@@ -270,8 +282,9 @@ export const billTypeSchema = z.object({
 
 export const deductionTypeSchema = z.object({
   id: z.string().min(1).max(64),
-  name: z.string().trim().min(1).max(80),
-  code: z.string().trim().min(1).max(40),
+  name: z.string().trim().min(1, 'Every deduction type needs a name.').max(80),
+  /** Blank takes the name in capitals (as main categories and sub categories do) — `saveConfig`. */
+  code: z.string().trim().max(40),
   kind: z.enum(DEDUCTION_KINDS),
   calculation: z.enum(['fixed', 'percentage']),
   percentBase: z.enum(['taxable', 'gross']),
@@ -326,6 +339,20 @@ export const configInputSchema = z.object({
       )
       .max(30)
       .optional(),
+    /** Settings → Note rules (`note-rules.ts`); checked against the sub categories and heads saved with them. */
+    noteRules: z
+      .array(
+        z.object({
+          id: z.string().trim().min(1).max(64),
+          name: z.string().trim().max(80),
+          active: z.boolean(),
+          billTypeIds: z.array(z.string().min(1).max(64)).max(1000),
+          deductionTypeIds: z.array(z.string().min(1).max(64)).max(60),
+          countInCertification: z.boolean(),
+        }),
+      )
+      .max(50)
+      .optional(),
     piMarker: z.string().trim().max(20),
   }),
   billCategories: z.array(billCategorySchema).min(1, 'Keep at least one main category.').max(100),
@@ -347,6 +374,11 @@ export const configInputSchema = z.object({
     .array(z.object({ key: z.string().min(1).max(200), excelName: z.string().max(300), projectId: z.string().min(1).max(128), projectName: z.string().max(300) }))
     .max(2000)
     .optional(),
+  /**
+   * The `settings.updatedAt` the page loaded. A save from an older copy is refused (409), so an import
+   * or another administrator's save in between is never overwritten. Absent = not checked.
+   */
+  expectedUpdatedAt: z.string().max(40).optional(),
 });
 export type ConfigInput = z.infer<typeof configInputSchema>;
 

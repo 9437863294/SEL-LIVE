@@ -5,6 +5,7 @@ import { withConfigDefaults } from '../src/lib/bill-tracking/defaults.ts';
 import {
   CONFIGURABLE_STEPS,
   actionBlocked,
+  amountsLocked,
   availableActions,
   certificationBlocked,
   isInvolved,
@@ -156,3 +157,33 @@ test('named people get into the module and can open the bills they are named for
   assert.equal(isInvolved(bill('draft'), settings, 'owner'), true);
   assert.equal(isInvolved(bill('draft'), settings, 'stranger'), false);
 });
+
+test('a returned bill is unlocked only when its resubmission goes back through the approval', () => {
+  const settings = withConfigDefaults({}).settings;
+  assert.equal(amountsLocked({ workflowStatus: 'approved' }, settings), true);
+  assert.equal(amountsLocked({ workflowStatus: 'verified' }, settings), false);
+  // Returned from Approved: resubmitted to Verified, so it is approved again — unlocked.
+  assert.equal(amountsLocked({ workflowStatus: 'returned', returnedFrom: 'approved' }, settings), false);
+  // Returned from Bill raised: resubmitted to Approved, past the approval — stays locked.
+  assert.equal(amountsLocked({ workflowStatus: 'returned', returnedFrom: 'raised' }, settings), true);
+});
+
+test('a switched-off step gives the people named on it nothing', () => {
+  const settings = settingsWith({ payment_followup: { enabled: false, assignment: 'users', userIds: ['u9'] } });
+  assert.equal(isInvolved({ collectionOwnerId: 'owner' }, settings, 'u9'), false);
+  assert.equal(isNamedInWorkflow(settings, 'u9'), false);
+  const on = settingsWith({ payment_followup: { enabled: true, assignment: 'users', userIds: ['u9'] } });
+  assert.equal(isInvolved({ collectionOwnerId: 'owner' }, on, 'u9'), true);
+  assert.equal(isNamedInWorkflow(on, 'u9'), true);
+});
+
+test('defaults: a renamed default code is not added back, and a list saved empty stays empty', () => {
+  const base = withConfigDefaults({});
+  const renamed = base.deductionTypes.map((type) => (type.id === 'dt-bcess' ? { ...type, code: 'BOCW' } : type));
+  const merged = withConfigDefaults({ ...base, deductionTypes: renamed });
+  assert.equal(merged.deductionTypes.filter((type) => type.id === 'dt-bcess').length, 1);
+  assert.equal(merged.deductionTypes.find((type) => type.id === 'dt-bcess').code, 'BOCW');
+  assert.deepEqual(withConfigDefaults({ ...base, stages: [] }).stages, []);
+  assert.ok(withConfigDefaults({}).stages.length > 0);
+});
+

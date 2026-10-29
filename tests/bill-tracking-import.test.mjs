@@ -14,6 +14,7 @@ import {
   readSheetLayout,
   provisionalBillType,
   nameSimilarity,
+  weekNearBill,
 } from '../src/lib/bill-tracking/import.ts';
 import { flattenCellValue, pickBillSheet } from '../src/lib/bill-tracking/workbook.ts';
 import { DEFAULT_CONFIG } from '../src/lib/bill-tracking/defaults.ts';
@@ -241,4 +242,21 @@ test('excel totals use the sheet’s own computed columns', () => {
 
 test('picks the Bill Tracking sheet among the report sheets', () => {
   assert.equal(pickBillSheet(['Month wise summary report', 'Bill Tracking', 'NOT RECEIVED']), 'Bill Tracking');
+});
+
+test('a legacy week is read near the bill, across the year boundary when that is nearer', () => {
+  // Late in the year, an early week is next year's.
+  assert.equal(weekNearBill('2', '2026-12-20'), '2027-W02');
+  assert.equal(weekNearBill('WK-3', '2026-11-30'), '2027-W03');
+  // 3 Jan 2027 is in ISO week 2026-W53, so week 52 is the week before it.
+  assert.equal(weekNearBill('52', '2027-01-03'), '2026-W52');
+  // Early in the year, a late week is last year's.
+  assert.equal(weekNearBill('Week 52', '2027-01-05'), '2026-W52');
+  // Mid-year, the week stays in the bill's year — even one well after the bill.
+  assert.equal(weekNearBill('40', '2026-03-15'), '2026-W40');
+  assert.equal(weekNearBill('8', '2026-03-15'), '2026-W08');
+  // A week typed with its year is kept as typed; unreadable or blank is no week.
+  assert.equal(weekNearBill('2025-W30', '2026-12-20'), '2025-W30');
+  assert.equal(weekNearBill('soon', '2026-12-20'), undefined);
+  assert.equal(weekNearBill('', '2026-12-20'), undefined);
 });

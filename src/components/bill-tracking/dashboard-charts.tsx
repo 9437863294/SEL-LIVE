@@ -65,8 +65,21 @@ export interface FlowPoint {
   outstanding: number;
 }
 
+/**
+ * A chart's click-through: the path with every filter in force (the dashboard's `link`), plus what
+ * the mark counts. Without one, just the FY.
+ */
+export type ChartLink = (path: string, extra?: Record<string, string | undefined>) => string;
+const fyLink =
+  (fy: string): ChartLink =>
+  (path, extra = {}) => {
+    const params = new URLSearchParams({ fy });
+    for (const [key, value] of Object.entries(extra)) if (value) params.set(key, value);
+    return `${path}?${params.toString()}`;
+  };
+
 /** Billing and collection per month as bars, outstanding at month end as a line (same ₹ axis). */
-export function BillingCollectionChart({ data, fy }: { data: FlowPoint[]; fy: string }) {
+export function BillingCollectionChart({ data, fy, link = fyLink(fy) }: { data: FlowPoint[]; fy: string; link?: ChartLink }) {
   const palette = useBtPalette();
   const router = useRouter();
   const rows = data.map((point) => ({ ...point, label: monthLabel(point.month).replace(/ \d{4}$/, '') }));
@@ -86,9 +99,9 @@ export function BillingCollectionChart({ data, fy }: { data: FlowPoint[]; fy: st
             radius={[4, 4, 0, 0]}
             maxBarSize={22}
             cursor="pointer"
-            onClick={(entry: { payload?: FlowPoint }) => entry.payload && router.push(`/bill-tracking/bills?fy=${fy}&from=${entry.payload.month}-01&to=${entry.payload.month}-31`)}
+            onClick={(entry: { payload?: FlowPoint }) => entry.payload && router.push(link('/bill-tracking/bills', { from: `${entry.payload.month}-01`, to: `${entry.payload.month}-31` }))}
           />
-          <Bar dataKey="collection" name="Collection" fill={palette.collection} radius={[4, 4, 0, 0]} maxBarSize={22} cursor="pointer" onClick={() => router.push(`/bill-tracking/reports/collections?fy=${fy}`)} />
+          <Bar dataKey="collection" name="Collection" fill={palette.collection} radius={[4, 4, 0, 0]} maxBarSize={22} cursor="pointer" onClick={() => router.push(link('/bill-tracking/reports/collections'))} />
           <Line type="monotone" dataKey="outstanding" name="Outstanding (month end)" stroke={palette.outstanding} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
         </ComposedChart>
       </ResponsiveContainer>
@@ -133,7 +146,7 @@ export interface AgeingDatum {
 }
 
 /** Outstanding by ageing bucket, darker = older. Each bar opens Outstanding filtered to its bucket. */
-export function AgeingChart({ data, fy, asOf }: { data: AgeingDatum[]; fy: string; asOf: string }) {
+export function AgeingChart({ data, fy, asOf, basis, link = fyLink(fy) }: { data: AgeingDatum[]; fy: string; asOf: string; /** What the buckets were aged from, so the list opened ages bills the same way. */ basis?: string; link?: ChartLink }) {
   const palette = useBtPalette();
   const router = useRouter();
   return (
@@ -144,7 +157,7 @@ export function AgeingChart({ data, fy, asOf }: { data: AgeingDatum[]; fy: strin
           <XAxis dataKey="label" stroke={chartChrome.axis} fontSize={11} tickLine={false} />
           <YAxis stroke={chartChrome.axis} fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisMoney} width={52} />
           <Tooltip cursor={chartChrome.cursor} {...chartChrome.tooltip} formatter={(value, _name, item) => [`${formatINR(Number(value))} · ${(item.payload as AgeingDatum).count} bills`, 'Outstanding']} labelFormatter={(label) => `${label} days`} />
-          <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={48} cursor="pointer" onClick={(entry: { payload?: AgeingDatum }) => entry.payload && router.push(`/bill-tracking/outstanding?fy=${fy}&ageing=${encodeURIComponent(entry.payload.label)}&asOf=${asOf}`)}>
+          <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={48} cursor="pointer" onClick={(entry: { payload?: AgeingDatum }) => entry.payload && router.push(link('/bill-tracking/outstanding', { ageing: entry.payload.label, asOf, ...(basis ? { basis } : {}) }))}>
             {data.map((row, index) => (
               <Cell key={row.label} fill={palette.ageing[Math.min(index, palette.ageing.length - 1)]} stroke={chartChrome.surface} strokeWidth={2} />
             ))}
@@ -163,9 +176,10 @@ export interface TargetDatum {
   achievement: number | null;
 }
 
-export function TargetActualChart({ data }: { data: TargetDatum[] }) {
+export function TargetActualChart({ data, link }: { data: TargetDatum[]; link?: ChartLink }) {
   const palette = useBtPalette();
   const router = useRouter();
+  const targets = link ? link('/bill-tracking/targets') : '/bill-tracking/targets';
   const rows = data.map((row) => ({ ...row, label: row.week.replace(/^\d{4}-/, '') }));
   if (!rows.some((row) => row.target || row.actual)) return <p className="py-8 text-center text-sm text-muted-foreground">No targets or collections in these weeks. Set weekly targets on the Targets page.</p>;
   return (
@@ -185,8 +199,8 @@ export function TargetActualChart({ data }: { data: TargetDatum[] }) {
             }}
           />
           <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-          <Bar dataKey="target" name="Target" fill={palette.billing} radius={[4, 4, 0, 0]} maxBarSize={18} cursor="pointer" onClick={() => router.push('/bill-tracking/targets')} />
-          <Bar dataKey="actual" name="Actual" fill={palette.collection} radius={[4, 4, 0, 0]} maxBarSize={18} cursor="pointer" onClick={() => router.push('/bill-tracking/targets')} />
+          <Bar dataKey="target" name="Target" fill={palette.billing} radius={[4, 4, 0, 0]} maxBarSize={18} cursor="pointer" onClick={() => router.push(targets)} />
+          <Bar dataKey="actual" name="Actual" fill={palette.collection} radius={[4, 4, 0, 0]} maxBarSize={18} cursor="pointer" onClick={() => router.push(targets)} />
         </BarChart>
       </ResponsiveContainer>
     </div>

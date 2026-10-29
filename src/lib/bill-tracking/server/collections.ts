@@ -41,6 +41,38 @@ type StoredCollection = BillCollection & { organizationId: string };
 
 /** Bank Balance's ledger of bank entries — a Credit here is money in the account. */
 const BANK_EXPENSES = 'bankExpenses';
+/** Bank Balance's accounts: a receipt that names one posts its Credit there. */
+const BANK_ACCOUNTS = 'bankAccounts';
+
+const billReference = (bill: Pick<Bill, 'gstInvoiceNumber' | 'billSerialNumber' | 'id'>) => bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
+
+/**
+ * An allocation must move a bill's open balance towards zero: a positive amount pays an invoice, a
+ * negative one sets a credit note off. One of the other sign would grow the balance instead — a
+ * credit note "paid" +₹10,000 owes the client ₹10,000 more. A bill with nothing open is left to the
+ * over-receipt rules.
+ */
+function assertAllocationSign(bill: StoredBill, amount: number): void {
+  if (toPaise(amount) === 0 || toPaise(bill.outstandingAmount) === 0 || Math.sign(amount) === Math.sign(bill.outstandingAmount)) return;
+  throw new BtError(`${billReference(bill)}: ₹${amount} goes the wrong way for its open balance of ₹${bill.outstandingAmount}. Pay an invoice with a positive amount, and set a credit note off with a negative one.`);
+}
+
+/**
+ * Whether an allocation sets a balance off rather than paying it: one of the other sign to the
+ * receipt, or any negative amount on a credit or debit note (a receipt made of set-offs alone is
+ * negative itself).
+ */
+const isSetOff = (bill: StoredBill, amount: number, receiptAmount: number): boolean => Math.sign(amount) !== Math.sign(receiptAmount) || (amount < 0 && isNoteType(bill.transactionType));
+
+/** A note's open balance set off in a receipt: only a note's, of its sign, and no more of it than is still open. */
+function assertSetOff(bill: StoredBill, amount: number, tolerance: number): void {
+  if (!isNoteType(bill.transactionType) || Math.sign(bill.outstandingAmount) !== Math.sign(amount)) {
+    throw new BtError(`${billReference(bill)}: only a credit or debit note's open balance can be set off against a receipt.`);
+  }
+  if (Math.abs(toPaise(amount)) > Math.abs(toPaise(bill.outstandingAmount)) + toPaise(Math.abs(tolerance))) {
+    throw new BtError(`${billReference(bill)}: ₹${Math.abs(amount)} is more than its open balance of ₹${Math.abs(bill.outstandingAmount)}.`);
+  }
+}
 
 /**
  * Writes the Bank Balance Credit for a verified receipt and returns its id, or `undefined` when
@@ -151,22 +183,19 @@ export async function createCollection(context: BtContext, input: CollectionInpu
   const notify: StoredBill[] = [];
   await firestore.runTransaction(async (transaction) => {
     const bills = await readBills(transaction, context, billIds);
+    // The account a receipt posts its Credit to must exist in Bank Balance (read before any write).
+    const account = input.bankAccountId ? await transaction.get(firestore.collection(BANK_ACCOUNTS).doc(input.bankAccountId)) : null;
+    if (input.bankAccountId && !account?.exists) throw new BtError('That bank account is not in Bank Balance → Accounts any more. Choose the account again.');
     for (const { bill } of bills.values()) {
       context.require('Collections', 'Add', bill.projectId);
       if (verify) context.require('Collections', 'Verify', bill.projectId);
       const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
       if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
     }
-    for (const entry of offsets) {
+    for (const entry of input.allocations) {
       const bill = bills.get(entry.billId)?.bill as StoredBill;
-      const reference = bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
-      // Only a note's own balance can be set off, and no more of it than is still open.
-      if (!isNoteType(bill.transactionType) || Math.sign(bill.outstandingAmount) !== Math.sign(entry.amount)) {
-        throw new BtError(`${reference}: only a credit or debit note's open balance can be set off against a receipt.`);
-      }
-      if (Math.abs(toPaise(entry.amount)) > Math.abs(toPaise(bill.outstandingAmount)) + toPaise(Math.abs(config.settings.tolerance))) {
-        throw new BtError(`${reference}: ₹${Math.abs(entry.amount)} is more than its open balance of ₹${Math.abs(bill.outstandingAmount)}.`);
-      }
+      assertAllocationSign(bill, entry.amount);
+      if (isSetOff(bill, entry.amount, input.amount)) assertSetOff(bill, entry.amount, config.settings.tolerance);
     }
     const first = bills.get(billIds[0])?.bill as StoredBill;
     const collection: StoredCollection = clean({
@@ -277,6 +306,12 @@ export async function changeCollectionStatus(context: BtContext, collectionId: s
         const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
         if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
       }
+      // A draft does not hold a note's balance, so a set-off is checked again against the note as it
+      // stands now: corrected since, or set off by another receipt verified first.
+      for (const allocation of collection.allocations) {
+        const entry = bills.get(allocation.billId);
+        if (entry && isSetOff(entry.bill, allocation.amount, collection.amount)) assertSetOff(entry.bill, allocation.amount, config.settings.tolerance);
+      }
     }
 
     const status: CollectionStatus = action === 'verify' ? 'verified' : 'cancelled';
@@ -342,18 +377,31 @@ export async function updateCollectionDetails(
     for (const projectId of collection.projectIds) context.require('Collections', 'Edit', projectId);
     if (collection.status === 'cancelled') throw new BtError('A cancelled receipt cannot be edited.', 409);
     const bills = await readBills(transaction, context, collection.billIds);
-    transaction.update(ref, clean({ ...patch, updatedAt: nowIso() }));
-    for (const { ref: billRef, bill } of bills.values()) {
-      const collections = (bill.collections ?? []).map((mirror) => (mirror.collectionId === collectionId ? clean({ ...mirror, utrNumber: patch.utrNumber, paymentMode: patch.paymentMode }) : mirror));
-      transaction.update(billRef, { collections, updatedAt: nowIso() });
-    }
-    logActivityTx(transaction, context, {
-      entityType: 'collection',
-      entityId: collectionId,
-      action: 'receipt_details_edited',
-      summary: 'Receipt reference details edited',
-      previous: { utrNumber: collection.utrNumber ?? null, paymentMode: collection.paymentMode ?? null, bankReference: collection.bankReference ?? null },
-      next: { utrNumber: patch.utrNumber ?? null, paymentMode: patch.paymentMode ?? null, bankReference: patch.bankReference ?? null },
+    // The details as they should now read: a UTR, reference or remark left blank is cleared (on the
+    // receipt as on its bills' mirrors); the mode and the account's name stay unless given.
+    const paymentMode = patch.paymentMode ?? collection.paymentMode;
+    const cleared = (value: string | undefined) => value ?? FieldValue.delete();
+    transaction.update(ref, {
+      ...clean({ paymentMode, bankAccountName: patch.bankAccountName ?? collection.bankAccountName, updatedAt: nowIso() }),
+      utrNumber: cleared(patch.utrNumber),
+      bankReference: cleared(patch.bankReference),
+      remarks: cleared(patch.remarks),
     });
+    for (const { ref: billRef, bill } of bills.values()) {
+      const collections = (bill.collections ?? []).map((mirror) => (mirror.collectionId === collectionId ? clean({ ...mirror, utrNumber: patch.utrNumber, paymentMode }) : mirror));
+      transaction.update(billRef, { collections, updatedAt: nowIso() });
+      // Logged on each bill, with its project, so the change shows in that bill's history and only to
+      // those who can see its project.
+      logActivityTx(transaction, context, {
+        entityType: 'collection',
+        entityId: collectionId,
+        billId: bill.id,
+        projectId: bill.projectId,
+        action: 'receipt_details_edited',
+        summary: `Receipt reference details edited on ${billReference(bill)}`,
+        previous: { utrNumber: collection.utrNumber ?? null, paymentMode: collection.paymentMode ?? null, bankReference: collection.bankReference ?? null },
+        next: { utrNumber: patch.utrNumber ?? null, paymentMode: paymentMode ?? null, bankReference: patch.bankReference ?? null },
+      });
+    }
   });
 }

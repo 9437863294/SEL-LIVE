@@ -52,23 +52,43 @@ written and served only by the API.
   (or Gross), less the deductions ticked under *Less (base)*".
   - Income TDS defaults to (Taxable − Mobilisation Advance) × rate.
   - *GST on it* adds GST at the given % on top of a deduction.
-  - The server recomputes every line on save (`computeDeductions` in `gst.ts`). Percentage lines
+  - The server works every line out on save (`computeDeductions` in `gst.ts`). Percentage lines
     are rounded to the rupee unless that setting is off.
+  - **Issued lines are kept.** An edit that sends the lines back unchanged (remarks and dates aside)
+    and changes none of the figures they were worked out on — taxable, GST and its parts, bill date,
+    type, the invoice a note is against — keeps them exactly as stored (`keepsIssuedLines`, used by
+    the server and previewed by the form). A later change to a head in Settings, or a note added
+    since under a note rule, therefore never alters an issued bill behind an unrelated edit.
+  - Two lines may not share an id (the API refuses it), and money rounds half a paisa away from
+    zero, so a credit note mirrors its invoice to the paisa.
 - **Credit notes.**
   - **What needs one.** Only a change of the invoice value: the taxable and the GST on it. A change
     of deductions needs no note. Once the client certifies a bill, its certified deductions apply
     to the bill directly (see *Raised vs certified*).
   - **Linking.** A credit note must name an invoice of the same project; a debit note may. Legacy
     notes whose description says "Against Inv No -…" are linked on import if that invoice exists.
+  - **Signs.** A credit note's taxable and GST are zero or below, a debit note's zero or above; the
+    server refuses the other sign rather than let a "credit" add to the receivable.
+  - **Deleting or moving a bill** is refused while live notes, receipts or retention releases point at
+    it; the message says which. Deal with those first.
   - **Invoice page.** It lists the notes against the invoice and shows its net after notes, and
     offers *Raise credit note*.
   - **Receivables.** Each note keeps its own receivable: its gross, less any deduction the client
     makes on the note itself.
   - **Receiving against an invoice with notes.** The client pays the invoice less its credit notes.
-    The receipt form adds the open notes against an invoice beside it, as negative allocations
-    ("set off"), and expects the invoice less those notes. Saving settles the invoice and its notes
-    together, and the bank is credited what actually arrived. Only a note's own open balance can be
-    set off, and never more of it than the bills it pays (`createCollection`).
+    The receipt form adds the open credit notes against an invoice beside it, as negative
+    allocations ("set off"), and expects the invoice less those notes. Saving settles the invoice and
+    its notes together, and the bank is credited what actually arrived. Only a note's own open
+    balance can be set off, and never more of it than the bills it pays (`createCollection`). A debit
+    note's open balance is owed on top of the invoice: it is not added for you, but can be added like
+    any bill when the client pays it too.
+  - **Allocation signs.** Every allocation must move its bill's open balance toward zero: a positive
+    amount on an invoice, a negative one on a credit note. The server refuses the other sign, and
+    verifying a receipt checks each set-off again against the note's balance at that moment (a
+    second draft, or a note corrected since, cannot overshoot it).
+  - **Bank Balance.** A verified receipt posts one credit to the chosen account, which must exist.
+    An adjustment (no money moved) or a ₹0 receipt posts nothing; a negative receipt posts a
+    negative credit.
 
 ### Bill categories
 
@@ -190,6 +210,19 @@ Where it shows:
   - Recording the certification is the *Certified by client* stage. It moves a bill at any earlier
     stage to Certified; removing it moves a bill still at Certified back to Bill raised.
   - The amount lock (*Edit After Approval* plus a reason) starts once a bill is approved or raised.
+    It covers the taxable, the GST type, total and parts, the SEL registration, the deductions, the
+    invoice number, bill date, project, transaction type and the invoice a note is against
+    (`PROTECTED_BILL_FIELDS`). They are compared by value (`protectedChanges`, shared by the server
+    and the form): money to the paisa, deduction lines by what they deduct — a renamed head or a
+    reworded remark is no change. A bill stored without a registration (imported) keeps none on edit
+    until someone chooses one.
+  - **Returned bills** (`amountsLocked`): a bill returned from the lock step or earlier is unlocked —
+    its resubmission goes back before the lock, so the corrected amounts are approved again. One
+    returned from a later step stays locked, since resubmitting would land it past the approval.
+  - A step switched off gives the people named on it nothing: no access to bills, no way into the
+    module.
+  - **Closed months** also hold recording or removing a certification, a payment-status override,
+    and adding or cancelling a manual retention release, on the bill's (or release's) date.
 - **No payment before certification.** Settings → Workflow → *Payment needs client
   certification*. It is on by default for invoices and retention bills. Recording or verifying a
   receipt against an uncertified bill of those types is refused, and the server enforces it.
@@ -235,6 +268,11 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
 
   The invoice decides this even when it is outside the filters (an earlier year). The slabs always
   add up to the retention reported everywhere else.
+
+  A debit note under a note rule (below) is the exception: it adds retention for the whole value
+  rather than adjusting the invoice's. A line it takes of the invoice plus its notes counts at its
+  own rate and is never shared over the invoice's; a line typed as an amount is read against the
+  same base, so ₹180 on a ₹300 note after a ₹600 invoice reads as 20%, not 60%.
 - **Releases.** A release can name the slab it releases (head and rate), and then reduces that
   slab's balance:
   - a release recorded by hand chooses its slab and, optionally, the bill;
@@ -252,8 +290,67 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
     - the bill form, on a bill the client has not certified yet;
     - the certification form, read against the certified taxable (or gross).
 
-    Two places show no such hint. A note follows its invoice. A certified bill's raised lines,
-    edited on the bill form, no longer count in the slabs: the certified ones do.
+    Two places show no such hint. A note follows its invoice (except a line a note rule takes of
+    the invoice plus its notes, which has one). A certified bill's raised lines, edited on the bill
+    form, no longer count in the slabs: the certified ones do.
+
+### Note rules: deductions of the invoice plus its notes
+
+Some supply invoices bill part of the value and carry no retention: a SUPPLY-60% or SUPPLY-70%
+invoice. A debit note against the invoice then bills the balance, and the client deducts the
+retention for the whole on that note: 20% and 10% of the invoice plus the note, not of the note
+alone. (A SUPPLY 100% invoice deducts its retention on the invoice itself, as any bill does.)
+
+| Invoice | Debit note | Taken of | 20% | 10% | Left to collect on the note |
+|---|---|---|---|---|---|
+| SUPPLY-70%, ₹700 | ₹300 | ₹1,000 | ₹200 | ₹100 | ₹0 (*Held as retention*) |
+| SUPPLY-60%, ₹600 | ₹300 | ₹900 | ₹180 | ₹90 | ₹30 |
+
+Configured in Settings → **Note rules** (`settings.noteRules`; logic in
+`src/lib/bill-tracking/note-rules.ts`). There are none until an administrator adds one. Each rule has:
+
+- **Debit notes against invoices of:** the invoice's sub categories (SUPPLY-60%, SUPPLY-70%…). A
+  sub category can be in one active rule only.
+- **Taken of the invoice plus its notes:** the deduction heads that follow the rule, usually the
+  retention heads. Every other head on the note (TDS on the debit note, say) stays on the note's own
+  value.
+- **Count these notes in the invoice's certification check:** off by default. The client certifies
+  the invoice at its own value, and the debit note bills the balance, so the note is left out of
+  raised vs certified (`outsideCertification`, set when the note is saved). Without that, a ₹300
+  debit note against a ₹600 invoice certified at ₹600 would ask for a ₹300 credit note. Only a note
+  carrying lines taken of the invoice plus its notes is left out: a debit note raised to match the
+  client's certification has none, so it counts.
+- **Active**, and a name. Every rule needs a name; an active one also needs a sub category and a
+  head (a switched-off rule may wait half-made). Two active rules may not share a sub category.
+  Sub categories and heads removed from Settings drop out of the rules that named them.
+
+How it works:
+
+- **The base** is the invoice plus every live note against it saved before this one and dated on or
+  before it, plus this note. It is taxable, or gross for a head taken on gross. The server stores it
+  on each line (`invoiceBase`). A note saved later never moves it, even one dated earlier, so editing
+  the note's remarks leaves its deductions alone.
+- **Already held.** A % line takes its rate of that base less what the invoice and the earlier notes
+  already hold at the same head and rate (`heldBefore`, shown on the form). A second balance note
+  therefore holds only what is still due: a ₹600 invoice with ₹200 and then ₹100 notes holds 30% of
+  ₹800 = ₹240 on the first and ₹270 − ₹240 = ₹30 on the second — ₹270 in all, as one ₹300 note
+  would. A line never goes below nothing.
+- **Reversing it.** A credit note that reverses such a note's retention lands in the same rates
+  (20%, 10%) on the Retention page, however its lines were typed.
+- **Only debit notes** follow a rule; a credit note's deductions reverse its own value.
+- **The note form** says which rule applies and what the base is. Each covered line reads
+  *20% of ₹900 (INV-1 + its notes, taxable) = ₹180*. *Take of this note only* takes one line of the
+  note's own value instead (`ownBase`), and *Take of INV-1 + its notes* puts it back.
+- **Retention by rate** counts such lines at their own rate (see above).
+- **The invoice page** marks such a note *Outside certification* in its notes list. Its Retention tab
+  lists the retention held on its notes and the total with them.
+- **Held as retention.** A bill with nothing to collect, nothing received and retention held shows
+  *Held as retention* instead of *Received*: the register, the reports and the bill page's payment
+  step all use it. The stored status stays `received`.
+- **Existing notes.** A rule applies when a debit note's lines are worked out: on a new note, or
+  when an edit changes its lines or figures. A note whose lines and figures are left as they were
+  keeps its issued deductions, whatever rules were added or switched off since (see *Issued lines
+  are kept*).
 
 ## Deployment checklist
 
@@ -325,6 +422,6 @@ The net and outstanding differences are exactly the 7 flagged rows.
 ## Tests
 
 ```
-npm run test:bill-tracking       # tests: calculations, ageing, import, reports, GST, categories, certification, workflow, retention by rate, permissions, reminders
+npm run test:bill-tracking       # tests: calculations, ageing, import, reports, GST, categories, certification, workflow, retention by rate, note rules, permissions, reminders
 npm run typecheck:bill-tracking
 ```

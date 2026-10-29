@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { isRetentionKind } from '@/lib/bill-tracking/calculations';
 import { splitInclusiveTotal, type DeductionLineInput } from '@/lib/bill-tracking/gst';
-import { formatINR } from '@/lib/bill-tracking/money';
+import { formatINR, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { formatRate, retentionLineRate } from '@/lib/bill-tracking/retention';
 import type { BillDeduction, DeductionTypeMaster, GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
@@ -38,6 +38,8 @@ export interface DeductionRow {
   cgstAmount: string;
   sgstAmount: string;
   igstAmount: string;
+  /** On a debit note under a note rule: taken of the note's own value, not the invoice plus its notes. */
+  ownBase?: boolean;
   remarks: string;
 }
 
@@ -66,6 +68,7 @@ export function rowsFromDeductions(lines: readonly BillDeduction[], deductionTyp
       cgstAmount: line.gstManual ? str(line.cgstAmount) : '',
       sgstAmount: line.gstManual ? str(line.sgstAmount) : '',
       igstAmount: line.gstManual ? str(line.igstAmount) : '',
+      ownBase: line.ownBase,
       remarks: line.remarks ?? '',
     };
   });
@@ -84,6 +87,7 @@ export function deductionInputs(rows: readonly DeductionRow[]): DeductionLineInp
       cgstAmount: line.cgstAmount !== '' ? num(line.cgstAmount) : undefined,
       sgstAmount: line.sgstAmount !== '' ? num(line.sgstAmount) : undefined,
       igstAmount: line.igstAmount !== '' ? num(line.igstAmount) : undefined,
+      ownBase: line.ownBase || undefined,
       remarks: line.remarks,
     }));
 }
@@ -99,7 +103,7 @@ export function patchDeductionRow(row: DeductionRow, patch: Partial<DeductionRow
   // A new base, % or rate means GST should be recalculated — unless amounts come with the change
   // (typing a total sets the base and the GST together).
   const typedAmounts = 'cgstAmount' in patch || 'sgstAmount' in patch || 'igstAmount' in patch;
-  if (!typedAmounts && ('deductionTypeId' in patch || 'baseAmount' in patch || 'percentage' in patch || 'gstRate' in patch)) {
+  if (!typedAmounts && ('deductionTypeId' in patch || 'baseAmount' in patch || 'percentage' in patch || 'gstRate' in patch || 'ownBase' in patch)) {
     next.cgstAmount = '';
     next.sgstAmount = '';
     next.igstAmount = '';
@@ -110,12 +114,14 @@ export function patchDeductionRow(row: DeductionRow, patch: Partial<DeductionRow
 /**
  * The retention slab a row counts in, in a few words — so whoever types 30% (or ₹30,000 on a
  * ₹1,00,000 taxable) sees it land in the 30% slab before saving. Null without `bases`, for other
- * heads, and for a row of ₹0 (it holds nothing).
+ * heads, and for a row of ₹0 (it holds nothing). A line taken of the invoice plus its notes (a note
+ * rule) is read against that base, so it always has a hint.
  */
-function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, bases?: { taxable: number; gross: number }): string | null {
-  if (!line || !bases || !isRetentionKind(type.kind) || line.amount === 0) return null;
-  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases.taxable, grossAmount: bases.gross }, type);
-  const baseWord = type.percentBase === 'gross' ? 'gross' : 'taxable';
+function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, bases?: { taxable: number; gross: number }, invoiceReference?: string): string | null {
+  const ofInvoice = line?.invoiceBase !== undefined;
+  if (!line || (!bases && !ofInvoice) || !isRetentionKind(type.kind) || line.amount === 0) return null;
+  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases?.taxable ?? 0, grossAmount: bases?.gross ?? 0 }, type);
+  const baseWord = ofInvoice ? `${invoiceReference ?? 'the invoice'} + its notes` : type.percentBase === 'gross' ? 'gross' : 'taxable';
   if (rate === null) return basis === 'percent' ? 'a fixed amount (a rate must be above 0 and at most 100%)' : `a fixed amount (no clean rate of ${baseWord})`;
   return basis === 'percent' ? `counts as ${type.name} @ ${formatRate(rate)}%` : `reads as ${formatRate(rate)}% of ${baseWord} — counts in the ${formatRate(rate)}% slab`;
 }
@@ -132,6 +138,7 @@ export function DeductionEditor({
   emptyText = 'No deductions on this bill.',
   reference,
   bases,
+  invoiceBase,
 }: {
   rows: readonly DeductionRow[];
   setRows: (update: (rows: DeductionRow[]) => DeductionRow[]) => void;
@@ -156,6 +163,11 @@ export function DeductionEditor({
    * against the certified taxable and gross — `retentionSource`).
    */
   bases?: { taxable: number; gross: number };
+  /**
+   * A debit note under a note rule: the heads it covers are taken of the invoice plus its notes
+   * (`reference` names the invoice). Such a row says so, and can be taken of the note alone instead.
+   */
+  invoiceBase?: { deductionTypeIds: readonly string[]; reference: string };
 }) {
   const lineById = new Map(lines.map((line) => [line.id, line]));
   const update = (id: string, patch: Partial<DeductionRow>) => setRows((current) => current.map((row) => (row.id === id ? patchDeductionRow(row, patch, activeTypes, defaultGstRate) : row)));
@@ -199,7 +211,15 @@ export function DeductionEditor({
           const baseValue = computed ? (computed.baseAmount ?? computed.amount) : 0;
           const referenceAmount = row.deductionTypeId ? reference?.byType.get(row.deductionTypeId) : undefined;
           const explain = type && (percent || gstApplicable);
-          const slabNote = type ? retentionSlabNote(computed, type, bases) : null;
+          const slabNote = type ? retentionSlabNote(computed, type, bases, invoiceBase?.reference) : null;
+          // Under a note rule: this head is taken of the invoice plus its notes, unless the row opts out.
+          const covered = Boolean(invoiceBase?.deductionTypeIds.includes(row.deductionTypeId));
+          const ofInvoice = computed?.invoiceBase !== undefined;
+          const baseName = type?.percentBase === 'gross' ? 'Gross' : 'Taxable';
+          // What the invoice and earlier notes already hold at this head and rate, taken off the line.
+          const held = computed?.heldBefore ?? 0;
+          // A blank rate box falls back to the head's rate — show the rate actually used, not 0.
+          const gstRate = row.gstRate !== '' ? num(row.gstRate) : (computed?.gstRate ?? 0);
           return (
             <div key={row.id} className="space-y-1.5 p-2">
               <div className={cn('grid grid-cols-2 items-center gap-2', grid)}>
@@ -229,12 +249,12 @@ export function DeductionEditor({
                 {gstApplicable ? (
                   <>
                     {gstType === 'igst' ? (
-                      <GstPart label="IGST" rate={num(row.gstRate)} amount={computed?.igstAmount ?? 0} typed={row.igstAmount !== ''} onRate={(value) => update(row.id, { gstRate: value })} onAmount={(value) => update(row.id, { igstAmount: value })} />
+                      <GstPart label="IGST" rate={gstRate} amount={computed?.igstAmount ?? 0} typed={row.igstAmount !== ''} onRate={(value) => update(row.id, { gstRate: value })} onAmount={(value) => update(row.id, { igstAmount: value })} />
                     ) : (
                       <>
                         {/* CGST and SGST rates are always equal: either rate box sets both. */}
-                        <GstPart label="CGST" rate={num(row.gstRate) / 2} amount={computed?.cgstAmount ?? 0} typed={row.cgstAmount !== ''} onRate={(value) => update(row.id, { gstRate: value === '' ? '' : String(num(value) * 2) })} onAmount={(value) => update(row.id, { cgstAmount: value, sgstAmount: row.sgstAmount === '' ? String(computed?.sgstAmount ?? 0) : row.sgstAmount })} />
-                        <GstPart label="SGST" rate={num(row.gstRate) / 2} amount={computed?.sgstAmount ?? 0} typed={row.sgstAmount !== ''} onRate={(value) => update(row.id, { gstRate: value === '' ? '' : String(num(value) * 2) })} onAmount={(value) => update(row.id, { sgstAmount: value, cgstAmount: row.cgstAmount === '' ? String(computed?.cgstAmount ?? 0) : row.cgstAmount })} />
+                        <GstPart label="CGST" rate={gstRate / 2} amount={computed?.cgstAmount ?? 0} typed={row.cgstAmount !== ''} onRate={(value) => update(row.id, { gstRate: value === '' ? '' : String(num(value) * 2) })} onAmount={(value) => update(row.id, { cgstAmount: value, sgstAmount: row.sgstAmount === '' ? String(computed?.sgstAmount ?? 0) : row.sgstAmount })} />
+                        <GstPart label="SGST" rate={gstRate / 2} amount={computed?.sgstAmount ?? 0} typed={row.sgstAmount !== ''} onRate={(value) => update(row.id, { gstRate: value === '' ? '' : String(num(value) * 2) })} onAmount={(value) => update(row.id, { sgstAmount: value, cgstAmount: row.cgstAmount === '' ? String(computed?.cgstAmount ?? 0) : row.cgstAmount })} />
                       </>
                     )}
                     <DraftInput
@@ -243,7 +263,7 @@ export function DeductionEditor({
                       className="col-span-2 text-right font-semibold tabular-nums lg:col-span-1"
                       value={String(computed?.amount ?? 0)}
                       onValue={(value) => {
-                        const parts = splitInclusiveTotal(num(value), num(row.gstRate), gstType);
+                        const parts = splitInclusiveTotal(num(value), gstRate, gstType);
                         update(row.id, {
                           percentage: '',
                           baseAmount: String(parts.baseAmount),
@@ -270,14 +290,22 @@ export function DeductionEditor({
                   </Button>
                 </div>
               </div>
-              {explain || slabNote || referenceAmount !== undefined ? (
+              {explain || slabNote || covered || referenceAmount !== undefined ? (
                 <p className="px-1 text-[11px] leading-snug text-slate-500">
-                  {explain && percent ? `${row.percentage}% of ${formatINR(computed?.calculationBase ?? 0)} (${type.percentBase === 'gross' ? 'Gross' : 'Taxable'}${lessNames.length ? ` − ${lessNames.join(' − ')}` : ''}) = ${formatINR(baseValue)}` : null}
+                  {explain && percent
+                    ? `${row.percentage}% of ${formatINR(computed?.calculationBase ?? 0)} (${ofInvoice ? `${invoiceBase?.reference ?? 'the invoice'} + its notes, ${baseName.toLowerCase()}` : baseName}${lessNames.length ? ` − ${lessNames.join(' − ')}` : ''}) = ${
+                        toPaise(held) <= 0
+                          ? formatINR(baseValue)
+                          : toPaise(baseValue) > 0
+                            ? `${formatINR(sumMoney([baseValue, held]))} − ${formatINR(held)} already held on the invoice and earlier notes = ${formatINR(baseValue)}`
+                            : `${formatINR(baseValue)}: the invoice and earlier notes already hold ${formatINR(held)} at this rate`
+                      }`
+                    : null}
                   {explain && percent && gstApplicable ? ' · ' : null}
                   {explain && gstApplicable
                     ? gstType === 'igst'
-                      ? `+ IGST ${num(row.gstRate)}% ${formatINR(computed?.igstAmount ?? 0)} = total ${formatINR(computed?.amount ?? 0)}`
-                      : `+ CGST ${num(row.gstRate) / 2}% ${formatINR(computed?.cgstAmount ?? 0)} + SGST ${num(row.gstRate) / 2}% ${formatINR(computed?.sgstAmount ?? 0)} = total ${formatINR(computed?.amount ?? 0)}`
+                      ? `+ IGST ${gstRate}% ${formatINR(computed?.igstAmount ?? 0)} = total ${formatINR(computed?.amount ?? 0)}`
+                      : `+ CGST ${gstRate / 2}% ${formatINR(computed?.cgstAmount ?? 0)} + SGST ${gstRate / 2}% ${formatINR(computed?.sgstAmount ?? 0)} = total ${formatINR(computed?.amount ?? 0)}`
                     : null}
                   {explain && gstApplicable && (row.cgstAmount !== '' || row.sgstAmount !== '' || row.igstAmount !== '') ? (
                     <>
@@ -293,9 +321,22 @@ export function DeductionEditor({
                       {slabNote}
                     </span>
                   ) : null}
+                  {covered && invoiceBase ? (
+                    <>
+                      {explain || slabNote ? ' · ' : ''}
+                      <button
+                        type="button"
+                        className="font-medium text-emerald-700 hover:underline"
+                        title={row.ownBase ? `The note rule takes this deduction of ${invoiceBase.reference} plus its notes.` : 'Take this deduction of this note’s own value instead, for this line only.'}
+                        onClick={() => update(row.id, { ownBase: !row.ownBase })}
+                      >
+                        {row.ownBase ? `Take of ${invoiceBase.reference} + its notes` : 'Take of this note only'}
+                      </button>
+                    </>
+                  ) : null}
                   {referenceAmount !== undefined && reference ? (
-                    <span className={cn((explain || slabNote) && 'ml-1', computed && Math.round(computed.amount * 100) !== Math.round(referenceAmount * 100) ? 'font-medium text-amber-700' : undefined)}>
-                      {explain || slabNote ? '· ' : ''}
+                    <span className={cn((explain || slabNote || covered) && 'ml-1', computed && Math.round(computed.amount * 100) !== Math.round(referenceAmount * 100) ? 'font-medium text-amber-700' : undefined)}>
+                      {explain || slabNote || covered ? '· ' : ''}
                       {reference.label} {formatINR(referenceAmount)}
                     </span>
                   ) : null}

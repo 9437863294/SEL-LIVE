@@ -62,10 +62,13 @@ async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
 export const invalidateConfig = (organizationId: string) => cache.delete(`config:${organizationId || 'default'}`);
 
 export async function loadConfig(organizationId: string): Promise<BillTrackingConfig> {
-  return cached(`config:${organizationId || 'default'}`, async () => {
-    const snapshot = await configRef(db(), organizationId).get();
-    return snapshot.exists ? withConfigDefaults(snapshot.data() as Partial<BillTrackingConfig>) : DEFAULT_CONFIG;
-  });
+  return cached(`config:${organizationId || 'default'}`, () => loadConfigFresh(organizationId));
+}
+
+/** The configuration as stored now, past the cache — for a write that must not undo another's. */
+export async function loadConfigFresh(organizationId: string): Promise<BillTrackingConfig> {
+  const snapshot = await configRef(db(), organizationId).get();
+  return snapshot.exists ? withConfigDefaults(snapshot.data() as Partial<BillTrackingConfig>) : DEFAULT_CONFIG;
 }
 
 export const nowIso = () => new Date().toISOString();
@@ -306,12 +309,18 @@ export async function logActivity(context: BtContext, input: ActivityInput): Pro
 
 export const activityRef = (): DocumentReference => db().collection(BT_COLLECTIONS.activity).doc();
 
+/** JSON with every object's keys sorted: Firestore hands a map back in its own key order. */
+const stableJson = (value: unknown): string =>
+  JSON.stringify(value, (_key, entry: unknown) =>
+    entry && typeof entry === 'object' && !Array.isArray(entry) ? Object.fromEntries(Object.keys(entry).sort().map((key) => [key, (entry as Record<string, unknown>)[key]])) : entry,
+  );
+
 /** Field-level diff for the audit trail: only what changed, previous and new side by side. */
 export function diffFields(before: Record<string, unknown>, after: Record<string, unknown>, keys: readonly string[]): { previous: Record<string, unknown>; next: Record<string, unknown> } | null {
   const previous: Record<string, unknown> = {};
   const next: Record<string, unknown> = {};
   for (const key of keys) {
-    if (JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null)) {
+    if (stableJson(before[key] ?? null) !== stableJson(after[key] ?? null)) {
       previous[key] = before[key] ?? null;
       next[key] = after[key] ?? null;
     }

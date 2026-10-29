@@ -14,7 +14,8 @@
  * So three sets of figures are compared, line by line:
  *
  *   raised      the bill as issued
- *   notes       the credit / debit notes raised against it so far
+ *   notes       the credit / debit notes raised against it so far (less any a note rule leaves
+ *               out: a debit note billing the balance of the value — `note-rules.ts`)
  *   certified   what the client approved and deducts
  *
  * and `pending = certified − (raised + notes)` is what a note still has to adjust — for the taxable,
@@ -93,9 +94,15 @@ export const certifiedFigures = (certification: BillCertification): ComparableFi
   net: certification.netAmount,
 });
 
-/** All live notes against one bill, added together (credit notes carry negative figures). */
+/**
+ * The notes a certification is compared with: the live ones, less any a note rule leaves out — a
+ * debit note billing the balance of the value rather than correcting the invoice (`outsideCertification`).
+ */
+export const comparedNotes = <T extends Pick<Bill, 'isDeleted' | 'outsideCertification'>>(notes: readonly T[]): T[] => notes.filter((note) => !note.isDeleted && !note.outsideCertification);
+
+/** The compared notes against one bill, added together (credit notes carry negative figures). */
 export function notesFigures(notes: readonly Bill[]): ComparableFigures {
-  const live = notes.filter((note) => !note.isDeleted);
+  const live = comparedNotes(notes);
   return {
     taxableAmount: sumBy(live, (note) => note.taxableAmount),
     gstAmount: sumBy(live, (note) => note.gstAmount),
@@ -219,7 +226,7 @@ const pendingFigure = (pick: (figures: ComparableFigures) => number, raised: Com
 
 /** Just the state and headline figures — what the register needs per row. */
 export function certificationSummary(bill: Bill, notes: readonly Bill[], tolerance: number): CertificationSummary {
-  const live = notes.filter((note) => !note.isDeleted);
+  const live = comparedNotes(notes);
   const raised = raisedFigures(bill);
   const fromNotes = notesFigures(live);
   const certification = bill.certification;
@@ -251,7 +258,7 @@ export function certificationSummary(bill: Bill, notes: readonly Bill[], toleran
 
 /** Every line, raised vs notes vs certified, plus the note still to raise. */
 export function compareCertification(bill: Bill, notes: readonly Bill[], tolerance: number): CertificationComparison {
-  const live = notes.filter((note) => !note.isDeleted);
+  const live = comparedNotes(notes);
   const summary = certificationSummary(bill, live, tolerance);
   const raised = raisedFigures(bill);
   const fromNotes = notesFigures(live);

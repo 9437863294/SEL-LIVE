@@ -14,7 +14,7 @@ import type { BillCollection } from './types';
 
 /** Enough of a receipt to build its bank credit from. */
 export type BankPostable = Pick<BillCollection, 'id' | 'amount' | 'receiptDate'> &
-  Partial<Pick<BillCollection, 'bankAccountId' | 'bankExpenseId' | 'clientNameSnapshot' | 'remarks'>> & {
+  Partial<Pick<BillCollection, 'bankAccountId' | 'bankExpenseId' | 'clientNameSnapshot' | 'remarks' | 'paymentMode'>> & {
     allocations?: Array<{ billSerialNumber?: string; gstInvoiceNumber?: string }>;
   };
 
@@ -80,12 +80,14 @@ export function bankCreditDescription(collection: BankPostable): string {
  * anyone who leaves the account blank), or one was already posted. That second check is the
  * idempotency guarantee — whatever verifies a receipt twice, the second pass writes nothing,
  * because the id of the first credit is stored on the receipt in the same transaction that
- * wrote it.
+ * wrote it. It also means no money moved: an adjustment is a book entry, and a receipt of ₹0 (notes
+ * set off in full) moved nothing. A negative receipt does post — a negative credit the ledger subtracts.
  */
 export function bankCreditForCollection(collection: BankPostable): BankCreditDraft | null {
   const accountId = (collection.bankAccountId ?? '').trim();
   if (!accountId) return null;
   if (collection.bankExpenseId) return null;
+  if (collection.paymentMode === 'ADJUSTMENT' || Math.round(collection.amount * 100) === 0) return null;
   return {
     date: receiptInstant(collection.receiptDate),
     accountId,

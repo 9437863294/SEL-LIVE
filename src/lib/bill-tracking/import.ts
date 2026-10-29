@@ -491,6 +491,16 @@ export function provisionalBillType(name: string, categories: readonly BillCateg
 }
 
 /**
+ * A legacy week cell ("2", "WK-52") as an ISO week near the bill — the bill's own ISO year, rolled across
+ * the year boundary when that puts the week far from the bill. A target or received week follows the
+ * bill, so one more than half a year before it is next year's ("2" on a bill of 20 Dec 2026 is 2027-W02)
+ * and one more than nine months after it is last year's ("52" on 5 Jan 2027 is 2026-W52). A bill of
+ * 3 Jan 2027 is already in ISO week 2026-W53, so "52" there is 2026-W52 unrolled. A week typed with its
+ * year stays as typed. The rule itself is `normaliseWeekKey`'s.
+ */
+export const weekNearBill = (raw: string | undefined, billDate: string): string | undefined => normaliseWeekKey(raw, billDate);
+
+/**
  * The invoice a legacy credit/debit note names in its description — the sheet writes
  * "Against Inv No -OD-168/2025-26". `undefined` when the description names none.
  */
@@ -874,8 +884,8 @@ export function parseImportRow(
     receiptDate,
     legacyStatus,
     legacyTimestamp: typeof legacyTimestamp === 'string' ? legacyTimestamp : undefined,
-    targetWeek: billDate ? (normaliseWeekKey(text('targetWeek'), billDate) ?? (text('targetWeek') || undefined)) : text('targetWeek') || undefined,
-    receivedWeek: billDate ? (normaliseWeekKey(text('receivedWeek'), billDate) ?? (text('receivedWeek') || undefined)) : text('receivedWeek') || undefined,
+    targetWeek: billDate ? (weekNearBill(text('targetWeek'), billDate) ?? (text('targetWeek') || undefined)) : text('targetWeek') || undefined,
+    receivedWeek: billDate ? (weekNearBill(text('receivedWeek'), billDate) ?? (text('receivedWeek') || undefined)) : text('receivedWeek') || undefined,
     stage: text('stage') || undefined,
     remarks: text('remarks') || undefined,
     typeV2: text('typeV2') || undefined,

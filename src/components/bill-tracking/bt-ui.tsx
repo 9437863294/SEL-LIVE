@@ -17,9 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { KpiCard, type Tone } from '@/components/shared/kpi-card';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { InfoTip } from '@/components/shared/info-tip';
+import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatINR, formatINRCompact } from '@/lib/bill-tracking/money';
-import { financialYearOptions } from '@/lib/bill-tracking/calculations';
+import { financialYearOptions, isHeldAsRetention } from '@/lib/bill-tracking/calculations';
 import {
   CERTIFICATION_STATE_LABELS,
   PAYMENT_STATUS_LABELS,
@@ -77,7 +78,17 @@ const PAYMENT_TONES: Record<BillPaymentStatus, StatusTone> = {
   cancelled: 'neutral',
 };
 
-export function PaymentStatusBadge({ status, overridden }: { status: BillPaymentStatus; overridden?: boolean }) {
+/** The payment status in words: *Held as retention* for a bill wholly held back (`isHeldAsRetention`). */
+export const paymentStatusText = (bill: Parameters<typeof isHeldAsRetention>[0]): string => (isHeldAsRetention(bill) ? 'Held as retention' : PAYMENT_STATUS_LABELS[bill.paymentStatus]);
+
+export function PaymentStatusBadge({ status, overridden, heldAsRetention }: { status: BillPaymentStatus; overridden?: boolean; /** Nothing to collect and nothing received: the whole value is held as retention. */ heldAsRetention?: boolean }) {
+  if (heldAsRetention) {
+    return (
+      <StatusBadge tone="info" dot title="Nothing to collect and nothing received: the whole value is held back as retention, paid when the client releases it.">
+        Held as retention
+      </StatusBadge>
+    );
+  }
   return (
     <StatusBadge tone={PAYMENT_TONES[status]} dot title={overridden ? 'Set by a finance override — see the bill’s activity for the reason' : undefined}>
       {PAYMENT_STATUS_LABELS[status]}
@@ -485,8 +496,11 @@ export interface ExportSpec<T> {
 }
 
 const csvCell = (value: unknown) => {
-  const text = value === null || value === undefined ? '' : String(value);
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  // Text that Excel would run as a formula (a remark typed as "=HYPERLINK(…)") is kept as text with a
+  // leading apostrophe; numbers — negative amounts included — are written as they are.
+  const raw = value === null || value === undefined ? '' : String(value);
+  const text = typeof value === 'string' && /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
 export function downloadCsv<T>(spec: ExportSpec<T>) {
@@ -529,14 +543,21 @@ export function printReport<T>(spec: ExportSpec<T>, company: CompanyProfile = DE
   });
 }
 
-export function ExportMenu<T>({ spec, extra, disabled, loadAll }: { spec: () => ExportSpec<T> | Promise<ExportSpec<T>>; extra?: { label: string; onSelect: () => void }[]; disabled?: boolean; loadAll?: boolean }) {
+export function ExportMenu<T>({ spec, extra, disabled, loadAll }: { spec: () => ExportSpec<T> | Promise<ExportSpec<T>>; extra?: { label: string; onSelect: () => void | Promise<void> }[]; disabled?: boolean; loadAll?: boolean }) {
   const { profile } = useCompanyProfile();
   const t = useUiText();
+  const { toast } = useToast();
+  // Loading every row can fail (a timeout, a lost connection): say so rather than do nothing.
+  const failed = (error: unknown) => toast({ title: 'Export failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
   const run = async (kind: 'excel' | 'csv' | 'print') => {
-    const resolved = await spec();
-    if (kind === 'excel') await downloadExcel(resolved);
-    else if (kind === 'csv') downloadCsv(resolved);
-    else if (!printReport(resolved, profile)) window.alert('Allow pop-ups for this site to print the report.');
+    try {
+      const resolved = await spec();
+      if (kind === 'excel') await downloadExcel(resolved);
+      else if (kind === 'csv') downloadCsv(resolved);
+      else if (!printReport(resolved, profile)) window.alert('Allow pop-ups for this site to print the report.');
+    } catch (error) {
+      failed(error);
+    }
   };
   return (
     <DropdownMenu>
@@ -559,7 +580,7 @@ export function ExportMenu<T>({ spec, extra, disabled, loadAll }: { spec: () => 
         </DropdownMenuItem>
         {extra?.length ? <DropdownMenuSeparator /> : null}
         {extra?.map((item) => (
-          <DropdownMenuItem key={item.label} onSelect={item.onSelect}>
+          <DropdownMenuItem key={item.label} onSelect={() => void Promise.resolve().then(item.onSelect).catch(failed)}>
             <FileSpreadsheet className="mr-2 h-4 w-4" /> {item.label}
           </DropdownMenuItem>
         ))}

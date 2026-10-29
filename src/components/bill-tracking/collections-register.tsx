@@ -31,7 +31,8 @@ interface Response {
   pages: number;
   pageSize: number;
   total: number;
-  totals: { count: number; amount: number; verified: number; draft: number; unallocated: number };
+  /** Cancelled receipts are left out of rows and totals unless the status filter asks for them; `cancelledCount` says how many. */
+  totals: { count: number; amount: number; verified: number; draft: number; unallocated: number; cancelledCount?: number };
 }
 
 export default function CollectionsRegister() {
@@ -143,6 +144,7 @@ export default function CollectionsRegister() {
       <BillFilterBar
         filters={filters}
         page="collections"
+        kind="receipts"
         hide={['payment']}
         extra={
           <>
@@ -163,7 +165,8 @@ export default function CollectionsRegister() {
           <ExportMenu<BillCollection>
             loadAll
             spec={async () => {
-              const all = await btFetch<Response>(`collections?${filters.apiQuery({ all: '1' })}`);
+              const all = await btFetch<Response>(`collections?${filters.exportQuery()}`);
+              if (all.total > all.rows.length) toast({ title: 'Export incomplete', description: `Only ${all.rows.length.toLocaleString('en-IN')} of ${all.total.toLocaleString('en-IN')} receipts came back — narrow the filters and export again.`, variant: 'destructive' });
               return {
                 title: 'Collections',
                 fileName: `collections-${filters.fy}`,
@@ -202,7 +205,7 @@ export default function CollectionsRegister() {
       {loading && !data ? (
         <BtLoading />
       ) : (
-        <BtTable rows={data?.rows ?? []} columns={columns} storageKey="collections" showTotals caption={data ? `${data.total.toLocaleString('en-IN')} receipt${data.total === 1 ? '' : 's'}` : undefined} footer={data && data.total > 0 ? <Pager page={data.page} pages={data.pages} total={data.total} pageSize={data.pageSize} onPage={(next) => filters.set({ page: String(next) }, false)} /> : undefined} rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : filters.get('highlight') === row.id ? 'bg-emerald-50' : undefined)} empty={<BtEmpty title="No collection records found." description="Record a receipt from a bill, or here for a payment covering several bills." />} />
+        <BtTable rows={data?.rows ?? []} columns={columns} storageKey="collections" showTotals caption={data ? `${data.total.toLocaleString('en-IN')} receipt${data.total === 1 ? '' : 's'}${data.totals.cancelledCount ? ` · ${data.totals.cancelledCount.toLocaleString('en-IN')} cancelled not shown` : ''}` : undefined} footer={data && data.total > 0 ? <Pager page={data.page} pages={data.pages} total={data.total} pageSize={data.pageSize} onPage={(next) => filters.set({ page: String(next) }, false)} /> : undefined} rowClassName={(row) => (row.status === 'cancelled' ? 'opacity-50' : filters.get('highlight') === row.id ? 'bg-emerald-50' : undefined)} empty={<BtEmpty title="No collection records found." description="Record a receipt from a bill, or here for a payment covering several bills." />} />
       )}
 
       <Dialog open={Boolean(cancel)} onOpenChange={(open) => !open && setCancel(null)}>

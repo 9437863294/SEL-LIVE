@@ -99,7 +99,27 @@ export function WorkflowSettings({
     next.splice(at < 0 ? next.length - 1 : at, 0, step);
     onStepsChange(next);
   };
-  const removeStep = (status: BillWorkflowStatus) => onStepsChange(list.filter((step) => step.status !== status));
+  // Steps removed since the page opened, with where they stood, so one can be put back before saving —
+  // the server refuses to remove a step bills are on only once Save is pressed.
+  const [removed, setRemoved] = useState<{ step: WorkflowStepSetting; at: number }[]>([]);
+  const removeStep = (status: BillWorkflowStatus) => {
+    const at = list.findIndex((step) => step.status === status);
+    if (at < 0) return;
+    setRemoved((current) => [...current.filter((entry) => entry.step.status !== status), { step: list[at], at }]);
+    onStepsChange(list.filter((step) => step.status !== status));
+  };
+  /** Back where it was (or just before Closed, if the list has since grown shorter). */
+  const restoreStep = (status: BillWorkflowStatus) => {
+    const entry = removed.find((item) => item.step.status === status);
+    if (!entry) return;
+    setRemoved((current) => current.filter((item) => item.step.status !== status));
+    if (list.some((step) => step.status === status)) return;
+    const next = [...list];
+    const closed = next.findIndex((step) => step.status === 'closed');
+    next.splice(Math.min(entry.at, closed < 0 ? next.length : closed), 0, entry.step);
+    onStepsChange(next);
+  };
+  const restorable = removed.filter((entry) => !list.some((step) => step.status === entry.step.status));
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -125,6 +145,17 @@ export function WorkflowSettings({
         </div>
 
         {problem ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{problem}</p> : null}
+
+        {restorable.length ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <span className="font-medium">Removed steps — not saved yet:</span>
+            {restorable.map(({ step }) => (
+              <Button key={step.status} type="button" variant="outline" size="sm" className="h-7 gap-1 bg-white px-2 text-xs" disabled={disabled} onClick={() => restoreStep(step.status)}>
+                <Undo2 className="h-3.5 w-3.5" /> Restore {step.label || 'step'}
+              </Button>
+            ))}
+          </div>
+        ) : null}
 
         <StageCard index={0} status="draft" label="Draft" description="Entered and still being prepared. Everything can be edited." enteredBy={null}>
           <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">

@@ -15,7 +15,9 @@ import {
   forecastWindows,
   groupBills,
   monthlySummary,
+  paginate,
   retentionReport,
+  sortBills,
   sumMonthlyRows,
   targetPerformance,
 } from '../src/lib/bill-tracking/reports.ts';
@@ -314,4 +316,37 @@ test('reminders fire on their one day, once per bill, to the owner', async () =>
   assert.deepEqual(overdue.recipients.sort(), ['maker', 'owner']);
   assert.equal(dueReminders([due], '2026-10-06', 5000000).length, 0, 'nothing on an ordinary day');
   assert.equal(dueReminders([{ ...due, outstandingAmount: 0, paymentStatus: 'received' }], '2026-10-03', 5000000).length, 0, 'paid bills are quiet');
+});
+
+test('an export (all) gets every row, whatever page the screen is on; a page stays capped at 500', () => {
+  const rows = Array.from({ length: 640 }, (_, index) => index);
+  const every = paginate(rows, 3, 25, true);
+  assert.deepEqual([every.rows.length, every.total, every.page, every.pages], [640, 640, 1, 1]);
+  const page = paginate(rows, 2, 5000);
+  assert.deepEqual([page.rows.length, page.pageSize, page.rows[0], page.total], [140, 500, 500, 640]);
+});
+
+test('the outstanding chips and the ageing sort follow the chosen "Aged from"', () => {
+  const ctx = context('2026-09-01');
+  // The open bill b: dated 12-May (112 days), due 26-Jun (67 days).
+  const open = { outstandingOnly: true };
+  assert.deepEqual(filterBills(BILLS, { ...open, chips: ['gt90'] }, ctx).map((entry) => entry.id), ['b']);
+  assert.deepEqual(filterBills(BILLS, { ...open, chips: ['gt90'], ageingBasis: 'dueDate' }, ctx).map((entry) => entry.id), []);
+  assert.deepEqual(filterBills(BILLS, { ...open, chips: ['gt60'], ageingBasis: 'dueDate' }, ctx).map((entry) => entry.id), ['b']);
+  const older = bill({ id: 'p', billDate: '2026-04-01', dueDate: '2026-08-30', taxableAmount: 1000 });
+  const overdue = bill({ id: 'q', billDate: '2026-05-01', dueDate: '2026-05-15', taxableAmount: 1000 });
+  assert.deepEqual(sortBills([older, overdue], 'ageing', 'desc', ctx).map((entry) => entry.id), ['p', 'q']);
+  assert.deepEqual(sortBills([older, overdue], 'ageing', 'desc', ctx, 'dueDate').map((entry) => entry.id), ['q', 'p']);
+});
+
+test('by client, a release counts once: with the bill it names, else where its project holds most retention', () => {
+  const ctx = context('2026-10-03');
+  const held = (id, clientId, retention) => bill({ id, projectId: 'p3', projectNameSnapshot: 'Project Three', clientId, clientNameSnapshot: clientId.toUpperCase(), taxableAmount: 1000000, deductions: [line('RET_INV', retention)] });
+  const bills = [held('e1', 'ca', 100000), held('e2', 'cb', 20000)];
+  const release = (id, amount, extra = {}) => ({ id, projectId: 'p3', projectNameSnapshot: 'Project Three', kind: 'retention_invoice', releaseDate: '2026-09-01', amount, status: 'active', createdBy: 'u', createdAt: '2026-09-01T00:00:00Z', ...extra });
+  const releases = [release('r1', 5000, { againstBillId: 'e2' }), release('r2', 30000), release('r3', 999, { status: 'cancelled' })];
+  const groups = Object.fromEntries(groupBills(bills, 'client', ctx, releases).map((group) => [group.key, group.retentionReleased]));
+  assert.deepEqual(groups, { ca: 30000, cb: 5000 });
+  // By project nothing changes: the project holds every release.
+  assert.equal(groupBills(bills, 'project', ctx, releases)[0].retentionReleased, 35000);
 });

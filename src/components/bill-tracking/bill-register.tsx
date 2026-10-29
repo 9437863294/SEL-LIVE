@@ -28,14 +28,15 @@ import { certificationBlocked, stepLabel, stepPermissionText, waitingFor } from 
 import { LEGACY_EXPORT_HEADERS, legacyExportRows } from '@/lib/bill-tracking/legacy-export';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { exportWorkbook } from '@/lib/report-excel';
-import { GST_TYPE_LABELS, PAYMENT_STATUS_LABELS, type Bill } from '@/lib/bill-tracking/types';
+import { isHeldAsRetention } from '@/lib/bill-tracking/calculations';
+import { GST_TYPE_LABELS, type Bill } from '@/lib/bill-tracking/types';
 import type { BillTotals } from '@/lib/bill-tracking/reports';
 
 import { btFetch, useBtQuery, useLookups, useBt, useWorkflowActor } from './bt-client';
 import { BillFilterBar, FilterChips, useUrlFilters } from './bt-filters';
 import { BtTable, Pager, type BtColumn } from './bt-table';
 import CertificationRegister, { RegisterViewTabs, type RegisterView } from './certification-register';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, ExportMenu, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, percentText, type ExportColumn, StatStrip, TruncatedText } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, ExportMenu, PaymentStatusBadge, TransactionTypeBadge, WorkflowStatusBadge, dateText, paymentStatusText, percentText, type ExportColumn, StatStrip, TruncatedText } from './bt-ui';
 
 export interface BillRow extends Bill {
   ageingDays: number;
@@ -171,7 +172,7 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
         ),
     },
     { key: 'owner', header: 'Owner', defaultHidden: !outstanding, cell: (bill) => bill.collectionOwnerName || '—' },
-    { key: 'payment', header: 'Payment', mobile: 'detail', cell: (bill) => <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} /> },
+    { key: 'payment', header: 'Payment', mobile: 'detail', cell: (bill) => <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} heldAsRetention={isHeldAsRetention(bill)} /> },
     { key: 'workflow', header: 'Workflow', defaultHidden: outstanding, cell: (bill) => <WorkflowStatusBadge status={bill.workflowStatus} /> },
     {
       key: 'waiting',
@@ -213,7 +214,12 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     },
   ];
 
-  const loadAll = async () => (await btFetch<ListResponse>(`bills?${filters.apiQuery({ sort, dir, all: '1', open: outstanding ? '1' : undefined })}`)).rows;
+  // Every row the filters match — never just the page on screen — and a warning if any are missing.
+  const loadAll = async () => {
+    const all = await btFetch<ListResponse>(`bills?${filters.exportQuery({ sort, dir, open: outstanding ? '1' : undefined })}`);
+    if (all.total > all.rows.length) toast({ title: 'Export incomplete', description: `Only ${all.rows.length.toLocaleString('en-IN')} of ${all.total.toLocaleString('en-IN')} bills came back — narrow the filters and export again.`, variant: 'destructive' });
+    return all.rows;
+  };
   const exportColumns: ExportColumn<BillRow>[] = [
     { key: 'gstInvoiceNumber', label: 'GST Invoice', value: (bill) => bill.gstInvoiceNumber ?? 'NA' },
     { key: 'billSerialNumber', label: 'Bill No', value: (bill) => bill.billSerialNumber },
@@ -243,7 +249,7 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
     { key: 'nextFollowUp', label: 'Next Follow-up', value: (bill) => bill.nextFollowUpDate },
     { key: 'commitment', label: 'Commitment Date', value: (bill) => bill.nextCommitmentDate },
     { key: 'owner', label: 'Owner', value: (bill) => bill.collectionOwnerName },
-    { key: 'payment', label: 'Payment Status', value: (bill) => PAYMENT_STATUS_LABELS[bill.paymentStatus] },
+    { key: 'payment', label: 'Payment Status', value: (bill) => paymentStatusText(bill) },
     { key: 'workflow', label: 'Workflow', value: (bill) => stepLabel(lookups.config.settings, bill.workflowStatus) },
   ];
 

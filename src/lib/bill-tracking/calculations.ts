@@ -113,6 +113,15 @@ export function computePaymentStatus(net: number, received: number, tolerance: n
   return 'partially_received';
 }
 
+/**
+ * A bill whose whole value is held back as retention, with nothing received: a debit note billing the
+ * balance of a SUPPLY-70% invoice, say, its 20% + 10% taken of the invoice plus the note. Its status is
+ * `received`, since nothing is owed, which reads as if money arrived; screens show *Held as retention*.
+ * `received` with nothing received already means the net is within the amount tolerance of ₹0.
+ */
+export const isHeldAsRetention = (bill: Pick<Bill, 'paymentStatus' | 'totalReceived' | 'retentionDeducted' | 'paymentStatusOverride'>): boolean =>
+  bill.paymentStatus === 'received' && !bill.paymentStatusOverride && toPaise(bill.totalReceived ?? 0) === 0 && toPaise(bill.retentionDeducted ?? 0) > 0;
+
 export interface BillSourceValues {
   taxableAmount: number;
   gstAmount: number;
@@ -399,7 +408,13 @@ export function normaliseWeekKey(raw: string | number | undefined, referenceDate
   if (!number) return undefined;
   const week = Number(number[1]);
   if (week < 1 || week > 53) return undefined;
-  const year = Number(referenceDateKey.slice(0, 4)) || new Date().getFullYear();
+  // The week of the bill's ISO year, rolled to the next year when it falls more than 26 weeks before
+  // the bill and to the last when more than 39 after — target and received weeks lie ahead of the bill:
+  // week 2 on a bill of 20 December is next January's, and week 52 on a bill of 3 January last December's.
+  const reference = /^(\d{4})-W(\d{2})$/.exec(parseDateKey(referenceDateKey) ? isoWeekOf(referenceDateKey) : '');
+  if (!reference) return `${Number(referenceDateKey.slice(0, 4)) || new Date().getFullYear()}-W${pad(week)}`;
+  const offset = week - Number(reference[2]);
+  const year = Number(reference[1]) + (offset < -26 ? 1 : offset > 39 ? -1 : 0);
   return `${year}-W${pad(week)}`;
 }
 
@@ -485,8 +500,11 @@ export function outstandingAsOf(
     return { included: false, received: 0, outstanding: 0, status: 'not_received' };
   }
   const received = totalReceived(bill.collections.filter((entry) => entry.receiptDate <= asOf));
-  const status = bill.paymentStatusOverride?.status ?? computePaymentStatus(bill.netReceivable, received, tolerance);
-  const outstanding = status === 'received' || status === 'adjusted' ? 0 : subtractMoney(bill.netReceivable, received);
+  // An override counts from the day it was set — an earlier "as on" date shows the bill as it then
+  // stood — and a cancelled bill owes nothing, as `deriveBillTotals` has it.
+  const override = bill.paymentStatusOverride;
+  const status = (override && (!override.at || override.at.slice(0, 10) <= asOf) ? override.status : undefined) ?? computePaymentStatus(bill.netReceivable, received, tolerance);
+  const outstanding = status === 'received' || status === 'adjusted' || status === 'cancelled' ? 0 : subtractMoney(bill.netReceivable, received);
   return { included: true, received, outstanding, status };
 }
 
@@ -520,8 +538,33 @@ export const resubmitTarget = (returnedFrom: BillWorkflowStatus | undefined): Bi
   return index > 0 ? WORKFLOW_PATH[index - 1] : 'draft';
 };
 
-/** Financial fields that, once a bill is approved, need approval permission and a reason to change. */
-export const PROTECTED_FINANCIAL_FIELDS = ['taxableAmount', 'gstAmount', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId'] as const;
+/** The bill fields that lock at the amount-lock step: changing one needs Edit After Approval and a reason. */
+export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId'] as const;
+export type ProtectedBillField = (typeof PROTECTED_BILL_FIELDS)[number];
+
+/** A deduction line as the lock sees it: what it deducts, never its name, remarks or the order of its keys. */
+const lockedLine = (line: BillDeduction): string =>
+  [line.deductionTypeId, toPaise(line.amount), toPaise(line.baseAmount ?? line.amount), line.percentage ?? '', toPaise(line.cgstAmount ?? 0), toPaise(line.sgstAmount ?? 0), toPaise(line.igstAmount ?? 0)].join('|');
+
+/**
+ * The protected fields an edit changes, compared by value: money to the paisa, a blank and a missing
+ * text alike, a bill with no GST type and no GST the same as "No GST", and deduction lines by what they
+ * deduct, in any order. A renamed head, a reworded remark or the order Firestore returns a map's keys
+ * in is therefore no change. The server and the bill form share it, so the form asks for a reason
+ * exactly when the server will.
+ */
+export function protectedChanges(before: Partial<Pick<Bill, ProtectedBillField>>, after: Partial<Pick<Bill, ProtectedBillField>>): ProtectedBillField[] {
+  const text = (value: unknown) => (value === undefined || value === null ? '' : String(value).trim());
+  const money = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? toPaise(value) : 0);
+  const gstType = (bill: typeof before) => bill.gstType ?? (money(bill.gstAmount) === 0 ? 'none' : '');
+  const lines = (value: readonly BillDeduction[] | undefined) => (value ?? []).map(lockedLine).sort().join(';');
+  return PROTECTED_BILL_FIELDS.filter((key) => {
+    if (key === 'deductions') return lines(before.deductions) !== lines(after.deductions);
+    if (key === 'gstType') return gstType(before) !== gstType(after);
+    if (key === 'taxableAmount' || key === 'gstAmount' || key === 'cgstAmount' || key === 'sgstAmount' || key === 'igstAmount') return money(before[key]) !== money(after[key]);
+    return text(before[key]) !== text(after[key]);
+  });
+}
 
 export const isPastApproval = (status: BillWorkflowStatus): boolean =>
   WORKFLOW_PATH.indexOf(status) >= WORKFLOW_PATH.indexOf('approved');

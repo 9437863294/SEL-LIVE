@@ -88,7 +88,8 @@ export function ImportJobPage({ jobId }: { jobId: string }) {
   if (loading && !data) return <BtLoading />;
   if (!data) return <BtError message={error ?? 'Import not found.'} onRetry={reload} />;
   const { job, rows } = data;
-  const headings = IMPORT_COLUMNS.map((column) => column.label);
+  // The sheet's own headings label its cells; jobs started before they were kept fall back to the standard ones.
+  const headings = (job as BillImportJob & { headings?: string[] }).headings ?? IMPORT_COLUMNS.map((column) => column.label);
 
   const columns: BtColumn<ImportRowRecord & { id: string }>[] = [
     { key: 'row', header: 'Row', pinned: true, mobile: 'title', sortValue: (row) => row.row, cell: (row) => <span className="font-medium">{row.row}</span> },

@@ -15,8 +15,8 @@ import { BarChart3, BookOpen, CalendarRange, FileWarning, Gauge, Hourglass, Land
 
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { effectiveDeductions, monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
-import { AGEING_BASIS_LABELS, PAYMENT_STATUS_LABELS, RETENTION_STATUS_LABELS, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
+import { effectiveDeductions, isHeldAsRetention, monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
+import { AGEING_BASIS_LABELS, RETENTION_STATUS_LABELS, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
 import { categoryName } from '@/lib/bill-tracking/categories';
 import type { CertificationTotals } from '@/lib/bill-tracking/certification';
 import { formatINR, sumBy } from '@/lib/bill-tracking/money';
@@ -28,7 +28,7 @@ import { ToolbarDate, ToolbarSelect } from './bt-toolbar';
 import { BtTable, type BtColumn } from './bt-table';
 import { billReference, TotalsStrip, type BillRow } from './bill-register';
 import { LedgerTable } from './bill-detail';
-import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, DrillLink, ExportMenu, Notice, PaymentStatusBadge, StatStrip, dateText, percentText, toQuery, type ExportColumn, type ExportSpec, TruncatedText } from './bt-ui';
+import { AgeingBadge, Amount, BtEmpty, BtError, BtLoading, DrillLink, ExportMenu, Notice, PaymentStatusBadge, StatStrip, dateText, paymentStatusText, percentText, toQuery, type ExportColumn, type ExportSpec, TruncatedText } from './bt-ui';
 
 /* ── hub ─────────────────────────────────────────────────────────────────── */
 
@@ -155,14 +155,27 @@ export function ReportView({ kind }: { kind: string }) {
   );
 }
 
+/** The register filters a report's drill-down links carry (`useUrlFilters` keys). */
+const CARRIED_FILTERS = ['q', 'project', 'client', 'dgm', 'category', 'billType', 'txn', 'payment', 'workflow', 'owner', 'ageing', 'basis', 'min', 'max', 'from', 'to', 'asOf', 'targetWeek', 'marker'] as const;
+
 function ReportBody({ kind, data, filters }: { kind: string; data: Record<string, unknown>; filters: UrlFilters }) {
   const lookups = useLookups();
   const fy = filters.fy;
-  const carry = (extra: Record<string, string | undefined>) => toQuery({ fy, project: filters.get('project'), client: filters.get('client'), dgm: filters.get('dgm'), billType: filters.get('billType'), ...extra });
+  // Every filter on screen goes along, the ageing basis included, so a drill-down lists the bills the
+  // report counted; `extra` (a month, a project, a bucket) narrows on top.
+  const carry = (extra: Record<string, string | undefined>) => toQuery({ fy, ...Object.fromEntries(CARRIED_FILTERS.map((key) => [key, filters.get(key) || undefined])), ...extra });
   switch (kind) {
     case 'monthly':
     case 'pi':
-      return <MonthlyTable rows={data.rows as MonthlySummaryRow[]} totals={data.totals as Omit<MonthlySummaryRow, 'month' | 'from' | 'to'>} carry={carry} note={kind === 'pi' ? `Rows marked “${data.piMarker as string}” in Bill / PI (legacy TAXABLE / ADVANCE) or entered as Advance / PI. ${data.billCount as number} bill(s).` : undefined} />;
+      return (
+        <MonthlyTable
+          rows={data.rows as MonthlySummaryRow[]}
+          totals={data.totals as Omit<MonthlySummaryRow, 'month' | 'from' | 'to'>}
+          // A PI month opens the PI rows of that month, not every bill dated in it.
+          carry={kind === 'pi' ? (extra) => carry({ ...extra, marker: data.piMarker as string }) : carry}
+          note={kind === 'pi' ? `Rows marked “${data.piMarker as string}” in Bill / PI (legacy TAXABLE / ADVANCE) or entered as Advance / PI. ${data.billCount as number} bill(s).` : undefined}
+        />
+      );
     case 'project-wise':
     case 'client-wise':
     case 'dgm-office':
@@ -325,7 +338,8 @@ type CertificationGroupRow = CertificationTotals & { key: string; label: string 
  * invoice value (taxable + GST), which a credit / debit note settles.
  */
 function CertificationReport({ rows, totals, carry }: { rows: CertificationGroupRow[]; totals: CertificationTotals; carry: (extra: Record<string, string | undefined>) => string }) {
-  const compareHref = (project: string, cert?: string) => `/bill-tracking/bills?${carry({ project, view: 'compare', cert })}`;
+  // `carry` returns the query with its "?".
+  const compareHref = (project: string, cert?: string) => `/bill-tracking/bills${carry({ project, view: 'compare', cert })}`;
   const columns: BtColumn<CertificationGroupRow & { id: string }>[] = [
     { key: 'label', header: 'Project', pinned: true, mobile: 'title', sortValue: (row) => row.label, cell: (row) => <DrillLink href={compareHref(row.key)}>{row.label}</DrillLink>, total: 'Total' },
     { key: 'count', header: 'Bills', align: 'right', sortValue: (row) => row.count, cell: (row) => row.count, total: totals.count },
@@ -335,7 +349,7 @@ function CertificationReport({ rows, totals, carry }: { rows: CertificationGroup
       header: 'Awaiting',
       align: 'right',
       sortValue: (row) => row.awaiting,
-      cell: (row) => (row.awaiting ? <DrillLink href={`/bill-tracking/bills?${carry({ project: row.key, view: 'certified', cert: 'awaiting' })}`}>{row.awaiting}</DrillLink> : 0),
+      cell: (row) => (row.awaiting ? <DrillLink href={`/bill-tracking/bills${carry({ project: row.key, view: 'certified', cert: 'awaiting' })}`}>{row.awaiting}</DrillLink> : 0),
       total: totals.awaiting,
     },
     { key: 'raisedNet', header: 'Raised net (certified)', align: 'right', sortValue: (row) => row.raisedNetCertified, cell: (row) => <Amount value={row.raisedNetCertified} signed />, total: <Amount value={totals.raisedNetCertified} signed /> },
@@ -594,9 +608,10 @@ function BillsReport({ kind, rows, totals, deductionTypes }: { kind: string; row
     { key: 'deduction', header: 'Total deduction', align: 'right', defaultHidden: !siteWise, cell: (bill) => <Amount value={bill.totalDeduction} signed />, total: <Amount value={totals.deduction} /> },
     { key: 'net', header: 'Net', align: 'right', cell: (bill) => <Amount value={bill.netReceivable} signed />, total: <Amount value={totals.net} /> },
     { key: 'received', header: 'Received', align: 'right', cell: (bill) => <Amount value={bill.totalReceived} muted />, total: <Amount value={totals.received} /> },
-    { key: 'outstanding', header: siteWise ? 'Shortfall' : 'Outstanding', align: 'right', mobile: 'aside', cell: (bill) => <Amount value={siteWise ? bill.shortfallSurplus : bill.outstandingAmount} signed />, total: <Amount value={totals.outstanding} /> },
+    // The footer adds up the column shown: site-wise shows each bill's shortfall, settled ones included.
+    { key: 'outstanding', header: siteWise ? 'Shortfall' : 'Outstanding', align: 'right', mobile: 'aside', cell: (bill) => <Amount value={siteWise ? bill.shortfallSurplus : bill.outstandingAmount} signed />, total: <Amount value={siteWise ? sumBy(rows, (bill) => bill.shortfallSurplus) : totals.outstanding} signed={siteWise} /> },
     { key: 'lastReceipt', header: 'Last receipt', cell: (bill) => dateText(bill.lastReceiptDate) },
-    { key: 'status', header: 'Status', cell: (bill) => <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} /> },
+    { key: 'status', header: 'Status', cell: (bill) => <PaymentStatusBadge status={bill.paymentStatus} overridden={Boolean(bill.paymentStatusOverride)} heldAsRetention={isHeldAsRetention(bill)} /> },
     { key: 'delay', header: 'Delay days', align: 'right', defaultHidden: siteWise, sortValue: (bill) => bill.ageingDays, cell: (bill) => (bill.ageingBucket ? <AgeingBadge label={bill.ageingBucket} days={bill.ageingDays} buckets={lookups.config.settings.ageingBuckets} /> : '—') },
     { key: 'lastFollow', header: 'Last follow-up', defaultHidden: siteWise, cell: (bill) => dateText(bill.lastFollowUpDate) },
     { key: 'nextFollow', header: 'Next follow-up', defaultHidden: siteWise, cell: (bill) => dateText(bill.nextFollowUpDate) },
@@ -747,15 +762,19 @@ function exportSpecFor(kind: string, data: Record<string, unknown>, base: { meta
     }
     case 'not-received':
     case 'site-wise': {
+      const siteWise = kind === 'site-wise';
       const rows = ((data.rows as BillRow[]) ?? []) as unknown as Row[];
-      const deductionColumns = kind === 'site-wise' ? deductionTypes.map((type) => ({ key: `d-${type.id}`, label: type.name, money: true, value: (row: Row) => headDeduction(row as unknown as BillRow, type.id) })) : [];
+      const deductionColumns = siteWise ? deductionTypes.map((type) => ({ key: `d-${type.id}`, label: type.name, money: true, value: (row: Row) => headDeduction(row as unknown as BillRow, type.id) })) : [];
+      // The sheet writes the column the screen shows: site-wise, each bill's shortfall.
+      const owing = siteWise ? money('shortfallSurplus', 'Shortfall') : money('outstandingAmount', 'Outstanding');
+      const owingTotal: Record<string, number> = siteWise ? { shortfallSurplus: sumBy(rows, (row) => Number(row.shortfallSurplus) || 0) } : { outstandingAmount: (data.totals as BillTotals).outstanding };
       return {
         ...base,
         title,
         fileName,
         rows,
-        columns: [text('serialNumber', 'Sl. No.'), text('billSerialNumber', 'Bill Sl No.'), text('gstInvoiceNumber', 'GST Invoice'), text('billDate', 'Date'), text('projectNameSnapshot', 'Project'), text('billTypeName', 'Type'), money('taxableAmount', 'Taxable'), money('gstAmount', 'GST'), ...deductionColumns, money('totalDeduction', 'Total Deduction'), money('netReceivable', 'Net'), money('totalReceived', 'Received'), money('outstandingAmount', 'Outstanding'), text('lastReceiptDate', 'Last Receipt'), text('paymentStatus', 'Status', (value) => PAYMENT_STATUS_LABELS[value as keyof typeof PAYMENT_STATUS_LABELS]), text('ageingDays', 'Delay Days'), text('lastFollowUpDate', 'Last Follow-up'), text('nextFollowUpDate', 'Next Follow-up'), text('collectionOwnerName', 'Owner'), text('nextCommitmentDate', 'Commitment Date')],
-        totals: { taxableAmount: (data.totals as BillTotals).taxable, gstAmount: (data.totals as BillTotals).gst, totalDeduction: (data.totals as BillTotals).deduction, netReceivable: (data.totals as BillTotals).net, totalReceived: (data.totals as BillTotals).received, outstandingAmount: (data.totals as BillTotals).outstanding },
+        columns: [text('serialNumber', 'Sl. No.'), text('billSerialNumber', 'Bill Sl No.'), text('gstInvoiceNumber', 'GST Invoice'), text('billDate', 'Date'), text('projectNameSnapshot', 'Project'), text('billTypeName', 'Type'), money('taxableAmount', 'Taxable'), money('gstAmount', 'GST'), ...deductionColumns, money('totalDeduction', 'Total Deduction'), money('netReceivable', 'Net'), money('totalReceived', 'Received'), owing, text('lastReceiptDate', 'Last Receipt'), text('paymentStatus', 'Status', (_value, row) => paymentStatusText(row as unknown as BillRow)), text('ageingDays', 'Delay Days'), text('lastFollowUpDate', 'Last Follow-up'), text('nextFollowUpDate', 'Next Follow-up'), text('collectionOwnerName', 'Owner'), text('nextCommitmentDate', 'Commitment Date')],
+        totals: { taxableAmount: (data.totals as BillTotals).taxable, gstAmount: (data.totals as BillTotals).gst, totalDeduction: (data.totals as BillTotals).deduction, netReceivable: (data.totals as BillTotals).net, totalReceived: (data.totals as BillTotals).received, ...owingTotal },
       };
     }
     case 'certification':

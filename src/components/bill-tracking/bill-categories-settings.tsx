@@ -171,7 +171,8 @@ export function BillCategoriesEditor({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Reports under (month-wise summary)</Label>
-                  <Select value={selected.summaryColumn} onValueChange={(value) => updateCategory(selected.id, { summaryColumn: value as SummaryColumn })}>
+                  {/* Radix opens even inside a disabled fieldset, so the picker is disabled itself. */}
+                  <Select disabled={disabled} value={selected.summaryColumn} onValueChange={(value) => updateCategory(selected.id, { summaryColumn: value as SummaryColumn })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -252,7 +253,7 @@ export function BillCategoriesEditor({
                           <Label className="text-[11px] text-muted-foreground lg:sr-only">Sub category</Label>
                           <Input value={type.name} placeholder="e.g. SUPPLY-60%" onChange={(event) => updateType(type.id, { name: event.target.value.toUpperCase(), code: event.target.value.toUpperCase() })} aria-label="Sub category name" />
                           {showingOrphans ? (
-                            <Select value="" onValueChange={(value) => updateType(type.id, { categoryId: value })}>
+                            <Select disabled={disabled} value="" onValueChange={(value) => updateType(type.id, { categoryId: value })}>
                               <SelectTrigger className="h-8 text-xs">
                                 <SelectValue placeholder="Move to main category…" />
                               </SelectTrigger>

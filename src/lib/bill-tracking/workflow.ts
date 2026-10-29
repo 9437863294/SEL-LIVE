@@ -275,6 +275,17 @@ export function nextStepAfter(status: BillWorkflowStatus, settings: WorkflowSett
   return path.slice(index + 1).find((candidate) => isStepEnabled(settings, candidate)) ?? null;
 }
 
+/**
+ * Whether a bill's amounts, GST and deductions are locked (Edit After Approval and a reason to change).
+ * A returned bill is unlocked only when its resubmission goes back before the lock step, so the
+ * corrected amounts are approved again; one returned from a later step stays locked, since
+ * resubmitting would land it past the approval.
+ */
+export function amountsLocked(bill: Pick<Bill, 'workflowStatus' | 'returnedFrom'>, settings: WorkflowSettings): boolean {
+  if (bill.workflowStatus !== 'returned') return isPastApproval(bill.workflowStatus, settings);
+  return isPastApproval(resubmitTo(bill.returnedFrom, settings), settings);
+}
+
 /** Where a corrected bill goes: the step in use before the one that returned it (Draft at the earliest). */
 export function resubmitTo(returnedFrom: BillWorkflowStatus | undefined, settings: WorkflowSettings): BillWorkflowStatus {
   const path = workflowPath(settings);
@@ -500,10 +511,14 @@ export function isMyTask(bill: Pick<Bill, 'workflowStatus' | 'collectionOwnerId'
   return holdsAny(actor, stepPermissions(settings, waiting.status), bill.projectId);
 }
 
-/** Named on any step of this bill's workflow — enough to open the bill and act on it. */
+/**
+ * Named on any step in use of this bill's workflow — enough to open the bill and act on it. A
+ * switched-off step gives its named people nothing.
+ */
 export function isInvolved(bill: Pick<Bill, 'collectionOwnerId'>, settings: WorkflowSettings, userId: string): boolean {
-  return workflowSteps(settings).some((step) => stepDoers(step, bill).includes(userId));
+  return workflowSteps(settings).some((step) => isStepEnabled(settings, step.status) && stepDoers(step, bill).includes(userId));
 }
 
-/** Named on any step at all — lets someone without the module permission into the module for their work. */
-export const isNamedInWorkflow = (settings: WorkflowSettings, userId: string): boolean => Boolean(settings?.workflowSteps?.some((step) => step.assignment !== 'permission' && step.userIds.includes(userId)));
+/** Named on any step in use — lets someone without the module permission into the module for their work. */
+export const isNamedInWorkflow = (settings: WorkflowSettings, userId: string): boolean =>
+  Boolean(settings?.workflowSteps?.some((step) => step.assignment !== 'permission' && step.userIds.includes(userId) && isStepEnabled(settings, step.status)));

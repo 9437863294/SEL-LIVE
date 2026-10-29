@@ -9,7 +9,7 @@ import 'server-only';
  * real query total, not the sum of the 25 rows on screen.
  */
 
-import { billLedger, combinedLedger, financialYearOf, financialYearRange, isoWeekOf } from '../calculations.ts';
+import { billLedger, combinedLedger, effectiveDeductions, financialYearOf, financialYearRange, isoWeekOf } from '../calculations.ts';
 import { isEnabledForProject } from '../categories.ts';
 import { canBeCertified, certificationSummary, certificationTotals, compareCertification, isNoteType, notesByInvoice, receiptBlockReason, type CertificationSummary } from '../certification.ts';
 import { isInvolved, isMyTask, isNamedInWorkflow } from '../workflow.ts';
@@ -233,10 +233,11 @@ async function listCertification(context: BtContext, params: URLSearchParams, lo
     });
   } else {
     const key = (BILL_SORT_KEYS as readonly string[]).includes(requested) ? (requested as BillSortKey) : 'billDate';
-    const order = new Map(sortBills(rows.map((row) => row.bill), key, direction === 1 ? 'asc' : 'desc', rc).map((bill, index) => [bill.id, index]));
+    const order = new Map(sortBills(rows.map((row) => row.bill), key, direction === 1 ? 'asc' : 'desc', rc, filters.ageingBasis).map((bill, index) => [bill.id, index]));
     sorted = [...rows].sort((a, b) => (order.get(a.bill.id) ?? 0) - (order.get(b.bill.id) ?? 0));
   }
-  const page = paginate(sorted, Number(params.get('page')) || 1, params.get('all') === '1' ? 5000 : Number(params.get('pageSize')) || 25);
+  // `all=1` (an export) takes every row, whatever page the screen is on.
+  const page = paginate(sorted, Number(params.get('page')) || 1, Number(params.get('pageSize')) || 25, params.get('all') === '1');
   return {
     ...page,
     rows: page.rows.map(({ bill, summary }): CertificationRow => ({ ...slim(withAgeing(bill, rc, filters.ageingBasis)), cert: summary })),
@@ -269,9 +270,9 @@ export async function listBills(context: BtContext, params: URLSearchParams) {
   const { bills, context: rc, filters } = loaded;
   const sortKey = (BILL_SORT_KEYS as readonly string[]).includes(params.get('sort') ?? '') ? (params.get('sort') as BillSortKey) : 'billDate';
   const direction = params.get('dir') === 'asc' ? 'asc' : 'desc';
-  const sorted = sortBills(bills, sortKey, direction, rc);
-  const all = params.get('all') === '1';
-  const page = paginate(sorted, Number(params.get('page')) || 1, all ? 5000 : Number(params.get('pageSize')) || 25);
+  const sorted = sortBills(bills, sortKey, direction, rc, filters.ageingBasis);
+  // `all=1` (an export) takes every row, whatever page the screen is on.
+  const page = paginate(sorted, Number(params.get('page')) || 1, Number(params.get('pageSize')) || 25, params.get('all') === '1');
   return {
     ...page,
     rows: page.rows.map((bill) => slim(withAgeing(bill, rc, filters.ageingBasis))),
@@ -287,11 +288,12 @@ export async function openBillsForAllocation(context: BtContext, params: URLSear
   const all = await loadScopedBills(context);
   const rc = reportContext(config, context.today);
   const filters: BillFilters = { search: params.get('q') || undefined, projectIds: list(params, 'project'), clientIds: list(params, 'client'), billIds: list(params, 'ids') };
-  // `against`: the open credit / debit notes raised against these invoices — the receipt form adds
-  // them beside their invoice, so the client's payment (invoice less credit note) allocates in full.
+  // `against`: the open credit notes raised against these invoices (a negative balance) — the receipt
+  // form sets them off beside their invoice, so the client's payment (invoice less credit note)
+  // allocates in full. A debit note's balance is owed on top, so it is not offered here.
   const against = list(params, 'against');
   const bills = against.length
-    ? all.filter((bill) => bill.againstBillId && against.includes(bill.againstBillId) && isNoteType(bill.transactionType) && isOpen(bill))
+    ? all.filter((bill) => bill.againstBillId && against.includes(bill.againstBillId) && isNoteType(bill.transactionType) && isOpen(bill) && bill.outstandingAmount < 0)
     : filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
   return sortBills(bills, 'billDate', 'asc', rc)
     .slice(0, 200)
@@ -309,13 +311,41 @@ export async function invoicesForNote(context: BtContext, params: URLSearchParam
   context.requireProject(projectId);
   const snapshot = await db().collection(BT_COLLECTIONS.bills).where('organizationId', '==', context.organizationId).where('projectId', '==', projectId).where('isDeleted', '==', false).get();
   const search = params.get('q')?.trim().toLowerCase();
-  return snapshot.docs
-    .map((doc) => ({ ...(doc.data() as Bill), id: doc.id }))
-    .filter((bill) => bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' && bill.id !== params.get('exclude'))
+  const bills = snapshot.docs.map((doc) => ({ ...(doc.data() as Bill), id: doc.id }));
+  // A note rule takes a debit note's deductions of its invoice plus the notes against it, less what they
+  // already hold; the form previews that, so each invoice comes with its deductions and its notes'.
+  const notes = notesByInvoice(bills);
+  const invoices = bills.filter((bill) => bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note' && bill.id !== params.get('exclude'));
+  const listed = invoices
     .filter((bill) => !search || [bill.gstInvoiceNumber, bill.billSerialNumber, bill.description, bill.billTypeName].some((value) => value?.toLowerCase().includes(search)))
     .sort((a, b) => b.billDate.localeCompare(a.billDate))
-    .slice(0, 200)
-    .map((bill) => ({ id: bill.id, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, description: bill.description, billTypeId: bill.billTypeId, billTypeName: bill.billTypeName, billCategory: bill.billCategory, taxableAmount: bill.taxableAmount, gstAmount: bill.gstAmount, gstType: bill.gstType, gstPercent: bill.gstPercent, cgstAmount: bill.cgstAmount, sgstAmount: bill.sgstAmount, igstAmount: bill.igstAmount, grossAmount: bill.grossAmount, netReceivable: bill.netReceivable, certified: Boolean(bill.certification) }));
+    .slice(0, 200);
+  // The note's own invoice is always there, however old, so editing the note keeps its link.
+  const include = invoices.find((bill) => bill.id === params.get('include'));
+  if (include && !listed.includes(include)) listed.push(include);
+  return listed.map((bill) => ({
+    id: bill.id,
+    billSerialNumber: bill.billSerialNumber,
+    gstInvoiceNumber: bill.gstInvoiceNumber,
+    billDate: bill.billDate,
+    description: bill.description,
+    billTypeId: bill.billTypeId,
+    billTypeName: bill.billTypeName,
+    billCategory: bill.billCategory,
+    taxableAmount: bill.taxableAmount,
+    gstAmount: bill.gstAmount,
+    gstType: bill.gstType,
+    gstPercent: bill.gstPercent,
+    cgstAmount: bill.cgstAmount,
+    sgstAmount: bill.sgstAmount,
+    igstAmount: bill.igstAmount,
+    grossAmount: bill.grossAmount,
+    netReceivable: bill.netReceivable,
+    certified: Boolean(bill.certification),
+    // The deductions that apply: the certified ones once the client has certified the invoice.
+    deductions: effectiveDeductions(bill),
+    notes: (notes.get(bill.id) ?? []).map((note) => ({ id: note.id, transactionType: note.transactionType, billDate: note.billDate, createdAt: note.createdAt, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, deductions: note.deductions ?? [] })),
+  }));
 }
 
 /* ── bill detail ─────────────────────────────────────────────────────────── */
@@ -365,7 +395,8 @@ export async function billDetail(context: BtContext, billId: string) {
     notes: liveNotes
       .slice()
       .sort((a, b) => a.billDate.localeCompare(b.billDate))
-      .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable })),
+      // Deductions too: the invoice's Retention tab shows what its notes hold.
+      .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable, deductions: note.deductions ?? [], outsideCertification: note.outsideCertification })),
     // For a note: just what decides which of its invoice's retention slabs the note lands in — the
     // certified deductions and figures once the client has certified the invoice, as slabs read them.
     noteInvoice: invoice ? retentionSource(invoice) : null,
@@ -381,26 +412,28 @@ export async function listCollections(context: BtContext, params: URLSearchParam
   const status = params.get('status');
   const search = filters.search?.toLowerCase();
   const range = filters.financialYear ? financialYearRange(filters.financialYear) : null;
-  const rows = docs
+  const matched = docs
     .filter((entry) => entry.projectIds.some((id) => context.inScope(id)))
     .filter((entry) => !range || (entry.receiptDate >= range.from && entry.receiptDate <= range.to))
     .filter((entry) => !filters.from || entry.receiptDate >= filters.from)
     .filter((entry) => !filters.to || entry.receiptDate <= filters.to)
     .filter((entry) => !filters.projectIds?.length || entry.projectIds.some((id) => filters.projectIds?.includes(id)))
-    .filter((entry) => !status || entry.status === status)
     .filter((entry) => !params.get('mode') || entry.paymentMode === params.get('mode'))
     .filter((entry) => !search || [entry.utrNumber, entry.bankReference, entry.remarks, entry.clientNameSnapshot, ...entry.allocations.flatMap((a) => [a.gstInvoiceNumber, a.billSerialNumber, a.projectNameSnapshot])].some((value) => value?.toLowerCase().includes(search)))
     .sort((a, b) => b.receiptDate.localeCompare(a.receiptDate) || b.createdAt.localeCompare(a.createdAt));
-  const page = paginate(rows, Number(params.get('page')) || 1, params.get('all') === '1' ? 5000 : Number(params.get('pageSize')) || 25);
-  const live = rows.filter((entry) => entry.status !== 'cancelled');
+  // The rows and the totals describe the same receipts: cancelled ones are left out of both unless the
+  // status filter asks for them, and `cancelledCount` says how many that hides.
+  const rows = status ? matched.filter((entry) => entry.status === status) : matched.filter((entry) => entry.status !== 'cancelled');
+  const page = paginate(rows, Number(params.get('page')) || 1, Number(params.get('pageSize')) || 25, params.get('all') === '1');
   return {
     ...page,
+    cancelledCount: status ? 0 : matched.length - rows.length,
     totals: {
-      count: live.length,
-      amount: sumBy(live, (entry) => entry.amount),
-      verified: sumBy(live.filter((entry) => entry.status === 'verified'), (entry) => entry.amount),
-      draft: sumBy(live.filter((entry) => entry.status === 'draft'), (entry) => entry.amount),
-      unallocated: sumBy(live, (entry) => entry.unallocatedAmount),
+      count: rows.length,
+      amount: sumBy(rows, (entry) => entry.amount),
+      verified: sumBy(rows.filter((entry) => entry.status === 'verified'), (entry) => entry.amount),
+      draft: sumBy(rows.filter((entry) => entry.status === 'draft'), (entry) => entry.amount),
+      unallocated: sumBy(rows, (entry) => entry.unallocatedAmount),
     },
   };
 }
@@ -439,10 +472,12 @@ export async function dashboard(context: BtContext, params: URLSearchParams) {
     projects: groupBills(bills, 'project', rc, releases).slice(0, 12),
     clients: groupBills(bills, 'client', rc, releases).slice(0, 10),
     billTypes: groupBills(bills, 'category', rc),
-    ageing: ageingReport(bills, rc),
-    targets: targetPerformance(targets.filter((target) => !filters.projectIds?.length || !target.projectId || filters.projectIds.includes(target.projectId)), bills, weeks),
+    ageing: ageingReport(bills, rc, { basis: filters.ageingBasis }),
+    // A company-wide target counts only when no project is chosen: one project's figures are measured
+    // against that project's targets.
+    targets: targetPerformance(targets.filter((target) => !filters.projectIds?.length || (Boolean(target.projectId) && filters.projectIds.includes(target.projectId as string))), bills, weeks),
     forecast: forecastWindows(items, rc.asOf),
-    oldest: sortBills(open, 'ageing', 'desc', rc).slice(0, 8).map((bill) => slim(withAgeing(bill, rc))),
+    oldest: sortBills(open, 'ageing', 'desc', rc, filters.ageingBasis).slice(0, 8).map((bill) => slim(withAgeing(bill, rc, filters.ageingBasis))),
     recentCollections: collectionLines(bills).slice(0, 8),
     expectedThisWeek: items.filter((item) => isoWeekOf(item.date) === isoWeekOf(rc.asOf)).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 10),
     missedCommitments: open.filter((bill) => commitmentMissed(bill, rc.asOf)).slice(0, 10).map((bill) => slim(withAgeing(bill, rc))),
@@ -554,10 +589,14 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     }
     case 'targets':
     case 'performance': {
-      const targets = await loadScopedTargets(context);
+      // The bar's projects narrow the targets and the receipts counted against them alike; a
+      // company-wide target counts only when no project is chosen.
+      const chosen = filters.projectIds ?? [];
+      const targets = (await loadScopedTargets(context)).filter((target) => !chosen.length || (Boolean(target.projectId) && chosen.includes(target.projectId as string)));
+      const counted = chosen.length ? all.filter((bill) => chosen.includes(bill.projectId)) : all;
       const weeks = financialYearWeeks(fy);
-      const performance = targetPerformance(targets, all, weeks).filter((row) => row.target > 0 || row.actual > 0);
-      const byDimension = kind === 'performance' ? performanceBy(all, targets, (params.get('by') as 'owner' | 'project' | 'dgmOffice' | null) ?? 'project', fy) : [];
+      const performance = targetPerformance(targets, counted, weeks).filter((row) => row.target > 0 || row.actual > 0);
+      const byDimension = kind === 'performance' ? performanceBy(counted, targets, (params.get('by') as 'owner' | 'project' | 'dgmOffice' | null) ?? 'project', fy) : [];
       return { ...base, financialYear: fy, weeks: performance, targets: targets.filter((target) => target.financialYear === fy).sort((a, b) => b.week.localeCompare(a.week)), byDimension };
     }
     case 'project-ledger':

@@ -129,6 +129,9 @@ export const DEFAULT_SETTINGS: BillTrackingSettings = {
   // Payment follows the client's certification of an invoice or retention bill; migrated bills were
   // certified on paper before SEL LIVE, so they are left out.
   certificationBeforeReceipt: { enabled: true, transactionTypes: ['invoice', 'retention_bill'], exemptImported: true },
+  // None until an administrator names the invoices whose debit notes take deductions of the invoice
+  // plus its notes (Settings → Note rules).
+  noteRules: [],
   // Every stage in use and left to permission holders until people are named in Settings → Workflow.
   workflowSteps: normaliseWorkflowSteps(undefined),
   closedMonths: [],
@@ -158,22 +161,26 @@ export function withConfigDefaults(stored: Partial<BillTrackingConfig> | null | 
   settings.workflowSteps = normaliseWorkflowSteps(stored?.settings?.workflowSteps);
   if (!settings.ageingBuckets?.length) settings.ageingBuckets = DEFAULT_AGEING_BUCKETS;
   const deductionTypes = stored?.deductionTypes?.length ? [...stored.deductionTypes] : [...DEFAULT_DEDUCTION_TYPES];
+  // A default is missing only when neither its id nor its code is stored: an administrator may rename
+  // a code (BCESS → BOCW), and adding the default back under the same id would make two heads of one.
+  const isDefault = (type: DeductionTypeMaster, entry: DeductionTypeMaster) => entry.id === type.id || entry.code === type.code;
   for (const type of DEFAULT_DEDUCTION_TYPES) {
-    if (!deductionTypes.some((entry) => entry.code === type.code)) deductionTypes.push(type);
+    if (!deductionTypes.some((entry) => isDefault(type, entry))) deductionTypes.push(type);
   }
   // A type saved before the base formula existed takes the default formula (Income TDS: less the
   // mobilisation advance); one an administrator has configured keeps its own, even if empty.
   for (const [index, type] of deductionTypes.entries()) {
-    const fallback = DEFAULT_DEDUCTION_TYPES.find((entry) => entry.code === type.code);
+    const fallback = DEFAULT_DEDUCTION_TYPES.find((entry) => isDefault(entry, type));
     if (type.baseLessTypeIds === undefined && fallback?.baseLessTypeIds) deductionTypes[index] = { ...type, baseLessTypeIds: fallback.baseLessTypeIds };
   }
   return {
     settings,
     billCategories: stored?.billCategories?.length ? stored.billCategories : DEFAULT_BILL_CATEGORIES,
-    // Older configurations stored a fixed `category` per bill type and no project list.
-    billTypes: (stored?.billTypes?.length ? stored.billTypes : DEFAULT_BILL_TYPES).map((type) => normaliseBillType(type)),
+    // Older configurations stored a fixed `category` per bill type and no project list. A list saved
+    // empty stays empty: only one never saved takes the defaults.
+    billTypes: (stored?.billTypes ?? DEFAULT_BILL_TYPES).map((type) => normaliseBillType(type)),
     deductionTypes: deductionTypes.sort((a, b) => a.sequence - b.sequence),
-    stages: stored?.stages?.length ? stored.stages : DEFAULT_STAGES,
+    stages: stored?.stages ?? DEFAULT_STAGES,
     projectMappings: stored?.projectMappings ?? [],
     projectProfiles: stored?.projectProfiles ?? [],
   };

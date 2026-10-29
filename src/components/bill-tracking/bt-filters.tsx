@@ -29,7 +29,10 @@ import { BtToolbar, DrawerInput, DrawerSelect, ToolbarSearch, ToolbarSelect } fr
 import { FySelect } from './bt-ui';
 
 /** Keys that are filters (counted as "active"); page, sort and size are not. */
-const FILTER_KEYS = ['project', 'client', 'dgm', 'billType', 'category', 'txn', 'payment', 'workflow', 'ageing', 'basis', 'min', 'max', 'targetWeek', 'owner', 'from', 'to', 'asOf', 'chip', 'marker', 'ids', 'open', 'cert', 'mine'] as const;
+const FILTER_KEYS = ['q', 'project', 'client', 'dgm', 'billType', 'category', 'txn', 'payment', 'workflow', 'ageing', 'basis', 'min', 'max', 'targetWeek', 'owner', 'from', 'to', 'asOf', 'chip', 'marker', 'ids', 'open', 'cert', 'mine'] as const;
+
+/** The filters the receipts list applies (`listCollections`): the drawer offers only these there. */
+const RECEIPT_FILTER_KEYS = ['q', 'project', 'from', 'to', 'status', 'mode'] as const;
 
 export function useUrlFilters() {
   const params = useSearchParams();
@@ -66,8 +69,16 @@ export function useUrlFilters() {
     return next.toString();
   };
 
+  /** The same filters for an export: every row (`all=1`), never the page on screen. */
+  const exportQuery = (extra: Record<string, string | number | undefined> = {}) => {
+    const next = new URLSearchParams(apiQuery({ ...extra, all: '1' }));
+    next.delete('page');
+    next.delete('pageSize');
+    return next.toString();
+  };
+
   const activeCount = FILTER_KEYS.filter((key) => params.get(key)).length;
-  return { params, get, set, clear, fy, apiQuery, activeCount, queryString: params.toString() };
+  return { params, get, set, clear, fy, apiQuery, exportQuery, activeCount, queryString: params.toString() };
 }
 
 export type UrlFilters = ReturnType<typeof useUrlFilters>;
@@ -77,11 +88,14 @@ const entries = <K extends string>(labels: Record<K, string>) => (Object.entries
 /**
  * The standard filter toolbar: search, FY, project and payment status inline; everything else in
  * the "More filters" drawer, shown as removable chips once set. `extra` adds page-specific
- * controls inline (use `ToolbarSelect` / `ToolbarDate` so they line up).
+ * controls inline (use `ToolbarSelect` / `ToolbarDate` so they line up). `kind="receipts"` offers
+ * only what the receipts list applies — receipt dates — so no filter shows without filtering.
  */
-export function BillFilterBar({ filters, page, extra, summary, actions, hide = [] }: { filters: UrlFilters; page: string; extra?: React.ReactNode; summary?: React.ReactNode; actions?: React.ReactNode; hide?: string[] }) {
+export function BillFilterBar({ filters, page, extra, summary, actions, hide = [], kind = 'bills' }: { filters: UrlFilters; page: string; extra?: React.ReactNode; summary?: React.ReactNode; actions?: React.ReactNode; hide?: string[]; kind?: 'bills' | 'receipts' }) {
   const lookups = useLookups();
-  const [search, setSearch] = useState(filters.get('q'));
+  const receipts = kind === 'receipts';
+  const urlSearch = filters.get('q');
+  const [search, setSearch] = useState(urlSearch);
   const [drawer, setDrawer] = useState(false);
 
   // Debounced push of the search box into the URL, through a ref so the timer always applies the
@@ -91,10 +105,27 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
     latest.current = filters;
   });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The last search this box pushed: a different `q` in the URL came from elsewhere (a saved view,
+  // "Waiting for me", a link) and replaces what the box shows; its own echo never overwrites typing.
+  const pushed = useRef(urlSearch);
   const pushSearch = (value: string) => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => latest.current.set({ q: value || undefined }), 350);
+    timer.current = setTimeout(() => {
+      pushed.current = value;
+      latest.current.set({ q: value || undefined });
+    }, 350);
   };
+  useEffect(() => {
+    if (urlSearch === pushed.current) return;
+    pushed.current = urlSearch;
+    // The URL changed from outside the box: show what it now searches.
+    setSearch(urlSearch);
+  }, [urlSearch]);
+  // A search still waiting when the page closes must not navigate back to it.
+  useEffect(() => {
+    const pending = timer;
+    return () => clearTimeout(pending.current);
+  }, []);
 
   const projectOptions = lookups.projects.map((project) => ({ value: project.id, label: project.name }));
   const clientOptions = lookups.clients.map((client) => ({ value: client.id, label: client.name }));
@@ -111,7 +142,11 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
 
   // Filters set in the drawer, as chips under the toolbar — so nothing filters the list unseen.
   const nameOf = (options: { value: string; label: string }[], value: string) => options.find((option) => option.value === value)?.label ?? value;
-  const chipDefs: [string, string, (value: string) => string][] = [
+  const receiptChips: [string, string, (value: string) => string][] = [
+    ['from', 'Receipt date from', (value) => value],
+    ['to', 'Receipt date to', (value) => value],
+  ];
+  const chipDefs: [string, string, (value: string) => string][] = receipts ? receiptChips : [
     ['client', 'Client', (value) => nameOf(clientOptions, value)],
     ['dgm', 'DGM office', (value) => value],
     ['category', 'Main category', (value) => nameOf(categoryOptions, value)],
@@ -156,7 +191,7 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
           </>
         }
         chips={chips}
-        activeCount={filters.activeCount}
+        activeCount={receipts ? RECEIPT_FILTER_KEYS.filter((key) => filters.get(key)).length : filters.activeCount}
         onClear={() => {
           setSearch('');
           filters.clear();
@@ -180,6 +215,17 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
             <SheetTitle>More filters</SheetTitle>
             <SheetDescription>Applied to the list, its totals and any export.</SheetDescription>
           </SheetHeader>
+          {receipts ? (
+            <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+              <fieldset className="space-y-3">
+                <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Receipt date</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <DrawerInput label="Receipt date from" type="date" value={filters.get('from')} onChange={(event) => filters.set({ from: event.target.value })} />
+                  <DrawerInput label="Receipt date to" type="date" value={filters.get('to')} onChange={(event) => filters.set({ to: event.target.value })} />
+                </div>
+              </fieldset>
+            </div>
+          ) : (
           <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
             <fieldset className="space-y-3">
               <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who and what</legend>
@@ -216,6 +262,7 @@ export function BillFilterBar({ filters, page, extra, summary, actions, hide = [
               </div>
             </fieldset>
           </div>
+          )}
           <SheetFooter className="flex-row justify-end gap-2 border-t border-slate-100 px-5 py-3">
             <Button variant="outline" onClick={() => filters.clear()}>
               Reset all

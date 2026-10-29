@@ -10,7 +10,7 @@
  * bills refer to them by code.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { collection, getDocs, limit, query } from 'firebase/firestore';
 import { BellRing, CalendarClock, Coins, Database, Hash, Lock, Plus, Save, Settings, ShieldCheck, Trash2, Unlock } from 'lucide-react';
@@ -39,10 +39,12 @@ import {
 } from '@/lib/bill-tracking/types';
 
 import { validateCategoryConfig } from '@/lib/bill-tracking/categories';
+import { normaliseNoteRules, noteRulesProblem } from '@/lib/bill-tracking/note-rules';
 
 import { BillCategoriesEditor } from './bill-categories-settings';
+import { NoteRulesSettings } from './note-rules-settings';
 import { WorkflowSettings } from './workflow-settings';
-import { btFetch, useBt, useBtQuery, useLookups } from './bt-client';
+import { BtApiError, btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BtError, BtLoading, FySelect, InfoTip, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
 
 const KIND_LABELS: Record<string, string> = {
@@ -59,21 +61,81 @@ const KIND_LABELS: Record<string, string> = {
 
 const newId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 
+/** A typed number, or 0 for a blank or unreadable box (the server's range checks say what is wrong). */
+const number = (value: string) => {
+  const parsed = Number(value.trim());
+  return value.trim() === '' || !Number.isFinite(parsed) ? 0 : parsed;
+};
+
+/**
+ * What the server would refuse in this save, worded for the screen — so an empty name or a 0 that
+ * must be at least 1 is caught here rather than as a schema path.
+ */
+function settingsProblem(config: BillTrackingConfig): string | null {
+  const settings = config.settings;
+  const whole = (value: number, min: number, max: number) => Number.isInteger(value) && value >= min && value <= max;
+  if (!(settings.tolerance >= 0 && settings.tolerance <= 1000)) return 'The amount tolerance must be between ₹0 and ₹1,000.';
+  if (!(settings.defaultGstRate >= 0 && settings.defaultGstRate <= 100)) return 'The default GST rate must be between 0 and 100%.';
+  if (!whole(settings.defaultCreditDays, 0, 730)) return 'Default credit days must be a whole number from 0 to 730.';
+  if (!whole(settings.oldOutstandingDays, 1, 3650)) return '“Old outstanding after” needs a whole number of days from 1 to 3,650.';
+  if (!whole(settings.noFollowUpDays, 1, 365)) return 'The no-follow-up alert needs a whole number of days from 1 to 365.';
+  if (!(settings.highValueThreshold >= 0)) return 'The high-value bill threshold cannot be negative.';
+  if (!settings.numbering.pattern.trim()) return 'Give the bill-number pattern (it is kept even while numbering is off).';
+  if (!whole(settings.numbering.padding, 1, 10)) return 'Sequence digits must be a whole number from 1 to 10.';
+  const head = config.deductionTypes.findIndex((type) => !type.name.trim());
+  if (head >= 0) return `Deduction type ${head + 1} needs a name.`;
+  const rate = config.deductionTypes.find((type) => [type.defaultPercent, type.gstRate].some((value) => value !== undefined && !(value >= 0 && value <= 100)));
+  if (rate) return `${rate.name}: its default % and GST % must be between 0 and 100.`;
+  const order = [...config.deductionTypes, ...config.stages].find((row) => !Number.isInteger(row.sequence));
+  if (order) return `${order.name || 'A row'}: the order must be a whole number.`;
+  const stage = config.stages.findIndex((entry) => !entry.name.trim());
+  if (stage >= 0) return `Stage ${stage + 1} needs a name.`;
+  if (config.projectProfiles.some((profile) => profile.creditDays !== undefined && !whole(profile.creditDays, 0, 730))) return 'Project credit days must be whole numbers from 0 to 730.';
+  return null;
+}
+
+/**
+ * Settings start from the configuration as saved now, not the copy loaded when the module opened —
+ * an import or another administrator may have changed it since, and a save sends whole lists.
+ */
 export default function SettingsPage() {
+  const { reload } = useBt();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void reload()
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [reload]);
+  return ready ? <SettingsForm /> : <BtLoading label="Loading settings…" />;
+}
+
+function SettingsForm() {
   const lookups = useLookups();
   const { can, reload } = useBt();
   const { toast } = useToast();
   const [config, setConfig] = useState<BillTrackingConfig>(() => JSON.parse(JSON.stringify(lookups.config)) as BillTrackingConfig);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
   const manage = can('Settings', 'Manage');
   const settings = config.settings;
   const setSettings = (patch: Partial<BillTrackingConfig['settings']>) => setConfig((current) => ({ ...current, settings: { ...current.settings, ...patch } }));
 
   const save = async () => {
-    const bucketError = validateAgeingBuckets(settings.ageingBuckets) ?? validateCategoryConfig(config.billCategories, config.billTypes);
-    if (bucketError) {
-      setError(bucketError);
+    setConflict(false);
+    const problem =
+      settingsProblem(config) ??
+      validateAgeingBuckets(settings.ageingBuckets) ??
+      validateCategoryConfig(config.billCategories, config.billTypes) ??
+      noteRulesProblem(normaliseNoteRules(settings.noteRules ?? [], config.billTypes, config.deductionTypes), config.billTypes);
+    if (problem) {
+      setError(problem);
       return;
     }
     setSaving(true);
@@ -82,25 +144,28 @@ export default function SettingsPage() {
       await btFetch('config', {
         method: 'PUT',
         body: {
-          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, workflowSteps: settings.workflowSteps, piMarker: settings.piMarker },
+          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, workflowSteps: settings.workflowSteps, noteRules: settings.noteRules ?? [], piMarker: settings.piMarker },
           billCategories: config.billCategories,
           billTypes: config.billTypes,
           deductionTypes: config.deductionTypes,
           stages: config.stages,
           projectProfiles: config.projectProfiles.filter((profile) => profile.dgmOffice || profile.clientId || profile.creditDays !== undefined),
           projectMappings: config.projectMappings,
+          // The version this page started from: the server refuses the save if anything was saved since.
+          expectedUpdatedAt: lookups.config.settings.updatedAt,
         },
       });
       toast({ title: 'Settings saved' });
       await reload();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not save.');
+      // A conflict (settings saved elsewhere since this page opened, or bills on a removed step) is
+      // offered a fresh start from the saved settings.
+      setConflict(caught instanceof BtApiError && caught.status === 409);
     } finally {
       setSaving(false);
     }
   };
-
-  const number = (value: string) => (value === '' ? 0 : Number(value));
 
   return (
     <div className="space-y-4">
@@ -118,6 +183,11 @@ export default function SettingsPage() {
       />
       {!manage ? <Notice tone="blue">You can view these settings; changing them needs Bill Tracking · Settings · Manage.</Notice> : null}
       <BtError message={error} />
+      {conflict ? (
+        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+          Reload the saved settings (discards these changes)
+        </Button>
+      ) : null}
 
       <Tabs defaultValue="general">
         <TabsList className={BT_TABS_LIST}>
@@ -126,6 +196,7 @@ export default function SettingsPage() {
           <TabsTrigger className={BT_TAB} value="ageing">Ageing</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="billTypes">Bill categories</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="deductions">Deduction types</TabsTrigger>
+          <TabsTrigger className={BT_TAB} value="noteRules">Note rules</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="stages">Stages</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="projects">Projects & DGM offices</TabsTrigger>
           <TabsTrigger className={BT_TAB} value="months">Month closure</TabsTrigger>
@@ -208,7 +279,7 @@ export default function SettingsPage() {
                   <Input id="numbering-pattern" className="font-mono text-[13px]" disabled={!manage} value={settings.numbering.pattern} onChange={(event) => setSettings({ numbering: { ...settings.numbering, pattern: event.target.value } })} />
                 </FormField>
                 <FormField label="Sequence digits" htmlFor="numbering-padding">
-                  <Input id="numbering-padding" inputMode="numeric" className="text-right tabular-nums" disabled={!manage} value={settings.numbering.padding} onChange={(event) => setSettings({ numbering: { ...settings.numbering, padding: number(event.target.value) } })} />
+                  <NumberInput id="numbering-padding" inputMode="numeric" className="text-right tabular-nums" disabled={!manage} value={settings.numbering.padding} onValue={(padding) => setSettings({ numbering: { ...settings.numbering, padding: padding ?? 0 } })} />
                 </FormField>
                 <p className="flex flex-wrap items-center gap-2 text-xs text-slate-500 sm:col-span-2">
                   Next number looks like
@@ -219,13 +290,14 @@ export default function SettingsPage() {
               </div>
             ) : null}
             <SettingRow title="PI marker" description="The “Bill / PI” value (legacy TAXABLE / ADVANCE) that marks a proforma invoice for the PI report.">
-              <Input className="text-center font-medium uppercase" disabled={!manage} value={settings.piMarker} onChange={(event) => setSettings({ piMarker: event.target.value.toUpperCase() })} aria-label="PI marker" />
+              <Input className="text-center font-medium uppercase" maxLength={20} disabled={!manage} value={settings.piMarker} onChange={(event) => setSettings({ piMarker: event.target.value.toUpperCase() })} aria-label="PI marker" />
             </SettingRow>
           </SettingsGroup>
         </TabsContent>
 
         <TabsContent value="workflow">
-          <WorkflowSettings rule={settings.certificationBeforeReceipt} onRuleChange={(rule) => setSettings({ certificationBeforeReceipt: rule })} steps={settings.workflowSteps} onStepsChange={(workflowSteps) => setSettings({ workflowSteps })} users={lookups.users} disabled={!manage} />
+          {/* Remounted after a save, so the "Removed steps — Restore" list lasts until Save. */}
+          <WorkflowSettings key={lookups.config.settings.updatedAt ?? 'unsaved'} rule={settings.certificationBeforeReceipt} onRuleChange={(rule) => setSettings({ certificationBeforeReceipt: rule })} steps={settings.workflowSteps} onStepsChange={(workflowSteps) => setSettings({ workflowSteps })} users={lookups.users} disabled={!manage} />
         </TabsContent>
 
         <TabsContent value="ageing">
@@ -234,8 +306,8 @@ export default function SettingsPage() {
               <SectionHeader descriptionAs="info" title="Ageing buckets" as="h3" description="Contiguous from day 0; the last bucket is open-ended. Changing them re-buckets every report immediately." />
               {settings.ageingBuckets.map((bucket, index) => (
                 <div key={index} className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2">
-                  <Input aria-label="From day" inputMode="numeric" disabled={!manage} value={bucket.from} onChange={(event) => setSettings({ ageingBuckets: settings.ageingBuckets.map((entry, position) => (position === index ? { ...entry, from: number(event.target.value) } : entry)) })} />
-                  <Input aria-label="To day" inputMode="numeric" disabled={!manage} placeholder="open-ended" value={bucket.to ?? ''} onChange={(event) => setSettings({ ageingBuckets: settings.ageingBuckets.map((entry, position) => (position === index ? { ...entry, to: event.target.value === '' ? null : number(event.target.value) } : entry)) })} />
+                  <NumberInput aria-label="From day" inputMode="numeric" disabled={!manage} value={bucket.from} onValue={(from) => setSettings({ ageingBuckets: settings.ageingBuckets.map((entry, position) => (position === index ? { ...entry, from: from ?? 0 } : entry)) })} />
+                  <NumberInput aria-label="To day" inputMode="numeric" disabled={!manage} placeholder="open-ended" value={bucket.to} optional onValue={(to) => setSettings({ ageingBuckets: settings.ageingBuckets.map((entry, position) => (position === index ? { ...entry, to: to ?? null } : entry)) })} />
                   <Input aria-label="Label" disabled={!manage} value={bucket.label} onChange={(event) => setSettings({ ageingBuckets: settings.ageingBuckets.map((entry, position) => (position === index ? { ...entry, label: event.target.value } : entry)) })} />
                   <Button variant="ghost" size="icon" disabled={!manage || settings.ageingBuckets.length <= 1} aria-label="Remove bucket" onClick={() => setSettings({ ageingBuckets: settings.ageingBuckets.filter((_, position) => position !== index) })}>
                     <Trash2 className="h-4 w-4" />
@@ -271,13 +343,14 @@ export default function SettingsPage() {
                 allowDelete={(row) => !lookups.config.deductionTypes.some((type) => type.id === row.id)}
                 onChange={(rows) => setConfig((current) => ({ ...current, deductionTypes: rows }))}
                 columns={[
-                  { label: 'Order', render: (row, set) => <Input className="w-16" inputMode="numeric" value={row.sequence} onChange={(event) => set({ sequence: Number(event.target.value) || 0 })} /> },
+                  { label: 'Order', render: (row, set) => <NumberInput className="w-16" inputMode="numeric" value={row.sequence} onValue={(sequence) => set({ sequence: sequence ?? 0 })} aria-label="Order" /> },
                   { label: 'Name', render: (row, set) => <Input value={row.name} onChange={(event) => set({ name: event.target.value })} /> },
-                  { label: 'Code', render: (row, set) => <Input value={row.code} onChange={(event) => set({ code: event.target.value.toUpperCase() })} /> },
+                  { label: 'Code', render: (row, set) => <Input value={row.code} placeholder="From the name" onChange={(event) => set({ code: event.target.value.toUpperCase() })} /> },
                   {
                     label: 'Kind',
                     render: (row, set) => (
-                      <Select value={row.kind} onValueChange={(value) => set({ kind: value as DeductionTypeMaster['kind'] })}>
+                      // Radix opens even inside a disabled fieldset, so each picker is disabled itself.
+                      <Select disabled={!manage} value={row.kind} onValueChange={(value) => set({ kind: value as DeductionTypeMaster['kind'] })}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -294,7 +367,7 @@ export default function SettingsPage() {
                   {
                     label: 'Calculation',
                     render: (row, set) => (
-                      <Select value={row.calculation} onValueChange={(value) => set({ calculation: value as DeductionTypeMaster['calculation'] })}>
+                      <Select disabled={!manage} value={row.calculation} onValueChange={(value) => set({ calculation: value as DeductionTypeMaster['calculation'] })}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -305,11 +378,11 @@ export default function SettingsPage() {
                       </Select>
                     ),
                   },
-                  { label: 'Default %', render: (row, set) => <Input className="w-20" inputMode="decimal" value={row.defaultPercent ?? ''} onChange={(event) => set({ defaultPercent: event.target.value === '' ? undefined : Number(event.target.value) })} /> },
+                  { label: 'Default %', render: (row, set) => <NumberInput className="w-20" inputMode="decimal" value={row.defaultPercent} optional onValue={(defaultPercent) => set({ defaultPercent })} aria-label="Default %" /> },
                   {
                     label: '% of',
                     render: (row, set) => (
-                      <Select value={row.percentBase} onValueChange={(value) => set({ percentBase: value as DeductionTypeMaster['percentBase'] })}>
+                      <Select disabled={!manage} value={row.percentBase} onValueChange={(value) => set({ percentBase: value as DeductionTypeMaster['percentBase'] })}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
@@ -325,7 +398,7 @@ export default function SettingsPage() {
                     render: (row, set) => <BaseLessPicker type={row} types={config.deductionTypes} onChange={(baseLessTypeIds) => set({ baseLessTypeIds })} disabled={!manage} />,
                   },
                   { label: 'GST on it', render: (row, set) => <Switch checked={Boolean(row.gstApplicable)} onCheckedChange={(value) => set({ gstApplicable: value, gstRate: value ? (row.gstRate ?? settings.defaultGstRate) : row.gstRate })} aria-label="GST applicable on this deduction" /> },
-                  { label: 'GST %', render: (row, set) => <Input className="w-16" inputMode="decimal" disabled={!row.gstApplicable} value={row.gstApplicable ? (row.gstRate ?? '') : ''} onChange={(event) => set({ gstRate: event.target.value === '' ? undefined : Number(event.target.value) })} aria-label="GST rate on this deduction" /> },
+                  { label: 'GST %', render: (row, set) => <NumberInput className="w-16" inputMode="decimal" disabled={!row.gstApplicable} value={row.gstApplicable ? row.gstRate : undefined} optional onValue={(gstRate) => set({ gstRate })} aria-label="GST rate on this deduction" /> },
                   { label: 'Active', render: (row, set) => <Switch checked={row.active} onCheckedChange={(value) => set({ active: value })} /> },
                 ]}
               />
@@ -334,6 +407,10 @@ export default function SettingsPage() {
               </p>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="noteRules">
+          <NoteRulesSettings rules={settings.noteRules ?? []} onChange={(noteRules) => setSettings({ noteRules })} billCategories={config.billCategories} billTypes={config.billTypes} deductionTypes={config.deductionTypes} disabled={!manage} />
         </TabsContent>
 
         <TabsContent value="stages">
@@ -346,7 +423,7 @@ export default function SettingsPage() {
                 allowDelete={() => true}
                 onChange={(rows) => setConfig((current) => ({ ...current, stages: rows }))}
                 columns={[
-                  { label: 'Order', render: (row, set) => <Input className="w-16" inputMode="numeric" value={row.sequence} onChange={(event) => set({ sequence: Number(event.target.value) || 0 })} /> },
+                  { label: 'Order', render: (row, set) => <NumberInput className="w-16" inputMode="numeric" value={row.sequence} onValue={(sequence) => set({ sequence: sequence ?? 0 })} aria-label="Order" /> },
                   { label: 'Name', render: (row, set) => <Input value={row.name} onChange={(event) => set({ name: event.target.value })} /> },
                   { label: 'Active', render: (row, set) => <Switch checked={row.active} onCheckedChange={(value) => set({ active: value })} /> },
                 ]}
@@ -396,7 +473,7 @@ export default function SettingsPage() {
                             </Select>
                           </td>
                           <td className="px-3 py-1.5">
-                            <Input className="h-8 w-24" inputMode="numeric" disabled={!manage} value={profile.creditDays ?? ''} onChange={(event) => setProfile({ creditDays: event.target.value === '' ? undefined : Number(event.target.value) })} />
+                            <NumberInput className="h-8 w-24" inputMode="numeric" disabled={!manage} value={profile.creditDays} optional onValue={(creditDays) => setProfile({ creditDays })} aria-label={`Credit days for ${project.name}`} />
                           </td>
                         </tr>
                       );
@@ -514,14 +591,57 @@ function SettingRow({ title, description, note, children }: { title: string; des
   );
 }
 
+/**
+ * The text a number box shows: what is being typed while it has focus ("0." on its way to "0.5"),
+ * the stored number otherwise — so a box that stores numbers keystroke by keystroke never eats a ".".
+ */
+function useNumberDraft(value: number | string | undefined | null) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const stored = value === undefined || value === null ? '' : String(value);
+  return {
+    value: draft ?? stored,
+    onFocus: () => setDraft(stored),
+    onBlur: () => setDraft(null),
+    typed: (text: string) => setDraft(text),
+  };
+}
+
 /** A number with its unit beside it: ₹ before an amount, % or "days" after. */
 function AffixInput({ prefix, suffix, value, onChange, ...props }: { prefix?: string; suffix?: string; value: string | number; onChange: (value: string) => void; disabled?: boolean; inputMode?: 'decimal' | 'numeric'; 'aria-label': string }) {
+  const draft = useNumberDraft(value);
   return (
     <div className="relative w-full">
       {prefix ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">{prefix}</span> : null}
-      <Input {...props} value={value} onChange={(event) => onChange(event.target.value)} className={cn('text-right tabular-nums', prefix && 'pl-7', suffix && (suffix.length > 1 ? 'pr-12' : 'pr-7'))} />
+      <Input
+        {...props}
+        value={draft.value}
+        onFocus={draft.onFocus}
+        onBlur={draft.onBlur}
+        onChange={(event) => {
+          draft.typed(event.target.value);
+          onChange(event.target.value);
+        }}
+        className={cn('text-right tabular-nums', prefix && 'pl-7', suffix && (suffix.length > 1 ? 'pr-12' : 'pr-7'))}
+      />
       {suffix ? <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400" aria-hidden="true">{suffix}</span> : null}
     </div>
+  );
+}
+
+/** A plain number box that keeps what is typed while focused; a blank box is 0, or undefined when `optional`. */
+function NumberInput({ value, onValue, optional = false, ...props }: { value: number | undefined | null; onValue: (value: number | undefined) => void; optional?: boolean } & Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange' | 'onFocus' | 'onBlur'>) {
+  const draft = useNumberDraft(value);
+  return (
+    <Input
+      {...props}
+      value={draft.value}
+      onFocus={draft.onFocus}
+      onBlur={draft.onBlur}
+      onChange={(event) => {
+        draft.typed(event.target.value);
+        onValue(event.target.value.trim() === '' ? (optional ? undefined : 0) : number(event.target.value));
+      }}
+    />
   );
 }
 

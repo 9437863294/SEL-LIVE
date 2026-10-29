@@ -25,7 +25,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { accountLabel } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { roundMoney, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { formatINR, roundMoney, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { PAYMENT_MODES, type BillTransactionType } from '@/lib/bill-tracking/types';
 import type { BankAccount } from '@/lib/types';
 
@@ -63,15 +63,29 @@ const num = (value: string) => {
 };
 
 const isNote = (bill: OpenBill) => bill.transactionType === 'credit_note' || bill.transactionType === 'debit_note';
+/**
+ * A note whose open balance the client takes off what it pays — a credit note — set off in the
+ * receipt. A debit note's balance is owed on top: it is a bill like any other, added if it is paid too.
+ */
+const isSetOff = (bill: OpenBill) => isNote(bill) && bill.outstandingAmount < 0;
 
-/** The open credit / debit notes raised against these invoices (none on a failed read — the receipt still works). */
+/** The open credit notes raised against these invoices (none on a failed read — the receipt still works). */
 async function openNotesAgainst(invoiceIds: string[]): Promise<OpenBill[]> {
   try {
-    return (await btFetch<{ bills: OpenBill[] }>(`bills/open?against=${invoiceIds.join(',')}`)).bills;
+    return (await btFetch<{ bills: OpenBill[] }>(`bills/open?against=${invoiceIds.join(',')}`)).bills.filter(isSetOff);
   } catch {
     return [];
   }
 }
+
+/**
+ * Whether an invoice's open credit notes can be set off in its receipt: only when they leave something
+ * to receive. Notes covering the whole outstanding would make the receipt ₹0 or less, so they are left
+ * for the user to set off in part.
+ */
+const settable = (invoice: OpenBill, notes: readonly OpenBill[]) => toPaise(invoice.outstandingAmount) + toPaise(sumMoney(notes.map((note) => note.outstandingAmount))) > 0;
+
+const billName = (bill: OpenBill) => bill.gstInvoiceNumber || bill.billSerialNumber || 'A bill';
 
 /** Radix Select cannot hold an empty value, so "no account" needs a sentinel. */
 const NO_ACCOUNT = '__none__';
@@ -101,6 +115,13 @@ export default function CollectionForm() {
   const debounced = useDebounced(search);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Credit notes left out because they cover an invoice's whole outstanding — said beside the allocation. */
+  const [coveringNotes, setCoveringNotes] = useState<{ invoiceId: string; text: string } | null>(null);
+  const noteCovers = (invoice: OpenBill, notes: readonly OpenBill[]) =>
+    setCoveringNotes({
+      invoiceId: invoice.id,
+      text: `${notes.map(billName).join(', ')} (${formatINR(Math.abs(sumMoney(notes.map((note) => note.outstandingAmount))))}) cover${notes.length === 1 ? 's' : ''} the ${formatINR(invoice.outstandingAmount)} still open on ${billName(invoice)}, so ${notes.length === 1 ? 'it was' : 'they were'} not set off here. To set off part, add ${notes.length === 1 ? 'it' : 'one'} from the list below with a negative amount.`,
+    });
 
   const { data: preset } = useBtQuery<{ bills: OpenBill[] }>(preselected ? `bills/open?ids=${preselected}` : null);
   useEffect(() => {
@@ -110,10 +131,15 @@ export default function CollectionForm() {
       setLines([{ bill, amount: String(bill.outstandingAmount) }]);
       setAmount(String(bill.outstandingAmount));
       // The client pays the invoice less its credit notes: set those off in the same receipt, so the
-      // amount expected is what actually arrives and every bill involved is settled.
+      // amount expected is what actually arrives and every bill involved is settled — unless the
+      // notes cover the whole outstanding, which would leave nothing (or less) to receive.
       if (!isNote(bill)) {
         void openNotesAgainst([bill.id]).then((notes) => {
           if (!notes.length) return;
+          if (!settable(bill, notes)) {
+            noteCovers(bill, notes);
+            return;
+          }
           setLines((current) => [...current, ...notes.filter((note) => !current.some((line) => line.bill.id === note.id)).map((note) => ({ bill: note, amount: String(note.outstandingAmount) }))]);
           setAmount(String(sumMoney([bill.outstandingAmount, ...notes.map((note) => note.outstandingAmount)])));
         });
@@ -159,45 +185,59 @@ export default function CollectionForm() {
   const unallocated = subtractMoney(receipt, allocated);
   const canHold = can('Collections', 'Hold Unallocated');
   const balanced = roundMoney(unallocated) === 0;
-  const valid = receipt !== 0 && lines.length > 0 && lines.every((line) => num(line.amount) !== 0) && (balanced || (allowUnallocated && canHold && Math.abs(allocated) < Math.abs(receipt)));
+
+  // A line's sign must follow its bill's open balance — a credit note is set off with a negative
+  // amount, a bill is paid with a positive one; the server refuses the other way round.
+  const wrongSign = lines.filter((line) => {
+    const value = num(line.amount);
+    const open = line.bill.outstandingAmount;
+    return value !== 0 && open !== 0 && Math.sign(value) !== Math.sign(open);
+  });
+  // More than a bill's open balance (a note's balance is negative, so compared by size).
+  const overAllocated = lines.filter((line) => !wrongSign.includes(line) && Math.abs(num(line.amount)) > Math.abs(line.bill.outstandingAmount) + lookups.config.settings.tolerance);
+  const zeroLines = lines.filter((line) => toPaise(num(line.amount)) === 0);
+  const setOff = sumMoney(lines.filter((line) => isSetOff(line.bill)).map((line) => num(line.amount)));
+  const valid = receipt !== 0 && lines.length > 0 && zeroLines.length === 0 && wrongSign.length === 0 && (balanced || (allowUnallocated && canHold && Math.abs(allocated) < Math.abs(receipt)));
 
   const addBill = (bill: OpenBill) => {
     if (lines.some((line) => line.bill.id === bill.id)) return;
     const remaining = Math.max(0, Math.min(bill.outstandingAmount, receipt ? subtractMoney(receipt, allocated) : bill.outstandingAmount));
     setLines((current) => [...current, { bill, amount: String(remaining || bill.outstandingAmount) }]);
     if (!isNote(bill)) {
-      void openNotesAgainst([bill.id]).then((notes) =>
-        setLines((current) => [...current, ...notes.filter((note) => !current.some((line) => line.bill.id === note.id)).map((note) => ({ bill: note, amount: String(note.outstandingAmount) }))]),
-      );
+      void openNotesAgainst([bill.id]).then((notes) => {
+        if (!notes.length) return;
+        if (!settable(bill, notes)) {
+          noteCovers(bill, notes);
+          return;
+        }
+        setLines((current) => [...current, ...notes.filter((note) => !current.some((line) => line.bill.id === note.id)).map((note) => ({ bill: note, amount: String(note.outstandingAmount) }))]);
+      });
     }
   };
 
   /** Removes a bill — and, for an invoice, the notes that were set off against it. */
-  const removeBill = (billId: string) => setLines((current) => current.filter((entry) => entry.bill.id !== billId && entry.bill.againstBillId !== billId));
+  const removeBill = (billId: string) => setLines((current) => current.filter((entry) => entry.bill.id !== billId && !(isSetOff(entry.bill) && entry.bill.againstBillId === billId)));
 
-  /** Fills the receipt across the chosen bills oldest-first, up to each bill's outstanding. */
+  /**
+   * Fills the receipt across the chosen bills oldest-first, up to each bill's outstanding. A bill the
+   * receipt does not reach is taken off the list rather than left at ₹0, which could not be saved.
+   */
   const autoAllocate = () => {
     // Notes set off keep their amounts; the bills share the receipt plus what the notes take off.
+    const keeps = (line: Line) => isNote(line.bill) && Math.sign(line.bill.outstandingAmount) !== Math.sign(receipt);
     let left = subtractMoney(receipt, sumMoney(lines.filter((line) => isNote(line.bill) && Math.sign(num(line.amount)) !== Math.sign(receipt)).map((line) => num(line.amount))));
     setLines((current) =>
       [...current]
         .sort((a, b) => a.bill.billDate.localeCompare(b.bill.billDate))
         .map((line) => {
-          if (isNote(line.bill) && Math.sign(line.bill.outstandingAmount) !== Math.sign(receipt)) return line;
+          if (keeps(line)) return line;
           const take = Math.max(0, Math.min(line.bill.outstandingAmount, left));
           left = subtractMoney(left, take);
           return { ...line, amount: String(take) };
-        }),
+        })
+        .filter((line) => keeps(line) || toPaise(num(line.amount)) !== 0),
     );
   };
-
-  // More than a bill's open balance (a note's balance is negative, so compared by size and sign).
-  const overAllocated = lines.filter((line) => {
-    const value = num(line.amount);
-    const open = line.bill.outstandingAmount;
-    return Math.abs(value) > Math.abs(open) + lookups.config.settings.tolerance || (value !== 0 && open !== 0 && Math.sign(value) !== Math.sign(open));
-  });
-  const setOff = sumMoney(lines.filter((line) => isNote(line.bill)).map((line) => num(line.amount)));
 
   const submit = async () => {
     setSaving(true);
@@ -334,7 +374,7 @@ export default function CollectionForm() {
                       <p className="text-xs text-muted-foreground">
                         {dateText(line.bill.billDate)} · net <Amount value={line.bill.netReceivable} /> · outstanding <Amount value={line.bill.outstandingAmount} className="font-medium text-rose-700" />
                         {line.bill.isRetentionBill ? ' · retention bill (posts a retention release)' : ''}
-                        {isNote(line.bill) && line.bill.againstBillId ? ` · set off against ${(() => {
+                        {isNote(line.bill) && line.bill.againstBillId ? ` · ${isSetOff(line.bill) ? 'set off against' : 'against'} ${(() => {
                           const invoice = lines.find((entry) => entry.bill.id === line.bill.againstBillId)?.bill;
                           return invoice ? invoice.gstInvoiceNumber || invoice.billSerialNumber : 'its invoice';
                         })()}` : ''}
@@ -347,6 +387,8 @@ export default function CollectionForm() {
                   </div>
                 ))}
               </div>
+
+              {coveringNotes && lines.some((line) => line.bill.id === coveringNotes.invoiceId) ? <Notice tone="blue">{coveringNotes.text}</Notice> : null}
 
               <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Find open bills</p>
@@ -426,10 +468,20 @@ export default function CollectionForm() {
                 <p className="border-t pt-2 text-xs text-muted-foreground">The receipt will await verification by someone with Verify permission.</p>
               )}
           </FormSection>
+          {wrongSign.length ? (
+            <Notice tone="rose" title="Amount the wrong way round">
+              {wrongSign.map((line) => `${billName(line.bill)}: ${line.bill.outstandingAmount < 0 ? 'a credit note is set off with a negative amount' : 'a bill is paid with a positive amount'}`).join('; ')}. Correct the sign to save.
+            </Notice>
+          ) : null}
           {overAllocated.length ? (
             <Notice tone="amber" title="More than the outstanding">
-              {overAllocated.map((line) => line.bill.gstInvoiceNumber || line.bill.billSerialNumber).join(', ')} will show as over received.
+              {overAllocated.map((line) => billName(line.bill)).join(', ')} will show as over received.
             </Notice>
+          ) : null}
+          {zeroLines.length ? (
+            <p className="text-xs text-amber-800">
+              {zeroLines.map((line) => billName(line.bill)).join(', ')} {zeroLines.length === 1 ? 'has' : 'have'} ₹0 allocated — give {zeroLines.length === 1 ? 'it' : 'each'} an amount or remove {zeroLines.length === 1 ? 'it' : 'them'} to save.
+            </p>
           ) : null}
           <BtError message={error} />
           <Button className="w-full gap-1.5" disabled={!valid || saving || !can('Collections', 'Add')} onClick={() => void submit()}>

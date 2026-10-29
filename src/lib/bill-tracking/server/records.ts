@@ -22,10 +22,11 @@ import { dispatchNotificationServer } from '@/lib/notifications-server';
 import { financialYearOf, isoWeekRange } from '../calculations.ts';
 import { subtractMoney } from '../money.ts';
 import { followUpRollup } from '../reports.ts';
-import type { BillComment, BillDocument, BillDocumentCategory, BillFollowUp, CollectionTarget, RetentionRelease } from '../types';
+import type { Bill, BillComment, BillDocument, BillDocumentCategory, BillFollowUp, CollectionTarget, RetentionRelease } from '../types';
+import { isInvolved } from '../workflow.ts';
 import type { z } from 'zod';
 import type { commitmentUpdateSchema, followUpInputSchema, retentionReleaseSchema, targetInputSchema } from '../schemas';
-import { retentionHead, roundSlabRate } from './bills';
+import { assertMonthOpen, retentionHead, roundSlabRate } from './bills';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, loadBill, loadProject, loadConfig, logActivity, logActivityTx, nowIso, userName } from './store';
 
@@ -146,14 +147,58 @@ export const MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
 
 const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-120) || 'file';
 
+/**
+ * The attachment types accepted, by extension. The type stored and served is decided here, from the
+ * name and the bytes — never the type the browser claimed, which whoever uploads controls.
+ */
+const DOCUMENT_TYPES: Readonly<Record<string, string>> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+  csv: 'text/csv',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  txt: 'text/plain',
+  zip: 'application/zip',
+};
+
+/** Types a browser may show in a tab (never HTML or SVG, which can carry script); everything else downloads. */
+export const INLINE_DOCUMENT_TYPES: ReadonlySet<string> = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp']);
+
+const startsWith = (bytes: Uint8Array, signature: readonly number[], offset = 0) => signature.every((byte, index) => bytes[offset + index] === byte);
+
+/** Whether the bytes are what a type shown in a tab claims — a page renamed .pdf is not a PDF. */
+function bytesMatch(contentType: string, bytes: Uint8Array): boolean {
+  if (contentType === 'application/pdf') return startsWith(bytes, [0x25, 0x50, 0x44, 0x46]);
+  if (contentType === 'image/png') return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (contentType === 'image/jpeg') return startsWith(bytes, [0xff, 0xd8, 0xff]);
+  if (contentType === 'image/webp') return startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8);
+  return true;
+}
+
+/** The type an attachment is stored and served as; anything not accepted is refused. */
+export function documentContentType(fileName: string, bytes: Uint8Array): string {
+  const extension = /\.([a-z0-9]+)$/.exec(fileName.toLowerCase())?.[1] ?? '';
+  const contentType = DOCUMENT_TYPES[extension];
+  if (!contentType) {
+    throw new BtError(`${extension ? `.${extension} files` : 'Files without an extension'} cannot be attached. Attach a PDF, an image (PNG, JPG, WEBP), a spreadsheet (XLSX, XLS, CSV), a Word document, a text file or a ZIP.`, 415);
+  }
+  if (!bytesMatch(contentType, bytes)) throw new BtError(`${fileName} is not the ${extension.toUpperCase()} file its name says. Attach the original file.`, 415);
+  return contentType;
+}
+
 export async function uploadDocument(context: BtContext, billId: string, file: File, category: BillDocumentCategory): Promise<{ id: string }> {
   const bill = await loadBill(context, billId);
   context.require('Bills', 'Edit', bill.projectId);
   if (file.size > MAX_DOCUMENT_BYTES) throw new BtError('Attachments are limited to 20 MB.', 413);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const contentType = documentContentType(file.name, bytes);
   const storagePath = `bill-tracking/${context.organizationId}/${billId}/${Date.now()}-${safeFileName(file.name)}`;
-  await getFirebaseAdminBucket()
-    .file(storagePath)
-    .save(Buffer.from(await file.arrayBuffer()), { contentType: file.type || 'application/octet-stream', resumable: false });
+  await getFirebaseAdminBucket().file(storagePath).save(bytes, { contentType, resumable: false });
   const ref = db().collection(BT_COLLECTIONS.documents).doc();
   const document: Omit<BillDocument, 'id'> & { organizationId: string; projectId: string } = clean({
     organizationId: context.organizationId,
@@ -161,7 +206,7 @@ export async function uploadDocument(context: BtContext, billId: string, file: F
     projectId: bill.projectId,
     category,
     fileName: file.name,
-    contentType: file.type || undefined,
+    contentType,
     size: file.size,
     storagePath,
     uploadedBy: context.userId,
@@ -177,8 +222,11 @@ export async function readDocument(context: BtContext, documentId: string): Prom
   const snapshot = await db().collection(BT_COLLECTIONS.documents).doc(documentId).get();
   const document = snapshot.exists ? ({ ...(snapshot.data() as BillDocument & { organizationId: string }), id: snapshot.id }) : undefined;
   if (!document || (document as BillDocument & { organizationId: string }).organizationId !== context.organizationId || document.isDeleted) throw new BtError('Document not found.', 404);
-  const bill = await loadBill(context, document.billId, { includeDeleted: true });
-  context.require('Bills', 'View', bill.projectId);
+  // Named on the bill's workflow is access to the bill, as on the bill page — and so to its attachments.
+  const config = await loadConfig(context.organizationId);
+  const involved = (bill: Pick<Bill, 'collectionOwnerId'>) => isInvolved(bill, config.settings, context.userId);
+  const bill = await loadBill(context, document.billId, { includeDeleted: true, allow: involved });
+  if (!involved(bill)) context.require('Bills', 'View', bill.projectId);
   const [data] = await getFirebaseAdminBucket().file(document.storagePath).download();
   return { document, data };
 }
@@ -200,9 +248,16 @@ export async function removeDocument(context: BtContext, documentId: string): Pr
 export async function addRetentionRelease(context: BtContext, input: z.infer<typeof retentionReleaseSchema>): Promise<{ id: string }> {
   context.require('Retention', 'Manage', input.projectId);
   const config = await loadConfig(context.organizationId);
+  assertMonthOpen(context, config, [input.releaseDate], 'Recording a retention release dated in it');
   const project = await loadProject(input.projectId, config.projectProfiles);
   const against = input.againstBillId ? await loadBill(context, input.againstBillId) : undefined;
   if (against && against.projectId !== input.projectId) throw new BtError('The bill belongs to a different project.');
+  // The release shows on the retention bill it names: that has to be a live retention bill of this project.
+  if (input.retentionBillId) {
+    const retentionBill = await loadBill(context, input.retentionBillId);
+    if (retentionBill.projectId !== input.projectId) throw new BtError('The retention bill belongs to a different project.');
+    if (!retentionBill.isRetentionBill && retentionBill.transactionType !== 'retention_bill') throw new BtError(`${retentionBill.gstInvoiceNumber || retentionBill.billSerialNumber || 'That bill'} is not a retention bill.`);
+  }
   // The slab released: a named head sets the kind; a rate alone keeps the chosen kind (the slab of
   // that rate under a head of that kind). Neither = a project-level release, as before.
   const head = input.deductionTypeId ? retentionHead(config, input.deductionTypeId) : undefined;
@@ -240,27 +295,35 @@ export async function cancelRetentionRelease(context: BtContext, releaseId: stri
   context.require('Retention', 'Manage', release.projectId);
   if (release.collectionId) throw new BtError('This release came from a receipt on a retention bill; cancel that receipt instead.', 409);
   if (release.status === 'cancelled') return;
+  assertMonthOpen(context, await loadConfig(context.organizationId), [release.releaseDate], 'Cancelling a retention release dated in it');
   await ref.update({ status: 'cancelled', cancelledBy: context.userId, cancelledAt: nowIso(), cancelReason: reason });
   await logActivity(context, { entityType: 'retention', entityId: releaseId, projectId: release.projectId, action: 'retention_release_cancelled', summary: `Retention release ₹${release.amount} cancelled`, reason });
 }
 
 /* ── targets ─────────────────────────────────────────────────────────────── */
 
-export async function saveTarget(context: BtContext, input: z.infer<typeof targetInputSchema>, targetId?: string): Promise<{ id: string }> {
-  if (input.projectId) context.require('Targets', 'Manage', input.projectId);
+/** Targets · Manage on a target's project; a company-wide target is All Projects work. */
+function requireTargetManage(context: BtContext, projectId: string | undefined): void {
+  if (projectId) context.require('Targets', 'Manage', projectId);
   else {
     context.require('Targets', 'Manage');
     if (context.scope !== null) throw new BtError('A company-wide target needs All Projects access; choose a project.', 403);
   }
+}
+
+export async function saveTarget(context: BtContext, input: z.infer<typeof targetInputSchema>, targetId?: string): Promise<{ id: string }> {
+  requireTargetManage(context, input.projectId);
+  const ref = targetId ? db().collection(BT_COLLECTIONS.targets).doc(targetId) : db().collection(BT_COLLECTIONS.targets).doc();
+  const existing = targetId ? await ref.get() : null;
+  if (targetId && (!existing?.exists || existing.data()?.organizationId !== context.organizationId)) throw new BtError('Target not found.', 404);
+  // An edit answers to the project the target was for, too: nobody rewrites another project's target as their own.
+  if (existing?.exists) requireTargetManage(context, existing.data()?.projectId as string | undefined);
   const config = await loadConfig(context.organizationId);
   const project = input.projectId ? await loadProject(input.projectId, config.projectProfiles) : undefined;
   if (input.billId) {
     const bill = await loadBill(context, input.billId);
     if (project && bill.projectId !== project.id) throw new BtError('The bill belongs to a different project.');
   }
-  const ref = targetId ? db().collection(BT_COLLECTIONS.targets).doc(targetId) : db().collection(BT_COLLECTIONS.targets).doc();
-  const existing = targetId ? await ref.get() : null;
-  if (targetId && (!existing?.exists || existing.data()?.organizationId !== context.organizationId)) throw new BtError('Target not found.', 404);
   const weekRange = isoWeekRange(input.week);
   if (!weekRange) throw new BtError('Use an ISO week such as 2026-W41.');
   const target: Omit<CollectionTarget, 'id'> & { organizationId: string } = clean({
@@ -291,7 +354,7 @@ export async function deleteTarget(context: BtContext, targetId: string): Promis
   const snapshot = await ref.get();
   const target = snapshot.data() as (CollectionTarget & { organizationId: string }) | undefined;
   if (!target || target.organizationId !== context.organizationId) throw new BtError('Target not found.', 404);
-  context.require('Targets', 'Manage', target.projectId);
+  requireTargetManage(context, target.projectId);
   // Targets are plans, not financial records — removing one is allowed, and audited.
   await ref.delete();
   await logActivity(context, { entityType: 'target', entityId: targetId, projectId: target.projectId, action: 'target_removed', summary: `Collection target ${target.week} (₹${target.amount}) removed`, previous: { amount: target.amount, week: target.week } });
