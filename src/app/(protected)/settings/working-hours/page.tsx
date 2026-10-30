@@ -1,326 +1,277 @@
-
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Calendar as CalendarIcon, ShieldAlert } from 'lucide-react';
+/**
+ * Settings › Working Hours — the company's working week (`settings/workingHours`, under `schedule`)
+ * and its holidays (`holidays`, one document each with a `yyyy-MM-dd` date). The rows and the list
+ * are `working-week-editor.tsx`.
+ */
+
+import { useEffect, useState } from 'react';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
+import { CalendarDays, Clock, Copy, Loader2, Plus, RotateCcw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { useBackNavigation } from '@/hooks/use-back-navigation';
-import { TableCard } from '@/components/shared/table-card';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { FormDialog } from '@/components/shared/form-dialog';
+import { PageHeader } from '@/components/shared/page-header';
+import { SettingsAccessDenied, SettingsNotice, SettingsPage, SettingsSection } from '@/components/settings/settings-ui';
+import {
+  HolidayRegister,
+  INITIAL_SCHEDULE,
+  WORK_WEEK,
+  WeekScheduleList,
+  dateOf,
+  hoursOf,
+  hoursText,
+  todayIso,
+} from '@/components/settings/working-week-editor';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import type { Holiday, WorkingHours } from '@/lib/types';
-import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow } from '@/components/ui/table';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
-import { format } from 'date-fns';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useAuthorization } from '@/hooks/useAuthorization';
 
-const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+async function loadHolidays(): Promise<Holiday[]> {
+  const snapshot = await getDocs(collection(db, 'holidays'));
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as Holiday).sort((a, b) => a.date.localeCompare(b.date));
+}
 
-const initialWorkingHours: WorkingHours = daysOfWeek.reduce((acc, day) => {
-  acc[day] = {
-    isWorkDay: !['Saturday', 'Sunday'].includes(day),
-    startTime: '09:30',
-    endTime: '18:30',
-  };
-  return acc;
-}, {} as WorkingHours);
+/** The stored week, or `null` before one is first saved. */
+async function loadSchedule(): Promise<WorkingHours | null> {
+  const snapshot = await getDoc(doc(db, 'settings', 'workingHours'));
+  if (!snapshot.exists()) return null;
+  const data = snapshot.data();
+  // Older documents hold the days at the top level rather than under `schedule`.
+  return { ...INITIAL_SCHEDULE, ...((data.schedule ?? data) as WorkingHours) };
+}
 
 export default function WorkingHoursPage() {
   const back = useBackNavigation('/settings');
   const { toast } = useToast();
-  const { can, isLoading: isAuthLoading } = useAuthorization();
-  
-  const [workingHours, setWorkingHours] = useState<WorkingHours>(initialWorkingHours);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  const [isAddHolidayOpen, setIsAddHolidayOpen] = useState(false);
-  const [newHolidayName, setNewHolidayName] = useState('');
-  const [newHolidayDate, setNewHolidayDate] = useState<Date | undefined>();
-  
+  const { can } = useAuthorization();
   const canView = can('View', 'Settings.Working Hrs');
   const canEdit = can('Edit', 'Settings.Working Hrs');
 
+  const [schedule, setSchedule] = useState<WorkingHours>(INITIAL_SCHEDULE);
+  const [savedSchedule, setSavedSchedule] = useState<WorkingHours>(INITIAL_SCHEDULE);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
-  const fetchWorkingHours = useCallback(async () => {
-    const docRef = doc(db, 'settings', 'workingHours');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      if(data.schedule) {
-        setWorkingHours(data.schedule);
-      } else {
-        // Fallback for old data structure
-        setWorkingHours(data as WorkingHours);
-      }
-    }
-  }, []);
-
-  const fetchHolidays = useCallback(async () => {
-    const querySnapshot = await getDocs(collection(db, 'holidays'));
-    const holidaysData: Holiday[] = [];
-    querySnapshot.forEach((doc) => {
-      holidaysData.push({ id: doc.id, ...doc.data() } as Holiday);
-    });
-    setHolidays(holidaysData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-  }, []);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Holiday | null>(null);
 
   useEffect(() => {
-    if (canView) {
-      setIsLoading(true);
-      Promise.all([fetchWorkingHours(), fetchHolidays()]).finally(() => setIsLoading(false));
-    }
-  }, [canView, fetchWorkingHours, fetchHolidays]);
-  
-  const resetHolidayForm = () => {
-    setNewHolidayName('');
-    setNewHolidayDate(undefined);
-    setIsAddHolidayOpen(false);
-  }
-
-  const handleWorkingHoursChange = (day: string, field: 'isWorkDay' | 'startTime' | 'endTime', value: boolean | string) => {
-    setWorkingHours(prev => ({
-      ...prev,
-      [day]: { ...prev[day], [field]: value }
-    }));
-  };
-
-  const handleSaveWorkingHours = async () => {
-    if (!canEdit) {
-      toast({ title: 'Permission Denied', description: 'You do not have permission to edit working hours.', variant: 'destructive' });
-      return;
-    }
-    try {
-      await setDoc(doc(db, 'settings', 'workingHours'), { schedule: workingHours });
-      toast({ title: 'Success', description: 'Working hours have been saved.' });
-    } catch (error) {
-      console.error("Error saving working hours: ", error);
-      toast({ title: 'Error', description: 'Failed to save working hours.', variant: 'destructive' });
-    }
-  };
-
-  const handleAddHoliday = async () => {
-     if (!canEdit) {
-      toast({ title: 'Permission Denied', description: 'You do not have permission to add holidays.', variant: 'destructive' });
-      return;
-    }
-    if (!newHolidayName.trim() || !newHolidayDate) {
-      toast({ title: 'Validation Error', description: 'Holiday name and date are required.', variant: 'destructive' });
-      return;
-    }
-    try {
-      await addDoc(collection(db, 'holidays'), {
-        name: newHolidayName,
-        date: format(newHolidayDate, 'yyyy-MM-dd'),
+    if (!canView) return;
+    let live = true;
+    Promise.all([loadSchedule(), loadHolidays()])
+      .then(([stored, list]) => {
+        if (!live) return;
+        if (stored) {
+          setSchedule(stored);
+          setSavedSchedule(stored);
+        }
+        setHolidays(list);
+      })
+      .catch((error) => {
+        console.error('Error loading working hours: ', error);
+        toast({ title: 'Could not load working hours', description: 'Check your connection and reload the page.', variant: 'destructive' });
+      })
+      .finally(() => {
+        if (live) setLoading(false);
       });
-      toast({ title: 'Success', description: `Holiday "${newHolidayName}" added.` });
-      resetHolidayForm();
-      fetchHolidays();
-    } catch (error) {
-      console.error("Error adding holiday: ", error);
-      toast({ title: 'Error', description: 'Failed to add holiday.', variant: 'destructive' });
-    }
-  };
-  
-  const handleDeleteHoliday = async (id: string) => {
-     if (!canEdit) {
-      toast({ title: 'Permission Denied', description: 'You do not have permission to delete holidays.', variant: 'destructive' });
-      return;
-    }
-    try {
-      await deleteDoc(doc(db, "holidays", id));
-      toast({ title: "Success", description: "Holiday deleted successfully." });
-      fetchHolidays();
-    } catch (error) {
-      console.error("Error deleting holiday: ", error);
-      toast({ title: "Error", description: "Failed to delete holiday.", variant: "destructive" });
-    }
-  };
-  
-  if (isAuthLoading) {
-      return (
-        <div className="w-full">
-            <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
-                <Skeleton className="h-96 lg:col-span-3" />
-                <Skeleton className="h-80 lg:col-span-2" />
-            </div>
-        </div>
-      )
-  }
+    return () => {
+      live = false;
+    };
+  }, [canView, toast]);
 
-  if (!canView) {
-    return (
-      <div className="w-full">
-        <PageHeader title="Working Hours" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
-        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!canView) return <SettingsAccessDenied title="Working Hours" icon={Clock} />;
+
+  const today = todayIso();
+  const upcomingCount = holidays.filter((holiday) => holiday.date >= today).length;
+  const workDays = WORK_WEEK.filter((day) => schedule[day]?.isWorkDay);
+  const invalidDays = workDays.filter((day) => hoursOf(schedule[day].startTime, schedule[day].endTime) === null);
+  const weeklyHours = workDays.reduce((sum, day) => sum + (hoursOf(schedule[day].startTime, schedule[day].endTime) ?? 0), 0);
+  const dirty = JSON.stringify(WORK_WEEK.map((day) => schedule[day])) !== JSON.stringify(WORK_WEEK.map((day) => savedSchedule[day]));
+  const firstWorkDay = workDays[0];
+
+  const changeDay = (day: string, patch: Partial<WorkingHours[string]>) =>
+    setSchedule((current) => ({ ...current, [day]: { ...current[day], ...patch } }));
+
+  const copyFirstDay = () => {
+    if (!firstWorkDay) return;
+    const { startTime, endTime } = schedule[firstWorkDay];
+    setSchedule((current) => Object.fromEntries(WORK_WEEK.map((day) => [day, current[day].isWorkDay ? { ...current[day], startTime, endTime } : current[day]])));
+  };
+
+  const saveSchedule = async () => {
+    if (!canEdit || invalidDays.length) return;
+    setSavingSchedule(true);
+    try {
+      await setDoc(doc(db, 'settings', 'workingHours'), { schedule });
+      setSavedSchedule(schedule);
+      toast({ title: 'Working week saved', description: `${workDays.length} working days, ${hoursText(weeklyHours)} a week.` });
+    } catch (error) {
+      console.error('Error saving working hours: ', error);
+      toast({ title: 'Not saved', description: 'Check your connection and try again.', variant: 'destructive' });
+    }
+    setSavingSchedule(false);
+  };
+
+  const openAdd = () => {
+    setNewName('');
+    setNewDate('');
+    setAddOpen(true);
+  };
+
+  const addHoliday = async () => {
+    if (!canEdit || !newName.trim() || !newDate) return;
+    setAdding(true);
+    try {
+      await addDoc(collection(db, 'holidays'), { name: newName.trim(), date: newDate });
+      setHolidays(await loadHolidays());
+      setAddOpen(false);
+      toast({ title: 'Holiday added', description: `${newName.trim()} · ${dateOf(newDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` });
+    } catch (error) {
+      console.error('Error adding holiday: ', error);
+      toast({ title: 'Not added', description: 'Check your connection and try again.', variant: 'destructive' });
+    }
+    setAdding(false);
+  };
+
+  const removeHoliday = async () => {
+    if (!deleteTarget || !canEdit) return;
+    try {
+      await deleteDoc(doc(db, 'holidays', deleteTarget.id));
+      setHolidays((current) => current.filter((holiday) => holiday.id !== deleteTarget.id));
+      toast({ title: 'Holiday removed', description: deleteTarget.name });
+    } catch (error) {
+      console.error('Error deleting holiday: ', error);
+      toast({ title: 'Not removed', description: 'Check your connection and try again.', variant: 'destructive' });
+      throw error;
+    }
+  };
+
+  const duplicateDate = newDate !== '' && holidays.some((holiday) => holiday.date === newDate);
 
   return (
-    <>
-      {/* ── Background ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-teal-50/60 via-background to-cyan-50/40 dark:from-teal-950/20 dark:via-background dark:to-cyan-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[35vw] h-[35vw] rounded-full bg-teal-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[35vw] h-[35vw] rounded-full bg-cyan-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(20,184,166,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-    <div className="w-full px-4 sm:px-5 py-3">
+    <SettingsPage>
       <PageHeader
         title="Working Hours"
-        description="Configure work schedule and holidays"
+        description="The company's working week and its holidays."
+        icon={Clock}
         backHref={back.href}
         backLabel={back.label}
         onBackClick={back.onClick}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
-        <Card className="lg:col-span-3 border-teal-200/60 dark:border-teal-800/30 overflow-hidden">
-          <div className="h-0.5 w-full bg-gradient-to-r from-teal-400 to-cyan-400" />
-          <CardHeader className="pb-3">
-            <CardTitle>Weekly Schedule</CardTitle>
-            <CardDescription>Set working hours for each day of the week.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {isLoading ? (
-               Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)
-            ) : (
-              daysOfWeek.map(day => (
-                <div key={day} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="flex items-center justify-between sm:justify-start gap-4">
-                    <Label htmlFor={`switch-${day}`} className="w-24 font-medium">{day}</Label>
-                    <div className="flex items-center gap-3">
-                      <Switch
-                        id={`switch-${day}`}
-                        checked={workingHours[day]?.isWorkDay}
-                        onCheckedChange={(checked) => handleWorkingHoursChange(day, 'isWorkDay', checked)}
-                        disabled={!canEdit}
-                      />
-                      <span className="text-sm text-muted-foreground w-8">{workingHours[day]?.isWorkDay ? 'Work' : 'Off'}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="time"
-                      value={workingHours[day]?.startTime || '00:00'}
-                      onChange={(e) => handleWorkingHoursChange(day, 'startTime', e.target.value)}
-                      disabled={!workingHours[day]?.isWorkDay || !canEdit}
-                      className="w-full sm:w-32"
-                    />
-                    <Input
-                      type="time"
-                      value={workingHours[day]?.endTime || '00:00'}
-                      onChange={(e) => handleWorkingHoursChange(day, 'endTime', e.target.value)}
-                      disabled={!workingHours[day]?.isWorkDay || !canEdit}
-                      className="w-full sm:w-32"
-                    />
-                  </div>
-                </div>
-              ))
-            )}
-            <Button onClick={handleSaveWorkingHours} className="w-full" disabled={!canEdit}>Save Hours</Button>
-          </CardContent>
-        </Card>
-
-        <Collapsible open={isAddHolidayOpen} onOpenChange={setIsAddHolidayOpen} className="min-w-0 lg:col-span-2">
-          <TableCard
-            title="Holidays"
-            description="Manage company holidays."
-            actions={
-              <CollapsibleTrigger asChild>
-                <Button size="sm" disabled={!canEdit}>
-                  <Plus className="mr-2 h-4 w-4" /> Add Holiday
-                </Button>
-              </CollapsibleTrigger>
-            }
-            toolbar={isAddHolidayOpen ? (
-              <CollapsibleContent>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="holiday-name">Holiday Name</Label>
-                    <Input id="holiday-name" value={newHolidayName} onChange={(e) => setNewHolidayName(e.target.value)} placeholder="e.g. New Year's Day" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant={"outline"}
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !newHolidayDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {newHolidayDate ? format(newHolidayDate, "PPP") : <span>Pick a date</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={newHolidayDate}
-                          onSelect={setNewHolidayDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={resetHolidayForm}>Cancel</Button>
-                    <Button onClick={handleAddHoliday}>Add</Button>
-                  </div>
-                </div>
-              </CollapsibleContent>
-            ) : undefined}
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right w-[50px]">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableLoading colSpan={3} rows={1} />
-                ) : holidays.length > 0 ? (
-                  holidays.map(holiday => (
-                    <TableRow key={holiday.id}>
-                      <TableCell className="font-medium">{holiday.name}</TableCell>
-                      <TableCell className="whitespace-nowrap">{format(new Date(holiday.date), 'dd MMM, yyyy')}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteHoliday(holiday.id)} disabled={!canEdit}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableEmpty colSpan={3}>No holidays added yet.</TableEmpty>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] xl:items-start">
+        <SettingsSection
+          title="Working week"
+          icon={Clock}
+          description={loading ? 'Loading…' : `${workDays.length} working day${workDays.length === 1 ? '' : 's'} · ${hoursText(weeklyHours)} a week`}
+          action={
+            canEdit && firstWorkDay && workDays.length > 1 ? (
+              <Button variant="outline" size="sm" onClick={copyFirstDay} disabled={loading}>
+                <Copy className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                Use {firstWorkDay}&rsquo;s hours for all
+              </Button>
+            ) : undefined
+          }
+          footer={
+            canEdit ? (
+              <>
+                {dirty && (
+                  <Button variant="ghost" onClick={() => setSchedule(savedSchedule)} disabled={savingSchedule}>
+                    <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Undo changes
+                  </Button>
                 )}
-              </TableBody>
-            </Table>
-          </TableCard>
-        </Collapsible>
+                <Button onClick={() => void saveSchedule()} disabled={savingSchedule || !dirty || invalidDays.length > 0}>
+                  {savingSchedule ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="mr-2 h-4 w-4" aria-hidden="true" />}
+                  Save week
+                </Button>
+              </>
+            ) : undefined
+          }
+        >
+          {loading ? (
+            <div className="space-y-2">
+              {WORK_WEEK.map((day) => <Skeleton key={day} className="h-12 rounded-lg" />)}
+            </div>
+          ) : (
+            <WeekScheduleList schedule={schedule} disabled={!canEdit} onChangeDay={changeDay} />
+          )}
+          {invalidDays.length > 0 && (
+            <SettingsNotice tone="danger" title="The end of the day must come after its start">
+              Check {invalidDays.join(', ')}.
+            </SettingsNotice>
+          )}
+          {!canEdit && <SettingsNotice>Your role can see the working week but not change it (Working Hrs › Edit).</SettingsNotice>}
+        </SettingsSection>
+
+        <SettingsSection
+          title="Holidays"
+          icon={CalendarDays}
+          description={loading ? 'Loading…' : upcomingCount ? `${upcomingCount} coming up` : 'None coming up'}
+          action={
+            canEdit ? (
+              <Button size="sm" onClick={openAdd} disabled={loading}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                Add holiday
+              </Button>
+            ) : undefined
+          }
+          flush
+        >
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {[0, 1, 2].map((row) => <Skeleton key={row} className="h-12 rounded-lg" />)}
+            </div>
+          ) : (
+            <HolidayRegister holidays={holidays} today={today} canEdit={canEdit} onDelete={setDeleteTarget} />
+          )}
+        </SettingsSection>
       </div>
-    </div>
-    </>
+
+      <FormDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        size="sm"
+        title="Add a holiday"
+        description="It is added to the company's list of holidays."
+        submitLabel="Add holiday"
+        submitting={adding}
+        submitDisabled={!newName.trim() || !newDate}
+        onSubmit={addHoliday}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="holiday-name">Name</Label>
+          <Input id="holiday-name" value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="e.g. Durga Puja" autoFocus maxLength={80} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="holiday-date">Date</Label>
+          <Input id="holiday-date" type="date" value={newDate} onChange={(event) => setNewDate(event.target.value)} />
+          {duplicateDate && <p className="text-xs font-medium text-amber-700">There is already a holiday on this date.</p>}
+        </div>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        destructive
+        title="Remove this holiday?"
+        description={deleteTarget ? `${deleteTarget.name} on ${dateOf(deleteTarget.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} will be removed.` : undefined}
+        confirmLabel="Remove holiday"
+        onConfirm={removeHoliday}
+      />
+    </SettingsPage>
   );
 }

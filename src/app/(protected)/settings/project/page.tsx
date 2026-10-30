@@ -1,14 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Construction, Plus, ShieldAlert } from 'lucide-react';
+import { Construction, Plus } from 'lucide-react';
 import { addDoc, collection, deleteDoc, doc, getDocs, runTransaction, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SettingsAccessDenied, SettingsPageSkeleton } from '@/components/settings/settings-ui';
 import { ProjectRegister } from '@/components/settings/projects/project-register';
 import { ProjectFormDialog, SubdivisionFormDialog, type InChargePerson } from '@/components/settings/projects/project-dialogs';
 import { useToast } from '@/hooks/use-toast';
@@ -205,57 +204,19 @@ export default function ManageProjectPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) {
-    return (
-      <div className="w-full space-y-4 px-4 py-3 sm:px-5">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-10 w-32" />
-        </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[76px] rounded-xl" />)}
-        </div>
-        <Skeleton className="h-96 w-full rounded-xl" />
-      </div>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <div className="w-full px-4 sm:px-5">
-        <PageHeader title="Projects" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this page. Please contact an administrator.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!canView) return <SettingsAccessDenied title="Projects" icon={Construction} />;
+  if (isAuthLoading || isLoading) return <SettingsPageSkeleton layout="register" />;
 
   const deleteSites = deleteTarget?.kind === 'project' ? subdivisionsOf(deleteTarget.project).length : 0;
 
   return (
     <>
-      {/* ── Background ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-amber-50/60 via-background to-yellow-50/40 dark:from-amber-950/20 dark:via-background dark:to-yellow-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[35vw] h-[35vw] rounded-full bg-amber-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[35vw] h-[35vw] rounded-full bg-yellow-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
       {/*
         From `lg` the page is exactly the screen below the app header (less the settings frame's
         2.5rem of padding), so the page never scrolls: the register fills what is left and scrolls
         inside. Below `lg` it flows as usual — a scroller inside a phone screen is too cramped.
       */}
-      <div className="flex w-full flex-col px-4 py-3 sm:px-5 lg:h-[calc(100dvh-var(--app-header-offset,4rem)-2.5rem)]">
+      <div className="flex w-full min-w-0 flex-col lg:h-[calc(100dvh-var(--app-header-offset,4rem)-2.5rem)]">
         <PageHeader
           title="Projects"
           description="Every project, and the sub-division sites it is executed at."
@@ -266,7 +227,6 @@ export default function ManageProjectPage() {
           actions={
             <Button
               disabled={!canAdd}
-              className="rounded-full shadow-md"
               onClick={() => openProject({ mode: 'add', project: null, initial: null })}
             >
               <Plus className="mr-2 h-4 w-4" />

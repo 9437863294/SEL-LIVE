@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Accessibility, Building2, LayoutDashboard, LayoutPanelLeft, Palette, SwatchBook } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { SettingsPage } from '@/components/settings/settings-ui';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { AppearanceSectionNav, SaveStatus, type SectionLink } from '@/components/appearance/controls';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -35,9 +36,10 @@ export default function AppearanceLayout({ children }: { children: ReactNode }) 
   ];
 
   return (
-    <div className="space-y-4 px-3 py-3 sm:px-5">
+    <SettingsPage>
       <PageHeader
         title="Appearance"
+        icon={Palette}
         description="How SEL Live looks and behaves for you — and, for administrators, for everyone."
         backHref={back.href}
         backLabel={back.label}
@@ -46,6 +48,6 @@ export default function AppearanceLayout({ children }: { children: ReactNode }) 
       />
       <AppearanceSectionNav links={links} />
       {children}
-    </div>
+    </SettingsPage>
   );
 }

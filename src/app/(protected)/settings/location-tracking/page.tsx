@@ -10,7 +10,6 @@ import {
   MailCheck,
   MapPin,
   RefreshCw,
-  ShieldAlert,
   ShieldCheck,
   Users,
 } from 'lucide-react';
@@ -26,6 +25,10 @@ import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { SearchInput } from '@/components/shared/filter-bar';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
+import { DataList } from '@/components/shared/data-list';
+import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
+import { SettingsAccessDenied, SettingsNotice, SettingsPage, SettingsPageSkeleton } from '@/components/settings/settings-ui';
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -39,7 +42,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LOCATION_OTP_EXPIRY_KEY, LOCATION_OTP_TOKEN_KEY } from '@/lib/location-tracking-client';
 
 // Shared with Session Management, which reuses this unlock to show GPS.
@@ -353,150 +356,192 @@ export default function LocationTrackingSettingsPage() {
   const enabledCount = rows.filter((row) => row.enabled).length;
   const capturedCount = rows.filter((row) => row.location).length;
 
-  if (permissionLoading) return <LocationPageSkeleton />;
-  if (!canView) return <AccessDenied />;
+  if (permissionLoading) return <SettingsPageSkeleton layout="register" />;
+  if (!canView) {
+    return (
+      <SettingsAccessDenied
+        title="Location Tracking"
+        icon={LocateFixed}
+        message="Your role needs Settings › Location Tracking › View to open this page."
+      />
+    );
+  }
+  const header = (actions?: React.ReactNode) => (
+    <PageHeader
+      title="Location Tracking"
+      description="Choose who shares their location and how often it is captured."
+      icon={LocateFixed}
+      backHref={back.href}
+      backLabel={back.label}
+      onBackClick={back.onClick}
+      actions={actions}
+    />
+  );
   if (!accessToken) {
     return (
-      <OtpGate
-        email={user?.email || ''}
-        maskedEmail={maskedEmail}
-        otp={otp}
-        personalPassword={personalPassword}
-        otpSent={otpSent}
-        busy={otpBusy}
-        resendSeconds={resendSeconds}
-        onOtpChange={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))}
-        onPersonalPasswordChange={setPersonalPassword}
-        onRequest={() => void requestOtp()}
-        onVerify={() => void verifyOtp()}
-      />
+      <SettingsPage>
+        {header()}
+        <OtpGate
+          email={user?.email || ''}
+          maskedEmail={maskedEmail}
+          otp={otp}
+          personalPassword={personalPassword}
+          otpSent={otpSent}
+          busy={otpBusy}
+          resendSeconds={resendSeconds}
+          onOtpChange={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))}
+          onPersonalPasswordChange={setPersonalPassword}
+          onRequest={() => void requestOtp()}
+          onVerify={() => void verifyOtp()}
+        />
+      </SettingsPage>
     );
   }
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <PageHeader
-        title="Location Tracking"
-        backHref={back.href}
-        backLabel={back.label}
-        onBackClick={back.onClick}
-        description="Choose who shares location and how often it is captured."
-        icon={LocateFixed}
-        actions={
-          <>
-            <Button variant="outline" onClick={() => void loadRows(accessToken)} disabled={loadingRows}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loadingRows ? 'animate-spin' : ''}`} /> Refresh
-            </Button>
-            <Button variant="ghost" onClick={clearAccess}><LockKeyhole className="mr-2 h-4 w-4" /> Lock</Button>
-          </>
-        }
-      />
+    <SettingsPage>
+      {header(
+        <>
+          <Button variant="outline" onClick={() => void loadRows(accessToken)} disabled={loadingRows}>
+            <RefreshCw className={cn('mr-2 h-4 w-4', loadingRows && 'animate-spin')} aria-hidden="true" /> Refresh
+          </Button>
+          <Button variant="outline" onClick={clearAccess} title="Lock the page again; opening it needs a new code">
+            <LockKeyhole className="mr-2 h-4 w-4" aria-hidden="true" /> Lock
+          </Button>
+        </>,
+      )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Metric icon={Users} label="Total users" value={rows.length} />
-        <Metric icon={MapPin} label="Capture enabled" value={enabledCount} />
-        <Metric icon={LocateFixed} label="Locations received" value={capturedCount} />
-      </div>
+      {!canEdit && <SettingsNotice>Your role can see these settings but not change them (Location Tracking › Edit).</SettingsNotice>}
+
+      <KpiGrid>
+        <KpiCard icon={Users} label="Users" value={rows.length} tone="slate" />
+        <KpiCard
+          icon={MapPin}
+          label="Capture on"
+          value={enabledCount}
+          hint={rows.length ? `${Math.round((enabledCount / rows.length) * 100)}% of users` : undefined}
+          tone="emerald"
+        />
+        <KpiCard icon={LocateFixed} label="Located" value={capturedCount} hint="Have sent a location" tone="teal" />
+      </KpiGrid>
 
       <TableCard
-        title="User capture settings"
-        description="Android continues after normal app dismissal with the required ongoing location notification."
+        title="Who shares their location"
+        description="On Android, capture carries on after the app is closed, under the required ongoing notification. Select a person for their history."
         count={filteredRows.length}
         total={rows.length}
         noun="user"
-        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search users" className="sm:max-w-sm" />}
+        toolbar={<SearchInput value={search} onChange={setSearch} placeholder="Search name, email, designation or role" className="sm:max-w-sm" />}
       >
-          {loadingRows ? <RowsSkeleton /> : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>User</TableHead>
-                  <TableHead>Required</TableHead>
-                  <TableHead>Capture interval</TableHead>
-                  <TableHead>Last location</TableHead>
-                  <TableHead>Current location</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRows.map((row) => {
-                  const saving = savingIds.has(row.id);
-                  const fetching = fetchingIds.has(row.id);
-                  return (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => void openHistory(row)}
-                          className="group flex w-full items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          aria-label={`Open location history for ${row.name}`}
+        {loadingRows ? (
+          <RowsSkeleton />
+        ) : (
+          <div className="p-3 sm:p-0">
+            <DataList
+              frameless
+              rows={filteredRows}
+              empty={<p className="py-10 text-center text-sm text-muted-foreground">{rows.length ? 'No user matches the search.' : 'No users yet.'}</p>}
+              columns={[
+                {
+                  header: 'User',
+                  mobile: 'title',
+                  cell: (row) => (
+                    <button
+                      type="button"
+                      onClick={() => void openHistory(row)}
+                      className="group flex w-full min-w-0 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`Open location history for ${row.name}`}
+                    >
+                      <Avatar className="h-9 w-9 shrink-0">
+                        <AvatarImage src={row.photoURL} alt="" />
+                        <AvatarFallback>{initials(row.name)}</AvatarFallback>
+                      </Avatar>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold group-hover:text-primary group-hover:underline">{row.name || 'Unnamed user'}</span>
+                        <span className="block truncate text-xs font-normal text-muted-foreground">{row.designation || row.role || row.email}</span>
+                      </span>
+                      {row.status === 'Inactive' && <StatusBadge status={row.status} />}
+                      <History className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
+                    </button>
+                  ),
+                },
+                {
+                  header: 'Capture',
+                  mobile: 'aside',
+                  cell: (row) => (
+                    <span className="inline-flex items-center gap-2">
+                      <Switch
+                        checked={row.enabled}
+                        disabled={!canEdit || savingIds.has(row.id)}
+                        onCheckedChange={(enabled) => void updateSetting(row, { enabled })}
+                        aria-label={`Capture location from ${row.name}`}
+                      />
+                      <span className="w-6 text-xs text-muted-foreground">{row.enabled ? 'On' : 'Off'}</span>
+                      {savingIds.has(row.id) && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="Saving" />}
+                    </span>
+                  ),
+                },
+                {
+                  header: 'Every',
+                  cell: (row) => (
+                    <Select
+                      value={String(row.intervalSeconds)}
+                      disabled={!canEdit || savingIds.has(row.id)}
+                      onValueChange={(value) => void updateSetting(row, { intervalSeconds: Number(value) })}
+                    >
+                      <SelectTrigger className="h-9 w-full sm:w-36" aria-label={`Capture interval for ${row.name}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INTERVAL_OPTIONS.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  ),
+                },
+                {
+                  header: 'Last location',
+                  cell: (row) =>
+                    row.location ? (
+                      <span className="block min-w-0 space-y-0.5">
+                        <a
+                          href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-medium tabular-nums text-primary hover:underline"
                         >
-                          <Avatar className="h-9 w-9"><AvatarImage src={row.photoURL} alt={row.name} /><AvatarFallback>{initials(row.name)}</AvatarFallback></Avatar>
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold group-hover:text-primary group-hover:underline">{row.name || 'Unnamed user'}</p>
-                            <p className="truncate text-xs text-muted-foreground">{row.designation || row.role || row.email}</p>
-                          </div>
-                          {row.status === 'Inactive' && <StatusBadge status={row.status} />}
-                          <History className="ml-auto h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                        </button>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={row.enabled}
-                            disabled={!canEdit || saving}
-                            onCheckedChange={(enabled) => void updateSetting(row, { enabled })}
-                            aria-label={`Require location from ${row.name}`}
-                          />
-                          <span className="text-xs text-muted-foreground">{row.enabled ? 'Yes' : 'No'}</span>
-                          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Select
-                          value={String(row.intervalSeconds)}
-                          disabled={!canEdit || saving}
-                          onValueChange={(value) => void updateSetting(row, { intervalSeconds: Number(value) })}
-                        >
-                          <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                          <SelectContent>{INTERVAL_OPTIONS.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell>
-                        {row.location ? (
-                          <div className="space-y-1">
-                            <a
-                              href={`https://www.google.com/maps?q=${row.location.latitude},${row.location.longitude}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                            >
-                              {row.location.latitude.toFixed(5)}, {row.location.longitude.toFixed(5)} <ExternalLink className="h-3 w-3" />
-                            </a>
-                            <p className="text-xs text-muted-foreground">{formatCapturedAt(row.location.updatedAtIso)}</p>
-                          </div>
-                        ) : <span className="text-muted-foreground">Never captured</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!canEdit || !row.enabled || fetching}
-                          onClick={() => void fetchCurrentLocation(row)}
-                          title={row.enabled ? `Fetch current location for ${row.name}` : 'Enable Required first'}
-                        >
-                          {fetching
-                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            : <LocateFixed className="mr-2 h-4 w-4" />}
-                          {fetching ? 'Fetching' : 'Fetch now'}
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {!filteredRows.length && <TableEmpty colSpan={5}>No matching users found.</TableEmpty>}
-              </TableBody>
-            </Table>
-          )}
+                          {row.location.latitude.toFixed(5)}, {row.location.longitude.toFixed(5)}
+                          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                        </a>
+                        <span className="block text-xs text-muted-foreground">{formatCapturedAt(row.location.updatedAtIso)}</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Never captured</span>
+                    ),
+                },
+                {
+                  header: 'Now',
+                  align: 'right',
+                  mobile: 'footer',
+                  cell: (row) => {
+                    const fetching = fetchingIds.has(row.id);
+                    return (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!canEdit || !row.enabled || fetching}
+                        onClick={() => void fetchCurrentLocation(row)}
+                        title={row.enabled ? `Ask ${row.name}’s device for its location now` : 'Turn capture on first'}
+                      >
+                        {fetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <LocateFixed className="mr-2 h-4 w-4" aria-hidden="true" />}
+                        {fetching ? 'Fetching' : 'Fetch now'}
+                      </Button>
+                    );
+                  },
+                },
+              ]}
+            />
+          </div>
+        )}
       </TableCard>
 
       <LocationHistoryDialog
@@ -510,9 +555,7 @@ export default function LocationTrackingSettingsPage() {
           }
         }}
       />
-
-      {!canEdit && <p className="text-center text-xs text-muted-foreground">Your role has view-only access. “Location Tracking → Edit” is required to change settings.</p>}
-    </div>
+    </SettingsPage>
   );
 }
 
@@ -622,12 +665,16 @@ function OtpGate({
   onVerify: () => void;
 }) {
   return (
-    <div className="flex min-h-[calc(100dvh-8rem)] items-center justify-center p-4">
-      <Card className="w-full max-w-md border-emerald-200/70 shadow-lg">
+    <div className="flex justify-center py-4 sm:py-10">
+      <Card className="w-full max-w-md shadow-md">
         <CardHeader className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><ShieldCheck className="h-7 w-7" /></div>
-          <CardTitle className="mt-3">Additional verification required</CardTitle>
-          <CardDescription>This page controls sensitive employee location settings. Enter the email OTP and personal password to continue.</CardDescription>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15" aria-hidden="true">
+            <ShieldCheck className="h-7 w-7" />
+          </div>
+          <CardTitle className="mt-3">Verify it’s you</CardTitle>
+          <CardDescription>
+            These settings control where employees’ locations are recorded. Enter the code we email you and your personal password to open them.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!otpSent ? (
@@ -680,18 +727,6 @@ function OtpGate({
       </Card>
     </div>
   );
-}
-
-function Metric({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) {
-  return <Card><CardContent className="flex items-center gap-3 p-4"><div className="rounded-lg bg-primary/10 p-2 text-primary"><Icon className="h-4 w-4" /></div><div><p className="text-2xl font-bold">{value}</p><p className="text-xs text-muted-foreground">{label}</p></div></CardContent></Card>;
-}
-
-function AccessDenied() {
-  return <div className="flex min-h-[calc(100dvh-8rem)] items-center justify-center p-6"><Card className="max-w-md text-center"><CardHeader><ShieldAlert className="mx-auto h-10 w-10 text-destructive" /><CardTitle>Access denied</CardTitle><CardDescription>Your role needs “Settings → Location Tracking → View” permission to open this page.</CardDescription></CardHeader></Card></div>;
-}
-
-function LocationPageSkeleton() {
-  return <div className="space-y-4 p-6"><Skeleton className="h-12 w-72" /><div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><Skeleton className="h-24" /><Skeleton className="h-24" /><Skeleton className="h-24" /></div><Skeleton className="h-96" /></div>;
 }
 
 function RowsSkeleton() {

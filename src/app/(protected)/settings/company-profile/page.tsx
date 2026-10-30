@@ -11,14 +11,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Download, Loader2, Palette, Plus, RotateCcw, Save, ShieldAlert, Star, Trash2 } from 'lucide-react';
+import { Building2, Download, FileText, Loader2, MapPin, Palette, PanelBottom, PanelTop, Plus, Printer, Receipt, RotateCcw, Ruler, Save, Stamp, Star, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/shared/page-header';
+import { SettingsAccessDenied, SettingsNotice, SettingsPage, SettingsSection } from '@/components/settings/settings-ui';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { CompanyFooterLine, CompanyLetterhead, PrintedOnLine, SignatureBlock } from '@/components/shared/company-letterhead';
 import { LetterheadA4Preview, LetterheadHtmlEditor } from '@/components/shared/letterhead-designer';
@@ -181,29 +181,27 @@ export default function CompanyProfileSettingsPage() {
     />
   );
 
-  if (authzLoading || (canView && !draft && !loadError)) {
+  if (!authzLoading && !canView) return <SettingsAccessDenied title="Company Profile" icon={Building2} />;
+
+  if (authzLoading || (!draft && !loadError)) {
     return (
-      <div className="w-full space-y-4 px-4 sm:px-5">
+      <SettingsPage>
         {header}
-        <Skeleton className="h-10 w-full max-w-xl" />
-        <Skeleton className="h-96 w-full" />
-      </div>
+        <Skeleton className="h-10 w-full max-w-xs rounded-lg" />
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="hidden h-96 rounded-xl xl:block" />
+        </div>
+      </SettingsPage>
     );
   }
 
-  if (!canView || loadError || !draft) {
+  if (loadError || !draft) {
     return (
-      <div className="w-full space-y-4 px-4 sm:px-5">
+      <SettingsPage>
         {header}
-        <Card>
-          <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
-            <ShieldAlert className="h-12 w-12 text-destructive" />
-            <span className="text-sm text-muted-foreground">
-              {!canView ? 'You do not have permission to view the company profile settings.' : loadError}
-            </span>
-          </CardContent>
-        </Card>
-      </div>
+        <SettingsNotice tone="danger" title="The company profile did not load">{loadError}</SettingsNotice>
+      </SettingsPage>
     );
   }
 
@@ -221,29 +219,31 @@ export default function CompanyProfileSettingsPage() {
   );
 
   return (
-    <div className="w-full px-4 pb-8 sm:px-5">
+    <SettingsPage>
       {header}
-      {readOnly && <p className="mb-3 text-sm text-muted-foreground">Read-only: saving needs the Company Profile › Edit permission.</p>}
-      <p className="mb-3 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-        <Palette className="h-4 w-4 shrink-0" aria-hidden="true" />
-        Layout, text and animations are on
-        <Link href="/settings/appearance/company-layout" className="font-medium text-primary underline-offset-2 hover:underline">Settings › Appearance</Link>.
-      </p>
+      {readOnly && <SettingsNotice>Read-only: saving needs the Company Profile › Edit permission.</SettingsNotice>}
 
       <Tabs defaultValue="details" className="min-w-0">
-        <div className="min-w-0 overflow-x-auto">
-          <TabsList className="mb-4">
+        <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 max-w-full overflow-x-auto">
+          <TabsList>
             <TabsTrigger value="details">Company details</TabsTrigger>
             <TabsTrigger value="letterhead">Letterhead &amp; print</TabsTrigger>
           </TabsList>
+          </div>
+          <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            <Palette className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              Layout, text and animations are in{' '}
+              <Link href="/settings/appearance/company-layout" className="font-medium text-primary underline-offset-2 hover:underline">Appearance</Link>.
+            </span>
+          </p>
         </div>
 
         {/* ── Company details ── */}
         <TabsContent value="details" className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
           <div className="min-w-0 space-y-4">
-            <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-base">Identity</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SettingsSection title="Identity" icon={Building2} description="How the company is named on documents." contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Legal name" className="sm:col-span-2"><Input value={draft.legalName} onChange={(e) => update({ legalName: e.target.value })} disabled={readOnly} maxLength={160} /></Field>
                 <Field label="Short name"><Input value={draft.shortName} onChange={(e) => update({ shortName: e.target.value })} disabled={readOnly} maxLength={40} /></Field>
                 <Field label="Tagline"><Input value={draft.tagline ?? ''} onChange={(e) => update({ tagline: e.target.value })} disabled={readOnly} maxLength={160} /></Field>
@@ -252,12 +252,9 @@ export default function CompanyProfileSettingsPage() {
                 <Field label="Logo URL" hint="Blank uses the logo from Settings › Appearance › Branding. https only." className="sm:col-span-2">
                   <Input value={draft.logoUrl ?? ''} onChange={(e) => update({ logoUrl: e.target.value })} disabled={readOnly} placeholder="https://…" />
                 </Field>
-              </CardContent>
-            </Card>
+            </SettingsSection>
 
-            <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-base">Address &amp; contacts</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SettingsSection title="Address and contacts" icon={MapPin} contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Address lines" hint="One per line, up to four." className="sm:col-span-2">
                   <Textarea rows={3} value={draft.addressLines.join('\n')} onChange={(e) => update({ addressLines: e.target.value.split('\n') })} disabled={readOnly} />
                 </Field>
@@ -268,25 +265,24 @@ export default function CompanyProfileSettingsPage() {
                 <Field label="Phone"><Input value={draft.phone ?? ''} onChange={(e) => update({ phone: e.target.value })} disabled={readOnly} /></Field>
                 <Field label="Email"><Input type="email" value={draft.email ?? ''} onChange={(e) => update({ email: e.target.value })} disabled={readOnly} /></Field>
                 <Field label="Website" className="sm:col-span-2"><Input value={draft.website ?? ''} onChange={(e) => update({ website: e.target.value })} disabled={readOnly} placeholder="https://…" /></Field>
-              </CardContent>
-            </Card>
+            </SettingsSection>
 
-            <Card>
-              <CardHeader className="flex flex-col gap-2 pb-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
-                <div className="min-w-0">
-                  <CardTitle className="text-base">GST registrations</CardTitle>
-                  <CardDescription className="text-xs">The primary one prints on the letterhead. Invalid GSTINs are dropped on save.</CardDescription>
-                </div>
-                {canEdit && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm" onClick={importFromExpenses}><Download className="mr-1.5 h-4 w-4" />Import from Expenses</Button>
+            <SettingsSection
+              title="GST registrations"
+              icon={Receipt}
+              description="The primary one prints on the letterhead. Invalid GSTINs are dropped on save."
+              action={
+                canEdit ? (
+                  <>
+                    <Button variant="outline" size="sm" onClick={importFromExpenses}><Download className="mr-1.5 h-4 w-4" aria-hidden="true" />Import from Expenses</Button>
                     <Button variant="outline" size="sm" onClick={() => setRegistrations([...draft.gstRegistrations, { gstin: '', state: '', label: '', primary: draft.gstRegistrations.length === 0 }])}>
-                      <Plus className="mr-1.5 h-4 w-4" />{preview.labels.add}
+                      <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />{preview.labels.add}
                     </Button>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-2">
+                  </>
+                ) : undefined
+              }
+              contentClassName="space-y-2"
+            >
                 {draft.gstRegistrations.length === 0 && <p className="text-sm text-muted-foreground">No registrations yet. Import the ones configured in Expenses › GST registrations.</p>}
                 {draft.gstRegistrations.map((registration, index) => {
                   const change = (patch: Partial<CompanyGstRegistration>) =>
@@ -316,8 +312,7 @@ export default function CompanyProfileSettingsPage() {
                     </div>
                   );
                 })}
-              </CardContent>
-            </Card>
+            </SettingsSection>
           </div>
           <PreviewCard title="Letterhead preview">{letterheadPreview}</PreviewCard>
         </TabsContent>
@@ -325,47 +320,37 @@ export default function CompanyProfileSettingsPage() {
         {/* ── Letterhead & print ── */}
         <TabsContent value="letterhead" className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
           <div className="min-w-0 space-y-4">
-            <Card>
-              <CardHeader className="flex flex-col gap-2 pb-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
-                <div className="min-w-0">
-                  <CardTitle className="text-base">Letterhead design</CardTitle>
-                  <CardDescription className="text-xs">Standard builds it from the options below; Designed lets you lay out the header and footer like a Word document.</CardDescription>
-                </div>
-                {canEdit && lh.mode === 'custom' && (
+            <SettingsSection
+              title="Letterhead design"
+              icon={Stamp}
+              description="Standard builds it from the options below; Designed lets you lay out the header and footer like a Word document."
+              action={
+                canEdit && lh.mode === 'custom' ? (
                   <Button variant="outline" size="sm" onClick={() => updateCustom({ headerHtml: DEFAULT_CUSTOM_LETTERHEAD.headerHtml, footerHtml: DEFAULT_CUSTOM_LETTERHEAD.footerHtml })}>
-                    <RotateCcw className="mr-1.5 h-4 w-4" />Reset to standard design
+                    <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />Reset to standard design
                   </Button>
-                )}
-              </CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                ) : undefined
+              }
+              contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2"
+            >
                 <ChoiceField label="Mode" value={lh.mode} disabled={readOnly} onChange={(mode) => updateDesign('letterhead', { mode })}
                   options={[{ value: 'standard', label: 'Standard (options)' }, { value: 'custom', label: 'Designed (header & footer editor)' }]} />
-              </CardContent>
-            </Card>
+            </SettingsSection>
 
             {lh.mode === 'custom' && (
               <>
-                <Card>
-                  <CardHeader className="pb-3"><CardTitle className="text-base">Header</CardTitle></CardHeader>
-                  <CardContent className="min-w-0">
+                <SettingsSection title="Header" icon={PanelTop} contentClassName="min-w-0">
                     <LetterheadHtmlEditor label="Letterhead header" value={lh.custom.headerHtml} onChange={(headerHtml) => updateCustom({ headerHtml })} disabled={readOnly} minHeightClass="min-h-[160px]" />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-3"><CardTitle className="text-base">Footer</CardTitle></CardHeader>
-                  <CardContent className="min-w-0">
+                </SettingsSection>
+                <SettingsSection title="Footer" icon={PanelBottom} contentClassName="min-w-0">
                     <LetterheadHtmlEditor label="Letterhead footer" value={lh.custom.footerHtml} onChange={(footerHtml) => updateCustom({ footerHtml })} disabled={readOnly} minHeightClass="min-h-[80px]" />
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Page</CardTitle>
-                    <CardDescription className="text-xs">
-                      Repeating on every page and the margin apply to documents printed with the repeating letterhead; others print the header once at the top.
-                      Page-number fields print in the page margin on current Chrome and Edge (131+) and are left out on older browsers such as Chrome 109.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                </SettingsSection>
+                <SettingsSection
+                  title="Page"
+                  icon={Ruler}
+                  description="Repeating on every page and the margin apply to documents printed with the repeating letterhead; others print the header once at the top. Page-number fields print in the page margin on current Chrome and Edge (131+) and are left out on older browsers such as Chrome 109."
+                  contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                >
                     <ChoiceField label="Show header on" value={lh.custom.headerOn} disabled={readOnly} onChange={(headerOn) => updateCustom({ headerOn })}
                       options={[{ value: 'first', label: 'First page only' }, { value: 'every', label: 'Every page' }]} />
                     <ChoiceField label="Show footer on" value={lh.custom.footerOn} disabled={readOnly} onChange={(footerOn) => updateCustom({ footerOn })}
@@ -375,15 +360,12 @@ export default function CompanyProfileSettingsPage() {
                     <MmField label="Page margins (mm)" hint="Blank keeps each document's own margins." value={lh.custom.marginMm} disabled={readOnly} onChange={(marginMm) => updateCustom({ marginMm })} />
                     <Field label="Footer note" hint="The {{footerNote}} field."><Input value={lh.footerNote ?? ''} onChange={(e) => updateDesign('letterhead', { footerNote: e.target.value })} disabled={readOnly} maxLength={200} /></Field>
                     <Field label="Watermark" hint="Faint text behind printed pages; blank for none."><Input value={lh.watermark ?? ''} onChange={(e) => updateDesign('letterhead', { watermark: e.target.value })} disabled={readOnly} maxLength={40} /></Field>
-                  </CardContent>
-                </Card>
+                </SettingsSection>
               </>
             )}
 
             {lh.mode === 'standard' && (
-            <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-base">Letterhead</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SettingsSection title="Letterhead" icon={FileText} description="What the standard letterhead shows, and how." contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <ChoiceField label="Layout" value={lh.layout} disabled={readOnly} onChange={(layout) => updateDesign('letterhead', { layout })}
                   options={[{ value: 'center', label: 'Centred' }, { value: 'left', label: 'Left, logo beside' }, { value: 'split', label: 'Split: name left, details right' }]} />
                 <ChoiceField label="Name size" value={lh.titleSize} disabled={readOnly} onChange={(titleSize) => updateDesign('letterhead', { titleSize })}
@@ -404,23 +386,19 @@ export default function CompanyProfileSettingsPage() {
                 <Field label="Note above the name" hint="e.g. An ISO 9001:2015 company"><Input value={lh.headerNote ?? ''} onChange={(e) => updateDesign('letterhead', { headerNote: e.target.value })} disabled={readOnly} maxLength={200} /></Field>
                 <Field label="Footer note" hint="Printed under the footer line."><Input value={lh.footerNote ?? ''} onChange={(e) => updateDesign('letterhead', { footerNote: e.target.value })} disabled={readOnly} maxLength={200} /></Field>
                 <Field label="Watermark" hint="Faint text behind printed pages; blank for none."><Input value={lh.watermark ?? ''} onChange={(e) => updateDesign('letterhead', { watermark: e.target.value })} disabled={readOnly} maxLength={40} /></Field>
-              </CardContent>
-            </Card>
+            </SettingsSection>
             )}
-            <Card>
-              <CardHeader className="pb-3"><CardTitle className="text-base">Print</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SettingsSection title="Print" icon={Printer} contentClassName="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <ToggleField label="Show “printed on” date" checked={draft.design.print.showPrintedOn} disabled={readOnly} onChange={(showPrintedOn) => updateDesign('print', { showPrintedOn })} />
                 <ToggleField label="Show page numbers" checked={draft.design.print.showPageNumbers} disabled={readOnly} onChange={(showPageNumbers) => updateDesign('print', { showPageNumbers })} />
                 <Field label="Signature captions" hint="One per line, up to six. Blank uses Prepared / Checked / Approved from Text labels." className="sm:col-span-2">
                   <Textarea rows={3} value={draft.design.print.signatureLabels.join('\n')} onChange={(e) => updateDesign('print', { signatureLabels: e.target.value.split('\n') })} disabled={readOnly} />
                 </Field>
-              </CardContent>
-            </Card>
+            </SettingsSection>
           </div>
           <PreviewCard title="Printed document preview">{lh.mode === 'custom' ? <LetterheadA4Preview profile={preview} /> : letterheadPreview}</PreviewCard>
         </TabsContent>
       </Tabs>
-    </div>
+    </SettingsPage>
   );
 }

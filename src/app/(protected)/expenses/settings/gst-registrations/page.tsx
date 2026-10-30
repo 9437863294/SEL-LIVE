@@ -429,8 +429,9 @@ export default function GstRegistrationsSettingsPage() {
         setDepartments(
           departmentsSnap.docs
             .map(entry => {
-              const data = entry.data() as { name?: string; head?: string };
-              return { id: entry.id, name: data.name || entry.id, note: data.head || undefined };
+              // The head is a user id (Settings › Departments picks a person); `headName` is their name.
+              const data = entry.data() as { name?: string; headName?: string };
+              return { id: entry.id, name: data.name || entry.id, note: data.headName || undefined };
             })
             .sort((a, b) => a.name.localeCompare(b.name)),
         );

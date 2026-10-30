@@ -109,7 +109,13 @@ export interface SavedUser {
 export interface Department {
   id: string;
   name: string;
+  /**
+   * The head of department's user id — E-Approval and HR route to it. Empty for none; older records
+   * may hold "N/A".
+   */
   head: string;
+  /** The head's name when it was picked, for screens that show it without looking the user up. */
+  headName?: string;
   status: "Active" | "Inactive";
 }
 

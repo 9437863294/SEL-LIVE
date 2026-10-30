@@ -1,369 +1,280 @@
-
 'use client';
 
-import Link from 'next/link';
+/**
+ * Settings › Overview, the module's landing page: figures from each part of Settings the person may
+ * open. It is not a second menu — the sidebar (and the phone's bar) is the menu, so this page has
+ * no link cards. Each figure loads on its own and shows a dash when its source fails, so one slow
+ * or refused read never holds up the rest. The drawing is in `overview-parts.tsx`.
+ */
+
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, getCountFromServer, getDoc, getDocs, query, Timestamp, where } from 'firebase/firestore';
 import {
-  Activity, Briefcase, Construction, Clock, Users, Hash,
-  Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound, DatabaseZap, Building2,
+  Activity, Briefcase, CalendarDays, Clock, Construction, DatabaseZap, Hash, MonitorSmartphone, Palette, Receipt, Settings2,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
-import { PageHeader } from '@/components/shared/page-header';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useAppearance } from '@/components/theme/ThemeProvider';
+import { HOME_DESIGN_META } from '@/components/home/home-designs';
+import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
+import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import {
+  DocumentNumberList,
+  OverviewAccount,
+  WorkingWeekStrip,
+  plural,
+  type DocumentNumberRow,
+  type Figure,
+} from '@/components/settings/overview-parts';
+import { SettingsPage, SettingsSection } from '@/components/settings/settings-ui';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { useCompanyProfile } from '@/hooks/use-company-profile';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { canOpenAccessManagement } from '@/lib/access-control';
-import { Skeleton } from '@/components/ui/skeleton';
+import { COMPANY_PROFILE_RESOURCE } from '@/lib/company-profile';
+import { DOCUMENT_SERIES } from '@/lib/document-numbers';
+import { db } from '@/lib/firebase';
+import { REPORTING_COPY_RESOURCE, type ReportingCopyRun } from '@/lib/reporting-copy';
+import { fetchReportingCopy } from '@/lib/reporting-copy-client';
+import { USER_SESSIONS_COLLECTION } from '@/lib/session-manager';
+import type { Holiday, SerialNumberConfig, WorkingHours } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
-interface SettingsItemConfig {
-  icon: LucideIcon;
-  text: string;
-  description: string;
-  href: string;
-  permission: string;
-  colorScheme: {
-    bg: string;
-    iconBg: string;
-    iconColor: string;
-    border: string;
-  };
-}
+// ── Figures ──────────────────────────────────────────────────────────────────────────────────────
 
-const settingsItemsBase: SettingsItemConfig[] = [
-  {
-    icon: Briefcase,
-    text: 'Manage Department',
-    description: 'Add, edit, or remove company departments.',
-    href: '/settings/department',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-sky-500/8 to-sky-600/4',
-      iconBg: 'bg-sky-100 dark:bg-sky-900/40',
-      iconColor: 'text-sky-600 dark:text-sky-400',
-      border: 'border-sky-200/60 dark:border-sky-800/30 hover:border-sky-400/60',
-    },
-  },
-  {
-    icon: Construction,
-    text: 'Manage Project',
-    description: 'Set up and configure project details.',
-    href: '/settings/project',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-amber-500/8 to-amber-600/4',
-      iconBg: 'bg-amber-100 dark:bg-amber-900/40',
-      iconColor: 'text-amber-600 dark:text-amber-400',
-      border: 'border-amber-200/60 dark:border-amber-800/30 hover:border-amber-400/60',
-    },
-  },
-  {
-    icon: Users,
-    text: 'Employee',
-    description: 'Manage employee data and sync with HR systems.',
-    href: '/employee',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-green-500/8 to-green-600/4',
-      iconBg: 'bg-green-100 dark:bg-green-900/40',
-      iconColor: 'text-green-600 dark:text-green-400',
-      border: 'border-green-200/60 dark:border-green-800/30 hover:border-green-400/60',
-    },
-  },
-  {
-    icon: KeyRound,
-    text: 'Access Management',
-    description: 'User accounts, roles and permissions, plus the projects and temporary access granted on top of them.',
-    href: '/settings/access-management',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-indigo-500/8 to-violet-600/4',
-      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
-      iconColor: 'text-indigo-600 dark:text-indigo-400',
-      border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
-    },
-  },
-  {
-    icon: MapPinned,
-    text: 'other',
-    description: 'other.',
-    href: '/settings/location-tracking',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-emerald-500/8 to-teal-600/4',
-      iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
-      iconColor: 'text-emerald-600 dark:text-emerald-400',
-      border: 'border-emerald-200/60 dark:border-emerald-800/30 hover:border-emerald-400/60',
-    },
-  },
-  {
-    icon: Hash,
-    text: 'Serial No. Config',
-    description: 'Configure document numbering sequences.',
-    href: '/settings/serial-no-configuration',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-indigo-500/8 to-indigo-600/4',
-      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
-      iconColor: 'text-indigo-600 dark:text-indigo-400',
-      border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
-    },
-  },
-  {
-    icon: Clock,
-    text: 'Working Hours',
-    description: 'Set company working hours and holidays.',
-    href: '/settings/working-hours',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-teal-500/8 to-teal-600/4',
-      iconBg: 'bg-teal-100 dark:bg-teal-900/40',
-      iconColor: 'text-teal-600 dark:text-teal-400',
-      border: 'border-teal-200/60 dark:border-teal-800/30 hover:border-teal-400/60',
-    },
-  },
-  {
-    icon: Palette,
-    text: 'Appearance',
-    description: 'How the app looks and moves: theme, layout, tables and dialogs, animations and text labels.',
-    href: '/settings/appearance',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-pink-500/8 to-pink-600/4',
-      iconBg: 'bg-pink-100 dark:bg-pink-900/40',
-      iconColor: 'text-pink-600 dark:text-pink-400',
-      border: 'border-pink-200/60 dark:border-pink-800/30 hover:border-pink-400/60',
-    },
-  },
-  {
-    icon: MailCheck,
-    text: 'Email Authorization',
-    description: 'Authorize access to email services.',
-    href: '/settings/email-authorization',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-cyan-500/8 to-cyan-600/4',
-      iconBg: 'bg-cyan-100 dark:bg-cyan-900/40',
-      iconColor: 'text-cyan-600 dark:text-cyan-400',
-      border: 'border-cyan-200/60 dark:border-cyan-800/30 hover:border-cyan-400/60',
-    },
-  },
-  {
-    icon: LogIn,
-    text: 'Login Expiry',
-    description: 'Manage session timeout settings.',
-    href: '/settings/login-expiry',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-orange-500/8 to-orange-600/4',
-      iconBg: 'bg-orange-100 dark:bg-orange-900/40',
-      iconColor: 'text-orange-600 dark:text-orange-400',
-      border: 'border-orange-200/60 dark:border-orange-800/30 hover:border-orange-400/60',
-    },
-  },
-  {
-    icon: Package,
-    text: 'Store & Stock',
-    description: 'Configure stock management settings.',
-    href: '/store-stock-management/settings',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-violet-500/8 to-violet-600/4',
-      iconBg: 'bg-violet-100 dark:bg-violet-900/40',
-      iconColor: 'text-violet-600 dark:text-violet-400',
-      border: 'border-violet-200/60 dark:border-violet-800/30 hover:border-violet-400/60',
-    },
-  },
-  {
-    icon: Activity,
-    text: 'Audit Logs',
-    description: 'Track every action across all modules — who, what, when, and where.',
-    href: '/settings/audit-logs',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-indigo-500/8 to-purple-600/4',
-      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
-      iconColor: 'text-indigo-600 dark:text-indigo-400',
-      border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
-    },
-  },
-  {
-    icon: DatabaseZap,
-    text: 'Reporting Database',
-    description: 'Schedule the MongoDB copy of the app’s data used by reporting tools.',
-    href: '/settings/reporting-database',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-cyan-500/8 to-cyan-600/4',
-      iconBg: 'bg-cyan-100 dark:bg-cyan-900/40',
-      iconColor: 'text-cyan-600 dark:text-cyan-400',
-      border: 'border-cyan-200/60 dark:border-cyan-800/30 hover:border-cyan-400/60',
-    },
-  },
-  {
-    icon: Building2,
-    text: 'Company Profile',
-    description: 'Company details, GST registrations, letterhead and print.',
-    href: '/settings/company-profile',
-    permission: 'View',
-    colorScheme: {
-      bg: 'from-slate-500/8 to-slate-600/4',
-      iconBg: 'bg-slate-100 dark:bg-slate-800/40',
-      iconColor: 'text-slate-700 dark:text-slate-300',
-      border: 'border-slate-200/60 dark:border-slate-700/30 hover:border-slate-400/60',
-    },
-  },
-];
-
-function SettingsCard({
-  item,
-  index,
-}: {
-  item: SettingsItemConfig;
-  index: number;
-}) {
-  const { colorScheme } = item;
-
-  const cardContent = (
-    <Card
-      className={cn(
-        'group relative flex flex-col h-full overflow-hidden transition-all duration-300 ease-in-out rounded-xl border',
-        colorScheme.border,
-        'hover:shadow-xl hover:-translate-y-0.5 cursor-pointer',
-      )}
-    >
-      {/* Gradient background */}
-      <div className={cn('absolute inset-0 bg-gradient-to-br opacity-60', colorScheme.bg)} />
-      {/* Top accent */}
-      <div className={cn(
-        'absolute top-0 left-0 right-0 h-0.5 transition-all duration-300 group-hover:h-[2px]',
-        colorScheme.iconBg,
-      )} />
-
-      <CardHeader className="relative flex-row items-center gap-4 space-y-0 p-4">
-        <div className={cn(
-          'rounded-xl p-2.5 shrink-0 transition-transform duration-300 group-hover:scale-110',
-          colorScheme.iconBg,
-        )}>
-          <item.icon className={cn('w-5 h-5', colorScheme.iconColor)} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <CardTitle className="text-sm font-bold leading-tight">{item.text}</CardTitle>
-          <CardDescription className="text-xs mt-0.5 line-clamp-2">{item.description}</CardDescription>
-        </div>
-      </CardHeader>
-    </Card>
-  );
-
-  return (
-    <Link href={item.href} className="no-underline h-full block animate-bb-card-in"
-      style={{ animationDelay: `${index * 40}ms`, animationFillMode: 'both' }}>
-      {cardContent}
-    </Link>
-  );
-}
-
-export default function SettingsPage() {
-  const back = useBackNavigation('/');
-  const { can, isLoading } = useAuthorization();
-
-  const permissionMap: Record<string, string> = {
-    '/settings/department': 'Settings.Manage Department',
-    '/settings/project': 'Settings.Manage Project',
-    '/employee': 'Settings.Employee Management',
-    '/settings/access-management': 'Settings.Access Management',
-    '/settings/location-tracking': 'Settings.Location Tracking',
-    '/settings/serial-no-configuration': 'Settings.Serial No. Config',
-    '/settings/working-hours': 'Settings.Working Hrs',
-    '/settings/appearance': 'Settings.Appearance',
-    '/settings/email-authorization': 'Settings.Email Authorization',
-    '/settings/login-expiry': 'Settings.Login Expiry',
-    '/settings/audit-logs': 'Settings.Audit Logs',
-    '/settings/reporting-database': 'Settings.Reporting Database',
-    '/settings/company-profile': 'Settings.Company Profile',
-    '/store-stock-management/settings': 'Store & Stock Management',
-  };
-
-  // Only the screens this person can open. A greyed-out card for one they cannot still announced
-  // it and cost a click to find out; each rule below is the one its page applies on arrival, so
-  // nobody loses a card for a screen they are allowed into.
-  const settingsItems = settingsItemsBase.filter((item) => {
-    const resource = permissionMap[item.href] ?? 'Settings';
-    switch (item.href) {
-      // Access Management's permission node did not exist when the current roles were written, so
-      // nobody holds it yet. Existing administrators — anyone who can already edit both users and
-      // roles, which is strictly more power than that screen offers — get in too, otherwise the page
-      // that grants the new permission would itself be unreachable. Same rule as
-      // `canOpenAccessManagement`, which the page enforces on its own.
-      case '/settings/access-management':
-        return canOpenAccessManagement(can);
-      // Appearance is personal — every user sets their own theme, text size and layout.
-      case '/settings/appearance':
-        return true;
-      case '/store-stock-management/settings':
-        return can('View Module', resource);
-      // The log also opens for whoever may view users or roles.
-      case '/settings/audit-logs':
-        return can('View', resource) || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management');
-      // Editing the profile includes reading it.
-      case '/settings/company-profile':
-        return can('View', resource) || can('Edit', resource);
-      default:
-        return can(item.permission, resource);
-    }
-  });
-
-  if (isLoading) {
-    return (
-      <>
-        <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-background to-violet-50/50 dark:from-slate-950/40 dark:via-background dark:to-violet-950/20" />
-        </div>
-        <div className="space-y-5">
-          <div className="flex items-center gap-3">
-            <Skeleton className="h-9 w-9 rounded-full" />
-            <Skeleton className="h-7 w-40" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 11 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 rounded-xl" />
-            ))}
-          </div>
-        </div>
-      </>
+/** One figure's load. `null` (no permission) loads nothing and returns `null`. */
+function useFigure<T>(load: (() => Promise<T>) | null): Figure<T> | null {
+  const [figure, setFigure] = useState<Figure<T>>({ status: 'loading' });
+  useEffect(() => {
+    if (!load) return;
+    let live = true;
+    load().then(
+      (value) => {
+        if (live) setFigure({ status: 'ready', value });
+      },
+      (error) => {
+        console.warn('Settings overview: a figure did not load.', error);
+        if (live) setFigure({ status: 'failed' });
+      },
     );
-  }
+    return () => {
+      live = false;
+    };
+  }, [load]);
+  return load ? figure : null;
+}
+
+/** The figure's text: a dash while it loads or when it failed. */
+function shown<T>(figure: Figure<T> | null, format: (value: T) => string): string {
+  return figure?.status === 'ready' ? format(figure.value) : '—';
+}
+
+const count = (value: number) => value.toLocaleString('en-IN');
+
+async function loadDepartments() {
+  const snapshot = await getDocs(collection(db, 'departments'));
+  const statuses = snapshot.docs.map((entry) => entry.get('status'));
+  return { total: statuses.length, active: statuses.filter((status) => status === 'Active').length };
+}
+
+async function loadProjects() {
+  const projects = collection(db, 'projects');
+  const [total, active] = await Promise.all([
+    getCountFromServer(projects),
+    getCountFromServer(query(projects, where('status', '==', 'Active'))),
+  ]);
+  return { total: total.data().count, active: active.data().count };
+}
+
+async function loadWorkingWeek(): Promise<WorkingHours | null> {
+  const snapshot = await getDoc(doc(db, 'settings', 'workingHours'));
+  if (!snapshot.exists()) return null;
+  const data = snapshot.data();
+  // Older documents hold the days at the top level rather than under `schedule`.
+  return (data.schedule ?? data) as WorkingHours;
+}
+
+async function loadHolidays(): Promise<Holiday[]> {
+  const snapshot = await getDocs(collection(db, 'holidays'));
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as Holiday);
+}
+
+async function countAuditToday() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const snapshot = await getCountFromServer(query(collection(db, 'userLogs'), where('timestamp', '>=', Timestamp.fromDate(start))));
+  return snapshot.data().count;
+}
+
+async function loadDocumentNumbers(): Promise<DocumentNumberRow[]> {
+  return Promise.all(
+    DOCUMENT_SERIES.map(async (series) => {
+      const snapshot = await getDoc(doc(db, 'serialNumberConfigs', series.id));
+      return { series, config: snapshot.exists() ? (snapshot.data() as SerialNumberConfig) : null };
+    }),
+  );
+}
+
+const loadReportingRun = async (): Promise<ReportingCopyRun | null> => (await fetchReportingCopy()).state.lastRun;
+
+const RUN_LABEL: Record<ReportingCopyRun['status'], string> = {
+  succeeded: 'Up to date',
+  failed: 'Failed',
+  stopped: 'Stopped',
+  running: 'Refreshing',
+};
+
+/** "YYYY-MM-DD" for today in this browser — the form holiday dates are stored in. */
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function holidayDate(iso: string): string {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const date = parts ? new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])) : new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+const MODE_LABEL = { light: 'Light', dark: 'Dark', system: 'Follows the device' } as const;
+
+// ── The page ─────────────────────────────────────────────────────────────────────────────────────
+
+export default function SettingsOverviewPage() {
+  const back = useBackNavigation('/');
+  const { user } = useAuth();
+  const { can, roleNames } = useAuthorization();
+  const { effective } = useAppearance();
+  const { profile } = useCompanyProfile();
+
+  const userId = user?.id;
+  const sessionsLoad = useMemo(
+    () => (userId
+      ? () => getCountFromServer(query(collection(db, USER_SESSIONS_COLLECTION), where('isActive', '==', true), where('userId', '==', userId))).then((snapshot) => snapshot.data().count)
+      : null),
+    [userId],
+  );
+  const canCompany = can('View', COMPANY_PROFILE_RESOURCE) || can('Edit', COMPANY_PROFILE_RESOURCE);
+  const canDepartments = can('View', 'Settings.Manage Department');
+  const canProjects = can('View', 'Settings.Manage Project');
+  const canWorkingHours = can('View', 'Settings.Working Hrs');
+  const canSerials = can('View', 'Settings.Serial No. Config');
+  const canAudit = can('View', 'Settings.Audit Logs') || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management');
+  const canReporting = can('View', REPORTING_COPY_RESOURCE);
+
+  const sessions = useFigure(sessionsLoad);
+  const departments = useFigure(canDepartments ? loadDepartments : null);
+  const projects = useFigure(canProjects ? loadProjects : null);
+  const week = useFigure(canWorkingHours ? loadWorkingWeek : null);
+  const holidays = useFigure(canWorkingHours ? loadHolidays : null);
+  const auditToday = useFigure(canAudit ? countAuditToday : null);
+  const numbers = useFigure(canSerials ? loadDocumentNumbers : null);
+  const reporting = useFigure(canReporting ? loadReportingRun : null);
+
+  const upcoming = useMemo(() => {
+    if (holidays?.status !== 'ready') return null;
+    const today = todayIso();
+    const year = today.slice(0, 4);
+    const ahead = holidays.value.filter((holiday) => holiday.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+    return { next: ahead[0] ?? null, leftThisYear: ahead.filter((holiday) => holiday.date.startsWith(year)).length };
+  }, [holidays]);
+
+  const reportingRun = reporting?.status === 'ready' ? reporting.value : null;
+
+  const figures = [
+    canCompany && (
+      <KpiCard key="gst" label="GSTINs" value={count(profile.gstRegistrations.length)} hint={profile.shortName} icon={Receipt} tone="slate" />
+    ),
+    departments && (
+      <KpiCard
+        key="departments"
+        label="Departments"
+        value={shown(departments, (value) => count(value.active))}
+        hint={shown(departments, (value) => `active of ${count(value.total)}`)}
+        icon={Briefcase}
+        tone="blue"
+      />
+    ),
+    projects && (
+      <KpiCard
+        key="projects"
+        label="Projects"
+        value={shown(projects, (value) => count(value.active))}
+        hint={shown(projects, (value) => `active of ${count(value.total)}`)}
+        icon={Construction}
+        tone="amber"
+      />
+    ),
+    holidays && (
+      <KpiCard
+        key="holidays"
+        label="Holidays left"
+        value={upcoming ? count(upcoming.leftThisYear) : '—'}
+        hint={upcoming ? (upcoming.next ? `Next: ${upcoming.next.name}` : 'None scheduled') : undefined}
+        icon={CalendarDays}
+        tone="teal"
+      />
+    ),
+    auditToday && (
+      <KpiCard key="audit" label="Actions today" value={shown(auditToday, count)} hint="In the audit log" icon={Activity} tone="violet" />
+    ),
+    reporting && (
+      <KpiCard
+        key="reporting"
+        label="Reporting copy"
+        value={reporting.status === 'ready' ? (reportingRun ? RUN_LABEL[reportingRun.status] : 'Not run yet') : '—'}
+        hint={reportingRun ? new Date(reportingRun.finishedAt ?? reportingRun.startedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : undefined}
+        icon={DatabaseZap}
+        tone={reportingRun?.status === 'failed' ? 'rose' : reportingRun?.status === 'succeeded' ? 'emerald' : 'cyan'}
+      />
+    ),
+  ].filter(Boolean);
 
   return (
-    <>
-      {/* ── Animated Background ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-background to-violet-50/50 dark:from-slate-950/40 dark:via-background dark:to-violet-950/20" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/12 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-sky-300/10 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.10) 1px, transparent 1px)', backgroundSize: '30px 30px' }}
-        />
-      </div>
+    <SettingsPage>
+      <PageHeader
+        title="Settings"
+        description="Your account and how the company is set up, at a glance."
+        icon={Settings2}
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
+      />
 
-      <div className="w-full px-4 sm:px-5">
-        {/* ── Header ── */}
-        <PageHeader
-          title="System Settings"
-          description="Configure system preferences and manage access"
-          icon={Settings2}
-          backHref={back.href}
-          backLabel={back.label}
-          onBackClick={back.onClick}
-          className="pt-3"
-        />
+      <OverviewAccount
+        name={user?.name ?? ''}
+        email={user?.email}
+        photoURL={user?.photoURL}
+        roles={roleNames.length > 0 ? roleNames : user?.role ? [user.role] : []}
+        facts={[
+          { icon: MonitorSmartphone, label: 'Signed in on', value: sessions ? shown(sessions, (value) => plural(value, 'device')) : '—' },
+          { icon: Palette, label: 'Appearance', value: MODE_LABEL[effective.mode], hint: `${HOME_DESIGN_META[effective.homeDesign].label} home page` },
+        ]}
+      />
 
-        {/* ── Settings Grid ── */}
-        <div className="pb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {settingsItems.map((item, i) => (
-            <SettingsCard key={item.text} item={item} index={i} />
-          ))}
+      {figures.length > 0 && (
+        <section aria-labelledby="settings-overview-company" className="min-w-0">
+          <SectionHeader title={<span id="settings-overview-company">Company set-up</span>} />
+          <KpiGrid>{figures}</KpiGrid>
+        </section>
+      )}
+
+      {(week || numbers) && (
+        <div className={cn('grid grid-cols-1 gap-4', week && numbers && 'xl:grid-cols-2')}>
+          {week && (
+            <SettingsSection
+              title="Working week"
+              icon={Clock}
+              description={upcoming?.next ? `Next holiday: ${upcoming.next.name}, ${holidayDate(upcoming.next.date)}.` : undefined}
+            >
+              <WorkingWeekStrip figure={week} />
+            </SettingsSection>
+          )}
+          {numbers && (
+            <SettingsSection title="Next document numbers" icon={Hash} description="What each series hands out next.">
+              <DocumentNumberList figure={numbers} />
+            </SettingsSection>
+          )}
         </div>
-      </div>
-    </>
+      )}
+    </SettingsPage>
   );
 }

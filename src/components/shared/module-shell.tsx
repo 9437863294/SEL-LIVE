@@ -199,7 +199,8 @@ export function ModuleAccessDenied({ title, message }: { title: string; message?
   );
 }
 
-function PageAccessDenied({ message }: { message?: string }) {
+/** One page's "you may not open this" card, inside the module's frame. */
+export function PageAccessDenied({ message }: { message?: string }) {
   return (
     <Card>
       <CardContent className="space-y-3 py-16 text-center">

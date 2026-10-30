@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
+import { UserRound } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { SettingsPage } from '@/components/settings/settings-ui';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -36,22 +38,23 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="space-y-4 px-3 py-3 sm:px-5">
+      <SettingsPage>
         <Skeleton className="h-10 w-48 rounded-xl" />
         <Skeleton className="h-64 w-full rounded-xl" />
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Skeleton className="h-80 rounded-xl" />
           <Skeleton className="h-80 rounded-xl" />
         </div>
-      </div>
+      </SettingsPage>
     );
   }
 
   return (
-    <div className="space-y-4 px-3 py-3 sm:px-5">
+    <SettingsPage>
       <PageHeader
         title="Your profile"
         description="Your details, access and account security."
+        icon={UserRound}
         backHref={back.href}
         backLabel={back.label}
         onBackClick={back.onClick}
@@ -59,7 +62,7 @@ export default function ProfilePage() {
 
       <ProfileHero onJumpToSecurity={jumpToSecurity} />
 
-      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
         <div className="min-w-0 space-y-4">
           <PersonalDetailsCard />
           <WorkDetailsCard />
@@ -78,6 +81,6 @@ export default function ProfilePage() {
           <RecentActivityCard />
         </div>
       </div>
-    </div>
+    </SettingsPage>
   );
 }

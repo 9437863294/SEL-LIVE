@@ -1,340 +1,266 @@
-
-
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Building2, ShieldAlert } from 'lucide-react';
+/**
+ * Settings › Departments — the company's departments and who heads each. The head is stored as the
+ * person's user id (`head`), which is what E-Approval and HR route to, with their name beside it
+ * (`headName`) for screens that show it; no head is an empty `head`.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { Briefcase, Check, ChevronsUpDown, Pencil, Plus, Trash2, UserRound, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { useBackNavigation } from '@/hooks/use-back-navigation';
-import { DataList } from '@/components/shared/data-list';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { TableCard } from '@/components/shared/table-card';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle as CardTitleShad,
-  CardDescription as CardDescriptionShad,
-} from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { DataList } from '@/components/shared/data-list';
+import { SearchInput } from '@/components/shared/filter-bar';
+import { FormDialog } from '@/components/shared/form-dialog';
+import { PageHeader } from '@/components/shared/page-header';
+import { StatusBadge } from '@/components/shared/status-badge';
+import { TableCard } from '@/components/shared/table-card';
+import { StatusToggle } from '@/components/settings/projects/project-dialogs';
+import { SettingsAccessDenied, SettingsPage } from '@/components/settings/settings-ui';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { useUiText } from '@/hooks/use-company-profile';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import type { Department } from '@/lib/types';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { useUiText } from '@/hooks/use-company-profile';
+import { cn } from '@/lib/utils';
 
+interface Person {
+  id: string;
+  name: string;
+  detail?: string;
+}
+
+interface DepartmentForm {
+  name: string;
+  head: string;
+  status: Department['status'];
+}
+
+const EMPTY_FORM: DepartmentForm = { name: '', head: '', status: 'Active' };
+
+/** "N/A" was the old page's only choice; it names nobody. */
+const headId = (department: Department) => (department.head && department.head !== 'N/A' ? department.head : '');
+
+async function loadDepartments(): Promise<Department[]> {
+  const snapshot = await getDocs(collection(db, 'departments'));
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as Department).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+}
+
+async function loadPeople(): Promise<Person[]> {
+  const snapshot = await getDocs(collection(db, 'users'));
+  return snapshot.docs
+    .map((entry) => {
+      const data = entry.data() as { name?: string; email?: string; status?: string };
+      return { id: entry.id, name: (data.name ?? '').trim(), detail: data.email, active: data.status !== 'Inactive' };
+    })
+    .filter((person) => person.name && person.active)
+    .map(({ id, name, detail }) => ({ id, name, detail }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export default function ManageDepartmentPage() {
   const back = useBackNavigation('/settings');
   const { toast } = useToast();
-  const { can, isLoading: isAuthLoading } = useAuthorization();
   const t = useUiText();
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  
-  // State for Add Dialog
-  const [newDepartmentName, setNewDepartmentName] = useState('');
-  const [newDepartmentStatus, setNewDepartmentStatus] = useState<'Active' | 'Inactive'>('Active');
-  const [newDepartmentHead, setNewDepartmentHead] = useState('N/A');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-
-  // State for Edit Dialog
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
-  const [editedName, setEditedName] = useState('');
-  const [editedStatus, setEditedStatus] = useState<'Active' | 'Inactive'>('Active');
-  const [editedHead, setEditedHead] = useState('N/A');
-  
+  const { can } = useAuthorization();
   const canView = can('View', 'Settings.Manage Department');
   const canAdd = can('Add', 'Settings.Manage Department');
   const canEdit = can('Edit', 'Settings.Manage Department');
   const canDelete = can('Delete', 'Settings.Manage Department');
 
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  // The dialog's contents outlive its `open` flag, so the title does not change while it fades out.
+  const [editing, setEditing] = useState<Department | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState<DepartmentForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Department | null>(null);
+
   useEffect(() => {
-    if (!isAuthLoading && canView) {
-        fetchDepartments();
-    } else if (!isAuthLoading && !canView) {
-        setIsLoading(false);
-    }
-  }, [isAuthLoading, canView]);
+    if (!canView) return;
+    let live = true;
+    loadDepartments()
+      .then((list) => {
+        if (live) setDepartments(list);
+      })
+      .catch((error) => {
+        console.error('Error fetching departments: ', error);
+        toast({ title: 'Could not load departments', description: 'Check your connection and reload the page.', variant: 'destructive' });
+      })
+      .finally(() => {
+        if (live) setLoading(false);
+      });
+    // The head picker's list. Optional: without it the list is empty and the current head stays.
+    loadPeople()
+      .then((list) => {
+        if (live) setPeople(list);
+      })
+      .catch((error) => console.error('Error fetching users for the head picker: ', error));
+    return () => {
+      live = false;
+    };
+  }, [canView, toast]);
 
-  const fetchDepartments = async () => {
-    setIsLoading(true);
+  const peopleById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+  const headName = useCallback(
+    (department: Department) => {
+      const id = headId(department);
+      if (!id) return '';
+      return peopleById.get(id)?.name ?? department.headName ?? '';
+    },
+    [peopleById],
+  );
+
+  const shown = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return departments;
+    return departments.filter((department) => `${department.name} ${headName(department)}`.toLowerCase().includes(query));
+  }, [departments, headName, search]);
+
+  if (!canView) return <SettingsAccessDenied title="Departments" icon={Briefcase} />;
+
+  const activeCount = departments.filter((department) => department.status === 'Active').length;
+  const trimmedName = form.name.trim();
+  const duplicate = departments.some(
+    (department) => department.id !== editing?.id && (department.name ?? '').trim().toLowerCase() === trimmedName.toLowerCase(),
+  );
+
+  const openForm = (department: Department | null) => {
+    setEditing(department);
+    setForm(department ? { name: department.name ?? '', head: headId(department), status: department.status === 'Inactive' ? 'Inactive' : 'Active' } : EMPTY_FORM);
+    setFormOpen(true);
+  };
+
+  const save = async () => {
+    if (!trimmedName || duplicate) return;
+    const payload = { name: trimmedName, head: form.head, headName: form.head ? peopleById.get(form.head)?.name ?? editing?.headName ?? '' : '', status: form.status };
+    setSaving(true);
     try {
-      const querySnapshot = await getDocs(collection(db, 'departments'));
-      const departmentsData: Department[] = [];
-      querySnapshot.forEach((doc) => {
-        departmentsData.push({ id: doc.id, ...doc.data() } as Department);
-      });
-      setDepartments(departmentsData);
+      if (editing) {
+        await updateDoc(doc(db, 'departments', editing.id), payload);
+        toast({ title: 'Department updated', description: trimmedName });
+      } else {
+        await addDoc(collection(db, 'departments'), payload);
+        toast({ title: 'Department added', description: trimmedName });
+      }
+      setFormOpen(false);
+      setDepartments(await loadDepartments());
     } catch (error) {
-      console.error("Error fetching departments: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch departments.',
-        variant: 'destructive',
-      });
+      console.error('Error saving department: ', error);
+      toast({ title: 'Not saved', description: 'Check your connection and try again.', variant: 'destructive' });
     }
-    setIsLoading(false);
+    setSaving(false);
   };
 
-  const resetAddDialog = () => {
-    setNewDepartmentName('');
-    setNewDepartmentStatus('Active');
-    setNewDepartmentHead('N/A');
-    setIsAddDialogOpen(false);
-  }
-
-  const handleAddDepartment = async () => {
-    if (!newDepartmentName.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Department name cannot be empty.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  const remove = async () => {
+    if (!deleteTarget) return;
     try {
-      await addDoc(collection(db, 'departments'), {
-        name: newDepartmentName,
-        head: newDepartmentHead,
-        status: newDepartmentStatus,
-      });
-      toast({
-        title: 'Success',
-        description: `Department "${newDepartmentName}" added.`,
-      });
-      resetAddDialog();
-      fetchDepartments(); // Refresh the list
+      await deleteDoc(doc(db, 'departments', deleteTarget.id));
+      setDepartments((current) => current.filter((department) => department.id !== deleteTarget.id));
+      toast({ title: 'Department deleted', description: deleteTarget.name });
     } catch (error) {
-      console.error("Error adding department: ", error);
-      toast({
-        title: 'Error',
-        description: 'Failed to add department.',
-        variant: 'destructive',
-      });
+      console.error('Error deleting department: ', error);
+      toast({ title: 'Not deleted', description: 'Check your connection and try again.', variant: 'destructive' });
+      throw error;
     }
   };
-  
-  const handleDeleteDepartment = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, "departments", id));
-      toast({
-        title: "Success",
-        description: "Department deleted successfully.",
-      });
-      fetchDepartments(); // Refresh the list
-    } catch (error) {
-      console.error("Error deleting department: ", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete department.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const openEditDialog = (department: Department) => {
-    setEditingDepartment(department);
-    setEditedName(department.name);
-    setEditedStatus(department.status);
-    setEditedHead(department.head);
-    setIsEditDialogOpen(true);
-  };
-
-  const handleUpdateDepartment = async () => {
-    if (!editingDepartment) return;
-
-    if (!editedName.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Department name cannot be empty.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    try {
-      const departmentRef = doc(db, 'departments', editingDepartment.id);
-      await updateDoc(departmentRef, {
-        name: editedName,
-        status: editedStatus,
-        head: editedHead,
-      });
-      toast({
-        title: 'Success',
-        description: 'Department updated successfully.',
-      });
-      setIsEditDialogOpen(false);
-      setEditingDepartment(null);
-      fetchDepartments();
-    } catch (error) {
-      console.error('Error updating department: ', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to update department.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  if (isAuthLoading || (isLoading && canView)) {
-    return (
-      <>
-        <div className="fixed inset-0 -z-10 pointer-events-none">
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-50/60 via-background to-blue-50/40 dark:from-sky-950/20 dark:via-background dark:to-blue-950/15" />
-        </div>
-        <div className="w-full space-y-4">
-          <div className="flex items-center justify-between">
-            <Skeleton className="h-9 w-48 rounded-xl" />
-            <Skeleton className="h-9 w-36 rounded-full" />
-          </div>
-          <Skeleton className="h-80 w-full rounded-xl" />
-        </div>
-      </>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <div className="w-full">
-        <PageHeader title="Manage Department" backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
-        <Card><CardHeader><CardTitleShad>Access Denied</CardTitleShad><CardDescriptionShad>You do not have permission to view this page.</CardDescriptionShad></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
-    <>
-      {/* ── Background ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-sky-50/60 via-background to-blue-50/40 dark:from-sky-950/20 dark:via-background dark:to-blue-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-sky-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[40vw] h-[40vw] rounded-full bg-blue-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(14,165,233,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
-    <div className="w-full px-4 sm:px-5 py-3">
+    <SettingsPage>
       <PageHeader
-        title="Manage Departments"
-        description={`${departments.length} department${departments.length !== 1 ? 's' : ''} configured`}
+        title="Departments"
+        description="The company's departments and who heads each. E-Approval and HR send a department's approvals to its head."
+        icon={Briefcase}
         backHref={back.href}
         backLabel={back.label}
         onBackClick={back.onClick}
+        meta={loading ? undefined : [{ label: 'Active', value: `${activeCount} of ${departments.length}` }]}
         actions={
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button disabled={!canAdd} className="rounded-full shadow-md">
-              <Plus className="mr-2 h-4 w-4" />
-              Add Department
+          canAdd ? (
+            <Button onClick={() => openForm(null)}>
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+              Add department
             </Button>
-          </DialogTrigger>
-          <DialogContent size="md" onPointerDownOutside={(e) => e.preventDefault()}>
-            <DialogHeader>
-              <DialogTitle>Add New Department</DialogTitle>
-              <DialogDescription>
-                Fill in the details to add a new department.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="add-name">
-                  Department Name
-                </Label>
-                <Input
-                  id="add-name"
-                  value={newDepartmentName}
-                  onChange={(e) => setNewDepartmentName(e.target.value)}
-                  placeholder="e.g., Human Resources"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="add-status">
-                  Status
-                </Label>
-                <Select
-                  value={newDepartmentStatus}
-                  onValueChange={(value: 'Active' | 'Inactive') => setNewDepartmentStatus(value)}
-                >
-                  <SelectTrigger id="add-status">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="add-head">
-                  Head of Department
-                </Label>
-                 <Select
-                  value={newDepartmentHead}
-                  onValueChange={(value: string) => setNewDepartmentHead(value)}
-                >
-                  <SelectTrigger id="add-head">
-                    <SelectValue placeholder="Select a user" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="N/A">N/A</SelectItem>
-                    {/* You can map over users here in the future */}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>{t('cancel')}</Button>
-              </DialogClose>
-              <Button onClick={handleAddDepartment}>Add Department</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          ) : undefined
         }
       />
 
-      <TableCard title="Departments" icon={Building2} count={departments.length} noun="department">
-        {isLoading ? (
+      <TableCard
+        title="Departments"
+        icon={Briefcase}
+        count={loading ? undefined : shown.length}
+        total={departments.length}
+        noun="department"
+        scroll="natural"
+        toolbar={departments.length > 6 ? <SearchInput value={search} onChange={setSearch} placeholder="Search departments or heads" className="sm:max-w-sm" /> : undefined}
+      >
+        {loading ? (
           <div className="space-y-2 p-4">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full rounded-lg" />)}
+            {Array.from({ length: 5 }).map((_, row) => <Skeleton key={row} className="h-11 w-full rounded-lg" />)}
           </div>
         ) : (
           <div className="p-3 sm:p-0">
             <DataList
               frameless
-              rows={departments}
-              empty={<p className="py-8 text-center text-sm text-muted-foreground">No departments found. Add your first department.</p>}
+              rows={shown}
+              empty={
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  {departments.length ? 'No department matches the search.' : 'No departments yet.'}
+                </p>
+              }
               columns={[
-                { header: 'Department Name', mobile: 'title', className: 'font-medium', cell: (dept) => dept.name },
-                { header: 'Head of Department', cell: (dept) => dept.head },
-                { header: 'Status', mobile: 'aside', cell: (dept) => <StatusBadge status={dept.status} /> },
+                { header: 'Department', mobile: 'title', className: 'font-medium', cell: (department) => department.name },
+                {
+                  header: 'Head of department',
+                  cell: (department) => {
+                    const name = headName(department);
+                    return name ? (
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <UserRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        <span className="truncate">{name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Not set</span>
+                    );
+                  },
+                },
+                { header: 'Status', mobile: 'aside', cell: (department) => <StatusBadge status={department.status} /> },
                 {
                   header: 'Actions',
                   align: 'right',
                   mobile: 'footer',
-                  cell: (dept) => (
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(dept)} disabled={!canEdit} className="rounded-lg">Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete} className="rounded-lg">{t('delete')}</Button>
+                  cell: (department) => (
+                    <div className="flex justify-end gap-1">
+                      {canEdit && (
+                        <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => openForm(department)}>
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t('edit')}
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1.5 text-destructive hover:text-destructive"
+                          onClick={() => setDeleteTarget(department)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          {t('delete')}
+                        </Button>
+                      )}
+                      {!canEdit && !canDelete && <span className="text-xs text-muted-foreground">View only</span>}
                     </div>
                   ),
                 },
@@ -344,74 +270,131 @@ export default function ManageDepartmentPage() {
         )}
       </TableCard>
 
-      {/* Edit Department Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent size="md">
-          <DialogHeader>
-            <DialogTitle>Edit Department</DialogTitle>
-            <DialogDescription>
-              Fill in the details to update the department.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-6 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="edit-name" className="text-right">
-                Department Name
-              </Label>
-              <div className="col-span-3 relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="edit-name"
-                  value={editedName}
-                  onChange={(e) => setEditedName(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="edit-status" className="text-right">
-                Status
-              </Label>
-              <Select
-                value={editedStatus}
-                onValueChange={(value: 'Active' | 'Inactive') => setEditedStatus(value)}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="edit-head" className="text-right">
-                Head of Department
-              </Label>
-               <Select
-                value={editedHead}
-                onValueChange={(value: string) => setEditedHead(value)}
-              >
-                <SelectTrigger className="col-span-3">
-                  <SelectValue placeholder="Select a user" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="N/A">N/A</SelectItem>
-                  {/* You can map over users here in the future */}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">{t('cancel')}</Button>
-            </DialogClose>
-            <Button onClick={handleUpdateDepartment}>Update Department</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-    </>
+      <FormDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        size="sm"
+        title={editing ? 'Edit department' : 'Add a department'}
+        description={editing ? editing.name : 'Name it, and say who heads it.'}
+        submitLabel={editing ? t('save') : 'Add department'}
+        submitting={saving}
+        submitDisabled={!trimmedName || duplicate}
+        onSubmit={save}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="department-name">Name</Label>
+          <Input
+            id="department-name"
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="e.g. Human Resources"
+            maxLength={80}
+            autoFocus
+            aria-invalid={duplicate}
+          />
+          {duplicate && <p className="text-xs font-medium text-danger">There is already a department with this name.</p>}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="department-head">Head of department</Label>
+          <HeadPicker
+            id="department-head"
+            value={form.head}
+            fallbackName={editing?.headName}
+            people={people}
+            onChange={(head) => setForm((current) => ({ ...current, head }))}
+          />
+          <p className="text-xs text-muted-foreground">Approvals addressed to the department go to this person.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label id="department-status-label">Status</Label>
+          <StatusToggle id="department-status" value={form.status} onChange={(status) => setForm((current) => ({ ...current, status }))} />
+        </div>
+      </FormDialog>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        destructive
+        title="Delete this department?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" will be deleted. People and records in other modules that name it will show it as missing — marking it Inactive is usually safer.`
+            : undefined
+        }
+        confirmLabel="Delete department"
+        onConfirm={remove}
+      />
+    </SettingsPage>
+  );
+}
+
+/** A searchable list of the app's people; the head must be someone who can sign in. */
+function HeadPicker({
+  id,
+  value,
+  fallbackName,
+  people,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  /** The stored name, for a head no longer in the list (left the company, account closed). */
+  fallbackName?: string;
+  people: readonly Person[];
+  onChange: (userId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const query = search.trim().toLowerCase();
+  const matches = query ? people.filter((person) => `${person.name} ${person.detail ?? ''}`.toLowerCase().includes(query)) : people;
+  const current = value ? people.find((person) => person.id === value)?.name ?? fallbackName ?? 'Someone no longer listed' : '';
+
+  const choose = (userId: string) => {
+    onChange(userId);
+    setOpen(false);
+    setSearch('');
+  };
+
+  return (
+    // Modal so the list scrolls with the wheel inside the dialog, whose scroll lock otherwise
+    // swallows it (the popover is portalled outside the dialog).
+    <Popover modal open={open} onOpenChange={(next) => { setOpen(next); if (!next) setSearch(''); }}>
+      <PopoverTrigger asChild>
+        <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal">
+          <span className={cn('flex min-w-0 items-center gap-2', !current && 'text-muted-foreground')}>
+            <UserRound className="h-4 w-4 shrink-0 opacity-60" aria-hidden="true" />
+            <span className="truncate">{current || 'No one'}</span>
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[16rem] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Search people" value={search} onValueChange={setSearch} />
+          <CommandList>
+            <CommandEmpty>{people.length ? 'No one matches.' : 'The list of people could not be loaded.'}</CommandEmpty>
+            <CommandGroup>
+              {value && !query && (
+                <CommandItem value="__clear__" onSelect={() => choose('')}>
+                  <X className="mr-2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  No one
+                </CommandItem>
+              )}
+              {matches.map((person) => (
+                <CommandItem key={person.id} value={person.id} onSelect={() => choose(person.id)}>
+                  <Check className={cn('mr-2 h-4 w-4 shrink-0', value === person.id ? 'opacity-100' : 'opacity-0')} aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm">{person.name}</span>
+                    {person.detail && <span className="block truncate text-[11px] text-muted-foreground">{person.detail}</span>}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

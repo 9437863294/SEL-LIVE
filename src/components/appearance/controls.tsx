@@ -6,8 +6,6 @@ import { usePathname } from 'next/navigation';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { AlertTriangle, Check, CheckCircle2, Eye, EyeOff, Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { useAppearance } from '@/components/theme/ThemeProvider';
 import { markReplaceOnPlainClick } from '@/hooks/use-back-navigation';
 import { cn } from '@/lib/utils';
@@ -135,99 +133,8 @@ export function ChoiceGroup<T extends string>({
   );
 }
 
-/** An on/off setting with its label wired to the switch. */
-export function SwitchRow({
-  label,
-  description,
-  checked,
-  onCheckedChange,
-  inherited,
-  onReset,
-  disabled,
-}: {
-  label: string;
-  description?: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  inherited?: boolean;
-  onReset?: () => void;
-  disabled?: boolean;
-}) {
-  const id = useId();
-  const descriptionId = useId();
-  return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
-      <div className="min-w-0">
-        <label htmlFor={id} className="text-sm font-semibold">
-          {label}
-        </label>
-        {description && (
-          <p id={descriptionId} className="text-xs text-muted-foreground">
-            {description}
-          </p>
-        )}
-        {onReset && !inherited && (
-          <button type="button" onClick={onReset} className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-2 hover:underline">
-            <RotateCcw className="h-3 w-3" aria-hidden="true" /> Use company default
-          </button>
-        )}
-      </div>
-      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} aria-describedby={description ? descriptionId : undefined} disabled={disabled} />
-    </div>
-  );
-}
-
-export function SettingsSection({
-  title,
-  description,
-  icon: Icon,
-  children,
-  action,
-}: {
-  title: string;
-  description?: string;
-  icon?: React.ComponentType<{ className?: string }>;
-  children: ReactNode;
-  action?: ReactNode;
-}) {
-  // Compact by design: a 1rem card padding and 1.25rem between settings. The 1.5rem padding and
-  // 1.5rem gaps this had read as mostly empty space once a page used its full width.
-  return (
-    <Card className="[--card-pad:1rem]">
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          {/* `flex-1`, so a long description wraps beside the action instead of pushing it onto a
-              line of its own. */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              {Icon && (
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Icon className="h-4 w-4" />
-                </span>
-              )}
-              <CardTitle className="text-base">{title}</CardTitle>
-            </div>
-            {description && <CardDescription className="mt-1 text-xs">{description}</CardDescription>}
-          </div>
-          {action}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-5">{children}</CardContent>
-    </Card>
-  );
-}
-
-/**
- * Settings sections side by side on a wide screen, one column below `xl`. Columns flow like a
- * masonry wall (CSS columns), so a short section never leaves a gap under a tall neighbour the way a
- * grid row does; no section is ever split across the two.
- */
-export function SettingsColumns({ children, single, className }: { children: ReactNode; /** One column whatever the width — e.g. beside an open preview. */ single?: boolean; className?: string }) {
-  if (single) return <div className={cn('space-y-4', className)}>{children}</div>;
-  // `max-xl:space-y-4`, not `space-y-4 xl:space-y-0`: space-y's own selector outranks `[&>*]:mb-4`, so
-  // the reset zeroed every section's bottom margin but the first and the columns lost their gaps.
-  return <div className={cn('max-xl:space-y-4 xl:columns-2 xl:gap-4 [&>*]:break-inside-avoid xl:[&>*]:mb-4', className)}>{children}</div>;
-}
+// The section card, columns and switch row are every Settings page's, not only Appearance's.
+export { SettingsColumns, SettingsSection, SwitchRow } from '@/components/settings/settings-ui';
 
 /**
  * Where the last change stands: saving, saved, or not saved — in words and an icon, announced to

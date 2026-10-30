@@ -1,7 +1,6 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ExcelJS from 'exceljs';
 import { format } from 'date-fns';
 import {
   collection, getDocs, limit, orderBy,
@@ -10,7 +9,7 @@ import {
 } from 'firebase/firestore';
 import {
   Activity, ChevronDown, ChevronRight, Columns3, Download,
-  Loader2, RefreshCw, X,
+  Loader2, RefreshCw,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
@@ -22,7 +21,7 @@ import { ACTIVITY_MODULE_NAMES, canonicalModuleName } from '@/lib/activity-modul
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { SettingsAccessDenied, SettingsNotice, SettingsPage, SettingsPageSkeleton } from '@/components/settings/settings-ui';
 import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -451,6 +450,7 @@ export default function AuditLogsPage() {
     if (isExporting) return;
     setIsExporting(true);
     try {
+      const { default: ExcelJS } = await import('exceljs');
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Audit Logs');
       ws.columns = [
@@ -716,29 +716,15 @@ export default function AuditLogsPage() {
     );
   };
 
-  if (isAuthLoading) {
-    return (
-      <div className="space-y-4 px-4 py-3 sm:px-5">
-        <Skeleton className="h-24 w-full rounded-xl" />
-        <Skeleton className="h-10 w-full rounded-lg" />
-        <Skeleton className="h-[400px] w-full rounded-xl" />
-      </div>
-    );
-  }
+  if (isAuthLoading) return <SettingsPageSkeleton layout="register" />;
 
   if (!canView) {
     return (
-      <div className="px-4 py-3 sm:px-5">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Restricted</CardTitle>
-            <CardDescription>
-              You need the <strong>Audit Logs → View</strong> permission under Settings.
-              Ask an administrator to grant it in Role Management, then sign out and back in.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
+      <SettingsAccessDenied
+        title="Audit Logs"
+        icon={Activity}
+        message="You need Settings › Audit Logs › View. Ask an administrator to grant it in Access Management, then sign out and back in."
+      />
     );
   }
 
@@ -754,8 +740,7 @@ export default function AuditLogsPage() {
   const busy = isLoading || isLoadingMore || isLoadingAll;
 
   return (
-    <div className="space-y-4 px-4 py-3 sm:px-5">
-
+    <SettingsPage>
       <PageHeader
         icon={Activity}
         title="Audit Logs"
@@ -784,14 +769,7 @@ export default function AuditLogsPage() {
         }
       />
 
-      {loadError && (
-        <Card className="border-red-200 bg-red-50/60">
-          <CardContent className="flex items-start gap-2 p-3">
-            <X className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-            <p className="text-xs text-red-700">{loadError}</p>
-          </CardContent>
-        </Card>
-      )}
+      {loadError && <SettingsNotice tone="danger" title="The log did not load">{loadError}</SettingsNotice>}
 
       <TableCard
         toolbar={
@@ -979,6 +957,6 @@ export default function AuditLogsPage() {
           </div>
         )}
       </TableCard>
-    </div>
+    </SettingsPage>
   );
 }

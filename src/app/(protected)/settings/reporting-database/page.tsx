@@ -2,15 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, CalendarClock, CheckCircle2, DatabaseZap, History, Info, ListTree, Loader2,
-  RefreshCw, Save, ShieldAlert, Square, XCircle,
+  CalendarClock, CheckCircle2, DatabaseZap, History, ListTree, Loader2,
+  RefreshCw, Save, Square,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/shared/page-header';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { TableCard } from '@/components/shared/table-card';
+import { SettingsAccessDenied, SettingsNotice, SettingsPage, SettingsPageSkeleton, SettingsSection } from '@/components/settings/settings-ui';
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableLoading, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -18,7 +19,6 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
@@ -301,25 +301,8 @@ export default function ReportingDatabasePage() {
     }
   };
 
-  if (authzLoading || (canView && !overview && !loadError)) {
-    return (
-      <div className="px-4 sm:px-5 py-3 space-y-4">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <Skeleton className="h-48 w-full rounded-xl" />
-      </div>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <div className="px-4 sm:px-5 py-3">
-        <PageHeader title="Reporting Database" icon={DatabaseZap} backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
-        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!authzLoading && !canView) return <SettingsAccessDenied title="Reporting Database" icon={DatabaseZap} />;
+  if (authzLoading || (canView && !overview && !loadError)) return <SettingsPageSkeleton layout="split" />;
 
   const timeZone = overview?.config.timezone || 'Asia/Kolkata';
   const lastRun = overview?.state.lastRun ?? null;
@@ -340,14 +323,10 @@ export default function ReportingDatabasePage() {
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-50/80 via-background to-violet-50/50 dark:from-slate-950/40 dark:via-background dark:to-violet-950/20" />
-      </div>
-
-      <div className="px-4 sm:px-5 py-3 space-y-4">
+      <SettingsPage>
         <PageHeader
           title="Reporting Database"
-          description="A copy of the app's data for MongoDB reporting tools, refreshed on a schedule"
+          description="A copy of the app's data for MongoDB reporting tools, refreshed on a schedule."
           icon={DatabaseZap}
           backHref={back.href}
           backLabel={back.label}
@@ -359,7 +338,7 @@ export default function ReportingDatabasePage() {
                   variant="outline"
                   onClick={() => setConfirmStop(true)}
                   disabled={isStopping || stopping}
-                  className="rounded-full border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                  className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
                 >
                   {isStopping || stopping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Square className="mr-2 h-4 w-4" />}
                   {stopping ? 'Stopping…' : 'Stop'}
@@ -370,14 +349,13 @@ export default function ReportingDatabasePage() {
                   variant="outline"
                   onClick={() => setConfirmFull(true)}
                   disabled={isRefreshing}
-                  className="rounded-full"
                   title="Look for subcollections again and check every collection for deleted documents"
                 >
                   <ListTree className="mr-2 h-4 w-4" />
                   Full refresh
                 </Button>
               )}
-              <Button onClick={() => void handleRefresh()} disabled={isRefreshing || running} className="rounded-full shadow-md">
+              <Button onClick={() => void handleRefresh()} disabled={isRefreshing || running}>
                 {isRefreshing || running ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
                 {running ? 'Refreshing…' : 'Refresh now'}
               </Button>
@@ -385,45 +363,30 @@ export default function ReportingDatabasePage() {
           ) : undefined}
         />
 
-        {loadError && (
-          <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span className="min-w-0 break-words">{loadError}</span>
-          </div>
-        )}
+        {loadError && <SettingsNotice tone="danger" title="The reporting database settings did not load">{loadError}</SettingsNotice>}
 
         {overview && !overview.configured && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span className="min-w-0 break-words">
-              The server has no connection string for the reporting database (<code>NEWDATABASE_MONGODB_URI</code>), so a
-              refresh would fail. It is set as an App Hosting secret; until then the schedule can be prepared but not run.
-            </span>
-          </div>
+          <SettingsNotice tone="warning" title="Not connected to the reporting database">
+            The server has no connection string for it (<code>NEWDATABASE_MONGODB_URI</code>), so a refresh would fail. It is
+            set as an App Hosting secret; until then the schedule can be prepared but not run.
+          </SettingsNotice>
         )}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {/* ── Last refresh ── */}
-          <Card className="min-w-0 overflow-hidden">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-cyan-100 dark:bg-cyan-900/40 p-2">
-                  <History className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <CardTitle>{running ? 'Refresh in progress' : 'Last refresh'}</CardTitle>
-                  <CardDescription className="text-xs">
-                    {lastRun ? `${startedBy} · ${formatWhen(lastRun.startedAt, timeZone)}` : 'Not refreshed from the app yet'}
-                  </CardDescription>
-                </div>
-                {lastRun && (
-                  <Badge variant={STATUS_BADGE[lastRun.status]?.variant ?? 'neutral'}>
-                    {stopping ? 'Stopping' : STATUS_BADGE[lastRun.status]?.label ?? lastRun.status}
-                  </Badge>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <SettingsSection
+            title={running ? 'Refresh in progress' : 'Last refresh'}
+            icon={History}
+            description={lastRun ? `${startedBy} · ${formatWhen(lastRun.startedAt, timeZone)}` : 'Not refreshed from the app yet'}
+            action={
+              lastRun ? (
+                <Badge variant={STATUS_BADGE[lastRun.status]?.variant ?? 'neutral'}>
+                  {stopping ? 'Stopping' : STATUS_BADGE[lastRun.status]?.label ?? lastRun.status}
+                </Badge>
+              ) : undefined
+            }
+            contentClassName="space-y-4"
+          >
               {lastRun ? (
                 <>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -482,24 +445,12 @@ export default function ReportingDatabasePage() {
                       {sliceNote && driving && (
                         <div className="break-words text-xs text-muted-foreground">{sliceNote}</div>
                       )}
-                      {progress.lastError && (
-                        <div className="break-words rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                          Retrying after an error: {progress.lastError}
-                        </div>
-                      )}
+                      {progress.lastError && <SettingsNotice tone="warning" title="Retrying after an error">{progress.lastError}</SettingsNotice>}
                     </div>
                   )}
 
                   {!running && lastRun.error && (
-                    <div
-                      className={cn(
-                        'flex items-start gap-2 rounded-lg border p-3 text-xs',
-                        lastRun.status === 'stopped' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-rose-200 bg-rose-50 text-rose-700',
-                      )}
-                    >
-                      <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                      <span className="min-w-0 break-words">{lastRun.error}</span>
-                    </div>
+                    <SettingsNotice tone={lastRun.status === 'stopped' ? 'warning' : 'danger'}>{lastRun.error}</SettingsNotice>
                   )}
                   {!running && lastRun.status === 'succeeded' && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -513,27 +464,25 @@ export default function ReportingDatabasePage() {
                   No refresh has run from the app yet. {canRun ? 'Use Refresh now, or switch the schedule on.' : ''}
                 </div>
               )}
-            </CardContent>
-          </Card>
+          </SettingsSection>
 
           {/* ── Schedule ── */}
-          <Card className="min-w-0 overflow-hidden">
-            <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <div className="rounded-lg bg-cyan-100 dark:bg-cyan-900/40 p-2">
-                  <CalendarClock className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <CardTitle>Schedule</CardTitle>
-                  <CardDescription className="text-xs">
-                    {overview ? describeReportingCopySchedule(overview.config) : '—'}
-                    {overview?.nextDueAt ? ` · next ${formatWhen(overview.nextDueAt, timeZone)}` : ''}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
+          <SettingsSection
+            title="Schedule"
+            icon={CalendarClock}
+            description={`${overview ? describeReportingCopySchedule(overview.config) : '—'}${overview?.nextDueAt ? ` · next ${formatWhen(overview.nextDueAt, timeZone)}` : ''}`}
+            contentClassName="space-y-4"
+            footer={
+              draft && canEdit ? (
+                <Button onClick={handleSave} disabled={isSaving || !dirty}>
+                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="mr-2 h-4 w-4" aria-hidden="true" />}
+                  Save schedule
+                </Button>
+              ) : undefined
+            }
+          >
             {draft && (
-              <CardContent className="space-y-4">
+              <>
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-border/40 bg-muted/40 p-3">
                   <div className="min-w-0">
                     <Label htmlFor="reporting-copy-enabled" className="text-sm font-medium">Scheduled refresh</Label>
@@ -591,7 +540,7 @@ export default function ReportingDatabasePage() {
                             aria-pressed={on}
                             onClick={() => update({ weekDays: on ? draft.weekDays.filter((d) => d !== day) : [...draft.weekDays, day].sort() })}
                             className={cn(
-                              'rounded-full border px-3 py-1.5 text-xs font-medium transition-all disabled:opacity-40',
+                              'rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
                               on ? 'border-primary bg-primary text-primary-foreground' : 'border-border/60 text-muted-foreground',
                             )}
                           >
@@ -609,36 +558,19 @@ export default function ReportingDatabasePage() {
                   full copy takes simply starts the next one when it ends.
                 </div>
 
-                {canEdit && (
-                  <div className="flex justify-end">
-                    <Button onClick={handleSave} disabled={isSaving || !dirty} className="rounded-full shadow-md">
-                      {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                      Save schedule
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
+              </>
             )}
-          </Card>
+          </SettingsSection>
         </div>
 
         {/* ── Run history ── */}
-        <Card className="min-w-0 overflow-hidden">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-cyan-100 dark:bg-cyan-900/40 p-2">
-                <ListTree className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <CardTitle>Run history</CardTitle>
-                <CardDescription className="text-xs">The last 50 refreshes. Select one for its collection-by-collection counts.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {historyError && (
-              <div className="break-words rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{historyError}</div>
-            )}
+        <TableCard
+          title="Run history"
+          icon={ListTree}
+          description="The last 50 refreshes. Select one for its collection-by-collection counts."
+          scroll="natural"
+          toolbar={historyError ? <SettingsNotice tone="danger">{historyError}</SettingsNotice> : undefined}
+        >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -700,13 +632,11 @@ export default function ReportingDatabasePage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
+        </TableCard>
 
         {/* ── What this is ── */}
-        <div className="flex items-start gap-2 rounded-lg border border-border/40 bg-muted/40 p-3">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+        <SettingsNotice title="About the reporting copy">
+          <div className="space-y-1.5 text-muted-foreground">
             <div>
               <strong>A one-way copy for MongoDB tools.</strong> Each refresh copies every collection of the app&apos;s
               database into <code>newdatabase</code> (Firestore with MongoDB compatibility), so it can be queried with
@@ -728,8 +658,8 @@ export default function ReportingDatabasePage() {
               do. Give reporting users read-only logins, and keep the list short.
             </div>
           </div>
-        </div>
-      </div>
+        </SettingsNotice>
+      </SettingsPage>
 
       <ConfirmDialog
         open={confirmStop}
@@ -766,9 +696,7 @@ export default function ReportingDatabasePage() {
           </DialogHeader>
           {selected && (
             <DialogBody className="space-y-3">
-              {selected.error && (
-                <div className="break-words rounded-lg border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">{selected.error}</div>
-              )}
+              {selected.error && <SettingsNotice tone="danger">{selected.error}</SettingsNotice>}
               {selected.skipped.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-xs font-medium">Skipped collections</div>

@@ -121,8 +121,11 @@ export function InChargePicker({
   );
 }
 
-/** Active / Inactive as a two-button switch — one tap, and both choices visible. */
-function StatusToggle({ id, value, onChange }: { id: string; value: ProjectStatus; onChange: (status: ProjectStatus) => void }) {
+/**
+ * Active / Inactive as a two-button switch — one tap, and both choices visible. Named by the label
+ * whose id is `${id}-label`.
+ */
+export function StatusToggle({ id, value, onChange }: { id: string; value: ProjectStatus; onChange: (status: ProjectStatus) => void }) {
   return (
     // A <label for> cannot name a div; the Field's label names the group instead.
     <div id={id} role="radiogroup" aria-labelledby={`${id}-label`} className="flex w-full rounded-lg border bg-muted/40 p-1 sm:w-fit">

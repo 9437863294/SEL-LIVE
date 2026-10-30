@@ -56,14 +56,15 @@ import {
 } from '@/lib/session-policy';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
+import { SettingsPage, SettingsSection, SwitchRow } from '@/components/settings/settings-ui';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -768,27 +769,11 @@ function NumberField({
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(Math.max(min, Number(e.target.value) || 0))}
-          className="h-9 w-28 bg-white"
+          className="h-9 w-28"
         />
         <span className="text-xs text-muted-foreground">{suffix}</span>
       </div>
       <p className="text-xs text-muted-foreground">{hint}</p>
-    </div>
-  );
-}
-
-function ToggleField({
-  id, label, hint, checked, onChange, disabled,
-}: {
-  id: string; label: string; hint: string; checked: boolean; onChange: (b: boolean) => void; disabled: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 rounded-xl border bg-white/70 p-3">
-      <div className="space-y-0.5">
-        <Label htmlFor={id} className="text-sm font-medium">{label}</Label>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </div>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} disabled={disabled} />
     </div>
   );
 }
@@ -814,19 +799,40 @@ function PolicyPanel({
   const disabled = !canEdit || saving;
 
   return (
-    <Card className="overflow-hidden">
-      <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-indigo-500" />
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Settings2 className="h-4 w-4 text-indigo-600" /> Session policy
-        </CardTitle>
-        <CardDescription>
-          Applied at every sign-in and page load. 0 means no limit. The defaults match how sessions behaved before this policy existed.
-          {!canEdit && ' You can view the policy; changing it needs Edit permission on Session Management.'}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid gap-5 sm:grid-cols-2">
+    <SettingsSection
+      title="Session policy"
+      icon={Settings2}
+      description={`Applied at every sign-in and page load. 0 means no limit. The defaults match how sessions behaved before this policy existed.${canEdit ? '' : ' You can view the policy; changing it needs Edit permission on Session Management.'}`}
+      contentClassName="space-y-6"
+      footer={
+        <>
+          <p className="mr-auto min-w-0 text-xs text-muted-foreground">
+            {policy.updatedAt
+              ? `Last changed ${new Date(policy.updatedAt).toLocaleString()}${policy.updatedByName ? ` by ${policy.updatedByName}` : ''}.`
+              : 'Using the default policy.'}
+            {policy.lastSweepAt && ` Last sweep ${new Date(policy.lastSweepAt).toLocaleString()}.`}
+          </p>
+          {canEdit && (
+            <>
+              <Button variant="ghost" disabled={!dirty || saving} onClick={() => setDraft(policy)}>
+                Discard
+              </Button>
+              <Button
+                disabled={!dirty || saving}
+                onClick={async () => {
+                  setSaving(true);
+                  try { await onSave(draft); } finally { setSaving(false); }
+                }}
+              >
+                {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="mr-2 h-4 w-4" aria-hidden="true" />}
+                Save policy
+              </Button>
+            </>
+          )}
+        </>
+      }
+    >
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <NumberField
             id="maxConcurrent"
             label="Max sessions per user"
@@ -866,54 +872,23 @@ function PolicyPanel({
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ToggleField
-            id="expireOnResume"
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <SwitchRow
             label="Enforce idle timeout after reopening"
-            hint="Reopening the app after the idle timeout has passed requires signing in again — including on phones."
+            description="Reopening the app after the idle timeout has passed requires signing in again — including on phones."
             checked={draft.expireOnResumeAfterIdle}
-            onChange={(b) => set('expireOnResumeAfterIdle', b)}
+            onCheckedChange={(b) => set('expireOnResumeAfterIdle', b)}
             disabled={disabled}
           />
-          <ToggleField
-            id="autoSweep"
+          <SwitchRow
             label="Automatically sweep stale sessions"
-            hint="Ends stale and over-age sessions at most every 15 minutes, triggered by any sign-in."
+            description="Ends stale and over-age sessions at most every 15 minutes, triggered by any sign-in."
             checked={draft.autoSweepStale}
-            onChange={(b) => set('autoSweepStale', b)}
+            onCheckedChange={(b) => set('autoSweepStale', b)}
             disabled={disabled}
           />
         </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <p className="text-xs text-muted-foreground">
-            {policy.updatedAt
-              ? `Last changed ${new Date(policy.updatedAt).toLocaleString()}${policy.updatedByName ? ` by ${policy.updatedByName}` : ''}.`
-              : 'Using default policy.'}
-            {policy.lastSweepAt && ` Last sweep ${new Date(policy.lastSweepAt).toLocaleString()}.`}
-          </p>
-          {canEdit && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={!dirty || saving} onClick={() => setDraft(policy)} className="bg-white">
-                Discard
-              </Button>
-              <Button
-                size="sm"
-                disabled={!dirty || saving}
-                onClick={async () => {
-                  setSaving(true);
-                  try { await onSave(draft); } finally { setSaving(false); }
-                }}
-                className="gap-1.5 bg-indigo-600 text-white hover:bg-indigo-700"
-              >
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Save policy
-              </Button>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    </SettingsSection>
   );
 }
 
@@ -1371,8 +1346,7 @@ export default function SessionManagementPage() {
   ];
 
   return (
-    <div className="space-y-5 p-4 md:p-6">
-
+    <SettingsPage>
       <PageHeader
         icon={isAdmin ? ShieldAlert : Shield}
         title="Session Management"
@@ -1406,51 +1380,35 @@ export default function SessionManagementPage() {
       />
 
       {/* ── Stats ───────────────────────────────────────────────────────── */}
-      <Card className="overflow-hidden">
-        <CardContent className={cn('grid grid-cols-2 gap-3 pt-[var(--card-pad,1.5rem)]', isAdmin ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-4')}>
-          {[
-            { label: 'Active Sessions', value: summary.active, icon: <Globe className="h-4 w-4" />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-            { label: 'Users Online', value: summary.uniqueUsers, icon: <Users className="h-4 w-4" />, color: 'text-emerald-600', bg: 'bg-emerald-50', adminOnly: true },
-            { label: 'Active Now', value: summary.online, icon: <Sparkles className="h-4 w-4" />, color: 'text-teal-600', bg: 'bg-teal-50' },
-            { label: 'Stale / Over Age', value: summary.sweepable.length, icon: <AlertTriangle className="h-4 w-4" />, color: 'text-amber-600', bg: 'bg-amber-50', adminOnly: true },
-            { label: 'Desktop · Mobile', value: `${summary.desktopCount} · ${summary.mobileCount}`, icon: <Monitor className="h-4 w-4" />, color: 'text-blue-600', bg: 'bg-blue-50' },
-          ]
-            .filter((s) => !s.adminOnly || isAdmin)
-            .map((stat) => (
-              <div key={stat.label} className="flex items-center gap-3 rounded-xl border bg-white/80 px-3 py-3">
-                <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', stat.bg, stat.color)}>
-                  {stat.icon}
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
-                  <p className={cn('text-xl font-bold leading-tight', stat.color)}>{isLoading ? '—' : String(stat.value)}</p>
-                </div>
-              </div>
-            ))}
-        </CardContent>
-      </Card>
+      <KpiGrid>
+        {([
+          { label: 'Active sessions', value: summary.active, icon: Globe, tone: 'indigo' },
+          { label: 'Users online', value: summary.uniqueUsers, icon: Users, tone: 'emerald', adminOnly: true },
+          { label: 'Active now', value: summary.online, icon: Sparkles, tone: 'teal' },
+          { label: 'Stale or over age', value: summary.sweepable.length, icon: AlertTriangle, tone: 'amber', adminOnly: true },
+          { label: 'Desktop · mobile', value: `${summary.desktopCount} · ${summary.mobileCount}`, icon: Monitor, tone: 'blue' },
+        ] as const)
+          .filter((stat) => !('adminOnly' in stat) || isAdmin)
+          .map((stat) => (
+            <KpiCard key={stat.label} label={stat.label} value={isLoading ? '—' : String(stat.value)} icon={stat.icon} tone={stat.tone} />
+          ))}
+      </KpiGrid>
 
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded-xl border bg-white/70 p-1 shadow-sm">
-          {tabs.filter((t) => t.show).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => { setTab(t.id); setSelected(new Set()); }}
-              className={cn(
-                'flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all',
-                tab === t.id
-                  ? 'bg-white shadow-sm text-indigo-700'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {t.icon} {t.label}{t.count != null && !isLoading && ` (${t.count})`}
-            </button>
-          ))}
+      <Tabs value={tab} onValueChange={(value) => { setTab(value as Tab); setSelected(new Set()); }} className="min-w-0">
+        <div className="mb-4 min-w-0 overflow-x-auto">
+          <TabsList>
+            {tabs.filter((t) => t.show).map((t) => (
+              <TabsTrigger key={t.id} value={t.id} className="gap-1.5">
+                {t.icon} {t.label}{t.count != null && !isLoading && ` (${t.count})`}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
-      </div>
 
       {/* ── Body ────────────────────────────────────────────────────────── */}
+      {/* One panel whose value is always the current tab, so the selected tab names a panel that exists. */}
+      <TabsContent value={tab} className="mt-0 min-w-0">
       {tab === 'policy' ? (
         <PolicyPanel policy={policy} canEdit={canEditPolicy} onSave={savePolicy} />
       ) : (
@@ -1468,7 +1426,7 @@ export default function SessionManagementPage() {
               <button
                 type="button"
                 onClick={() => setExpandedUsers(allExpanded ? new Set() : new Set(userGroups.map((g) => g.id)))}
-                className="text-xs font-medium text-indigo-600 hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
               >
                 {allExpanded ? 'Collapse all' : 'Expand all'}
               </button>
@@ -1587,7 +1545,7 @@ export default function SessionManagementPage() {
           footer={
             !isLoading && userGroups.length > 0 && tab === 'history' && historySessions.length >= historyLimit ? (
               <div className="flex justify-center">
-                <Button variant="outline" size="sm" className="bg-white" onClick={() => setHistoryLimit((n) => n + HISTORY_PAGE)}>
+                <Button variant="outline" size="sm" onClick={() => setHistoryLimit((n) => n + HISTORY_PAGE)}>
                   Load more history
                 </Button>
               </div>
@@ -1647,6 +1605,8 @@ export default function SessionManagementPage() {
           )}
         </TableCard>
       )}
+      </TabsContent>
+      </Tabs>
 
       {/* ── Confirm dialog ─────────────────────────────────────────────── */}
       <AlertDialog open={!!pending} onOpenChange={(open) => { if (!open && !isWorking) setPending(null); }}>
@@ -1702,7 +1662,7 @@ export default function SessionManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </SettingsPage>
   );
 }
 

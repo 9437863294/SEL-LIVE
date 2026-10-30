@@ -1,172 +1,180 @@
-
-
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Save, Loader2, ShieldAlert, Clock, Info } from 'lucide-react';
+/**
+ * Settings › Login Expiry — how long you may stay idle before SEL Live signs you out. It is your own
+ * setting (`users/{id}.theme.sessionDuration`), capped by the company's session policy, and it
+ * applies from your next sign-in.
+ */
+
+import { useEffect, useState } from 'react';
+import { Clock, Loader2, LogIn, RotateCcw, Save } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { useBackNavigation } from '@/hooks/use-back-navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageHeader } from '@/components/shared/page-header';
+import { SettingsAccessDenied, SettingsNotice, SettingsPage, SettingsSection } from '@/components/settings/settings-ui';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { Skeleton } from '@/components/ui/skeleton';
+import { fetchSessionPolicy } from '@/lib/session-manager';
+import { cn } from '@/lib/utils';
+
+const MIN_MINUTES = 5;
+const MAX_MINUTES = 1440;
+const DEFAULT_MINUTES = 60;
+const PRESETS = [30, 60, 120, 240, 480];
+
+const asText = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest} min`;
+  return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
+};
 
 export default function LoginExpiryPage() {
   const back = useBackNavigation('/settings');
   const { toast } = useToast();
-  const { user, loading: authLoading, refreshUserData } = useAuth();
-  const { can, isLoading: authzLoading } = useAuthorization();
-  const [sessionDuration, setSessionDuration] = useState(60);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { user, refreshUserData } = useAuth();
+  const { can } = useAuthorization();
+  const canView = can('View', 'Settings.Login Expiry');
+  const canEdit = can('Edit', 'Settings.Login Expiry');
 
-  const canViewPage = can('View', 'Settings.Login Expiry');
-  const canEditPage = can('Edit', 'Settings.Login Expiry');
+  const stored = user?.theme?.sessionDuration || DEFAULT_MINUTES;
+  // Text, so the field can be cleared while typing; the number is read from it.
+  const [value, setValue] = useState(String(stored));
+  const [saving, setSaving] = useState(false);
+  const [cap, setCap] = useState<number | null>(null);
 
   useEffect(() => {
-    if (user) setSessionDuration(user.theme?.sessionDuration || 60);
-    setIsLoading(false);
-  }, [user]);
+    let live = true;
+    fetchSessionPolicy()
+      .then((result) => {
+        if (live) setCap(result.policy.idleTimeoutCapMinutes > 0 ? result.policy.idleTimeoutCapMinutes : null);
+      })
+      .catch((error) => console.warn('[login-expiry] session policy not loaded', error));
+    return () => {
+      live = false;
+    };
+  }, []);
 
-  const handleSave = async () => {
-    if (!user || !canEditPage) {
-      toast({ title: 'Permission Denied', description: "You don't have permission to save settings.", variant: 'destructive' });
-      return;
-    }
-    setIsSaving(true);
+  if (!canView) return <SettingsAccessDenied title="Login Expiry" icon={LogIn} />;
+
+  const minutes = Number(value);
+  const valid = value.trim() !== '' && Number.isInteger(minutes) && minutes >= MIN_MINUTES && minutes <= MAX_MINUTES;
+  const dirty = valid && minutes !== stored;
+  const applied = valid && cap !== null ? Math.min(minutes, cap) : null;
+
+  const save = async () => {
+    if (!user || !canEdit || !valid) return;
+    setSaving(true);
     try {
-      await updateDoc(doc(db, 'users', user.id), { 'theme.sessionDuration': sessionDuration });
+      await updateDoc(doc(db, 'users', user.id), { 'theme.sessionDuration': minutes });
       await refreshUserData();
-      toast({ title: 'Success', description: 'Login expiry setting saved. Takes effect on next login.' });
+      toast({ title: 'Login expiry saved', description: `You will be signed out after ${asText(minutes)} idle, from your next sign-in.` });
     } catch {
-      toast({ title: 'Error', description: 'Failed to save setting.', variant: 'destructive' });
+      toast({ title: 'Not saved', description: 'Check your connection and try again.', variant: 'destructive' });
     }
-    setIsSaving(false);
+    setSaving(false);
   };
 
-  if (authLoading || authzLoading || isLoading) {
-    return (
-      <div className=" space-y-4">
-        <Skeleton className="h-10 w-64 rounded-xl" />
-        <Skeleton className="h-48 w-full rounded-xl" />
-      </div>
-    );
-  }
-
-  if (!canViewPage) {
-    return (
-      <div className=" px-4 sm:px-5 py-3">
-        <PageHeader title="Login Expiry" icon={Clock} backHref={back.href} backLabel={back.label} onBackClick={back.onClick} />
-        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
-          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <>
-      {/* ── Background ── */}
-      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-br from-orange-50/60 via-background to-amber-50/40 dark:from-orange-950/20 dark:via-background dark:to-amber-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[35vw] h-[35vw] rounded-full bg-orange-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[35vw] h-[35vw] rounded-full bg-amber-300/12 blur-3xl" />
-        <div className="absolute inset-0 opacity-20 dark:opacity-12"
-          style={{ backgroundImage: 'radial-gradient(circle, rgba(249,115,22,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
-        />
-      </div>
+    <SettingsPage>
+      <PageHeader
+        title="Login Expiry"
+        description="How long you can stay idle before SEL Live signs you out."
+        icon={LogIn}
+        backHref={back.href}
+        backLabel={back.label}
+        onBackClick={back.onClick}
+      />
 
-      <div className=" px-4 sm:px-5 py-3">
-        {/* Header */}
-        <PageHeader
-          title="Login Expiry"
-          description="Session timeout configuration"
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:items-start">
+        <SettingsSection
+          title="Idle sign-out"
           icon={Clock}
-          backHref={back.href}
-          backLabel={back.label}
-          onBackClick={back.onClick}
-        />
+          description="Counted from your last click or key press, on every device you are signed in on."
+          footer={
+            canEdit ? (
+              <>
+                {value !== String(stored) && (
+                  <Button variant="ghost" onClick={() => setValue(String(stored))} disabled={saving}>
+                    <RotateCcw className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Undo
+                  </Button>
+                )}
+                <Button onClick={() => void save()} disabled={saving || !dirty}>
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="mr-2 h-4 w-4" aria-hidden="true" />}
+                  Save
+                </Button>
+              </>
+            ) : undefined
+          }
+        >
+          <div role="radiogroup" aria-label="Quick choices" className="flex flex-wrap gap-2">
+            {PRESETS.map((preset) => {
+              const selected = valid && minutes === preset;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={!canEdit}
+                  onClick={() => setValue(String(preset))}
+                  className={cn(
+                    'rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+                    selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:border-primary/40 hover:bg-primary/5',
+                  )}
+                >
+                  {asText(preset)}
+                </button>
+              );
+            })}
+          </div>
 
-        <Card className="border-orange-200/60 dark:border-orange-800/30 overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-orange-400 to-amber-400" />
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-orange-100 dark:bg-orange-900/40 p-2">
-                <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
-              </div>
-              <div>
-                <CardTitle>Session Duration</CardTitle>
-                <CardDescription className="text-xs">Auto-logout after inactivity</CardDescription>
-              </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="session-duration">Or any number of minutes</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Input
+                id="session-duration"
+                type="number"
+                inputMode="numeric"
+                min={MIN_MINUTES}
+                max={MAX_MINUTES}
+                step={1}
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                disabled={!canEdit}
+                aria-invalid={!valid}
+                aria-describedby="session-duration-hint"
+                className="w-28 text-center text-base font-semibold tabular-nums"
+              />
+              <span className="text-sm text-muted-foreground">minutes{valid ? ` · ${asText(minutes)}` : ''}</span>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="session-duration" className="text-sm font-medium">
-                Duration (in minutes)
-              </Label>
-              <div className="flex items-center gap-3">
-                <Input
-                  id="session-duration"
-                  type="number"
-                  value={sessionDuration}
-                  onChange={(e) => setSessionDuration(parseInt(e.target.value, 10))}
-                  className="max-w-[140px] text-center text-lg font-semibold"
-                  disabled={!canEditPage}
-                  min={5}
-                  max={1440}
-                />
-                <span className="text-sm text-muted-foreground">minutes</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                = {Math.floor(sessionDuration / 60)} hr {sessionDuration % 60} min
-              </p>
-            </div>
+            <p id="session-duration-hint" className={cn('text-xs', valid ? 'text-muted-foreground' : 'font-medium text-danger')}>
+              {valid ? `Between ${MIN_MINUTES} minutes and 24 hours.` : `Enter a whole number from ${MIN_MINUTES} to ${MAX_MINUTES}.`}
+            </p>
+          </div>
 
-            {/* Presets */}
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Quick Presets</Label>
-              <div className="flex flex-wrap gap-2">
-                {[30, 60, 120, 240, 480].map(mins => (
-                  <button
-                    key={mins}
-                    onClick={() => setSessionDuration(mins)}
-                    disabled={!canEditPage}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                      sessionDuration === mins
-                        ? 'bg-orange-500 text-white border-orange-500'
-                        : 'border-border/60 hover:border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-950/20 text-muted-foreground disabled:opacity-40'
-                    }`}
-                  >
-                    {mins < 60 ? `${mins}m` : `${mins / 60}h`}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {!canEdit && <SettingsNotice>Your role can see this setting but not change it (Login Expiry › Edit).</SettingsNotice>}
+        </SettingsSection>
 
-            {/* Info box */}
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-muted/40 border border-border/40">
-              <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                This setting takes effect on your <strong>next login</strong>. You will be automatically logged out after the specified period of inactivity.
-              </p>
-            </div>
-
-            <div className="flex justify-end">
-              <Button onClick={handleSave} disabled={isSaving || !canEditPage} className="rounded-full shadow-md">
-                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save Settings
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="min-w-0 space-y-3">
+          <SettingsNotice title="Applies from your next sign-in">
+            Your current session keeps the timeout it started with. Signing out and back in picks up a change straight away.
+          </SettingsNotice>
+          {cap !== null && (
+            <SettingsNotice tone="warning" title={`The company caps idle time at ${asText(cap)}`}>
+              {applied !== null && applied < minutes
+                ? `So you will be signed out after ${asText(applied)}, not ${asText(minutes)}.`
+                : 'A longer setting here is cut down to that.'}
+            </SettingsNotice>
+          )}
+        </div>
       </div>
-    </>
+    </SettingsPage>
   );
 }
