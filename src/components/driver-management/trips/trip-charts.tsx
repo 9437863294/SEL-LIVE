@@ -102,20 +102,21 @@ export function OwnershipSplit({ own, company }: { own: number; company: number 
         {own > 0 && <div className="h-full rounded-l-full" style={{ width: `${(own / total) * 100}%`, backgroundColor: palette.own, borderTopRightRadius: company ? 0 : 9999, borderBottomRightRadius: company ? 0 : 9999 }} title={`Own vehicle: ${formatKm(own)}`} />}
         {company > 0 && <div className="h-full rounded-r-full" style={{ width: `${(company / total) * 100}%`, backgroundColor: palette.company, borderTopLeftRadius: own ? 0 : 9999, borderBottomLeftRadius: own ? 0 : 9999 }} title={`Company vehicle: ${formatKm(company)}`} />}
       </div>
+      {/* Each <div> holds exactly one <dt>/<dd> pair (the dot sits inside the <dt>), as a <dl> requires. */}
       <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div className="flex items-start gap-2">
-          <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: palette.own }} aria-hidden />
-          <div>
-            <dt className="text-xs text-muted-foreground">Own vehicle</dt>
-            <dd className="font-semibold tabular-nums text-slate-800">{formatKm(own)} <span className="text-xs font-normal text-muted-foreground">· {ownShare}%</span></dd>
-          </div>
+        <div>
+          <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: palette.own }} aria-hidden />
+            Own vehicle
+          </dt>
+          <dd className="pl-[18px] font-semibold tabular-nums text-slate-800">{formatKm(own)} <span className="text-xs font-normal text-muted-foreground">· {ownShare}%</span></dd>
         </div>
-        <div className="flex items-start gap-2">
-          <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: palette.company }} aria-hidden />
-          <div>
-            <dt className="text-xs text-muted-foreground">Company vehicle</dt>
-            <dd className="font-semibold tabular-nums text-slate-800">{formatKm(company)} <span className="text-xs font-normal text-muted-foreground">· {100 - ownShare}%</span></dd>
-          </div>
+        <div>
+          <dt className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: palette.company }} aria-hidden />
+            Company vehicle
+          </dt>
+          <dd className="pl-[18px] font-semibold tabular-nums text-slate-800">{formatKm(company)} <span className="text-xs font-normal text-muted-foreground">· {100 - ownShare}%</span></dd>
         </div>
       </dl>
     </div>

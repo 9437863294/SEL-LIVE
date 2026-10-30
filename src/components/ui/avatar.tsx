@@ -26,7 +26,8 @@ const AvatarImage = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AvatarPrimitive.Image
     ref={ref}
-    className={cn("aspect-square h-full w-full", className)}
+    // object-cover: a photo that is not square is cropped to the circle, not squashed into it.
+    className={cn("aspect-square h-full w-full object-cover", className)}
     {...props}
   />
 ))

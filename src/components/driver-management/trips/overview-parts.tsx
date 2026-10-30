@@ -33,15 +33,15 @@ function RouteArt({ className }: { className?: string }) {
       <path d="M18 132 C 70 132, 72 70, 128 70 S 190 18, 246 30 S 300 70, 300 70" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="2 10" />
       <circle cx="18" cy="132" r="7" stroke="currentColor" strokeWidth="3" />
       <path d="M300 44c-10 0-17 7.4-17 16.4C283 72 300 88 300 88s17-16 17-27.6C317 51.4 310 44 300 44Z" fill="currentColor" />
-      <circle cx="300" cy="60" r="5" className="fill-sky-600 dark:fill-sky-900" />
+      <circle cx="300" cy="60" r="5" className="fill-sky-700 dark:fill-sky-900" />
     </svg>
   );
 }
 
 function HeroFact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 rounded-xl border border-white/20 bg-white/10 px-3 py-2">
-      <dt className="truncate text-[11px] font-medium text-white/75">{label}</dt>
+    <div className="min-w-0 rounded-xl border border-white/15 bg-black/15 px-3 py-2">
+      <dt className="truncate text-[11px] font-medium text-white/90">{label}</dt>
       <dd className="truncate text-sm font-semibold tabular-nums text-white">{children}</dd>
     </div>
   );
@@ -67,15 +67,15 @@ export function OverviewHero({
   const unclaimed = personal.unclaimed.trips;
 
   return (
-    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-600 via-cyan-600 to-teal-600 p-4 text-white shadow-[0_18px_40px_-24px_rgba(8,145,178,0.9)] sm:p-6 dark:from-sky-900 dark:via-cyan-900 dark:to-teal-900">
+    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-700 via-cyan-700 to-teal-700 p-4 text-white shadow-[0_18px_40px_-24px_rgba(14,116,144,0.9)] sm:p-6 dark:from-sky-900 dark:via-cyan-900 dark:to-teal-900">
       <RouteArt className="pointer-events-none absolute -right-6 -top-6 h-24 w-48 text-white/15 sm:-right-4 sm:top-2 sm:h-44 sm:w-[22rem] sm:text-white/20" />
 
       <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0 lg:max-w-xl">
-          <p className="text-xs font-medium text-white/80">
+          <p className="text-xs font-medium text-white/90">
             {greeting()} · {month}
           </p>
-          <p className="mt-3 text-sm text-white/85">Reimbursement from this month&apos;s trips</p>
+          <p className="mt-3 text-sm text-white/90">Reimbursement from this month&apos;s trips</p>
           <p className="mt-0.5 text-3xl font-semibold tracking-tight sm:text-4xl">
             <Money value={personal.thisMonth.amount} />
           </p>
@@ -107,7 +107,7 @@ export function OverviewHero({
             </Button>
           )}
           {unclaimed > 0 && (
-            <Button type="button" onClick={onClaim} className="h-11 flex-1 border border-white/30 bg-white/15 font-semibold text-white shadow-none hover:bg-white/25 lg:flex-none">
+            <Button type="button" onClick={onClaim} className="h-11 flex-1 border border-white/30 bg-black/15 font-semibold text-white shadow-none hover:bg-black/25 lg:flex-none">
               <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
               Claim {plural(unclaimed, 'trip')} · <Money value={personal.unclaimed.amount} compact className="ml-1" />
             </Button>
@@ -151,7 +151,7 @@ export function ClaimJourney({ personal, financialYear }: { personal: Personal; 
                 </span>
                 <span className="min-w-0 text-xs font-medium leading-tight text-slate-600">{step.label}</span>
               </div>
-              <p className={cn('mt-2.5 truncate text-lg font-semibold leading-tight sm:text-xl', step.amount ? 'text-slate-900' : 'text-slate-400')}>
+              <p className={cn('mt-2.5 truncate text-lg font-semibold leading-tight sm:text-xl', step.amount ? 'text-slate-900' : 'text-slate-500')}>
                 <Money value={step.amount} />
               </p>
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{step.hint}</p>
@@ -178,14 +178,15 @@ export function PipelineBar({ parts }: { parts: { label: string; amount: number;
       </div>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
         {parts.map((part) => (
-          <div key={part.label} className="flex min-w-0 items-start gap-2">
-            <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', part.color)} aria-hidden />
-            <div className="min-w-0">
-              <dt className="truncate text-xs text-muted-foreground">{part.label}</dt>
-              <dd className="truncate text-sm font-semibold text-slate-800">
-                <Money value={part.amount} compact /> <span className="text-xs font-normal text-muted-foreground">· {plural(part.claims, 'claim')}</span>
-              </dd>
-            </div>
+          // One <dt>/<dd> pair per <div>, the dot inside the <dt> — the only shape a <dl> allows.
+          <div key={part.label} className="min-w-0">
+            <dt className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+              <span className={cn('h-2 w-2 shrink-0 rounded-full', part.color)} aria-hidden />
+              <span className="truncate">{part.label}</span>
+            </dt>
+            <dd className="truncate pl-4 text-sm font-semibold text-slate-800">
+              <Money value={part.amount} compact /> <span className="text-xs font-normal text-muted-foreground">· {plural(part.claims, 'claim')}</span>
+            </dd>
           </div>
         ))}
       </dl>

@@ -8,6 +8,7 @@ import '@/styles/module-shell.css';
 // After globals.css: its dark-mode remaps must come later than Tailwind's utilities to win.
 import './dark-compat.css';
 import type { ReactNode } from 'react';
+import type { Metadata } from 'next';
 import { Atkinson_Hyperlegible, Inter, Roboto } from 'next/font/google';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Toaster } from '@/components/ui/toaster';
@@ -31,6 +32,13 @@ const inter = Inter({
 // fetched on devices whose user picked them.
 const roboto = Roboto({ subsets: ['latin'], display: 'swap', variable: '--font-roboto-face', weight: ['400', '500', '700'], preload: false });
 const atkinson = Atkinson_Hyperlegible({ subsets: ['latin'], display: 'swap', variable: '--font-atkinson-face', weight: ['400', '700'], preload: false });
+
+// Every page had no <title> at all: browser tabs, history and screen readers named nothing. The
+// app's product name, not the company's (that comes from the company profile, never from code).
+export const metadata: Metadata = {
+  title: { default: 'SEL Live', template: '%s · SEL Live' },
+  description: 'SEL Live — trips, claims, approvals, projects and the rest of the working day in one place.',
+};
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

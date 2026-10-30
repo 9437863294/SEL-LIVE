@@ -33,6 +33,7 @@ import { SidebarNavTooltip, useSidebarIconsOnly } from '@/components/navigation/
 import { ModuleMobileHeader } from '@/components/shared/page-header';
 import { useSidebarDefault } from '@/components/theme/use-sidebar-default';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 export type { ModuleNavTab } from '@/components/navigation/ModuleBottomNav';
@@ -339,21 +340,25 @@ export function ModuleShell({
     return [{ href: home.href, label: 'Home', icon: home.icon, exact: home.match !== 'prefix', match, ariaLabel: home.label }];
   }, [mobileTabs, visibleGroups]);
 
-  if (gate?.loading) {
+  // AppShell already drops the app header on a print route; this drops the module's chrome too
+  // (print lays out below `lg`, so the phone bar would otherwise print).
+  // A whole `print` path segment: `/settings/printing` is an ordinary page, not a print view.
+  const isBare = bare ?? pathname.split('/').includes('print');
+  // Permissions still loading: the module's frame and name straight away, its menu and page as
+  // placeholders — not a lone spinner on an empty page until sign-in and permissions are in (a
+  // phone on a slow network watched that for seconds). A print view keeps the spinner.
+  const loading = Boolean(gate?.loading);
+  if (loading && isBare) {
     return (
       <div data-slot="module-shell-loading" className="flex w-full items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" aria-label="Loading" />
       </div>
     );
   }
-  if (gate && !gate.allowed) return <ModuleAccessDenied title={title} message={gate.deniedMessage} />;
+  if (!loading && gate && !gate.allowed) return <ModuleAccessDenied title={title} message={gate.deniedMessage} />;
+  if (isBare) return <>{children}</>;
 
-  // AppShell already drops the app header on a print route; this drops the module's chrome too
-  // (print lays out below `lg`, so the phone bar would otherwise print).
-  // A whole `print` path segment: `/settings/printing` is an ordinary page, not a print view.
-  if (bare ?? pathname.split('/').includes('print')) return <>{children}</>;
-
-  const content = gate?.pageAllowed === false ? <PageAccessDenied message={gate.pageDeniedMessage} /> : children;
+  const content = loading ? <ModuleContentSkeleton /> : gate?.pageAllowed === false ? <PageAccessDenied message={gate.pageDeniedMessage} /> : children;
   const ToggleIcon = collapsed ? PanelLeftOpen : PanelLeftClose;
 
   return (
@@ -397,7 +402,8 @@ export function ModuleShell({
             </div>
 
             <nav data-slot="module-nav" aria-label={`${title} pages`}>
-              {visibleGroups.map((group) => (
+              {loading && <ModuleNavSkeleton collapsed={collapsed} />}
+              {!loading && visibleGroups.map((group) => (
                 <div key={group.id} data-slot="module-nav-group" data-labelled={group.label ? 'true' : 'false'}>
                   {group.label && <p data-slot="module-nav-group-label">{group.label}</p>}
                   {group.items.map((item) => {
@@ -419,12 +425,45 @@ export function ModuleShell({
           </aside>
         </TooltipProvider>
 
-        <main data-slot="module-content" className="min-w-0">
+        <main data-slot="module-content" className="min-w-0" aria-busy={loading || undefined}>
           {content}
         </main>
       </div>
 
-      <ModuleBottomNav tabs={tabs} pages={pages} groupLabels={groupLabels} moreContent={mobileMoreContent} moduleName={title} />
+      {!loading && <ModuleBottomNav tabs={tabs} pages={pages} groupLabels={groupLabels} moreContent={mobileMoreContent} moduleName={title} />}
+    </div>
+  );
+}
+
+/** The menu's place while permissions load: rows the height of its links. */
+function ModuleNavSkeleton({ collapsed }: { collapsed: boolean }) {
+  return (
+    <div className="space-y-2 px-1 py-1" aria-hidden>
+      {[0, 1, 2, 3, 4, 5].map((row) => (
+        <div key={row} className="flex items-center gap-2.5 py-1">
+          <Skeleton className="h-7 w-7 shrink-0 rounded-lg" />
+          {!collapsed && <Skeleton className="h-3.5 rounded" style={{ width: `${[68, 54, 60, 48, 64, 42][row]}%` }} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A page's place while permissions load: a title, a row of figures and a card. */
+function ModuleContentSkeleton() {
+  return (
+    <div className="space-y-4">
+      <span className="sr-only">Loading…</span>
+      <div className="space-y-2" aria-hidden>
+        <Skeleton className="h-6 w-48 rounded-md" />
+        <Skeleton className="h-4 w-72 max-w-full rounded-md" />
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-hidden>
+        {[0, 1, 2, 3].map((tile) => (
+          <Skeleton key={tile} className="h-20 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-64 w-full rounded-xl" aria-hidden />
     </div>
   );
 }

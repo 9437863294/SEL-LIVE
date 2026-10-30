@@ -47,7 +47,8 @@ import { onOwnTripSaved } from '@/components/driver-management/trips/own-trip-ou
 import { OwnTripOutboxPanel } from '@/components/driver-management/trips/own-trip-outbox-panel';
 import { useTripClaims } from '@/components/driver-management/trips/trip-claims-provider';
 import { useTripQuery } from '@/components/driver-management/trips/use-trip-query';
-import { ErrorBlock, LoadingBlock, Money } from '@/components/driver-management/trips/trip-ui';
+import { ErrorBlock, Money } from '@/components/driver-management/trips/trip-ui';
+import { Skeleton } from '@/components/ui/skeleton';
 import { VM_PRIMARY_BUTTON } from '@/components/vehicle-management/vm-ui';
 import { cn } from '@/lib/utils';
 import { awaitsDriverEnd } from '@/lib/fleet/trips';
@@ -104,6 +105,45 @@ function StartFromUrl({ kind, enabled, onCompany, onChoose }: { kind: string | n
     window.history.replaceState(null, '', window.location.pathname);
   }, [kind, enabled, gps, onCompany, onChoose]);
   return null;
+}
+
+function FleetHeader() {
+  return (
+    <PageHeader
+      title="Fleet Trip"
+      description="Record every official trip by GPS — your own vehicle or a company vehicle."
+      icon={Truck}
+      // No actions: My Trips is on the module's own navigation, and Refresh sits on the Recent
+      // trips card — a lone button here took a row of its own on a phone.
+    />
+  );
+}
+
+/**
+ * The page while its figures load: the real title at once, then placeholders shaped like the Start
+ * button and the trip list — so a slow phone sees the page arrive rather than a spinner.
+ */
+export function FleetHomeSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <FleetHeader />
+      <span className="sr-only">Loading your trips…</span>
+      <Skeleton className="h-14 w-full rounded-2xl sm:h-[84px] sm:rounded-xl" aria-hidden />
+      <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4" aria-hidden>
+        <Skeleton className="mb-3 h-4 w-32 rounded" />
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="flex items-center gap-3 py-1.5">
+            <Skeleton className="h-9 w-9 shrink-0 rounded-lg" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-3.5 w-2/3 rounded" />
+              <Skeleton className="h-3 w-1/3 rounded" />
+            </div>
+            <Skeleton className="h-4 w-14 shrink-0 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -186,7 +226,7 @@ function FleetHomeContent() {
     if (data) void settleFleetRecording([runningTripId, awaitingId]);
   }, [data, runningTripId, awaitingId]);
 
-  if ((loading && !data) || (claims.loading && !claims.data)) return <LoadingBlock />;
+  if ((loading && !data) || (claims.loading && !claims.data)) return <FleetHomeSkeleton />;
   if (!data) return <ErrorBlock message={error ?? 'Fleet Trip could not be loaded.'} onRetry={() => void reload()} />;
 
   // A trip waiting for the driver's end blocks a new start, as a running one does.
@@ -237,19 +277,9 @@ function FleetHomeContent() {
     claims.reload();
   };
 
-  const header = (
-    <PageHeader
-      title="Fleet Trip"
-      description="Record every official trip by GPS — your own vehicle or a company vehicle."
-      icon={Truck}
-      // No actions: My Trips is on the module's own navigation, and Refresh sits on the Recent
-      // trips card — a lone button here took a row of its own on a phone.
-    />
-  );
-
   const body = (
     <div className="space-y-4">
-      {header}
+      <FleetHeader />
 
       {/* The own-vehicle recording, full width while it is driven. */}
       <GpsTripPanel />
