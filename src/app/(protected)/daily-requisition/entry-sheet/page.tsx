@@ -631,6 +631,17 @@ function EntrySheetPageComponent() {
     setIsAddDialogOpen(true);
   };
 
+  // The dashboard's "New requisition" links here as `?new=1`: once the data — and with it the next
+  // Reception No — has loaded, Add New Entry opens as if its button had been pressed. Once only.
+  const newParam = searchParams.get('new');
+  const openedNewFromLink = React.useRef(false);
+  React.useEffect(() => {
+    if (newParam !== '1' || openedNewFromLink.current || isLoading || !canAdd) return;
+    openedNewFromLink.current = true;
+    openAddDialog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `openAddDialog` is rebuilt every render; this runs once.
+  }, [newParam, isLoading, canAdd]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setAttachmentError(null);

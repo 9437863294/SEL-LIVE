@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   NO_FILTERS,
   activeFilterCount,
+  BACKLOG_DAYS,
   buildDashboard,
+  buildOverview,
   daysBetween,
   describePeriod,
   filterRows,
@@ -11,6 +13,7 @@ import {
   lastMonths,
   monthEnd,
   periodRange,
+  previousRange,
   stageOfStatus,
   topWithOther,
   weekStart,
@@ -158,4 +161,75 @@ test('groups largest first, the tail folded into Other', () => {
   assert.equal(figures.byParty[0].oldestDays, 122);
   const top = topWithOther(figures.byDepartment, 1);
   assert.deepEqual(top.map((g) => [g.key, g.balance, g.count]), [['d2', 525, 2], ['__other__', 60, 2]]);
+});
+
+test('the quarter so far, and the days to compare a period with', () => {
+  assert.deepEqual(periodRange('this-quarter', '2026-11-14'), { from: '2026-10-01', to: '2026-11-14' });
+  assert.deepEqual(periodRange('this-quarter', '2027-03-31'), { from: '2027-01-01', to: '2027-03-31' });
+  assert.deepEqual(periodRange('this-quarter', '2026-04-01'), { from: '2026-04-01', to: '2026-04-01' });
+  assert.deepEqual(previousRange({ from: '2026-10-01', to: '2026-10-30' }), { from: '2026-09-01', to: '2026-09-30' }, 'a month so far: the same days of the month before');
+  assert.deepEqual(previousRange({ from: '2026-03-01', to: '2026-03-31' }), { from: '2026-02-01', to: '2026-02-28' }, 'a whole month: the whole month before');
+  assert.deepEqual(previousRange({ from: '2026-03-01', to: '2026-03-30' }), { from: '2026-02-01', to: '2026-02-28' }, 'never past the month end');
+  assert.deepEqual(previousRange({ from: '2026-10-01', to: '2026-10-01' }), { from: '2026-09-30', to: '2026-09-30' }, 'one day: the day before');
+  assert.deepEqual(previousRange({ from: '2026-09-28', to: '2026-10-01' }), { from: '2026-09-24', to: '2026-09-27' });
+  assert.equal(previousRange({ from: '', to: TODAY }), null);
+});
+
+test('the overview: wait profiles, backlog, settling and the open amount by month', () => {
+  const rows = [
+    row({ id: 'a', status: 'Pending', dateKey: '2026-09-28', balance: 100 }), // 3 d
+    row({ id: 'b', status: 'Pending', dateKey: '2026-08-01', balance: 200 }), // 61 d
+    row({ id: 'c', status: 'Pending', dateKey: '2026-01-01', balance: 300, documentStatus: 'Missing' }), // 273 d
+    row({ id: 'd', status: 'Received for Payment', dateKey: '2026-09-11', balance: 50, projectId: '' }), // 20 d
+    row({ id: 'e', status: 'Paid', dateKey: '2026-09-01', net: 80, paid: 80, balance: 0, paidEvents: [{ dateKey: '2026-09-21', amount: 80 }] }),
+    row({ id: 'f', status: 'Cancelled', dateKey: '2026-09-01', balance: 0 }),
+    row({ id: 'g', status: 'Pending', dateKey: '', balance: 10 }),
+  ];
+  const overview = buildOverview(rows, { todayKey: TODAY, range: { from: '2026-09-01', to: TODAY } });
+
+  const receiving = overview.stages[0];
+  assert.equal(receiving.count, 4, 'the undated one is counted in its queue');
+  assert.equal(receiving.balance, 610);
+  assert.equal(receiving.oldestDays, 273);
+  assert.equal(receiving.medianDays, 61);
+  assert.equal(receiving.overdue, 2);
+  assert.deepEqual(receiving.bands.map((b) => b.count), [1, 0, 1, 1]);
+  assert.equal(overview.stages[2].count, 1);
+
+  assert.deepEqual(overview.overdue, { count: 3, balance: 550 });
+  assert.ok(BACKLOG_DAYS < 273);
+  assert.deepEqual(overview.backlog, { count: 1, balance: 300, stage: 'receiving', stageCount: 1 });
+
+  assert.deepEqual(overview.settled, { count: 1, avgCycleDays: 20 });
+  assert.equal(overview.lastPaidKey, '2026-09-21');
+
+  assert.equal(overview.quality.missingDocuments, 1);
+  assert.equal(overview.quality.noProject, 1);
+  assert.equal(overview.quality.undated, 1);
+
+  assert.equal(overview.backlogByMonth.length, 12);
+  assert.equal(overview.backlogByMonth[11], 660, 'today: every open balance, undated included');
+  // End of September: a, b, c and d were owed; e was received and paid by then.
+  assert.equal(overview.backlogByMonth[10], 100 + 100 + 100 + 100);
+  assert.equal(overview.backlogByMonth[7], 100, 'end of June: only c had been received');
+
+  assert.equal(overview.weekly.length, 12);
+  assert.equal(overview.weekly[11].start, '2026-09-28');
+  assert.equal(overview.weekly[11].received, 1);
+  const settledWeek = overview.weekly.find((week) => week.start === '2026-09-21');
+  assert.deepEqual([settledWeek.settled, settledWeek.paid, settledWeek.cycleDays], [1, 80, 20]);
+});
+
+test('possible duplicates: same party and amount within a week', () => {
+  const overview = buildOverview(
+    [
+      row({ id: '1', partyName: 'Acme', net: 500, dateKey: '2026-09-01' }),
+      row({ id: '2', partyName: ' acme ', net: 500.2, dateKey: '2026-09-05' }),
+      row({ id: '3', partyName: 'Acme', net: 500, dateKey: '2026-09-20' }),
+      row({ id: '4', partyName: 'Acme', net: 900, dateKey: '2026-09-02' }),
+      row({ id: '5', partyName: 'Acme', net: 500, dateKey: '2026-09-03', status: 'Cancelled' }),
+    ],
+    { todayKey: TODAY, range: { from: '', to: TODAY } },
+  );
+  assert.equal(overview.quality.possibleDuplicates, 2);
 });

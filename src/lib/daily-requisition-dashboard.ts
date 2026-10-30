@@ -78,6 +78,7 @@ export type DashboardPeriod =
   | 'today'
   | 'this-week'
   | 'this-month'
+  | 'this-quarter'
   | 'last-month'
   | 'last-30'
   | 'last-90'
@@ -90,6 +91,7 @@ export const DASHBOARD_PERIODS: ReadonlyArray<{ value: DashboardPeriod; label: s
   { value: 'today', label: 'Today' },
   { value: 'this-week', label: 'This week' },
   { value: 'this-month', label: 'This month' },
+  { value: 'this-quarter', label: 'This quarter' },
   { value: 'last-month', label: 'Last month' },
   { value: 'last-30', label: 'Last 30 days' },
   { value: 'last-90', label: 'Last 90 days' },
@@ -160,6 +162,11 @@ export function periodRange(
       return { from: weekStart(todayKey), to: todayKey };
     case 'this-month':
       return { from: `${todayKey.slice(0, 7)}-01`, to: todayKey };
+    case 'this-quarter': {
+      // Financial-year quarters: Apr–Jun, Jul–Sep, Oct–Dec, Jan–Mar. None crosses a calendar year.
+      const [y, m] = todayKey.split('-').map(Number);
+      return { from: `${y}-${pad2(m - (((m + 8) % 12) % 3))}-01`, to: todayKey };
+    }
     case 'last-month': {
       const start = shiftMonth(todayKey, -1);
       return { from: start, to: monthEnd(start) };
@@ -461,6 +468,314 @@ export function buildDashboard(
   figures.byDepartment = [...departments.values()].sort(byBalance);
   figures.byParty = [...parties.values()].sort(byBalance);
   return figures;
+}
+
+/* ── the overview: how long work waits, how it flows, what needs fixing ──────────────────────── */
+
+/**
+ * The days just before a period, to compare it with: for a month so far, the same days of the month
+ * before ("1 – 30 Oct" against "1 – 30 Sep"), the whole of it for a whole month; otherwise as many
+ * days again. Null for all time, which has nothing before it.
+ */
+export function previousRange(range: { from: string; to: string }): { from: string; to: string } | null {
+  if (!range.from || !isKey(range.from) || !isKey(range.to)) return null;
+  if (range.from !== range.to && range.from.endsWith('-01') && range.from.slice(0, 7) === range.to.slice(0, 7)) {
+    const start = shiftMonth(range.from, -1);
+    const end = monthEnd(start);
+    if (range.to === monthEnd(range.from)) return { from: start, to: end };
+    const sameDay = `${start.slice(0, 8)}${range.to.slice(8)}`;
+    return { from: start, to: sameDay > end ? end : sameDay };
+  }
+  const length = daysBetween(range.from, range.to) + 1;
+  return { from: shiftKey(range.from, -length), to: shiftKey(range.from, -1) };
+}
+
+/** How long an open requisition has waited since its reception date, in the overview's four bands. */
+export const WAIT_BANDS = [
+  { key: 'fresh', label: '0–15 d', minDays: 0, maxDays: 15 },
+  { key: 'late', label: '16–60 d', minDays: 16, maxDays: 60 },
+  { key: 'old', label: '61–180 d', minDays: 61, maxDays: 180 },
+  { key: 'stale', label: '> 180 d', minDays: 181, maxDays: null },
+] as const;
+export type WaitBandKey = (typeof WAIT_BANDS)[number]['key'];
+
+/** Past this many days an open requisition counts as overdue. No stage has an SLA of its own to read. */
+export const OVERDUE_DAYS = 15;
+/** Past this many days open work is backlog, and the overview says so before anything else. */
+export const BACKLOG_DAYS = 180;
+
+export interface BandFigure {
+  key: WaitBandKey;
+  label: string;
+  count: number;
+  balance: number;
+}
+
+export interface StageProfile {
+  stage: OpenStage;
+  count: number;
+  balance: number;
+  /** How the dated ones in this queue have waited. */
+  bands: BandFigure[];
+  medianDays: number | null;
+  oldestDays: number | null;
+  /** Waiting more than OVERDUE_DAYS. */
+  overdue: number;
+}
+
+export interface WeekPoint {
+  /** The Monday the week starts on. */
+  start: string;
+  /** Requisitions received that week, by reception date, cancelled ones left out. */
+  received: number;
+  /** Requisitions settled that week: Paid, with their last payment that week. */
+  settled: number;
+  /** Money paid out that week. */
+  paid: number;
+  /** Average days from reception to the last payment, of those settled that week. */
+  cycleDays: number | null;
+}
+
+export interface QualityFigures {
+  /** Open requisitions whose documents are marked Missing. */
+  missingDocuments: number;
+  /** Open requisitions whose documents are still Pending. */
+  pendingDocuments: number;
+  noProject: number;
+  noDepartment: number;
+  /** Open requisitions with no readable reception date — they age nowhere. */
+  undated: number;
+  netAboveGross: number;
+  /** Requisitions (not cancelled) with the same party and amount as another within 7 days. */
+  possibleDuplicates: number;
+}
+
+export interface OverviewFigures {
+  stages: StageProfile[];
+  /** Every dated open requisition, by how long it has waited. */
+  bands: BandFigure[];
+  overdue: { count: number; balance: number };
+  /** Open more than BACKLOG_DAYS, and the queue that holds the most of it. */
+  backlog: { count: number; balance: number; stage: OpenStage | null; stageCount: number };
+  /** Settled in the period: Paid, with the last payment in it. */
+  settled: { count: number; avgCycleDays: number | null };
+  /** The latest payment up to today. */
+  lastPaidKey: string | null;
+  /** Still-due by project, largest first. */
+  byProject: GroupFigure[];
+  /** What was still owed at the end of each of the last 12 months (`lastMonths` order); the last is today. */
+  backlogByMonth: number[];
+  /** The last 12 weeks, oldest first, this one last. */
+  weekly: WeekPoint[];
+  quality: QualityFigures;
+}
+
+const medianOf = (values: number[]): number | null => {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+};
+
+const emptyBands = (): BandFigure[] => WAIT_BANDS.map((band) => ({ key: band.key, label: band.label, count: 0, balance: 0 }));
+
+const bandOf = (age: number) => WAIT_BANDS.find((band) => age >= band.minDays && (band.maxDays === null || age <= band.maxDays)) ?? WAIT_BANDS[WAIT_BANDS.length - 1];
+
+const addToBand = (bands: BandFigure[], key: WaitBandKey, balance: number) => {
+  const band = bands.find((b) => b.key === key);
+  if (!band) return;
+  band.count += 1;
+  band.balance = round2(band.balance + balance);
+};
+
+/**
+ * The overview's figures beyond `buildDashboard`: each queue's wait profile, the backlog, how fast
+ * work settles, the open amount month by month, the weekly flow and what needs fixing. Like
+ * `buildDashboard` it reads the rows the filters allow; only "settled" reads the period.
+ */
+export function buildOverview(
+  rows: readonly DashboardRow[],
+  options: { todayKey: string; range: { from: string; to: string } },
+): OverviewFigures {
+  const { todayKey, range } = options;
+
+  const months = lastMonths(todayKey, 12);
+  const monthEnds = months.map((month) => {
+    const end = monthEnd(`${month.key}-01`);
+    return end > todayKey ? todayKey : end;
+  });
+  const backlogByMonth = months.map(() => 0);
+
+  const thisWeek = weekStart(todayKey);
+  const weekly: WeekPoint[] = Array.from({ length: 12 }, (_, index) => ({
+    start: shiftKey(thisWeek, -7 * (11 - index)),
+    received: 0,
+    settled: 0,
+    paid: 0,
+    cycleDays: null,
+  }));
+  const weekIndex = new Map(weekly.map((week, index) => [week.start, index]));
+  const weekCycles = weekly.map(() => ({ sum: 0, count: 0 }));
+
+  const stages = new Map<OpenStage, StageProfile>(
+    OPEN_STAGES.map((stage) => [stage, { stage, count: 0, balance: 0, bands: emptyBands(), medianDays: null, oldestDays: null, overdue: 0 }]),
+  );
+  const stageAges = new Map<OpenStage, number[]>(OPEN_STAGES.map((stage) => [stage, []]));
+  const bands = emptyBands();
+  const overdue = { count: 0, balance: 0 };
+  const backlog = { count: 0, balance: 0 };
+  const backlogByStage = new Map<OpenStage, number>();
+  const settled = { count: 0, cycleSum: 0, cycled: 0 };
+  let lastPaidKey: string | null = null;
+  const projects = new Map<string, GroupFigure>();
+  const quality: QualityFigures = {
+    missingDocuments: 0,
+    pendingDocuments: 0,
+    noProject: 0,
+    noDepartment: 0,
+    undated: 0,
+    netAboveGross: 0,
+    possibleDuplicates: 0,
+  };
+  const sameBill = new Map<string, string[]>();
+
+  for (const row of rows) {
+    const stage = stageOfStatus(row.status);
+    if (stage === 'cancelled') continue;
+    const dated = isKey(row.dateKey);
+    const age = dated ? Math.max(0, daysBetween(row.dateKey, todayKey)) : null;
+
+    // Payments up to today, oldest first. Post-dated ones have not happened yet.
+    const payments = row.paidEvents
+      .filter((event) => isKey(event.dateKey) && event.amount > 0 && event.dateKey <= todayKey)
+      .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const lastPayment = payments.length ? payments[payments.length - 1].dateKey : null;
+    if (lastPayment && (!lastPaidKey || lastPayment > lastPaidKey)) lastPaidKey = lastPayment;
+    for (const payment of payments) {
+      const week = weekIndex.get(weekStart(payment.dateKey));
+      if (week !== undefined) weekly[week].paid = round2(weekly[week].paid + payment.amount);
+    }
+
+    if (dated) {
+      const week = weekIndex.get(weekStart(row.dateKey));
+      if (week !== undefined) weekly[week].received += 1;
+      const party = row.partyName.trim().toLowerCase();
+      if (party && row.net > 0) {
+        const key = `${party}|${Math.round(row.net)}`;
+        sameBill.set(key, [...(sameBill.get(key) ?? []), row.dateKey]);
+      }
+    }
+
+    if (stage === 'paid' && lastPayment) {
+      const cycle = dated ? Math.max(0, daysBetween(row.dateKey, lastPayment)) : null;
+      const week = weekIndex.get(weekStart(lastPayment));
+      if (week !== undefined) {
+        weekly[week].settled += 1;
+        if (cycle !== null) {
+          weekCycles[week].sum += cycle;
+          weekCycles[week].count += 1;
+        }
+      }
+      if (within(lastPayment, range)) {
+        settled.count += 1;
+        if (cycle !== null) {
+          settled.cycleSum += cycle;
+          settled.cycled += 1;
+        }
+      }
+    }
+
+    // What was still owed at each month end: received by then, less what had been paid by then.
+    // Today's figure is the requisition's own balance, so the last point is the open amount.
+    if (dated) {
+      months.forEach((_, index) => {
+        const end = monthEnds[index];
+        if (row.dateKey > end) return;
+        let owed = row.balance;
+        if (end < todayKey) {
+          if (stage === 'paid' && lastPayment && lastPayment <= end) owed = 0;
+          else owed = Math.max(0, row.net - payments.reduce((sum, payment) => (payment.dateKey <= end ? sum + payment.amount : sum), 0));
+        }
+        backlogByMonth[index] = round2(backlogByMonth[index] + owed);
+      });
+    } else {
+      backlogByMonth[months.length - 1] = round2(backlogByMonth[months.length - 1] + row.balance);
+    }
+
+    if (stage === 'paid') continue;
+
+    // Open from here on.
+    const documents = row.documentStatus || 'Pending';
+    if (documents === 'Missing') quality.missingDocuments += 1;
+    else if (documents === 'Pending') quality.pendingDocuments += 1;
+    if (!row.projectId) quality.noProject += 1;
+    if (!row.departmentId) quality.noDepartment += 1;
+    if (!dated) quality.undated += 1;
+    if (row.gross > 0 && row.net > row.gross + 0.5) quality.netAboveGross += 1;
+
+    const profile = stages.get(stage)!;
+    profile.count += 1;
+    profile.balance = round2(profile.balance + row.balance);
+    addGroup(projects, row.projectId || '', row.balance, age);
+    if (age === null) continue;
+
+    stageAges.get(stage)!.push(age);
+    if (profile.oldestDays === null || age > profile.oldestDays) profile.oldestDays = age;
+    const band = bandOf(age).key;
+    addToBand(profile.bands, band, row.balance);
+    addToBand(bands, band, row.balance);
+    if (age > OVERDUE_DAYS) {
+      profile.overdue += 1;
+      overdue.count += 1;
+      overdue.balance = round2(overdue.balance + row.balance);
+    }
+    if (age > BACKLOG_DAYS) {
+      backlog.count += 1;
+      backlog.balance = round2(backlog.balance + row.balance);
+      backlogByStage.set(stage, (backlogByStage.get(stage) ?? 0) + 1);
+    }
+  }
+
+  for (const stage of OPEN_STAGES) stages.get(stage)!.medianDays = medianOf(stageAges.get(stage)!);
+  weekly.forEach((week, index) => {
+    week.cycleDays = weekCycles[index].count ? Math.round(weekCycles[index].sum / weekCycles[index].count) : null;
+  });
+
+  // Possible duplicates: the same party and amount received again within a week.
+  for (const days of sameBill.values()) {
+    if (days.length < 2) continue;
+    const sorted = [...days].sort();
+    const flagged = new Set<number>();
+    for (let i = 1; i < sorted.length; i += 1) {
+      if (daysBetween(sorted[i - 1], sorted[i]) <= 7) {
+        flagged.add(i - 1);
+        flagged.add(i);
+      }
+    }
+    quality.possibleDuplicates += flagged.size;
+  }
+
+  let backlogStage: OpenStage | null = null;
+  let backlogStageCount = 0;
+  for (const [stage, count] of backlogByStage) {
+    if (count > backlogStageCount) {
+      backlogStage = stage;
+      backlogStageCount = count;
+    }
+  }
+
+  return {
+    stages: OPEN_STAGES.map((stage) => stages.get(stage)!),
+    bands,
+    overdue,
+    backlog: { ...backlog, stage: backlogStage, stageCount: backlogStageCount },
+    settled: { count: settled.count, avgCycleDays: settled.cycled ? Math.round(settled.cycleSum / settled.cycled) : null },
+    lastPaidKey,
+    byProject: [...projects.values()].sort(byBalance),
+    backlogByMonth,
+    weekly,
+    quality,
+  };
 }
 
 /** The first `limit` groups, the rest folded into one "Other" group (key `''` stays its own). */
