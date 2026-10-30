@@ -219,6 +219,26 @@ test('saved preferences beat company defaults; absent preferences follow them', 
   assert.equal(chosen.mode, 'dark');
 });
 
+test('the home design follows the company default until a user picks one; unknown designs are dropped', () => {
+  assert.equal(resolveAppearance(sanitizeConfig({}), {}).homeDesign, 'classic');
+  const company = sanitizeConfig({ defaults: { homeDesign: 'command' } });
+  assert.equal(company.defaults.homeDesign, 'command');
+  assert.equal(resolveAppearance(company, {}).homeDesign, 'command');
+  assert.equal(resolveAppearance(company, { homeDesign: 'launchpad' }).homeDesign, 'launchpad');
+  assert.equal(sanitizeConfig({ defaults: { homeDesign: 'retro' } }).defaults.homeDesign, 'classic');
+  assert.equal(sanitizePreferences({ homeDesign: 'retro' }).homeDesign, undefined);
+});
+
+test('favourites are their own list of real modules, separate from the retired pins', () => {
+  const prefs = sanitizePreferences(
+    { layout: { pinnedModules: ['Loan'], favouriteModules: ['E-Approval', 'Nope', 'Loan', 'E-Approval'] } },
+    ['E-Approval', 'Loan'],
+  );
+  assert.deepEqual(prefs.layout.favouriteModules, ['E-Approval', 'Loan']);
+  const effective = resolveAppearance(sanitizeConfig({}), { layout: { pinnedModules: ['Loan'] } });
+  assert.deepEqual(effective.layout.favouriteModules, []);
+});
+
 test('an accent or font the company withdrew falls back to the company default', () => {
   const company = sanitizeConfig({ theme: { approvedAccents: ['violet', 'blue'], approvedFonts: ['inter'] } });
   const effective = resolveAppearance(company, { accent: 'rose', font: 'roboto' });

@@ -19,6 +19,7 @@ import {
   type CompanyAppearanceConfig,
   type ContrastPreference,
   type DashboardView,
+  type HomeDesign,
   type DialogSizePreference,
   type Density,
   type FontId,
@@ -52,6 +53,7 @@ export interface EffectiveAppearance {
   contrast: ContrastPreference;
   tableDensity: Density;
   dashboardView: DashboardView;
+  homeDesign: HomeDesign;
   navStyle: NavStyle;
   layout: Required<LayoutPreferences>;
   /** `null` follows the company's dialog size (set by company-design-provider as data-dialog-size). */
@@ -81,6 +83,7 @@ export function resolveAppearance(
     contrast: p.contrast ?? 'standard',
     tableDensity: p.tableDensity ?? d.tableDensity,
     dashboardView: p.dashboardView ?? d.dashboardView,
+    homeDesign: p.homeDesign ?? d.homeDesign,
     navStyle: p.navStyle ?? d.navStyle,
     layout: {
       sidebarDefault: l.sidebarDefault ?? d.sidebarDefault,
@@ -88,6 +91,7 @@ export function resolveAppearance(
       moduleGrouping: l.moduleGrouping ?? d.moduleGrouping,
       hiddenModules: l.hiddenModules ?? [],
       pinnedModules: l.pinnedModules ?? [],
+      favouriteModules: l.favouriteModules ?? [],
       breadcrumbs: l.breadcrumbs ?? d.breadcrumbs,
       stickyHeader: l.stickyHeader ?? d.stickyHeader,
       dashboardCardDensity: l.dashboardCardDensity ?? d.dashboardCardDensity,

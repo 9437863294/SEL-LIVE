@@ -1,7 +1,10 @@
 'use client';
 
 /**
- * The home page: two tabs, "Your work" and "Modules".
+ * The home page: two tabs, "Your work" and "Modules", in every design. The design (Settings ›
+ * Appearance › "Home page design"; the company sets the default, each person may choose their own)
+ * decides only what the Modules tab looks like: the Classic launcher, or Command, Launchpad or Aurora Glass from
+ * src/components/home.
  *
  * It used to be only the module launcher — a grid of cards, one per module the user could open.
  * That answered "where is everything?" and nothing else, so the first thing anybody did on signing
@@ -29,12 +32,25 @@ import { useCallback, useState, useSyncExternalStore } from 'react';
 import AppShell from '@/components/app/AppShell';
 import ModuleDashboard from '@/components/module-hub/ModuleDashboard';
 import { useAppearance } from '@/components/theme/ThemeProvider';
-import { useWorkDashboard } from '@/components/work-dashboard/hooks';
+import dynamic from 'next/dynamic';
+import { useWorkDashboard, type WorkDashboardState } from '@/components/work-dashboard/hooks';
 import { WorkBoard } from '@/components/work-dashboard/work-dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import type { HomeDesign } from '@/lib/appearance/model';
 import { cn } from '@/lib/utils';
+
+// The other two designs are downloaded only by the people who chose them.
+const designLoading = () => (
+  <div className="w-full space-y-3 px-2 pt-3 sm:px-3 md:px-4" aria-busy="true">
+    <Skeleton className="h-9 w-56 rounded-md" />
+    <Skeleton className="h-48 rounded-xl" />
+  </div>
+);
+const CommandHome = dynamic(() => import('@/components/home/command-home'), { loading: designLoading });
+const LaunchpadHome = dynamic(() => import('@/components/home/launchpad-home'), { loading: designLoading });
+const AuroraHome = dynamic(() => import('@/components/home/launchpad-home').then((m) => m.AuroraHome), { loading: designLoading });
 
 type HomeTab = 'work' | 'modules';
 
@@ -56,7 +72,41 @@ function readStoredTab(): HomeTab | null {
 // person's own pick is showing.
 const subscribeToNothing = () => () => {};
 
+const onClient = () => true;
+const onServer = () => false;
+
+/**
+ * The home page in the person's chosen design (Settings › Appearance › "Home page design", with a
+ * company default). The work data is fetched here once, whichever design draws it.
+ */
 export default function DashboardPage() {
+  const { effective } = useAppearance();
+  const work = useWorkDashboard();
+  // The design comes from this device's cached preferences, which the server cannot see. So the
+  // server's markup (and the hydrating render) is a neutral placeholder rather than one design that
+  // is then swapped for another; the real design is drawn before the browser's first paint.
+  const mounted = useSyncExternalStore(subscribeToNothing, onClient, onServer);
+  const design = effective.homeDesign;
+
+  return <AppShell>{!mounted ? designLoading() : <HomeTabs work={work} design={design} />}</AppShell>;
+}
+
+/**
+ * Side gutters per design, shared by the tab strip and the work board so both line up with the
+ * design's own content. Classic's are the original minimal gutters.
+ */
+const GUTTER: Record<HomeDesign, string> = {
+  classic: 'px-2 sm:px-3 md:px-4',
+  command: 'px-4 sm:px-6 lg:px-8',
+  launchpad: 'px-3 sm:px-4 md:px-6',
+  aurora: 'px-3 sm:px-4 md:px-6',
+};
+
+/**
+ * "Your work" and "Modules" tabs — in every design. The design only decides what the Modules tab
+ * looks like: the original launcher (Classic), or the Command or Launchpad page.
+ */
+function HomeTabs({ work, design }: { work: WorkDashboardState; design: HomeDesign }) {
   const { effective, ready } = useAppearance();
   const dashboardView = effective.dashboardView;
 
@@ -87,10 +137,8 @@ export default function DashboardPage() {
   // Set during render, like `settled` above.
   const [visited, setVisited] = useState<ReadonlySet<HomeTab>>(() => new Set());
   if (tabKnown && !visited.has(tab)) setVisited(new Set(visited).add(tab));
-
-  // Run here rather than inside the board, so the tab's pending count is there from the start
-  // whichever tab opens — the board itself only mounts once "Your work" is shown.
-  const work = useWorkDashboard();
+  // `work` comes from the page rather than the board, so the tab's pending count is there from the
+  // start whichever tab opens — the board itself only mounts once "Your work" is shown.
 
   const selectTab = useCallback((value: string) => {
     if (!isHomeTab(value)) return;
@@ -106,12 +154,18 @@ export default function DashboardPage() {
   const pending = work.isLoading ? 0 : work.summary.action;
   const overdue = work.isLoading ? 0 : work.summary.overdue;
 
+  const gutter = GUTTER[design];
+
   return (
-    <AppShell>
-      {/* Full width with minimal gutters — the page is a working surface, not an article. */}
-      <main className="w-full px-2 pt-3 sm:px-3 md:px-4">
+    <>
+      {/* Full width with minimal gutters — the page is a working surface, not an article. The gutters
+          sit on the tab strip and each panel rather than here, so Command's welcome band can run edge
+          to edge under the tabs. */}
+      <main className="w-full pt-3">
         {/* An empty value while the tab is unknown: no trigger is active and both panels stay hidden. */}
         <Tabs value={tabKnown ? tab : ''} onValueChange={selectTab}>
+          {/* Its own layer, so a design's backdrop (Aurora's glow) can run behind the tabs. */}
+          <div className={cn('relative z-10', gutter)}>
           <TabsList>
             <TabsTrigger value="work" className="gap-2">
               Your work
@@ -133,17 +187,31 @@ export default function DashboardPage() {
           </TabsList>
 
           {tabKnown ? null : <Skeleton className="mt-2 h-48 rounded-xl" />}
+          </div>
 
-          <TabsContent value="work" forceMount className="pb-8 data-[state=inactive]:hidden">
+          <TabsContent value="work" forceMount className={cn(gutter, 'pb-8 data-[state=inactive]:hidden')}>
             {visited.has('work') ? <WorkBoard showTitle={false} state={work} /> : null}
           </TabsContent>
 
-          <TabsContent value="modules" forceMount className="pb-8 data-[state=inactive]:hidden">
-            {/* The launcher's own page padding is dropped: this panel is already inset. */}
-            {visited.has('modules') ? <ModuleDashboard className="flex flex-col gap-6" /> : null}
+          <TabsContent
+            value="modules"
+            forceMount
+            // Command and Launchpad pad themselves (Command's band is full-bleed); the launcher's own
+            // page padding is dropped, so the panel insets it.
+            className={cn(design === 'classic' && cn(gutter, 'pb-8'), 'data-[state=inactive]:hidden')}
+          >
+            {!visited.has('modules') ? null : design === 'command' ? (
+              <CommandHome work={work} />
+            ) : design === 'launchpad' ? (
+              <LaunchpadHome work={work} />
+            ) : design === 'aurora' ? (
+              <AuroraHome work={work} />
+            ) : (
+              <ModuleDashboard className="flex flex-col gap-6" />
+            )}
           </TabsContent>
         </Tabs>
       </main>
-    </AppShell>
+    </>
   );
 }

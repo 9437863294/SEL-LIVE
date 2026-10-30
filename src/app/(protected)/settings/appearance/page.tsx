@@ -34,11 +34,15 @@ import { ChoiceGroup, SettingsSection, SwitchRow, type Choice } from '@/componen
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
 import { ThemeModeControl } from '@/components/theme/ThemeModeControl';
 import { useCompanyDesign } from '@/hooks/use-company-profile';
+import { HomeDesignPreview } from '@/components/home/home-design-preview';
+import { HOME_DESIGN_META } from '@/components/home/home-designs';
 import {
   ACCENTS,
   FONT_META,
+  HOME_DESIGNS,
   type AccentId,
   type DashboardView,
+  type HomeDesign,
   type Density,
   type DialogSizePreference,
   type FontId,
@@ -289,9 +293,24 @@ export default function MyAppearancePage() {
             inherited={inherited('tableDensity')}
             onReset={() => clear('tableDensity')}
           />
+          <ChoiceGroup<HomeDesign>
+            label="Home page design"
+            description="How the Modules tab of the home page looks; Your work is the same in every design. Every design lists only the modules you can open."
+            value={effective.homeDesign}
+            options={HOME_DESIGNS.map((value) => ({
+              value,
+              label: HOME_DESIGN_META[value].label,
+              description: HOME_DESIGN_META[value].description,
+              preview: <HomeDesignPreview design={value} />,
+            }))}
+            onChange={(value) => set('homeDesign', value)}
+            companyDefault={defaults.homeDesign}
+            inherited={inherited('homeDesign')}
+            onReset={() => clear('homeDesign')}
+          />
           <ChoiceGroup<DashboardView>
             label="Default dashboard view"
-            description="Which tab the home page opens on."
+            description="Which tab the home page opens on, in every design."
             value={effective.dashboardView}
             options={[
               { value: 'last', label: 'Last used', description: 'Reopen whichever tab you used last.' },

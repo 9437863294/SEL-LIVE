@@ -23,6 +23,7 @@ import { EditModuleDialog } from "./EditModuleDialog";
 import Link from "next/link";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { moduleDisplayName } from "@/lib/module-display-names";
+import { moduleHref } from "./module-catalog";
 import type { Density } from "@/lib/appearance/model";
 
 interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -71,108 +72,6 @@ export default function ModuleCard({
   const canEdit = can("Edit", "Module Hub");
   const canDelete = can("Delete", "Module Hub");
 
-  const getHref = (moduleTitle: string) => {
-    const slug = moduleTitle.toLowerCase().replace(/\s+/g, "-");
-    switch (moduleTitle) {
-      case "Subcontractors Management":
-        return "/subcontractors-management/all";
-      case "Project Management":
-        return "/project-management";
-      case "Vendor Management":
-        return "/vendor-management";
-      case "Site Fund Requisition":
-        return "/site-fund-requisition-2";
-      case "Site Fund Request":
-        return "/site-fund-request";
-      case "Daily Requisition":
-        return "/daily-requisition";
-      case "Billing Recon":
-        return "/billing-recon";
-      case "Bank Balance":
-        return "/bank-balance";
-      case "Expenses":
-        return "/expenses";
-      case "Settings":
-        return "/settings";
-      case "Chat System":
-        return "/chat-system";
-      case "Loan":
-        return "/loan";
-      case "Recurring Payments":
-        return "/recurring-payments";
-      case "Bill Tracking":
-        return "/bill-tracking";
-      // The slug fallback below would produce "hr-&-recruitment", so this needs naming explicitly.
-      case "HR & Recruitment":
-        return "/hr";
-      // The slug fallback below would produce "tour,-travel-&-expense" (comma and ampersand carried
-      // straight through), a URL no route matches, so this needs naming explicitly too.
-      case "Tour, Travel & Expense":
-        return "/tour-travel";
-      case "Letter of Credit Management":
-        return "/letter-of-credit";
-      case "Bank Guarantee Management":
-        return "/bank-guarantee";
-      case "Fixed Deposit Management":
-        return "/fixed-deposit";
-      case "Insurance":
-        return "/insurance";
-      case "Store & Stock Management":
-        return "/store-stock-management";
-      case "Vehicle Management":
-        return "/vehicle-management";
-      case "Driver Management":
-        return "/driver-management";
-      case "Site Account Statement":
-        return "/site-account-statement";
-      case "Mail Hub":
-        return "/mail";
-      // Nested Settings Pages
-      // User Management and Role Management no longer have screens of their own — Access Management
-      // absorbed both. Their permission nodes stay (roles still hold them, and they still grant the
-      // work), so all three titles resolve to the one screen.
-      case "User Management":
-      case "Role Management":
-      case "Access Management":
-        return "/settings/access-management";
-      case "Serial No. Config":
-        return "/settings/serial-no-configuration";
-      case "Working Hrs":
-        return "/settings/working-hours";
-      case "Appearance":
-        return "/settings/appearance";
-      case "Email Authorization":
-        return "/settings/email-authorization";
-      case "Login Expiry":
-        return "/settings/login-expiry";
-      case "Manage Department":
-        return "/settings/department";
-      case "Manage Project":
-        return "/settings/project";
-      case "Employee":
-        return "/employee";
-      // Nested Expenses Settings — these live inside the module, under its own shell and its own
-      // Expenses.Settings permissions. The /settings/expenses duplicates they used to point at are gone.
-      case "Manage Accounts":
-        return "/expenses/settings/accounts";
-      case "Department-wise Serial Number":
-        return "/expenses/settings/department-serial-no";
-      // Nested Insurance Settings
-      case "Policy Holders":
-        return "/insurance/policy-holders";
-      case "Insurance Companies":
-        return "/insurance/companies";
-      case "Policy Category":
-        return "/insurance/settings/policy-category";
-      case "Projects and Properties":
-        return "/insurance/settings/assets";
-      case "Help":
-        return "/insurance/settings/help";
-      default:
-        return `/${slug}`;
-    }
-  };
-
   const { Icon: ModuleGlyph, gradient } = getModuleIconEntry(module.icon);
   const styles = densityStyles[density];
   const reorderable = draggable === true || draggable === "true";
@@ -199,7 +98,7 @@ export default function ModuleCard({
           drag that starts on it picks up the card rather than the URL.
         */}
         <Link
-          href={getHref(module.title)}
+          href={moduleHref(module.title)}
           draggable={false}
           className="absolute inset-0 rounded-xl ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >

@@ -36,6 +36,7 @@ import {
   DENSITIES,
   FONTS,
   FONT_META,
+  HOME_DESIGNS,
   MODULE_GROUPINGS,
   NAV_STYLES,
   RADII,
@@ -48,8 +49,10 @@ import {
   type CompanyAppearanceConfig,
   type CompanyDefaults,
   type DarkPresetId,
+  type HomeDesign,
   type LightPresetId,
 } from '@/lib/appearance/model';
+import { HOME_DESIGN_META } from '@/components/home/home-designs';
 import { PRESET_META, SEL_CLASSIC, SEL_MIDNIGHT } from '@/lib/appearance/presets';
 import { themeContrastReport } from '@/lib/appearance/resolve';
 import { cn } from '@/lib/utils';
@@ -375,7 +378,8 @@ export default function ThemeManagementPage() {
               <DefaultSelect field="radius" title="Border style" options={RADII} config={config} onChange={edit} disabled={!canEdit} />
               <DefaultSelect field="tableDensity" title="Table rows" options={DENSITIES} config={config} onChange={edit} disabled={!canEdit} />
               <DefaultSelect field="navStyle" title="Mobile navigation" options={NAV_STYLES} config={config} onChange={edit} disabled={!canEdit} render={(v) => floatingNavThemeMeta[v as keyof typeof floatingNavThemeMeta]?.label ?? v} />
-              <DefaultSelect field="dashboardView" title="Home opens on" options={DASHBOARD_VIEWS} config={config} onChange={edit} disabled={!canEdit} render={(v) => ({ last: 'Last used', work: 'Your work', modules: 'Modules' })[v] ?? v} />
+              <DefaultSelect field="homeDesign" title="Home page design" options={HOME_DESIGNS} config={config} onChange={edit} disabled={!canEdit} render={(v) => HOME_DESIGN_META[v as HomeDesign]?.label ?? v} />
+              <DefaultSelect field="dashboardView" title="Home opens on"options={DASHBOARD_VIEWS} config={config} onChange={edit} disabled={!canEdit} render={(v) => ({ last: 'Last used', work: 'Your work', modules: 'Modules' })[v] ?? v} />
               <DefaultSelect field="sidebarDefault" title="Sidebars start" options={SIDEBAR_DEFAULTS} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'auto' ? "Each module's own" : label(v))} />
               <DefaultSelect field="sidebarMode" title="Module menus" options={SIDEBAR_MODES} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'icons' ? 'Compact icons' : 'Full labels')} />
               <DefaultSelect field="moduleGrouping" title="Launcher grouping" options={MODULE_GROUPINGS} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'category' ? 'By category' : 'One list')} />

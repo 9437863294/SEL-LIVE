@@ -48,6 +48,15 @@ export type ContrastPreference = (typeof CONTRASTS)[number];
 export const DASHBOARD_VIEWS = ['last', 'work', 'modules'] as const;
 export type DashboardView = (typeof DASHBOARD_VIEWS)[number];
 
+/**
+ * The look of the home page's Modules tab (every design keeps the "Your work" / "Modules" tabs).
+ * `classic` is the card launcher; `command` is a work summary over category-grouped modules;
+ * `launchpad` is a greeting with search over a grid of module tiles; `aurora` is the same layout as
+ * frosted glass over a soft glow. Kept in step with `HOME_DESIGN_META` in src/components/home/home-designs.ts.
+ */
+export const HOME_DESIGNS = ['classic', 'command', 'launchpad', 'aurora'] as const;
+export type HomeDesign = (typeof HOME_DESIGNS)[number];
+
 /** Kept in step with `FLOATING_NAV_THEMES` in src/components/navigation/themes.ts. */
 export const NAV_STYLES = ['blue', 'teal', 'neon', 'glass', 'sunset', 'graphite'] as const;
 export type NavStyle = (typeof NAV_STYLES)[number];
@@ -154,8 +163,13 @@ export interface LayoutPreferences {
   moduleGrouping?: ModuleGrouping;
   /** Permitted modules the user chose not to see on their launcher. Never grants anything. */
   hiddenModules?: ModuleName[];
-  /** Shown first, in this order. Only ever a subset of what the user may open. */
+  /** No longer read: pinning was removed from the launcher on 2026-10-30. */
   pinnedModules?: ModuleName[];
+  /**
+   * The Favourites row of the Command and Launchpad home designs, in the order they were starred.
+   * A separate list from the retired pins, so pins removed then do not come back as favourites.
+   */
+  favouriteModules?: ModuleName[];
   breadcrumbs?: boolean;
   stickyHeader?: boolean;
   dashboardCardDensity?: Density;
@@ -177,6 +191,7 @@ export interface UserAppearancePreferences {
   contrast?: ContrastPreference;
   tableDensity?: Density;
   dashboardView?: DashboardView;
+  homeDesign?: HomeDesign;
   navStyle?: NavStyle;
   layout?: LayoutPreferences;
   /** Overrides the company's default dialog width for this user. */
@@ -204,6 +219,7 @@ export interface CompanyDefaults {
   tableDensity: Density;
   navStyle: NavStyle;
   dashboardView: DashboardView;
+  homeDesign: HomeDesign;
   sidebarDefault: SidebarDefault;
   sidebarMode: SidebarMode;
   moduleGrouping: ModuleGrouping;
@@ -282,6 +298,7 @@ export const DEFAULT_COMPANY_DEFAULTS: CompanyDefaults = {
   tableDensity: 'standard',
   navStyle: 'blue',
   dashboardView: 'last',
+  homeDesign: 'classic',
   sidebarDefault: 'auto',
   sidebarMode: 'labels',
   moduleGrouping: 'none',
@@ -383,6 +400,7 @@ export function sanitizePreferences(input: unknown, knownModules?: readonly stri
     moduleGrouping: pick(MODULE_GROUPINGS, layoutRaw.moduleGrouping),
     hiddenModules: moduleList(layoutRaw.hiddenModules, knownModules),
     pinnedModules: moduleList(layoutRaw.pinnedModules, knownModules),
+    favouriteModules: moduleList(layoutRaw.favouriteModules, knownModules),
     breadcrumbs: bool(layoutRaw.breadcrumbs),
     stickyHeader: bool(layoutRaw.stickyHeader),
     dashboardCardDensity: pick(DENSITIES, layoutRaw.dashboardCardDensity),
@@ -398,6 +416,7 @@ export function sanitizePreferences(input: unknown, knownModules?: readonly stri
     contrast: pick(CONTRASTS, raw.contrast),
     tableDensity: pick(DENSITIES, raw.tableDensity),
     dashboardView: pick(DASHBOARD_VIEWS, raw.dashboardView),
+    homeDesign: pick(HOME_DESIGNS, raw.homeDesign),
     navStyle: pick(NAV_STYLES, raw.navStyle),
     dialogSize: pick(DIALOG_SIZES, raw.dialogSize),
     dialogControls: bool(raw.dialogControls),
@@ -515,6 +534,7 @@ export function sanitizeDefaults(input: unknown, theme: CompanyTheme, fallback: 
     tableDensity: pick(DENSITIES, raw.tableDensity) ?? fallback.tableDensity,
     navStyle: pick(NAV_STYLES, raw.navStyle) ?? fallback.navStyle,
     dashboardView: pick(DASHBOARD_VIEWS, raw.dashboardView) ?? fallback.dashboardView,
+    homeDesign: pick(HOME_DESIGNS, raw.homeDesign) ?? fallback.homeDesign,
     sidebarDefault: pick(SIDEBAR_DEFAULTS, raw.sidebarDefault) ?? fallback.sidebarDefault,
     sidebarMode: pick(SIDEBAR_MODES, raw.sidebarMode) ?? fallback.sidebarMode,
     moduleGrouping: pick(MODULE_GROUPINGS, raw.moduleGrouping) ?? fallback.moduleGrouping,
