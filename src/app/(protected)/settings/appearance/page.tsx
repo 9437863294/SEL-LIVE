@@ -30,7 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ActionAnimationSettings } from '@/components/appearance/action-animation-settings';
 import { AppearanceGallery } from '@/components/appearance/AppearanceGallery';
-import { ChoiceGroup, SettingsSection, SwitchRow, type Choice } from '@/components/appearance/controls';
+import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsSection, SwitchRow, usePreviewVisible, type Choice } from '@/components/appearance/controls';
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
 import { ThemeModeControl } from '@/components/theme/ThemeModeControl';
 import { useCompanyDesign } from '@/hooks/use-company-profile';
@@ -118,6 +118,7 @@ export default function MyAppearancePage() {
   const editor = usePreferenceEditor();
   const companyDialogSize = useCompanyDesign().dialogs.defaultSize;
   const { effective, defaults, company, resolvedMode, ready, preferences, set, clear, inherited, resetPreferences } = editor;
+  const [showPreview, setShowPreview] = usePreviewVisible('my-appearance');
 
   if (!ready) {
     return (
@@ -151,8 +152,11 @@ export default function MyAppearancePage() {
   const hasChoices = Object.keys(preferences).length > 0;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+    <div className={cn('grid gap-4', showPreview && 'xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start')}>
       <div className="min-w-0 space-y-4">
+        {showPreview ? null : (
+          <PreviewCollapsed title="Live preview" note="Sample screens — a dashboard, a table, an approval and notifications — in your current choices." onShow={() => setShowPreview(true)} />
+        )}
         <SettingsSection
           title="Theme"
           icon={Moon}
@@ -370,15 +374,18 @@ export default function MyAppearancePage() {
         </div>
       </div>
 
+      {showPreview ? (
       <aside className="min-w-0 xl:sticky xl:top-[calc(var(--app-header-offset,4rem)+1rem)]" aria-label="Live preview">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Monitor className="h-3.5 w-3.5" aria-hidden="true" />
-          Live preview — the whole app changes as you choose
+          <span className="flex-1">Live preview — the whole app changes as you choose</span>
+          <PreviewToggle visible onToggle={setShowPreview} className="normal-case tracking-normal" />
         </div>
         <div className="max-h-none overflow-visible rounded-2xl border bg-background p-3 xl:max-h-[calc(100vh-var(--app-header-offset,4rem)-6rem)] xl:overflow-y-auto">
           <AppearanceGallery sections={['dashboard', 'table', 'approval', 'notifications']} />
         </div>
       </aside>
+      ) : null}
     </div>
   );
 }

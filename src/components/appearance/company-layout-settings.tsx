@@ -18,6 +18,7 @@ import {
 } from '@/components/appearance/company-profile-part';
 import type { CompanyDesign, CompanyProfile } from '@/lib/company-profile';
 import { cn } from '@/lib/utils';
+import { PreviewCollapsed, usePreviewVisible } from '@/components/appearance/controls';
 
 const pickLayout = (profile: CompanyProfile) => ({ sidebar: profile.design.sidebar, tables: profile.design.tables, dialogs: profile.design.dialogs });
 const applyLayout = (stored: CompanyProfile, draft: CompanyProfile): CompanyProfile => ({
@@ -90,6 +91,7 @@ function TablePreview({ tables, accent }: { tables: CompanyDesign['tables']; acc
 export function CompanyLayoutSettings() {
   const editor = useCompanyProfilePart({ pick: pickLayout, apply: applyLayout, savedMessage: 'Sidebars, tables and dialogs now use the new layout.' });
   const { readOnly, preview, setDraft } = editor;
+  const [showPreview, setShowPreview] = usePreviewVisible('company-layout');
   const updateDesign = <K extends 'sidebar' | 'tables' | 'dialogs'>(section: K, patch: Partial<CompanyDesign[K]>) =>
     setDraft((current) => ({ ...current, design: { ...current.design, [section]: { ...current.design[section], ...patch } } }));
 
@@ -102,8 +104,11 @@ export function CompanyLayoutSettings() {
       saveLabel={preview.labels.save}
     >
       {(draft) => (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+        <div className={cn('grid grid-cols-1 gap-4', showPreview && 'xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
           <div className="min-w-0 space-y-4">
+            {showPreview ? null : (
+              <PreviewCollapsed title="Layout preview" note="The unsaved sidebar, table and dialog settings, as they will look." onShow={() => setShowPreview(true)} />
+            )}
             <Card>
               <CardHeader className="pb-3"><CardTitle className="text-base">Module sidebar</CardTitle></CardHeader>
               <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -140,13 +145,15 @@ export function CompanyLayoutSettings() {
               </CardContent>
             </Card>
           </div>
-          <PreviewCard title="Layout preview">
+          {showPreview ? (
+          <PreviewCard title="Layout preview" onHide={() => setShowPreview(false)}>
             <div className="min-w-0 space-y-5">
               <SidebarPreview sidebar={preview.design.sidebar} />
               <TablePreview tables={preview.design.tables} accent={preview.design.letterhead.accentColor} />
               <DialogPreview dialogs={preview.design.dialogs} labels={preview.labels} />
             </div>
           </PreviewCard>
+          ) : null}
         </div>
       )}
     </CompanyPartFrame>

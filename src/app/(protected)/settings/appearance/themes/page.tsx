@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { ChoiceGroup, SettingsSection } from '@/components/appearance/controls';
+import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsSection, usePreviewVisible } from '@/components/appearance/controls';
 import { floatingNavThemeMeta } from '@/components/navigation/themes';
 import { HexColorField } from '@/components/appearance/HexColorField';
 import { ThemePreviewFrame } from '@/components/appearance/ThemePreviewFrame';
@@ -53,6 +53,7 @@ import {
   type LightPresetId,
 } from '@/lib/appearance/model';
 import { HOME_DESIGN_META } from '@/components/home/home-designs';
+import { ModuleGroupsEditor } from '@/components/appearance/module-groups-editor';
 import { PRESET_META, SEL_CLASSIC, SEL_MIDNIGHT } from '@/lib/appearance/presets';
 import { themeContrastReport } from '@/lib/appearance/resolve';
 import { cn } from '@/lib/utils';
@@ -162,6 +163,7 @@ export default function ThemeManagementPage() {
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [note, setNote] = useState('');
+  const [showPreview, setShowPreview] = usePreviewVisible('themes');
 
   useEffect(() => {
     if (data) setConfig(data.draft.config);
@@ -268,8 +270,11 @@ export default function ThemeManagementPage() {
         {!canEdit && <p className="w-full text-xs text-muted-foreground">You can view themes. Editing needs Theme Management: Edit; publishing needs Publish.</p>}
       </div>
 
-      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] 2xl:items-start">
+      <div className={cn('grid gap-4', showPreview && '2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] 2xl:items-start')}>
         <div className="min-w-0 space-y-4">
+          {showPreview ? null : (
+            <PreviewCollapsed note="The draft on representative screens, in light or dark, at desktop, tablet or phone width." onShow={() => setShowPreview(true)} />
+          )}
           <SettingsSection title="Presets" icon={SwatchBook} description="The token set used for light and for dark mode.">
             <ChoiceGroup<LightPresetId>
               label="Light mode"
@@ -382,7 +387,7 @@ export default function ThemeManagementPage() {
               <DefaultSelect field="dashboardView" title="Home opens on"options={DASHBOARD_VIEWS} config={config} onChange={edit} disabled={!canEdit} render={(v) => ({ last: 'Last used', work: 'Your work', modules: 'Modules' })[v] ?? v} />
               <DefaultSelect field="sidebarDefault" title="Sidebars start" options={SIDEBAR_DEFAULTS} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'auto' ? "Each module's own" : label(v))} />
               <DefaultSelect field="sidebarMode" title="Module menus" options={SIDEBAR_MODES} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'icons' ? 'Compact icons' : 'Full labels')} />
-              <DefaultSelect field="moduleGrouping" title="Launcher grouping" options={MODULE_GROUPINGS} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'category' ? 'By category' : 'One list')} />
+              <DefaultSelect field="moduleGrouping" title="Launcher grouping" options={MODULE_GROUPINGS} config={config} onChange={edit} disabled={!canEdit} render={(v) => (v === 'category' ? 'By group' : 'One list')} />
               <DefaultSelect field="dashboardCardDensity" title="Dashboard cards" options={DENSITIES} config={config} onChange={edit} disabled={!canEdit} />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -395,6 +400,12 @@ export default function ThemeManagementPage() {
             </div>
           </SettingsSection>
 
+          <ModuleGroupsEditor
+            groups={config.defaults.moduleGroups}
+            disabled={!canEdit}
+            onChange={(moduleGroups) => edit({ ...config, defaults: { ...config.defaults, moduleGroups } })}
+          />
+
           <SettingsSection title="Readability" icon={CheckCircle2} description="Contrast of this draft's key pairs against WCAG targets.">
             <div className="grid gap-3 md:grid-cols-2">
               <ContrastReport config={config} scheme="light" />
@@ -403,11 +414,13 @@ export default function ThemeManagementPage() {
           </SettingsSection>
         </div>
 
+        {showPreview ? (
         <div className="min-w-0 space-y-3 2xl:sticky 2xl:top-[calc(var(--app-header-offset,4rem)+1rem)]">
           <div className="flex flex-wrap items-center gap-2">
             <Eye className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
             <span className="text-sm font-semibold">Preview{dirty ? ' (unsaved changes included)' : ''}</span>
             <div className="ml-auto flex flex-wrap gap-2">
+              <PreviewToggle visible onToggle={setShowPreview} />
               <Select value={scheme} onValueChange={(v) => setScheme(v as 'light' | 'dark')}>
                 <SelectTrigger className="h-8 w-28" aria-label="Preview scheme">
                   <SelectValue />
@@ -449,6 +462,7 @@ export default function ThemeManagementPage() {
             title={`Draft theme preview, ${scheme} mode, ${contrast} contrast, ${DEVICES[device].label} width`}
           />
         </div>
+        ) : null}
       </div>
 
       <SettingsSection title="Published versions" icon={History} description="Restore any version's theme, or everything including branding. Each publish and restore is in Settings → Audit Logs.">

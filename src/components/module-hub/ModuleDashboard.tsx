@@ -10,11 +10,7 @@ import type { Density } from "@/lib/appearance/model";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAppearance } from "@/components/theme/ThemeProvider";
 import { cn } from "@/lib/utils";
-import {
-  MODULE_CATEGORIES,
-  moduleCategories,
-  usePermittedModules,
-} from "./module-catalog";
+import { useModuleGroups, usePermittedModules } from "./module-catalog";
 
 /** "Dashboard card density" for the grid; the card pads itself to match. `standard` is the original. */
 const gridGap: Record<Density, string> = {
@@ -54,15 +50,18 @@ export default function ModuleDashboard({ className }: { className?: string } = 
   const { effective } = useAppearance();
   const { moduleGrouping, dashboardCardDensity: density } = effective.layout;
 
+  // The company's module groups (Theme Management › Module groups), each in this person's own order.
+  const { groups: launcherGroups, groupOf } = useModuleGroups();
   const groups = useMemo(() => {
     if (moduleGrouping !== "category") return null;
-    return MODULE_CATEGORIES.map((category) => ({
-      category,
-      modules: allModules.filter(
-        (m) => (moduleCategories[m.title] ?? "Other") === category,
-      ),
-    })).filter((group) => group.modules.length > 0);
-  }, [allModules, moduleGrouping]);
+    return launcherGroups
+      .map((group) => ({
+        category: group.label,
+        id: group.id,
+        modules: allModules.filter((m) => groupOf(m.title).id === group.id),
+      }))
+      .filter((group) => group.modules.length > 0);
+  }, [allModules, moduleGrouping, launcherGroups, groupOf]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent<HTMLDivElement>, module: Module) => {
@@ -148,7 +147,7 @@ export default function ModuleDashboard({ className }: { className?: string } = 
       ) : groups ? (
         groups.map((group, index) => (
           <section
-            key={group.category}
+            key={group.id}
             aria-labelledby={`${headingId}-group-${index}`}
             className="flex flex-col gap-2"
           >

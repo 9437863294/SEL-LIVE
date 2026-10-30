@@ -9,6 +9,8 @@ import { RotateCcw, Type } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PreviewCollapsed, usePreviewVisible } from '@/components/appearance/controls';
+import { cn } from '@/lib/utils';
 import { SignatureBlock } from '@/components/shared/company-letterhead';
 import {
   CompanyPartFrame,
@@ -25,6 +27,7 @@ const applyLabels = (stored: CompanyProfile, draft: CompanyProfile): CompanyProf
 export function CompanyTextLabels() {
   const editor = useCompanyProfilePart({ pick: pickLabels, apply: applyLabels, savedMessage: 'Every module now uses the new wording.' });
   const { readOnly, canEdit, preview, setDraft } = editor;
+  const [showPreview, setShowPreview] = usePreviewVisible('company-labels');
   const setLabel = (key: UiTextKey, value: string) => setDraft((current) => ({ ...current, labels: { ...current.labels, [key]: value } }));
 
   return (
@@ -36,7 +39,10 @@ export function CompanyTextLabels() {
       saveLabel={preview.labels.save}
     >
       {(draft) => (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]">
+        <div className={cn('grid grid-cols-1 gap-4', showPreview && 'xl:grid-cols-[minmax(0,1fr)_minmax(0,28rem)]')}>
+          {showPreview ? null : (
+            <PreviewCollapsed title="Labels preview" note="Buttons, search, empty states, a dialog and the signature block in the unsaved labels." onShow={() => setShowPreview(true)} />
+          )}
           <Card className="min-w-0">
             <CardHeader className="flex flex-col gap-2 pb-3 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
               <div className="min-w-0">
@@ -72,7 +78,8 @@ export function CompanyTextLabels() {
               ))}
             </CardContent>
           </Card>
-          <PreviewCard title="Labels preview">
+          {showPreview ? (
+          <PreviewCard title="Labels preview" onHide={() => setShowPreview(false)}>
             <div className="min-w-0 space-y-4">
               <div className="flex flex-wrap gap-2">
                 {(['save', 'cancel', 'edit', 'add', 'export', 'print', 'refresh'] as const).map((key) => (
@@ -87,6 +94,7 @@ export function CompanyTextLabels() {
               </div>
             </div>
           </PreviewCard>
+          ) : null}
         </div>
       )}
     </CompanyPartFrame>

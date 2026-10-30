@@ -4,24 +4,29 @@
 
 import Link from 'next/link';
 import { Star } from 'lucide-react';
-import type { ModuleCategory } from '@/components/module-hub/module-catalog';
+import type { GroupColor } from '@/lib/appearance/model';
 import type { WorkUrgency } from '@/lib/work-dashboard';
 import { cn } from '@/lib/utils';
 import type { HomeModule } from './home-data';
 
 /**
- * One colour per category, for the Command design's icon tiles and section dots. Solid 600-weight
- * fills with white glyphs read the same on the light and the dark theme, so no `dark:` pair is needed.
+ * Classes per module-group colour, for the Command design's icon tiles and section dots and the
+ * group editor's swatches. Solid fills with white glyphs read the same on the light and the dark
+ * theme, so no `dark:` pair is needed. Written out in full so Tailwind generates every one.
  */
-export const CATEGORY_TONE: Record<ModuleCategory, { tile: string; dot: string }> = {
-  'Finance & Treasury': { tile: 'bg-blue-600', dot: 'bg-blue-600' },
-  'Projects & Sites': { tile: 'bg-orange-500', dot: 'bg-orange-500' },
-  'Procurement & Stores': { tile: 'bg-teal-600', dot: 'bg-teal-600' },
-  'People & HR': { tile: 'bg-violet-600', dot: 'bg-violet-600' },
-  'Fleet & Logistics': { tile: 'bg-sky-600', dot: 'bg-sky-600' },
-  'Workspace & Communication': { tile: 'bg-slate-600', dot: 'bg-slate-500' },
-  Administration: { tile: 'bg-zinc-600', dot: 'bg-zinc-500' },
-  Other: { tile: 'bg-slate-500', dot: 'bg-slate-400' },
+export const GROUP_TONE: Record<GroupColor, { tile: string; dot: string; label: string }> = {
+  blue: { tile: 'bg-blue-600', dot: 'bg-blue-600', label: 'Blue' },
+  orange: { tile: 'bg-orange-500', dot: 'bg-orange-500', label: 'Orange' },
+  teal: { tile: 'bg-teal-600', dot: 'bg-teal-600', label: 'Teal' },
+  violet: { tile: 'bg-violet-600', dot: 'bg-violet-600', label: 'Violet' },
+  sky: { tile: 'bg-sky-600', dot: 'bg-sky-600', label: 'Sky' },
+  emerald: { tile: 'bg-emerald-600', dot: 'bg-emerald-600', label: 'Green' },
+  rose: { tile: 'bg-rose-600', dot: 'bg-rose-600', label: 'Rose' },
+  amber: { tile: 'bg-amber-500', dot: 'bg-amber-500', label: 'Amber' },
+  indigo: { tile: 'bg-indigo-600', dot: 'bg-indigo-600', label: 'Indigo' },
+  pink: { tile: 'bg-pink-600', dot: 'bg-pink-600', label: 'Pink' },
+  slate: { tile: 'bg-slate-600', dot: 'bg-slate-500', label: 'Slate' },
+  zinc: { tile: 'bg-zinc-600', dot: 'bg-zinc-500', label: 'Grey' },
 };
 
 /** Text colour for a deadline note, as light/dark pairs (the `--chart-*` tokens are dark-only). */

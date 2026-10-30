@@ -15,12 +15,11 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAppearance } from '@/components/theme/ThemeProvider';
 import type { WorkDashboardState } from '@/components/work-dashboard/hooks';
 import {
-  MODULE_CATEGORIES,
-  moduleCategories,
   moduleHref,
+  useModuleGroups,
   usePermittedModules,
   usePermittedModulesLoading,
-  type ModuleCategory,
+  type LauncherGroup,
 } from '@/components/module-hub/module-catalog';
 import { getModuleIconEntry } from '@/components/module-hub/module-icon-registry';
 import type { ModuleIconProps } from '@/components/module-hub/module-icons';
@@ -42,7 +41,8 @@ export interface HomeModule {
   label: string;
   description: string;
   href: string;
-  category: ModuleCategory;
+  /** The company's group for this module, or "Other". */
+  group: LauncherGroup;
   Icon: ComponentType<ModuleIconProps>;
   /** `bg-gradient-to-br` stops for the icon tile. */
   gradient: string;
@@ -119,6 +119,7 @@ export function useHomeData(work: WorkDashboardState) {
   const { effective, updatePreferences } = useAppearance();
   const permitted = usePermittedModules();
   const modulesLoading = usePermittedModulesLoading();
+  const { groups: launcherGroups, groupOf } = useModuleGroups();
   const favouriteNames = effective.layout.favouriteModules;
   const { lanes, summary, today, isLoading: workLoading } = work;
 
@@ -140,7 +141,7 @@ export function useHomeData(work: WorkDashboardState) {
           label: moduleDisplayName(module.title),
           description: module.content,
           href: moduleHref(module.title),
-          category: moduleCategories[module.title] ?? 'Other',
+          group: groupOf(module.title),
           Icon,
           gradient,
           accent: gradientAccent(gradient),
@@ -148,7 +149,7 @@ export function useHomeData(work: WorkDashboardState) {
           favourite: favouriteNames.includes(module.title),
         };
       }),
-    [permitted, pendingByModule, favouriteNames],
+    [permitted, pendingByModule, favouriteNames, groupOf],
   );
 
   // In the order they were starred; a favourite the person can no longer open is simply not shown.
@@ -157,13 +158,13 @@ export function useHomeData(work: WorkDashboardState) {
     [favouriteNames, modules],
   );
 
+  // The company's groups in their order, each with this person's modules in it; empty groups dropped.
   const categories = useMemo(
     () =>
-      MODULE_CATEGORIES.map((category) => ({
-        category,
-        modules: modules.filter((m) => m.category === category),
-      })).filter((group) => group.modules.length > 0),
-    [modules],
+      launcherGroups
+        .map((group) => ({ group, modules: modules.filter((m) => m.group.id === group.id) }))
+        .filter((entry) => entry.modules.length > 0),
+    [launcherGroups, modules],
   );
 
   // Modules with work waiting, busiest first, each with its most pressing item's deadline.

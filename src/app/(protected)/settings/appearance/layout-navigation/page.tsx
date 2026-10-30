@@ -87,7 +87,7 @@ export default function LayoutNavigationPage() {
           value={layout.moduleGrouping}
           options={[
             { value: 'none', label: 'One list', description: 'Your own order; drag to rearrange.' },
-            { value: 'category', label: 'By category', description: 'Finance, projects, people…' },
+            { value: 'category', label: 'By group', description: "Under your company's module groups." },
           ]}
           onChange={(value) => setLayout('moduleGrouping', value)}
           companyDefault={defaults.moduleGrouping}

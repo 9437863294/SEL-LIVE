@@ -2,7 +2,7 @@
 
 /**
  * The "Command" home design: a welcome band with today's meetings, the modules holding work for
- * you, a row of favourites, then every module grouped by category.
+ * you, a row of favourites, then every module under the company's module groups.
  *
  * The band is a fixed navy in both themes (a little lighter in dark mode so it still separates from
  * the page), and the work tiles overlap its lower edge. Everything else is on the theme's own
@@ -13,11 +13,10 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { ModuleCategory } from '@/components/module-hub/module-catalog';
 import type { WorkDashboardState } from '@/components/work-dashboard/hooks';
 import { cn } from '@/lib/utils';
 import { longDate, useHomeData, type HomeData, type HomeModule } from './home-data';
-import { CATEGORY_TONE, FavouriteButton, StretchedLink, URGENCY_TEXT } from './home-parts';
+import { GROUP_TONE, FavouriteButton, StretchedLink, URGENCY_TEXT } from './home-parts';
 
 const shell = 'w-full px-4 sm:px-6 lg:px-8';
 
@@ -153,7 +152,7 @@ function ModuleTile({ module, size }: { module: HomeModule; size: 'sm' | 'md' | 
       aria-hidden="true"
       className={cn(
         'pointer-events-none inline-flex shrink-0 items-center justify-center text-white shadow-sm',
-        CATEGORY_TONE[module.category].tile,
+        GROUP_TONE[module.group.color].tile,
         size === 'sm' && 'h-9 w-9 rounded-lg',
         size === 'md' && 'h-11 w-11 rounded-lg',
         size === 'lg' && 'h-14 w-14 rounded-2xl',
@@ -215,27 +214,30 @@ function CountBubble({ count, className }: { count: number; className?: string }
 }
 
 function AllModules({ data }: { data: HomeData }) {
-  const [filter, setFilter] = useState<ModuleCategory | 'all'>('all');
-  const groups = filter === 'all' ? data.categories : data.categories.filter((group) => group.category === filter);
+  // A group id, or 'all'. A filter on a group that has since emptied falls back to everything.
+  const [filter, setFilter] = useState<string>('all');
+  const picked = data.categories.filter((entry) => entry.group.id === filter);
+  const groups = filter === 'all' || picked.length === 0 ? data.categories : picked;
+  const active = filter !== 'all' && picked.length > 0 ? filter : 'all';
 
   return (
     <section aria-labelledby="home-all-modules" className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h2 id="home-all-modules" className="text-lg font-semibold">All modules</h2>
         {data.categories.length > 1 ? (
-          <div role="group" aria-label="Show category" className="flex min-w-0 gap-1 overflow-x-auto rounded-full border bg-card p-1">
-            {(['all', ...data.categories.map((group) => group.category)] as const).map((value) => (
+          <div role="group" aria-label="Show group" className="flex min-w-0 gap-1 overflow-x-auto rounded-full border bg-card p-1">
+            {[{ id: 'all', label: 'All' }, ...data.categories.map((entry) => entry.group)].map(({ id, label }) => (
               <button
-                key={value}
+                key={id}
                 type="button"
-                aria-pressed={filter === value}
-                onClick={() => setFilter(value)}
+                aria-pressed={active === id}
+                onClick={() => setFilter(id)}
                 className={cn(
                   'shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  filter === value ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  active === id ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
-                {value === 'all' ? 'All' : value}
+                {label}
               </button>
             ))}
           </div>
@@ -250,10 +252,10 @@ function AllModules({ data }: { data: HomeData }) {
         </div>
       ) : (
         groups.map((group) => (
-          <section key={group.category} aria-label={group.category} className="space-y-3">
+          <section key={group.group.id} aria-label={group.group.label} className="space-y-3">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
-              <span className={cn('h-2 w-2 rounded-sm', CATEGORY_TONE[group.category].dot)} aria-hidden="true" />
-              {group.category}
+              <span className={cn('h-2 w-2 rounded-sm', GROUP_TONE[group.group.color].dot)} aria-hidden="true" />
+              {group.group.label}
               <span className="font-normal text-muted-foreground">{group.modules.length}</span>
             </h3>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">

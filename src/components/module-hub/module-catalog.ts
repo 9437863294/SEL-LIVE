@@ -2,13 +2,15 @@
 
 /**
  * The launcher's catalogue: which modules exist on the home page, what each is called, its icon,
- * its category and where its card goes — shared by every home design (Classic, Command and
+ * its group and where its card goes — shared by every home design (Classic, Command and
  * Launchpad), so they can never disagree about what a person may open.
  */
 
 import { useMemo } from "react";
 import { useModules } from "@/context/ModuleContext";
 import { useAuthorization } from "@/hooks/useAuthorization";
+import { useAppearance } from "@/components/theme/ThemeProvider";
+import { DEFAULT_MODULE_GROUPS, OTHER_GROUP_ID, type GroupColor } from "@/lib/appearance/model";
 import { permissionModules } from "@/lib/permissions";
 import type { Module } from "@/lib/types";
 
@@ -103,60 +105,35 @@ export const moduleDescriptions: Record<string, string> = {
     "Raise tour requests, route them for approval, and manage travel advances, expense claims, and settlements.",
 };
 
-/**
- * Headings for "Group modules by category" (Settings → Appearance → Layout and Navigation), in the
- * order they are shown. Keyed by the module names in `permissionModules`.
- *
- * Grouping only arranges cards the user may already open — it is not a list of what exists. A
- * module missing from this map is still shown, under "Other", so a new module never goes missing
- * from the launcher just because nobody filed it here.
- */
-export const MODULE_CATEGORIES = [
-  "Finance & Treasury",
-  "Projects & Sites",
-  "Procurement & Stores",
-  "People & HR",
-  "Fleet & Logistics",
-  "Workspace & Communication",
-  "Administration",
-  "Other",
-] as const;
-export type ModuleCategory = (typeof MODULE_CATEGORIES)[number];
+/** A heading on the home page: one of the company's module groups, or "Other". */
+export interface LauncherGroup {
+  id: string;
+  label: string;
+  color: GroupColor;
+}
 
-export const moduleCategories: Record<string, ModuleCategory> = {
-  "Bank Balance": "Finance & Treasury",
-  "Fixed Deposit Management": "Finance & Treasury",
-  "Letter of Credit Management": "Finance & Treasury",
-  "Bank Guarantee Management": "Finance & Treasury",
-  Loan: "Finance & Treasury",
-  "Recurring Payments": "Finance & Treasury",
-  "Bill Tracking": "Finance & Treasury",
-  Expenses: "Finance & Treasury",
-  Insurance: "Finance & Treasury",
-  // Everything addressed to a site or a project, including the money that goes to one.
-  "Project Management": "Projects & Sites",
-  "Subcontractors Management": "Projects & Sites",
-  "Billing Recon": "Projects & Sites",
-  "Site Account Statement": "Projects & Sites",
-  "Site Fund Requisition": "Projects & Sites",
-  "Site Fund Requisition 2": "Projects & Sites",
-  "Site Fund Request": "Projects & Sites",
-  "Daily Requisition": "Procurement & Stores",
-  "Store & Stock Management": "Procurement & Stores",
-  "Vendor Management": "Procurement & Stores",
-  Employee: "People & HR",
-  "HR & Recruitment": "People & HR",
-  "Tour, Travel & Expense": "People & HR",
-  "Vehicle Management": "Fleet & Logistics",
-  "Driver Management": "Fleet & Logistics",
-  "Chat System": "Workspace & Communication",
-  "Mail Hub": "Workspace & Communication",
-  "Office Hub": "Workspace & Communication",
-  "E-Approval": "Workspace & Communication",
-  Settings: "Administration",
-  "Module Hub": "Administration",
-  "Windows Agent": "Administration",
-};
+/** Where every module no group names is shown. */
+export const OTHER_GROUP: LauncherGroup = { id: OTHER_GROUP_ID, label: 'Other', color: 'slate' };
+
+/**
+ * The company's module groups (Settings › Appearance › Theme Management › Module groups), in
+ * order, ending with "Other" for anything unassigned — so a new module never goes missing from the
+ * launcher just because nobody filed it. Read from the published appearance; until one is
+ * published, the groups the launcher shipped with.
+ */
+export function useModuleGroups(): { groups: LauncherGroup[]; groupOf: (moduleName: string) => LauncherGroup } {
+  const { company } = useAppearance();
+  const configured = company.defaults.moduleGroups ?? DEFAULT_MODULE_GROUPS;
+  return useMemo(() => {
+    const byModule = new Map<string, LauncherGroup>();
+    const groups: LauncherGroup[] = configured.map(({ id, label, color, modules }) => {
+      const group = { id, label, color };
+      for (const name of modules) if (!byModule.has(name)) byModule.set(name, group);
+      return group;
+    });
+    return { groups: [...groups, OTHER_GROUP], groupOf: (name: string) => byModule.get(name) ?? OTHER_GROUP };
+  }, [configured]);
+}
 
 /** Where a module's card opens. */
 export function moduleHref(moduleTitle: string): string {

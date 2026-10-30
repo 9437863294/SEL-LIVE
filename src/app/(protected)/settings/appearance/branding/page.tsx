@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { BrandAssetField } from '@/components/appearance/BrandAssetField';
-import { ChoiceGroup, SettingsSection, SwitchRow } from '@/components/appearance/controls';
+import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsSection, SwitchRow, usePreviewVisible } from '@/components/appearance/controls';
 import { LOGIN_PREVIEW_DEVICES, LoginPreviewFrame, type LoginPreviewDevice } from '@/components/appearance/LoginPreviewFrame';
 import { VersionHistory } from '@/components/appearance/VersionHistory';
 import { useAppearanceAdmin } from '@/components/appearance/use-appearance-admin';
@@ -181,6 +181,7 @@ export default function CompanyBrandingPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [device, setDevice] = useState<LoginPreviewDevice>('desktop');
+  const [showPreview, setShowPreview] = usePreviewVisible('branding');
 
   useEffect(() => {
     if (data) setDraft(data.published.branding);
@@ -267,12 +268,15 @@ export default function CompanyBrandingPage() {
           }))}
         />
 
+        {showPreview ? (
         <div className="space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="min-w-0">
               <p className="text-sm font-semibold">Preview</p>
               <p className="text-xs text-muted-foreground">As a signed-out visitor sees it, with your unpublished changes.</p>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+            <PreviewToggle visible onToggle={setShowPreview} />
             <div className="inline-flex rounded-lg border p-0.5" role="group" aria-label="Preview size">
               {(Object.keys(LOGIN_PREVIEW_DEVICES) as LoginPreviewDevice[]).map((id) => {
                 const Icon = id === 'desktop' ? Monitor : Smartphone;
@@ -291,9 +295,13 @@ export default function CompanyBrandingPage() {
                 );
               })}
             </div>
+            </div>
           </div>
           <LoginPreviewFrame branding={draft} device={device} />
         </div>
+        ) : (
+          <PreviewCollapsed title="Sign-in preview" note="The sign-in page as a signed-out visitor sees it, with your unpublished changes." onShow={() => setShowPreview(true)} />
+        )}
 
         <div className="space-y-2.5">
           <p className="text-sm font-semibold">What to show</p>

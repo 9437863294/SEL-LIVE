@@ -1,10 +1,10 @@
 'use client';
 
-import { useId, type ReactNode } from 'react';
+import { useCallback, useId, useSyncExternalStore, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
-import { AlertTriangle, Check, CheckCircle2, Loader2, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, Eye, EyeOff, Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -283,5 +283,72 @@ export function AppearanceSectionNav({ links }: { links: SectionLink[] }) {
         })}
       </ul>
     </nav>
+  );
+}
+
+// ── Optional previews ────────────────────────────────────────────────────────────────────────────
+
+const PREVIEW_EVENT = 'appearance-preview-change';
+/** Used when storage is blocked, so the toggle still works for the visit. */
+const previewMemory = new Map<string, boolean>();
+
+function readPreview(key: string): boolean {
+  if (previewMemory.has(key)) return previewMemory.get(key) === true;
+  try {
+    return window.localStorage.getItem(`appearance-preview:${key}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function subscribePreview(onChange: () => void) {
+  window.addEventListener(PREVIEW_EVENT, onChange);
+  window.addEventListener('storage', onChange);
+  return () => {
+    window.removeEventListener(PREVIEW_EVENT, onChange);
+    window.removeEventListener('storage', onChange);
+  };
+}
+
+/**
+ * Whether a screen's large preview is showing. Previews are optional and start hidden — they take a
+ * column of their own, and most visits are to change one setting, not to look. The choice is
+ * remembered per screen on this device (a convenience only; it never reaches the server).
+ */
+export function usePreviewVisible(key: string): [boolean, (visible: boolean) => void] {
+  const visible = useSyncExternalStore(subscribePreview, () => readPreview(key), () => false);
+  const setVisible = useCallback(
+    (next: boolean) => {
+      previewMemory.set(key, next);
+      try {
+        window.localStorage.setItem(`appearance-preview:${key}`, next ? '1' : '0');
+      } catch {
+        // Remembered for this visit only.
+      }
+      window.dispatchEvent(new Event(PREVIEW_EVENT));
+    },
+    [key],
+  );
+  return [visible, setVisible];
+}
+
+export function PreviewToggle({ visible, onToggle, className }: { visible: boolean; onToggle: (visible: boolean) => void; className?: string }) {
+  return (
+    <Button type="button" variant="outline" size="sm" className={cn('h-8 gap-1.5', className)} aria-pressed={visible} onClick={() => onToggle(!visible)}>
+      {visible ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}
+      {visible ? 'Hide preview' : 'Show preview'}
+    </Button>
+  );
+}
+
+/** What stands in for a hidden preview: one slim line with the button to bring it back. */
+export function PreviewCollapsed({ title = 'Preview', note, onShow }: { title?: string; note?: string; onShow: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-sm">
+      <Eye className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span className="font-medium">{title}</span>
+      {note ? <span className="min-w-0 flex-1 text-xs text-muted-foreground">{note}</span> : <span className="flex-1" />}
+      <PreviewToggle visible={false} onToggle={onShow} />
+    </div>
   );
 }

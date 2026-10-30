@@ -155,6 +155,39 @@ export type TokenOverrides = Partial<Record<CustomToken, Hex>>;
 /** Modules whose names can be pinned or hidden: the keys of `permissionModules`, passed in. */
 export type ModuleName = string;
 
+/** The colours a module group can take — each maps to a fixed set of classes in the launcher. */
+export const GROUP_COLORS = ['blue', 'orange', 'teal', 'violet', 'sky', 'emerald', 'rose', 'amber', 'indigo', 'pink', 'slate', 'zinc'] as const;
+export type GroupColor = (typeof GROUP_COLORS)[number];
+
+/**
+ * A company-defined group of modules on the home page (Theme Management › Module groups). A module
+ * sits in at most one group; any module in none is shown under "Other". Grouping only arranges what
+ * a person may already open — it never grants a module.
+ */
+export interface ModuleGroup {
+  /** Stable, set when the group is created; renaming a group keeps it. */
+  id: string;
+  label: string;
+  color: GroupColor;
+  modules: ModuleName[];
+}
+
+export const MAX_MODULE_GROUPS = 20;
+/** Reserved for the implicit group of unassigned modules. */
+export const OTHER_GROUP_ID = 'other';
+
+/** The groups the launcher shipped with, used until the company publishes its own. */
+export const DEFAULT_MODULE_GROUPS: ModuleGroup[] = [
+  { id: 'finance', label: 'Finance & Treasury', color: 'blue', modules: ['Bank Balance', 'Fixed Deposit Management', 'Letter of Credit Management', 'Bank Guarantee Management', 'Loan', 'Recurring Payments', 'Bill Tracking', 'Expenses', 'Insurance'] },
+  // Everything addressed to a site or a project, including the money that goes to one.
+  { id: 'projects', label: 'Projects & Sites', color: 'orange', modules: ['Project Management', 'Subcontractors Management', 'Billing Recon', 'Site Account Statement', 'Site Fund Requisition', 'Site Fund Requisition 2', 'Site Fund Request'] },
+  { id: 'procurement', label: 'Procurement & Stores', color: 'teal', modules: ['Daily Requisition', 'Store & Stock Management', 'Vendor Management'] },
+  { id: 'people', label: 'People & HR', color: 'violet', modules: ['Employee', 'HR & Recruitment', 'Tour, Travel & Expense'] },
+  { id: 'fleet', label: 'Fleet & Logistics', color: 'sky', modules: ['Vehicle Management', 'Driver Management'] },
+  { id: 'workspace', label: 'Workspace & Communication', color: 'slate', modules: ['Chat System', 'Mail Hub', 'Office Hub', 'E-Approval'] },
+  { id: 'administration', label: 'Administration', color: 'zinc', modules: ['Settings', 'Module Hub', 'Windows Agent'] },
+];
+
 // ── Stored shapes ────────────────────────────────────────────────────────────────────────────────
 
 export interface LayoutPreferences {
@@ -226,6 +259,11 @@ export interface CompanyDefaults {
   breadcrumbs: boolean;
   stickyHeader: boolean;
   dashboardCardDensity: Density;
+  /**
+   * The home page's module groups, in order. Kept with the defaults so it is drafted, published and
+   * restored with them — but it is company-only: no personal preference overrides it.
+   */
+  moduleGroups: ModuleGroup[];
 }
 
 export interface BrandAsset {
@@ -305,6 +343,7 @@ export const DEFAULT_COMPANY_DEFAULTS: CompanyDefaults = {
   breadcrumbs: false,
   stickyHeader: true,
   dashboardCardDensity: 'standard',
+  moduleGroups: DEFAULT_MODULE_GROUPS,
 };
 
 export const DEFAULT_BRANDING: CompanyBranding = {
@@ -541,7 +580,43 @@ export function sanitizeDefaults(input: unknown, theme: CompanyTheme, fallback: 
     breadcrumbs: bool(raw.breadcrumbs) ?? fallback.breadcrumbs,
     stickyHeader: bool(raw.stickyHeader) ?? fallback.stickyHeader,
     dashboardCardDensity: pick(DENSITIES, raw.dashboardCardDensity) ?? fallback.dashboardCardDensity,
+    moduleGroups: sanitizeModuleGroups(raw.moduleGroups, fallback.moduleGroups),
   };
+}
+
+const slug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+
+/**
+ * Module groups, repaired: a name is required, ids are unique slugs (never the reserved "other"), a
+ * colour comes from the list, and each module belongs to the first group that names it. Not an
+ * array means nothing was saved, so `fallback` applies; an empty array is a real choice ("no
+ * groups, everything under Other") and is kept.
+ */
+export function sanitizeModuleGroups(value: unknown, fallback: ModuleGroup[] = DEFAULT_MODULE_GROUPS): ModuleGroup[] {
+  if (!Array.isArray(value)) return fallback;
+  const out: ModuleGroup[] = [];
+  const ids = new Set<string>([OTHER_GROUP_ID]);
+  const placed = new Set<string>();
+  for (const entry of value) {
+    if (out.length >= MAX_MODULE_GROUPS) break;
+    if (!entry || typeof entry !== 'object') continue;
+    const raw = entry as Record<string, unknown>;
+    const label = cleanText(raw.label, 40);
+    if (!label) continue;
+    const base = (typeof raw.id === 'string' && /^[a-z0-9-]{1,40}$/.test(raw.id) ? raw.id : slug(label)) || 'group';
+    let id = base;
+    for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+    ids.add(id);
+    const modules = (moduleList(raw.modules) ?? []).filter((name) => !placed.has(name));
+    modules.forEach((name) => placed.add(name));
+    out.push({ id, label, color: pick(GROUP_COLORS, raw.color) ?? 'slate', modules });
+  }
+  return out;
 }
 
 /** A whole configuration, every part validated, anything missing filled from `fallback`. */

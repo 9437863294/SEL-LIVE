@@ -13,6 +13,7 @@ import {
   sanitizeAsset,
   sanitizeBranding,
   sanitizeConfig,
+  sanitizeModuleGroups,
   sanitizePreferences,
 } from '../src/lib/appearance/model.ts';
 import { SEL_CLASSIC, SEL_MIDNIGHT } from '../src/lib/appearance/presets.ts';
@@ -227,6 +228,27 @@ test('the home design follows the company default until a user picks one; unknow
   assert.equal(resolveAppearance(company, { homeDesign: 'launchpad' }).homeDesign, 'launchpad');
   assert.equal(sanitizeConfig({ defaults: { homeDesign: 'retro' } }).defaults.homeDesign, 'classic');
   assert.equal(sanitizePreferences({ homeDesign: 'retro' }).homeDesign, undefined);
+});
+
+test('module groups are repaired: named, unique ids, listed colours, each module in one group', () => {
+  // Nothing published yet: the built-in groups.
+  assert.deepEqual(sanitizeConfig({}).defaults.moduleGroups.map((g) => g.id), ['finance', 'projects', 'procurement', 'people', 'fleet', 'workspace', 'administration']);
+  const groups = sanitizeModuleGroups([
+    { id: 'ops', label: '  Operations ', color: 'neon', modules: ['Loan', 'Daily Requisition', 'Loan'] },
+    { id: 'ops', label: 'Ops two', color: 'rose', modules: ['Loan', 'Expenses'] },
+    { id: 'other', label: 'Misc', color: 'teal', modules: [] },
+    { label: '', color: 'blue', modules: ['Insurance'] },
+    { id: 'BAD ID', label: 'Site & Stores', modules: '<script>' },
+  ]);
+  assert.deepEqual(groups, [
+    { id: 'ops', label: 'Operations', color: 'slate', modules: ['Loan', 'Daily Requisition'] },
+    { id: 'ops-2', label: 'Ops two', color: 'rose', modules: ['Expenses'] },
+    { id: 'other-2', label: 'Misc', color: 'teal', modules: [] },
+    { id: 'site-stores', label: 'Site & Stores', color: 'slate', modules: [] },
+  ]);
+  // Deleting every group is a choice, not a reason to bring the built-in ones back.
+  assert.deepEqual(sanitizeModuleGroups([]), []);
+  assert.equal(sanitizeModuleGroups(Array.from({ length: 30 }, (_, i) => ({ label: `G${i}`, modules: [] }))).length, 20);
 });
 
 test('favourites are their own list of real modules, separate from the retired pins', () => {

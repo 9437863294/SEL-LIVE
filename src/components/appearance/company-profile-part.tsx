@@ -30,6 +30,7 @@ import {
   type UiTextKey,
 } from '@/lib/company-profile';
 import { cn } from '@/lib/utils';
+import { PreviewToggle } from '@/components/appearance/controls';
 
 export async function companyProfileFetch<T>(input: string, init?: RequestInit): Promise<T> {
   const user = auth.currentUser;
@@ -241,12 +242,17 @@ export function ToggleField({ label, checked, onChange, disabled }: { label: str
   );
 }
 
-export function PreviewCard({ title, children }: { title: string; children: ReactNode }) {
+export function PreviewCard({ title, children, onHide }: { title: string; children: ReactNode; onHide?: () => void }) {
   return (
     <Card className="min-w-0 xl:sticky xl:top-[calc(var(--app-header-offset,4rem)+1rem)] xl:self-start">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm">{title}</CardTitle>
-        <CardDescription className="text-xs">The unsaved draft, as it will look.</CardDescription>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <CardTitle className="text-sm">{title}</CardTitle>
+            <CardDescription className="text-xs">The unsaved draft, as it will look.</CardDescription>
+          </div>
+          {onHide ? <PreviewToggle visible onToggle={() => onHide()} /> : null}
+        </div>
       </CardHeader>
       <CardContent className="min-w-0">{children}</CardContent>
     </Card>

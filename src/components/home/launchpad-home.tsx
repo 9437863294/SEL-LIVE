@@ -2,7 +2,7 @@
 
 /**
  * The "Launchpad" and "Aurora Glass" home designs — one layout, two skins: a greeting with a module
- * search and three work figures, category chips, a row of favourite cards, then every module as a
+ * search and three work figures, chips for the company's module groups, a row of favourite cards, then every module as a
  * tile.
  *
  * - Launchpad: a teal gradient greeting band with white text on it; the search field on it is
@@ -20,7 +20,6 @@ import Link from 'next/link';
 import { useDeferredValue, useId, useMemo, useState, type CSSProperties } from 'react';
 import { ArrowRight, Search } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { ModuleCategory } from '@/components/module-hub/module-catalog';
 import type { WorkDashboardState } from '@/components/work-dashboard/hooks';
 import { cn } from '@/lib/utils';
 import { greeting, longDate, useHomeData, type HomeData, type HomeModule } from './home-data';
@@ -52,15 +51,17 @@ export function AuroraHome({ work }: { work: WorkDashboardState }) {
 export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; skin?: LaunchpadSkin }) {
   const aurora = skin === 'aurora';
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<ModuleCategory | 'all'>('all');
+  // A group id, or 'all'. A chip whose group has since emptied falls back to everything.
+  const [picked, setCategory] = useState<string>('all');
+  const category = picked === 'all' || data.categories.some((entry) => entry.group.id === picked) ? picked : 'all';
   const deferredQuery = useDeferredValue(query);
 
   const shown = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
     return data.modules.filter(
       (module) =>
-        (category === 'all' || module.category === category) &&
-        (!needle || [module.label, module.name, module.description, module.category].some((text) => text.toLowerCase().includes(needle))),
+        (category === 'all' || module.group.id === category) &&
+        (!needle || [module.label, module.name, module.description, module.group.label].some((text) => text.toLowerCase().includes(needle))),
     );
   }, [data.modules, category, deferredQuery]);
 
@@ -72,11 +73,11 @@ export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; sk
 
       <div
         role="group"
-        aria-label="Show category"
+        aria-label="Show group"
         className={cn('flex min-w-0 gap-2 overflow-x-auto pb-1', aurora && 'pt-1 sm:flex-wrap sm:overflow-visible')}
       >
-        {(['all', ...data.categories.map((group) => group.category)] as const).map((value) => {
-          const count = value === 'all' ? data.modules.length : data.categories.find((group) => group.category === value)?.modules.length ?? 0;
+        {[{ id: 'all', label: 'All' }, ...data.categories.map((entry) => entry.group)].map(({ id: value, label }) => {
+          const count = value === 'all' ? data.modules.length : data.categories.find((entry) => entry.group.id === value)?.modules.length ?? 0;
           const active = category === value;
           return (
             <button
@@ -96,7 +97,7 @@ export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; sk
                     : 'bg-card text-foreground hover:bg-muted',
               )}
             >
-              {value === 'all' ? 'All' : value}
+              {label}
               <span className={cn('ml-1.5 tabular-nums', aurora ? 'opacity-50' : active ? 'opacity-80' : 'text-muted-foreground')}>{count}</span>
             </button>
           );
@@ -117,7 +118,7 @@ export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; sk
           </div>
         ) : shown.length === 0 ? (
           <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
-            {deferredQuery.trim() ? `No module matches “${deferredQuery.trim()}”.` : 'No modules in this category.'}
+            {deferredQuery.trim() ? `No module matches “${deferredQuery.trim()}”.` : 'No modules in this group.'}
           </p>
         ) : (
           <div className={tileGrid(aurora)}>
