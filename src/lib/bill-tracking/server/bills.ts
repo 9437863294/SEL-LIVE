@@ -85,6 +85,7 @@ const AUDITED_FIELDS = [
   'igstAmount',
   'gstRegistrationId',
   'againstBillId',
+  'adjustsNoteId',
   'deductions',
   'netReceivable',
   'targetWeek',
@@ -205,6 +206,24 @@ function composeNoteLink(input: BillInput, against: StoredBill | undefined, exis
   return { againstBillId: against.id, againstBillRef: against.gstInvoiceNumber || against.billSerialNumber || against.id, againstBillDate: against.billDate };
 }
 
+/**
+ * A note settling a debit note's certification names that debit note. It must be a live debit note
+ * against the same invoice — a note is never raised against another note — and not itself one settling
+ * another. Any other bill drops the link.
+ */
+function composeAdjusts(input: BillInput, adjusted: StoredBill | undefined, existing: StoredBill | undefined, againstBillId: string | undefined) {
+  if (!input.adjustsNoteId || !isNoteType(input.transactionType)) return { adjustsNoteId: undefined, adjustsNoteRef: undefined };
+  if (!adjusted || adjusted.id !== input.adjustsNoteId) throw new BtError('The debit note this note settles was not found.', 404);
+  const reference = adjusted.gstInvoiceNumber || adjusted.billSerialNumber || adjusted.id;
+  if (adjusted.isDeleted) throw new BtError(`Debit note ${reference}, which this note settles, has been deleted.`);
+  if (adjusted.transactionType !== 'debit_note' || adjusted.adjustsNoteId) throw new BtError('A note can settle only a debit note’s own certification.');
+  if (existing && adjusted.id === existing.id) throw new BtError('A note cannot settle itself.');
+  if ((adjusted.againstBillId ?? null) !== (againstBillId ?? null)) {
+    throw new BtError(`A note settling debit note ${reference} is raised against the same invoice${adjusted.againstBillRef ? `, ${adjusted.againstBillRef}` : ''}.`);
+  }
+  return { adjustsNoteId: adjusted.id, adjustsNoteRef: reference };
+}
+
 /** A slab rate kept to 4 dp, as `retention.ts` reads it, so a stored rate always matches its slab key. */
 export const roundSlabRate = (rate: number | null): number | null => (rate === null ? null : Math.round(rate * 10000) / 10000);
 
@@ -241,11 +260,13 @@ interface ComposeArgs {
   against?: StoredBill;
   /** The live notes against that invoice: a note rule takes a debit note's deductions of the invoice plus them. */
   invoiceNotes?: readonly StoredBill[];
+  /** The debit note whose certification this note settles (`adjustsNoteId`), loaded by the caller. */
+  adjusted?: StoredBill;
   gstSetup?: RegistrationSetup;
 }
 
 /** Builds every stored field of a bill from validated input plus masters; derived totals included. */
-export function composeBill({ context, input, config, project, client, existing, ownerName, against, invoiceNotes = [], gstSetup }: ComposeArgs):Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
+export function composeBill({ context, input, config, project, client, existing, ownerName, against, invoiceNotes = [], adjusted, gstSetup }: ComposeArgs):Omit<StoredBill, 'id' | 'createdAt' | 'createdBy' | 'version'> & Partial<Pick<StoredBill, 'createdAt' | 'createdBy' | 'version'>> {
   const billType = config.billTypes.find((entry) => entry.id === input.billTypeId);
   const keeping = existing?.billTypeId === input.billTypeId;
   if (!billType) throw new BtError(keeping ? 'This bill’s sub category was deleted from Settings — choose another.' : 'Choose a sub category.');
@@ -288,9 +309,16 @@ export function composeBill({ context, input, config, project, client, existing,
   const registration = existing && !existing.gstRegistrationId && !input.gstRegistrationId ? undefined : suggestion.registration;
 
   const note = composeNoteLink(input, against, existing, project.id);
-  // The client's certification belongs to an invoice; a bill turned into a note cannot keep one.
-  if (existing?.certification && isNoteType(input.transactionType)) {
-    throw new BtError('This bill has a client certification. Remove the certification before turning it into a credit or debit note.', 409);
+  const adjusts = composeAdjusts(input, adjusted, existing, note.againstBillId);
+  // A certified bill stays one the client certifies: it cannot turn into another kind of note, or into
+  // a note settling a debit note (a certified debit note may still be edited as one).
+  if (existing?.certification && ((isNoteType(input.transactionType) && input.transactionType !== existing.transactionType) || adjusts.adjustsNoteId)) {
+    throw new BtError(
+      adjusts.adjustsNoteId
+        ? 'This bill has a client certification, so it cannot settle another debit note’s. Remove the certification first.'
+        : 'This bill has a client certification. Remove the certification before turning it into a credit or debit note.',
+      409,
+    );
   }
   // A debit note under a note rule takes the rule's heads of the invoice plus its notes up to it,
   // fixed now so a later note does not move it.
@@ -348,6 +376,7 @@ export function composeBill({ context, input, config, project, client, existing,
     billSerialNumber: input.billSerialNumber ?? existing?.billSerialNumber,
     transactionType: input.transactionType,
     ...note,
+    ...adjusts,
     outsideCertification,
     gstInvoiceNumber: input.gstInvoiceNumber,
     billDate: input.billDate,
@@ -439,23 +468,36 @@ async function loadInvoiceNotes(context: BtContext, input: BillInput, config: Bi
   return snapshot.docs.map((doc) => ({ ...(doc.data() as StoredBill), id: doc.id })).filter((bill) => bill.organizationId === context.organizationId && !bill.isDeleted);
 }
 
+/** How many live notes settle this debit note's certification (`adjustsNoteId`). */
+async function settlingNotesCount(context: BtContext, billId: string): Promise<number> {
+  const snapshot = await db().collection(BT_COLLECTIONS.bills).where('adjustsNoteId', '==', billId).get();
+  return snapshot.docs.filter((doc) => doc.data().organizationId === context.organizationId && !doc.data().isDeleted).length;
+}
+
 /**
- * What still points at a bill — live notes against it, receipts allocated to it, retention released
- * against it — in words, so it is not deleted or moved to another project from under them.
+ * What still points at a bill — live notes against it or settling it, receipts allocated to it,
+ * retention released against it — in words, so it is not deleted or moved to another project from
+ * under them.
  */
 async function dependentsOf(context: BtContext, bill: StoredBill): Promise<string[]> {
   const firestore = db();
-  const [notes, releasedAgainst, releasedBy] = await Promise.all([
+  const [notes, releasedAgainst, releasedBy, settling] = await Promise.all([
     firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', bill.id).get(),
     firestore.collection(BT_COLLECTIONS.retention).where('againstBillId', '==', bill.id).get(),
     firestore.collection(BT_COLLECTIONS.retention).where('retentionBillId', '==', bill.id).get(),
+    bill.transactionType === 'debit_note' ? settlingNotesCount(context, bill.id) : Promise.resolve(0),
   ]);
   const ours = (doc: FirebaseFirestore.QueryDocumentSnapshot) => doc.data().organizationId === context.organizationId;
   const liveNotes = notes.docs.filter((doc) => ours(doc) && !doc.data().isDeleted).length;
   const releases = new Set([...releasedAgainst.docs, ...releasedBy.docs].filter((doc) => ours(doc) && doc.data().status === 'active').map((doc) => doc.id)).size;
   const receipts = (bill.collections ?? []).filter((entry) => entry.status !== 'cancelled').length;
   const count = (n: number, one: string, many: string) => (n ? `${n} ${n === 1 ? one : many}` : '');
-  return [count(liveNotes, 'credit/debit note against it', 'credit/debit notes against it'), count(receipts, 'receipt', 'receipts'), count(releases, 'retention release', 'retention releases')].filter(Boolean);
+  return [
+    count(liveNotes, 'credit/debit note against it', 'credit/debit notes against it'),
+    count(settling, 'note settling its certification', 'notes settling its certification'),
+    count(receipts, 'receipt', 'receipts'),
+    count(releases, 'retention release', 'retention releases'),
+  ].filter(Boolean);
 }
 
 /** "a, b and c". */
@@ -484,12 +526,12 @@ export async function createBill(context: BtContext, input: BillInput): Promise<
   const client = await loadClient(input.clientId ?? project.clientId);
   await assertUniqueInvoice(context, project.id, input.gstInvoiceNumber);
   const ownerName = await userName(input.collectionOwnerId);
-  const [against, gstSetup, invoiceNotes] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), loadInvoiceNotes(context, input, config)]);
+  const [against, gstSetup, invoiceNotes, adjusted] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), loadInvoiceNotes(context, input, config), loadAgainst(context, input.adjustsNoteId)]);
 
   const firestore = db();
   const ref = firestore.collection(BT_COLLECTIONS.bills).doc();
   await firestore.runTransaction(async (transaction) => {
-    const composed = composeBill({ context, input, config, project, client, ownerName, against, invoiceNotes, gstSetup });
+    const composed = composeBill({ context, input, config, project, client, ownerName, against, invoiceNotes, adjusted, gstSetup });
     let billSerialNumber = composed.billSerialNumber;
     if ((input.autoNumber || !billSerialNumber) && config.settings.numbering.enabled) {
       const counterRef = firestore.collection(BT_COLLECTIONS.counters).doc(`${context.organizationId}_${composed.financialYear}`);
@@ -545,8 +587,13 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
     const blocking = await dependentsOf(context, before);
     if (blocking.length) throw new BtError(`This bill has ${inWords(blocking)} on ${before.projectNameSnapshot}, so it cannot move to another project. Cancel or move those first.`, 409);
   }
+  // A debit note other notes settle stays a debit note against the same invoice, or they settle nothing.
+  if (before.transactionType === 'debit_note' && (input.transactionType !== 'debit_note' || (input.againstBillId ?? null) !== (before.againstBillId ?? null))) {
+    const settling = await settlingNotesCount(context, billId);
+    if (settling) throw new BtError(`${settling === 1 ? 'A note settles' : `${settling} notes settle`} this debit note’s certification, so it stays a debit note against the same invoice. Delete or re-link ${settling === 1 ? 'that note' : 'those notes'} first.`, 409);
+  }
   const ownerName = await userName(input.collectionOwnerId);
-  const [against, gstSetup, invoiceNotes] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), loadInvoiceNotes(context, input, config)]);
+  const [against, gstSetup, invoiceNotes, adjusted] = await Promise.all([loadAgainst(context, input.againstBillId), loadGstSetup(), loadInvoiceNotes(context, input, config), loadAgainst(context, input.adjustsNoteId)]);
 
   let version = 0;
   await firestore.runTransaction(async (transaction) => {
@@ -555,7 +602,7 @@ export async function updateBill(context: BtContext, billId: string, input: Bill
     if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
       throw new BtError('Someone else changed this bill while you were editing it. Reload to see their changes, then edit again.', 409);
     }
-    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, invoiceNotes, gstSetup });
+    const composed = composeBill({ context, input, config, project, client, existing: current, ownerName, against, invoiceNotes, adjusted, gstSetup });
 
     // Compared by value (`protectedChanges`, shared with the bill form): a renamed head or the key order
     // Firestore returns is no change. A returned bill is locked when resubmitting it would skip approval.

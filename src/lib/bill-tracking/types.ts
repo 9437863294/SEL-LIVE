@@ -306,6 +306,20 @@ export interface BillNumberingConfig {
  * until its certification is recorded. Bills migrated from the legacy workbook (certified on paper
  * long ago) and bills dated before `fromDate` can be left out.
  */
+/**
+ * Which debit notes ask for the client's certification: none, only those billing the balance under a
+ * note rule (lines taken of the invoice plus its notes), or every one. A note raised to settle a debit
+ * note's certification (`adjustsNoteId`) never does.
+ */
+export const DEBIT_NOTE_CERTIFICATION = ['none', 'note_rule', 'all'] as const;
+export type DebitNoteCertification = (typeof DEBIT_NOTE_CERTIFICATION)[number];
+
+export const DEBIT_NOTE_CERTIFICATION_LABELS: Record<DebitNoteCertification, string> = {
+  none: 'No debit notes',
+  note_rule: 'Only balance debit notes (under a note rule)',
+  all: 'Every debit note',
+};
+
 export interface CertificationReceiptRule {
   enabled: boolean;
   transactionTypes: BillTransactionType[];
@@ -389,6 +403,8 @@ export interface BillTrackingSettings {
   numbering: BillNumberingConfig;
   /** Receipts only against bills the client has certified (Settings → Workflow). */
   certificationBeforeReceipt: CertificationReceiptRule;
+  /** Which debit notes the client certifies (Settings → Workflow); credit notes never are. */
+  debitNoteCertification: DebitNoteCertification;
   /** Debit notes whose deductions are taken of the invoice plus its notes (Settings → Note rules). */
   noteRules: NoteRule[];
   /** Per-stage workflow settings, one per stage after Draft. */
@@ -572,6 +588,12 @@ export interface Bill {
    * balance of the value rather than correcting the invoice. Set when the note is saved.
    */
   outsideCertification?: boolean;
+  /**
+   * A note raised to settle a debit note's own certification — against the same invoice, compared with
+   * that debit note rather than the invoice. Its reference is kept as `adjustsNoteRef`.
+   */
+  adjustsNoteId?: string;
+  adjustsNoteRef?: string;
   /** `undefined` for non-GST rows (the legacy sheet writes `NA`). */
   gstInvoiceNumber?: string;
   billDate: string;

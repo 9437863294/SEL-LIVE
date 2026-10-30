@@ -194,12 +194,12 @@ export default function BillRegister({ mode = 'all' }: { mode?: 'all' | 'outstan
       align: 'right',
       cell: (bill) => (
         <div className="flex justify-end gap-1">
-          {can('Collections', 'Add') && bill.outstandingAmount > 0 && !receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt) ? (
+          {can('Collections', 'Add') && bill.outstandingAmount > 0 && !receiptBlockReason(bill, lookups.config.settings) ? (
             <Button asChild size="sm" variant="outline" className="h-7 px-2 text-xs">
               <Link href={`/bill-tracking/collections/new?bill=${bill.id}`}>Receive</Link>
             </Button>
           ) : null}
-          {bill.outstandingAmount > 0 && certificationBlocked(bill, lookups.config.settings, actor) === null && receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt) ? (
+          {bill.outstandingAmount > 0 && certificationBlocked(bill, lookups.config.settings, actor) === null && receiptBlockReason(bill, lookups.config.settings) ? (
             <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-amber-800" title="Payment waits for the client's certification">
               <Link href={`/bill-tracking/bills/${bill.id}/certify`}>Certify</Link>
             </Button>

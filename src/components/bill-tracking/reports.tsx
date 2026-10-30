@@ -10,10 +10,13 @@
  * the bills behind any figure.
  */
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { BarChart3, BookOpen, CalendarRange, FileWarning, Gauge, Hourglass, Landmark, Layers, ListChecks, MapPin, PiggyBank, Receipt, Scale, Scissors, ScrollText, TrendingUp, Users, Wallet } from 'lucide-react';
+import { BarChart3, BookOpen, CalendarRange, ChevronRight, FileWarning, Gauge, Hourglass, Landmark, Layers, ListChecks, MapPin, PiggyBank, Receipt, Scale, Scissors, ScrollText, Search, TrendingUp, Users, Wallet } from 'lucide-react';
 
+import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
+import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { effectiveDeductions, isHeldAsRetention, monthLabel, type LedgerLine } from '@/lib/bill-tracking/calculations';
 import { AGEING_BASIS_LABELS, RETENTION_STATUS_LABELS, type DeductionTypeMaster, type RetentionRelease } from '@/lib/bill-tracking/types';
@@ -53,26 +56,62 @@ const REPORTS: { kind: string; title: string; description: string; icon: React.E
   { kind: 'client-ledger', title: 'Client bill ledger', description: 'The same ledger for one client — for reconciliation with the client.', icon: ScrollText },
 ];
 
+/** The hub's sections, in reading order: each report sits in the first whose list names it. */
+const REPORT_GROUPS: { title: string; hint: string; kinds: string[]; tile: string }[] = [
+  { title: 'Monthly summaries', hint: 'The legacy summary sheets, month by month', kinds: ['monthly', 'pi'], tile: 'bg-emerald-50 text-emerald-700' },
+  { title: 'Outstanding & collections', hint: 'What is owed, how old it is, and what is coming in', kinds: ['not-received', 'ageing', 'collections', 'forecast', 'performance'], tile: 'bg-sky-50 text-sky-700' },
+  { title: 'By project, client & type', hint: 'The same measures cut different ways', kinds: ['project-wise', 'site-wise', 'client-wise', 'dgm-office', 'bill-type'], tile: 'bg-violet-50 text-violet-700' },
+  { title: 'Deductions & retention', hint: 'Every head, and retention held and released', kinds: ['deductions', 'retention'], tile: 'bg-amber-50 text-amber-700' },
+  { title: 'Certification & checks', hint: 'Raised vs certified, and what needs attention', kinds: ['certification', 'exceptions'], tile: 'bg-rose-50 text-rose-700' },
+  { title: 'Ledgers', hint: 'Date-wise debit and credit, for reconciliation', kinds: ['project-ledger', 'client-ledger'], tile: 'bg-slate-100 text-slate-700' },
+];
+
 export function ReportsHub() {
+  const [query, setQuery] = useState('');
+  const needle = query.trim().toLowerCase();
+  const matches = (report: (typeof REPORTS)[number]) => !needle || `${report.title} ${report.description}`.toLowerCase().includes(needle);
+  const groups = REPORT_GROUPS.map((group) => ({ ...group, reports: group.kinds.flatMap((kind) => REPORTS.find((report) => report.kind === kind) ?? []).filter(matches) })).filter((group) => group.reports.length);
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader icon={BarChart3} title="Reports" description="Built directly from the bills, receipts and retention in SEL LIVE — no spreadsheet formulas." />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {REPORTS.map((report) => {
-          const Icon = report.icon;
-          return (
-            <Link key={report.kind} href={report.href ?? `/bill-tracking/reports/${report.kind}`} className="group rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-300 hover:shadow">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 group-hover:bg-emerald-100">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <p className="font-semibold text-slate-800">{report.title}</p>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">{report.description}</p>
-            </Link>
-          );
-        })}
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+        <Input aria-label="Find a report" placeholder={`Find a report — ${REPORTS.length} in all`} value={query} onChange={(event) => setQuery(event.target.value)} className="pl-9" />
       </div>
+      {groups.length === 0 ? <BtEmpty title="No report matches" description="Try another word, or clear the search." /> : null}
+      {groups.map((group) => (
+        <section key={group.title} className="space-y-2.5">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-slate-200 pb-1.5">
+            <h2 className="text-sm font-semibold text-slate-900">{group.title}</h2>
+            <span className="text-xs text-slate-500">{group.hint}</span>
+            <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{group.reports.length}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {group.reports.map((report) => {
+              const Icon = report.icon;
+              return (
+                <Link
+                  key={report.kind}
+                  href={report.href ?? `/bill-tracking/reports/${report.kind}`}
+                  title={report.description}
+                  className="group flex min-w-0 items-start gap-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                >
+                  <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', group.tile)} aria-hidden="true">
+                    <Icon className="h-[18px] w-[18px]" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1 font-semibold text-slate-800 group-hover:text-emerald-800">
+                      <span className="truncate">{report.title}</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-emerald-600" aria-hidden="true" />
+                    </span>
+                    <span className="mt-0.5 line-clamp-2 block text-xs leading-relaxed text-slate-500">{report.description}</span>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

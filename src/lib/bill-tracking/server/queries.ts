@@ -59,9 +59,11 @@ import {
   type BillDocument,
   type BillFollowUp,
   type BillTrackingConfig,
+  type BillTrackingSettings,
   type CollectionTarget,
   type RetentionRelease,
 } from '../types.ts';
+import { certificationRuleBase } from './certification';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, loadBill, loadBillsById, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
 
@@ -204,15 +206,18 @@ const certificationFilter = (summary: CertificationSummary, filter: string | nul
   return true;
 };
 
-/** Each certifiable bill with its certification state (notes come from every year). */
-async function withCertification(context: BtContext, bills: readonly Bill[], tolerance: number) {
+/**
+ * Each bill the client certifies, with its certification state (notes come from every year). One
+ * certified while Settings still had it certified stays listed after the setting narrows.
+ */
+async function withCertification(context: BtContext, bills: readonly Bill[], settings: BillTrackingSettings) {
   const notes = notesByInvoice(await loadScopedNotes(context));
-  return bills.filter(canBeCertified).map((bill) => ({ bill, summary: certificationSummary(bill, notes.get(bill.id) ?? [], tolerance) }));
+  return bills.filter((bill) => canBeCertified(bill, settings) || (bill.certification && !bill.isDeleted)).map((bill) => ({ bill, summary: certificationSummary(bill, notes.get(bill.id) ?? [], settings.tolerance) }));
 }
 
 async function listCertification(context: BtContext, params: URLSearchParams, loaded: Loaded) {
   const { bills, context: rc, filters, config } = loaded;
-  const rows = (await withCertification(context, bills, config.settings.tolerance)).filter(({ summary }) => certificationFilter(summary, params.get('cert')));
+  const rows = (await withCertification(context, bills, config.settings)).filter(({ summary }) => certificationFilter(summary, params.get('cert')));
   const direction = params.get('dir') === 'asc' ? 1 : -1;
   const requested = params.get('sort') ?? '';
   let sorted: typeof rows;
@@ -297,7 +302,7 @@ export async function openBillsForAllocation(context: BtContext, params: URLSear
     : filterBills(all, filters, rc).filter((bill) => isOpen(bill) || filters.billIds?.includes(bill.id));
   return sortBills(bills, 'billDate', 'asc', rc)
     .slice(0, 200)
-    .map((bill) => ({ id: bill.id, transactionType: bill.transactionType, againstBillId: bill.againstBillId, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings.certificationBeforeReceipt) }));
+    .map((bill) => ({ id: bill.id, transactionType: bill.transactionType, againstBillId: bill.againstBillId, billSerialNumber: bill.billSerialNumber, gstInvoiceNumber: bill.gstInvoiceNumber, billDate: bill.billDate, projectId: bill.projectId, projectNameSnapshot: bill.projectNameSnapshot, clientNameSnapshot: bill.clientNameSnapshot, netReceivable: bill.netReceivable, totalReceived: bill.totalReceived, outstandingAmount: bill.outstandingAmount, paymentStatus: bill.paymentStatus, isRetentionBill: bill.isRetentionBill, receiptBlock: receiptBlockReason(bill, config.settings) }));
 }
 
 /**
@@ -344,7 +349,9 @@ export async function invoicesForNote(context: BtContext, params: URLSearchParam
     certified: Boolean(bill.certification),
     // The deductions that apply: the certified ones once the client has certified the invoice.
     deductions: effectiveDeductions(bill),
-    notes: (notes.get(bill.id) ?? []).map((note) => ({ id: note.id, transactionType: note.transactionType, billDate: note.billDate, createdAt: note.createdAt, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, deductions: note.deductions ?? [] })),
+    notes: (notes.get(bill.id) ?? [])
+      .filter((note) => note.againstBillId === bill.id)
+      .map((note) => ({ id: note.id, transactionType: note.transactionType, gstInvoiceNumber: note.gstInvoiceNumber, billSerialNumber: note.billSerialNumber, billDate: note.billDate, createdAt: note.createdAt, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, deductions: note.deductions ?? [], certification: note.certification ? { deductions: note.certification.deductions, taxableAmount: note.certification.taxableAmount, grossAmount: note.certification.grossAmount } : undefined })),
   }));
 }
 
@@ -364,6 +371,8 @@ export async function billDetail(context: BtContext, billId: string) {
     firestore.collection(BT_COLLECTIONS.retention).where('againstBillId', '==', billId).get(),
     firestore.collection(BT_COLLECTIONS.retention).where('retentionBillId', '==', billId).get(),
     firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', billId).get(),
+    // A debit note's certification is settled by notes against its invoice that name it.
+    firestore.collection(BT_COLLECTIONS.bills).where('adjustsNoteId', '==', billId).get(),
   ]);
   related.catch(() => undefined);
   // Scope is checked here rather than in loadBill, because it needs the settings that load alongside.
@@ -376,10 +385,15 @@ export async function billDetail(context: BtContext, billId: string) {
   const rc = reportContext(config, context.today);
   // A note's retention lands in its invoice's slabs; the invoice is read alongside the records.
   const invoiceRead = bill.againstBillId && isNoteType(bill.transactionType) ? loadBillsById(context, [bill.againstBillId]) : Promise.resolve([]);
-  const [[collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes], [invoice]] = await Promise.all([related, invoiceRead]);
+  // A balance debit note the client certifies: what its certified rule lines are taken of besides itself.
+  const certifiable = canBeCertified(bill, config.settings) || Boolean(bill.certification);
+  const ruleBaseRead = certifiable ? certificationRuleBase(context, bill, config.deductionTypes) : Promise.resolve(undefined);
+  const [[collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes, settling], [invoice], ruleBase] = await Promise.all([related, invoiceRead, ruleBaseRead]);
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
-  const liveNotes = docs<Bill>(notes).filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId);
+  const live = (snapshot: FirebaseFirestore.QuerySnapshot) => docs<Bill>(snapshot).filter((note) => !note.isDeleted && (note as Bill & { organizationId?: string }).organizationId === context.organizationId);
+  // An invoice's notes are those against it; a debit note's, those settling its certification.
+  const liveNotes = bill.transactionType === 'debit_note' ? live(settling) : live(notes);
   return {
     bill: withAgeing(bill, rc),
     ledger: billLedger(bill),
@@ -389,14 +403,16 @@ export async function billDetail(context: BtContext, billId: string) {
     documents: docs<BillDocument>(documents).filter((document) => !document.isDeleted).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
     activity: docs<BillActivity>(activity).sort((a, b) => b.at.localeCompare(a.at)),
     retention: releases.sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
-    // Raised vs notes vs the client's certification — null for a note (notes are not certified).
-    certification: canBeCertified(bill) || bill.certification ? compareCertification(bill, liveNotes, config.settings.tolerance) : null,
-    // Credit / debit notes raised against this invoice (live ones only).
+    // Raised vs notes vs the client's certification — null for a bill the client does not certify.
+    certification: certifiable ? compareCertification(bill, liveNotes, config.settings.tolerance) : null,
+    // For a balance debit note: the invoice plus the notes before it, under the rule's heads.
+    certificationRuleBase: ruleBase ?? null,
+    // Credit / debit notes raised against this invoice, or settling this debit note (live ones only).
     notes: liveNotes
       .slice()
       .sort((a, b) => a.billDate.localeCompare(b.billDate))
       // Deductions too: the invoice's Retention tab shows what its notes hold.
-      .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable, deductions: note.deductions ?? [], outsideCertification: note.outsideCertification })),
+      .map((note) => ({ id: note.id, transactionType: note.transactionType, billSerialNumber: note.billSerialNumber, gstInvoiceNumber: note.gstInvoiceNumber, billDate: note.billDate, taxableAmount: note.taxableAmount, gstAmount: note.gstAmount, grossAmount: note.grossAmount, netReceivable: note.netReceivable, deductions: note.deductions ?? [], outsideCertification: note.outsideCertification, adjustsNoteRef: note.adjustsNoteRef })),
     // For a note: just what decides which of its invoice's retention slabs the note lands in — the
     // certified deductions and figures once the client has certified the invoice, as slabs read them.
     noteInvoice: invoice ? retentionSource(invoice) : null,
@@ -463,7 +479,7 @@ export async function dashboard(context: BtContext, params: URLSearchParams) {
   const items = forecastItems(open);
   const notes = notesByInvoice(await loadScopedNotes(context));
   const exceptions = exceptionItems(bills, rc, notes);
-  const certifiable = bills.filter(canBeCertified);
+  const certifiable = bills.filter((bill) => canBeCertified(bill, config.settings) || (bill.certification && !bill.isDeleted));
   return {
     asOf: rc.asOf,
     financialYear: fy,
@@ -611,7 +627,7 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
     case 'certification': {
       // Raised vs certified, per project: what the client changed and what is still to adjust — the
       // projects with the largest notes to raise (taxable + GST) first.
-      const rows = await withCertification(context, bills, config.settings.tolerance);
+      const rows = await withCertification(context, bills, config.settings);
       const groups = new Map<string, { label: string; summaries: CertificationSummary[] }>();
       for (const { bill, summary } of rows) {
         const group = groups.get(bill.projectId) ?? { label: bill.projectNameSnapshot, summaries: [] };

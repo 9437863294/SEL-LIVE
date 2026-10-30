@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   AGEING_BASES,
   COMMITMENT_STATUSES,
+  DEBIT_NOTE_CERTIFICATION,
   DEDUCTION_KINDS,
   DOCUMENT_CATEGORIES,
   FOLLOW_UP_METHODS,
@@ -87,6 +88,8 @@ export const billInputSchema = z.object({
   gstRegistrationId: optionalText(64),
   /** Credit / debit note: the invoice it adjusts. Required for a credit note. */
   againstBillId: optionalText(128),
+  /** A note settling a debit note’s own certification: that debit note (against the same invoice). */
+  adjustsNoteId: optionalText(128),
   /**
    * The deductions as raised. A credit / debit note may carry its own (TDS on a debit note) but
    * needs none: a certification's deductions apply to the invoice itself, not through a note.
@@ -317,6 +320,7 @@ export const configInputSchema = z.object({
         fromDate: optionalDate,
       })
       .optional(),
+    debitNoteCertification: z.enum(DEBIT_NOTE_CERTIFICATION).optional(),
     workflowSteps: z
       .array(
         z.object({

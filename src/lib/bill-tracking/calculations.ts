@@ -539,7 +539,7 @@ export const resubmitTarget = (returnedFrom: BillWorkflowStatus | undefined): Bi
 };
 
 /** The bill fields that lock at the amount-lock step: changing one needs Edit After Approval and a reason. */
-export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId'] as const;
+export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId', 'adjustsNoteId'] as const;
 export type ProtectedBillField = (typeof PROTECTED_BILL_FIELDS)[number];
 
 /** A deduction line as the lock sees it: what it deducts, never its name, remarks or the order of its keys. */

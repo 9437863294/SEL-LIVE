@@ -63,6 +63,8 @@ interface FormState {
   autoNumber: boolean;
   transactionType: BillTransactionType;
   againstBillId: string;
+  /** A note settling a debit note's own certification: that debit note ('' = none). */
+  adjustsNoteId: string;
   gstInvoiceNumber: string;
   billDate: string;
   financialYear: string;
@@ -131,7 +133,7 @@ interface InvoiceOption {
   /** The deductions that apply to it (the certified ones once certified): what a note rule counts as held. */
   deductions?: BillDeduction[];
   /** The live notes against it, with their deductions: a note rule takes a debit note's of the invoice plus them. */
-  notes?: GroupNote[];
+  notes?: (GroupNote & Pick<Bill, 'gstInvoiceNumber' | 'billSerialNumber'>)[];
 }
 
 /** What the bill page returns that the note form needs to match a certification. */
@@ -149,6 +151,7 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     autoNumber: false,
     transactionType: bill.transactionType,
     againstBillId: bill.againstBillId ?? '',
+    adjustsNoteId: bill.adjustsNoteId ?? '',
     gstInvoiceNumber: bill.gstInvoiceNumber ?? '',
     billDate: bill.billDate,
     // Only a year that differs from the bill date's is an override; otherwise a new date sets the year.
@@ -196,16 +199,18 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
 /**
  * The note that makes the raised bill plus its notes equal the client's certification: its type,
  * taxable and GST components. No deduction lines — the certified deductions already apply to the
- * invoice itself; a change of deductions takes no note.
+ * invoice itself; a change of deductions takes no note. Matching a certified debit note, `source` is
+ * that note: the new one goes against its invoice and names it.
  */
-function withSuggestedNote(state: FormState, note: SuggestedNote, invoice: Pick<Bill, 'id' | 'projectId' | 'billTypeId' | 'billCategory'>, config: BillTrackingConfig): FormState {
-  const type = config.billTypes.find((entry) => entry.id === invoice.billTypeId);
+function withSuggestedNote(state: FormState, note: SuggestedNote, source: Pick<Bill, 'id' | 'projectId' | 'billTypeId' | 'billCategory'>, config: BillTrackingConfig): FormState {
+  const type = config.billTypes.find((entry) => entry.id === source.billTypeId);
   return {
     ...state,
     transactionType: note.transactionType,
-    againstBillId: invoice.id,
-    projectId: invoice.projectId,
-    categoryId: type?.categoryId ?? invoice.billCategory ?? state.categoryId,
+    againstBillId: note.againstBillId ?? (note.adjustsNoteId ? '' : source.id),
+    adjustsNoteId: note.adjustsNoteId ?? '',
+    projectId: source.projectId,
+    categoryId: type?.categoryId ?? source.billCategory ?? state.categoryId,
     billTypeId: type?.id ?? state.billTypeId,
     taxableAmount: String(note.taxableAmount),
     gstType: note.gstType ?? 'legacy',
@@ -274,6 +279,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           autoNumber: config.settings.numbering.enabled,
           transactionType: (params.get('type') as BillTransactionType | null) ?? 'invoice',
           againstBillId: params.get('against') ?? '',
+          adjustsNoteId: '',
           gstInvoiceNumber: '',
           billDate: lookups.today,
           financialYear: '',
@@ -339,6 +345,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
         dgmOffice: current.dgmPicked ? current.dgmOffice : next?.dgmOffice || '',
         billTypeId: subCategoriesFor(config.billTypes, current.categoryId, projectId, keepTypeFor(projectId)).some((type) => type.id === current.billTypeId) ? current.billTypeId : '',
         againstBillId: '',
+        adjustsNoteId: '',
       };
     });
 
@@ -370,13 +377,24 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const note = isNote(form.transactionType);
   // The invoice the note was opened with is always listed, however old (the list holds the 200 latest).
   // Fixed for the form's life, so picking another invoice does not reload the list.
-  const [linkedInvoiceId] = useState(() => existing?.againstBillId ?? prefill?.invoice.id ?? (params.get('against') || ''));
+  const [linkedInvoiceId] = useState(() => (existing ? (existing.againstBillId ?? '') : prefill ? (prefill.note.againstBillId ?? (prefill.note.adjustsNoteId ? '' : prefill.invoice.id)) : params.get('against') || ''));
   const { data: invoiceData, loading: invoicesLoading } = useBtQuery<{ bills: InvoiceOption[] }>(
     note && form.projectId ? `bills/invoices?project=${form.projectId}${existing ? `&exclude=${existing.id}` : ''}${linkedInvoiceId ? `&include=${linkedInvoiceId}` : ''}` : null,
   );
   const invoices = invoiceData?.bills ?? [];
   const againstInvoice = invoices.find((invoice) => invoice.id === form.againstBillId);
   const againstReference = againstInvoice ? againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber : undefined;
+  // The debit note this note settles the certification of, by its number.
+  const adjustedNote = form.adjustsNoteId ? againstInvoice?.notes?.find((entry) => entry.id === form.adjustsNoteId) : undefined;
+  const adjustedReference = !form.adjustsNoteId
+    ? undefined
+    : adjustedNote
+      ? adjustedNote.gstInvoiceNumber || adjustedNote.billSerialNumber || 'the debit note'
+      : existing?.adjustsNoteId === form.adjustsNoteId
+        ? existing.adjustsNoteRef
+        : prefill?.note.adjustsNoteId === form.adjustsNoteId
+          ? prefill.invoice.gstInvoiceNumber || prefill.invoice.billSerialNumber
+          : undefined;
 
   /* ── deductions ───────────────────────────────────────────────────────── */
   const gross = Math.round((taxable + gstTotal) * 100) / 100;
@@ -454,7 +472,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       }
       // Editing a note already counted against this invoice: the suggestion leaves its saved figures in,
       // so add them back — the note carries the whole difference, not just what is left over.
-      const counted = existing && isNote(existing.transactionType) && existing.againstBillId === invoice.id && !existing.outsideCertification;
+      const counted = existing && isNote(existing.transactionType) && existing.againstBillId === invoice.id && !existing.outsideCertification && !existing.adjustsNoteId;
       const target = counted ? withSavedNote(suggestion, existing) : suggestion;
       if (!target) {
         toast({ title: 'This note is not needed', description: 'Without it, the invoice and its other notes already match the client certification in taxable and GST.' });
@@ -511,6 +529,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
     projectId: form.projectId,
     transactionType: form.transactionType,
     againstBillId: note ? form.againstBillId || undefined : undefined,
+    adjustsNoteId: note ? form.adjustsNoteId || undefined : undefined,
   };
   const protectedChanged = existing && locked ? protectedChanges(existing, preview).length > 0 : false;
 
@@ -528,6 +547,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       serialNumber: existing?.serialNumber,
       transactionType: form.transactionType,
       againstBillId: note ? form.againstBillId || undefined : undefined,
+      adjustsNoteId: note ? form.adjustsNoteId || undefined : undefined,
       gstInvoiceNumber: form.gstInvoiceNumber,
       billDate: form.billDate,
       financialYear: form.financialYear || undefined,
@@ -618,7 +638,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
 
       {matchedFrom ? (
         <Notice tone="blue" title={`Filled to match the client certification of ${matchedFrom}`}>
-          Taxable and GST are entered as the difference between the certification and the raised bill (less any notes already raised). The note carries no deductions: the client’s certified deductions already apply to the invoice. Check the figures against the client’s certificate, add the note number and date, then save — the invoice will then show as matched.
+          Taxable and GST are entered as the difference between the certification and the raised bill (less any notes already raised). The note carries no deductions: the client’s certified deductions already apply to the bill itself. Check the figures against the client’s certificate, add the note number and date, then save — {form.adjustsNoteId ? 'the debit note' : 'the invoice'} will then show as matched.
         </Notice>
       ) : null}
 
@@ -828,7 +848,12 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                     {field(
                       `Against invoice${needsInvoice ? ' *' : ''}`,
-                      <Select value={form.againstBillId || 'none'} onValueChange={(value) => set('againstBillId', value === 'none' ? '' : value)} disabled={!form.projectId}>
+                      <Select
+                        value={form.againstBillId || 'none'}
+                        // Another invoice: a debit note this note settled is against the old one, so the link goes.
+                        onValueChange={(value) => setForm((current) => ({ ...current, againstBillId: value === 'none' ? '' : value, adjustsNoteId: (value === 'none' ? '' : value) === current.againstBillId ? current.adjustsNoteId : '' }))}
+                        disabled={!form.projectId}
+                      >
                         <SelectTrigger aria-label="Against invoice">
                           <SelectValue placeholder={!form.projectId ? 'Choose the project first' : invoicesLoading ? 'Loading invoices…' : 'Choose the invoice'} />
                         </SelectTrigger>
@@ -867,6 +892,16 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                       Invoice {againstInvoice.gstInvoiceNumber || againstInvoice.billSerialNumber}: taxable {formatINR(againstInvoice.taxableAmount)}, GST {formatINR(againstInvoice.gstAmount)}, net {formatINR(againstInvoice.netReceivable)}
                       {againstInvoice.certified ? ' after the client’s certified deductions' : ''}.
                     </p>
+                  ) : null}
+                  {form.adjustsNoteId ? (
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-violet-200 bg-white px-3 py-2 text-xs text-violet-900">
+                      <span className="min-w-0">
+                        Settles the client’s certification of debit note <b>{adjustedReference ?? 'chosen earlier'}</b> — compared with that debit note, not with the invoice.
+                      </span>
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-violet-800" onClick={() => set('adjustsNoteId', '')}>
+                        Unlink
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
