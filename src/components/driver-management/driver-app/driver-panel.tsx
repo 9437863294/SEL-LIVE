@@ -16,10 +16,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Device } from '@capacitor/device';
 import { Network } from '@capacitor/network';
-import { CarFront, Fuel, LocateFixed, RefreshCw, Smartphone } from 'lucide-react';
+import Link from 'next/link';
+import { CarFront, RefreshCw, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
-import { SectionHeader } from '@/components/shared/page-header';
+import { cn } from '@/lib/utils';
 import { useFleet } from '@/components/fleet/fleet-provider';
 import { useFleetQuery } from '@/components/fleet/use-fleet-query';
 import type { FuelEntryView } from '@/lib/fleet/server/fuel';
@@ -80,24 +80,17 @@ export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
   const failed = Boolean((!bootstrap && fleet.error) || (!fuel.data && fuel.error));
 
   return (
-    <section className="space-y-3">
-      <SectionHeader title="My vehicle & driving" icon={CarFront} description={`${String(driver.driverName || driver.name || 'Driver')} · ${String(driver.mobileNumber || 'no mobile on record')}`} />
-      <KpiGrid>
-        <KpiCard label="Assigned vehicle" value={String(driver.assignedVehicleNumber || 'Not assigned')} icon={CarFront} tone="blue" accent />
-        <KpiCard
-          label="Fleet trip"
-          value={tripsLoading ? '…' : openTrip ? `On a trip · ${openTrip.vehicleNumber}` : 'Not running'}
-          hint={tripsLoading ? 'Loading…' : `${tripsLabel} trip${tripsThisMonth === 1 ? '' : 's'} this month`}
-          icon={LocateFixed}
-          tone={openTrip ? 'emerald' : 'slate'}
-          href="/driver-management/fleet"
-          accent
-        />
-        <KpiCard label="Fuel entries" value={fuelLoading ? '…' : String(fuelThisMonth)} hint="This month" icon={Fuel} tone="amber" href="/driver-management/fuel" accent />
-      </KpiGrid>
-      {failed && <p className="text-xs text-amber-700">Your driving records could not be loaded just now.</p>}
+    <DriverPanelView
+      name={String(driver.driverName || driver.name || 'Driver')}
+      mobile={String(driver.mobileNumber || '')}
+      vehicleNumber={String(driver.assignedVehicleNumber || '')}
+      tripRunning={tripsLoading ? null : openTrip ? openTrip.vehicleNumber : false}
+      tripsLabel={tripsLoading ? '…' : `${tripsLabel}`}
+      fuelLabel={fuelLoading ? '…' : String(fuelThisMonth)}
+      failed={failed}
+    >
       {native && (
-        <details className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
+        <details className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
           <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-slate-700">
             <Smartphone className="h-4 w-4 text-slate-500" aria-hidden />
             This phone
@@ -122,6 +115,79 @@ export function DriverPanel({ driver }: { driver: Record<string, unknown> }) {
           </div>
         </details>
       )}
+    </DriverPanelView>
+  );
+}
+
+/** A vehicle number as a plate: the blue IND band, then the registration in a fixed-width face. */
+function NumberPlate({ number }: { number: string }) {
+  return (
+    <span className="keep-light inline-flex max-w-full items-stretch self-start sm:self-auto overflow-hidden rounded-md border-2 border-slate-800 bg-white shadow-sm">
+      <span className="flex w-5 shrink-0 items-end justify-center bg-blue-700 pb-0.5 text-[7px] font-bold text-white" aria-hidden>
+        IND
+      </span>
+      <span className="truncate px-2.5 py-1 font-mono text-base font-bold uppercase tracking-[0.12em] text-slate-900">{number}</span>
+    </span>
+  );
+}
+
+function DriverStat({ label, value, href, tone }: { label: string; value: string; href: string; tone?: 'live' }) {
+  return (
+    <Link href={href} className="min-w-0 rounded-xl bg-slate-50 px-3 py-2.5 transition-colors hover:bg-slate-100">
+      <span className="block truncate text-[11px] font-medium text-muted-foreground">{label}</span>
+      <span className={cn('mt-0.5 flex items-center gap-1.5 truncate text-sm font-semibold', tone === 'live' ? 'text-emerald-700' : 'text-slate-800')}>
+        {tone === 'live' && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />}
+        {value}
+      </span>
+    </Link>
+  );
+}
+
+/** The panel itself, from plain figures (`tripRunning`: null while loading, false, or the vehicle number). */
+export function DriverPanelView({
+  name,
+  mobile,
+  vehicleNumber,
+  tripRunning,
+  tripsLabel,
+  fuelLabel,
+  failed,
+  children,
+}: {
+  name: string;
+  mobile: string;
+  vehicleNumber: string;
+  tripRunning: string | false | null;
+  tripsLabel: string;
+  fuelLabel: string;
+  failed: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="driver-panel">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700" aria-hidden>
+            <CarFront className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 id="driver-panel" className="truncate text-sm font-semibold text-slate-800">
+              My vehicle &amp; driving
+            </h2>
+            <p className="truncate text-xs text-muted-foreground">
+              {name} · {mobile || 'no mobile on record'}
+            </p>
+          </div>
+        </div>
+        {vehicleNumber ? <NumberPlate number={vehicleNumber} /> : <span className="text-xs font-medium text-muted-foreground">No vehicle assigned</span>}
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <DriverStat label="Fleet trip" value={tripRunning === null ? '…' : tripRunning ? 'Running' : 'Not running'} href="/driver-management/fleet" tone={tripRunning ? 'live' : undefined} />
+        <DriverStat label="Trips this month" value={tripsLabel} href="/driver-management/fleet" />
+        <DriverStat label="Fuel this month" value={fuelLabel} href="/driver-management/fuel" />
+      </div>
+      {failed && <p className="text-xs text-amber-700">Your driving records could not be loaded just now.</p>}
+      {children}
     </section>
   );
 }
