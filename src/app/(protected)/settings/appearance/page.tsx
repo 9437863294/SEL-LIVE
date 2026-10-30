@@ -30,7 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ActionAnimationSettings } from '@/components/appearance/action-animation-settings';
 import { AppearanceGallery } from '@/components/appearance/AppearanceGallery';
-import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsSection, SwitchRow, usePreviewVisible, type Choice } from '@/components/appearance/controls';
+import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsColumns, SettingsSection, SwitchRow, usePreviewVisible, type Choice } from '@/components/appearance/controls';
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
 import { ThemeModeControl } from '@/components/theme/ThemeModeControl';
 import { useCompanyDesign } from '@/hooks/use-company-profile';
@@ -157,6 +157,7 @@ export default function MyAppearancePage() {
         {showPreview ? null : (
           <PreviewCollapsed title="Live preview" note="Sample screens — a dashboard, a table, an approval and notifications — in your current choices." onShow={() => setShowPreview(true)} />
         )}
+        <SettingsColumns single={showPreview}>
         <SettingsSection
           title="Theme"
           icon={Moon}
@@ -344,6 +345,9 @@ export default function MyAppearancePage() {
           />
         </SettingsSection>
 
+        </SettingsColumns>
+
+        {/* Full width: a list and an editor side by side, too much for half a page. */}
         <ActionAnimationSettings scope="personal" />
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">

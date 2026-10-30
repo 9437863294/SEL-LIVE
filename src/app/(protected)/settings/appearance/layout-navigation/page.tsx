@@ -3,7 +3,7 @@
 import { LayoutDashboard, LayoutGrid, PanelLeft, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChoiceGroup, SettingsSection, SwitchRow } from '@/components/appearance/controls';
+import { ChoiceGroup, SettingsColumns, SettingsSection, SwitchRow } from '@/components/appearance/controls';
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
 import { FloatingNavShowcase } from '@/components/navigation/FloatingNavShowcase';
 import type { Density, ModuleGrouping, SidebarDefault, SidebarMode } from '@/lib/appearance/model';
@@ -26,7 +26,7 @@ export default function LayoutNavigationPage() {
   ];
 
   return (
-    <div className="space-y-4">
+    <SettingsColumns>
       <SettingsSection title="Sidebars" icon={PanelLeft} description="How module menus open on larger screens. Phones always use the menu sheet and bottom bar.">
         <ChoiceGroup<SidebarDefault>
           label="Collapsible sidebars start"
@@ -120,6 +120,6 @@ export default function LayoutNavigationPage() {
       >
         <FloatingNavShowcase value={effective.navStyle} onChange={(value) => set('navStyle', value)} />
       </SettingsSection>
-    </div>
+    </SettingsColumns>
   );
 }

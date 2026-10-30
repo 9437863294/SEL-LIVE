@@ -52,27 +52,29 @@ export function ChoiceGroup<T extends string>({
   const labelId = useId();
   const descriptionId = useId();
   return (
-    <div className="space-y-2.5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
+    <div className="space-y-2">
+      <div className="min-w-0">
+        {/* The company-default state sits beside the setting's name, not at the far edge of the card
+            — on a wide screen that was a long way from the thing it describes. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p id={labelId} className="text-sm font-semibold">
             {label}
           </p>
-          {description && (
-            <p id={descriptionId} className="text-xs text-muted-foreground">
-              {description}
-            </p>
+          {companyDefault !== undefined && onReset && (
+            inherited ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Company default</span>
+            ) : (
+              <Button type="button" variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-[11px] text-primary hover:text-primary" onClick={onReset} disabled={disabled}>
+                <RotateCcw className="h-3 w-3" aria-hidden="true" />
+                Use company default
+              </Button>
+            )
           )}
         </div>
-        {companyDefault !== undefined && onReset && (
-          inherited ? (
-            <span className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">Company default</span>
-          ) : (
-            <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onReset} disabled={disabled}>
-              <RotateCcw className="h-3 w-3" aria-hidden="true" />
-              Use company default
-            </Button>
-          )
+        {description && (
+          <p id={descriptionId} className="text-xs text-muted-foreground">
+            {description}
+          </p>
         )}
       </div>
       <RadioGroupPrimitive.Root
@@ -81,11 +83,16 @@ export function ChoiceGroup<T extends string>({
         aria-labelledby={labelId}
         aria-describedby={description ? descriptionId : undefined}
         disabled={disabled}
+        // Cards keep a natural width: as many columns of at least this size as fit, and spare room
+        // left empty rather than spread across. Fixed column counts stretched three cards over a
+        // whole wide screen, with each radio circle a long way from its label. `columns` is the
+        // density of the option: 2 for wordy ones, 4 for short ones.
         className={cn(
-          'grid gap-2.5',
-          columns === 2 && 'grid-cols-1 sm:grid-cols-2',
-          columns === 3 && 'grid-cols-1 sm:grid-cols-3',
-          columns === 4 && 'grid-cols-2 lg:grid-cols-4',
+          'grid gap-2',
+          columns === 2 && 'grid-cols-[repeat(auto-fill,minmax(min(100%,17rem),1fr))]',
+          // Two across on a phone (10rem), so a short three-way choice is not three full-width rows.
+          columns === 3 && 'grid-cols-[repeat(auto-fill,minmax(min(100%,10rem),1fr))] sm:grid-cols-[repeat(auto-fill,minmax(min(100%,13rem),1fr))]',
+          columns === 4 && 'grid-cols-[repeat(auto-fill,minmax(min(100%,9.5rem),1fr))]',
         )}
       >
         {options.map((option) => {
@@ -94,9 +101,11 @@ export function ChoiceGroup<T extends string>({
             <RadioGroupPrimitive.Item
               key={option.value}
               value={option.value}
+              // A 1px border, with a ring on the selected card rather than a thicker border, so
+              // selecting never shifts the layout; tighter padding than the old 0.75rem + 2px border.
               className={cn(
-                'relative flex min-h-[3.25rem] flex-col gap-2 rounded-xl border-2 p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
-                selected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-muted/40',
+                'relative flex flex-col gap-1.5 rounded-lg border px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60',
+                selected ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:border-primary/40 hover:bg-muted/40',
               )}
             >
               {option.preview && <span className="block" aria-hidden="true">{option.preview}</span>}
@@ -106,16 +115,16 @@ export function ChoiceGroup<T extends string>({
                     {option.label}
                     {companyDefault === option.value && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">(default)</span>}
                   </span>
-                  {option.description && <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>}
+                  {option.description && <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{option.description}</span>}
                 </span>
                 <span
                   aria-hidden="true"
                   className={cn(
-                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
+                    'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
                     selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
                   )}
                 >
-                  {selected && <Check className="h-3 w-3" />}
+                  {selected && <Check className="h-2.5 w-2.5" />}
                 </span>
               </span>
             </RadioGroupPrimitive.Item>
@@ -147,7 +156,7 @@ export function SwitchRow({
   const id = useId();
   const descriptionId = useId();
   return (
-    <div className="flex items-start justify-between gap-4 rounded-xl border border-border p-3">
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border px-3 py-2.5">
       <div className="min-w-0">
         <label htmlFor={id} className="text-sm font-semibold">
           {label}
@@ -181,23 +190,43 @@ export function SettingsSection({
   children: ReactNode;
   action?: ReactNode;
 }) {
+  // Compact by design: a 1rem card padding and 1.25rem between settings. The 1.5rem padding and
+  // 1.5rem gaps this had read as mostly empty space once a page used its full width.
   return (
-    <Card>
+    <Card className="[--card-pad:1rem]">
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
+          {/* `flex-1`, so a long description wraps beside the action instead of pushing it onto a
+              line of its own. */}
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
-              <CardTitle>{title}</CardTitle>
+              {Icon && (
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-4 w-4" />
+                </span>
+              )}
+              <CardTitle className="text-base">{title}</CardTitle>
             </div>
-            {description && <CardDescription className="mt-1">{description}</CardDescription>}
+            {description && <CardDescription className="mt-1 text-xs">{description}</CardDescription>}
           </div>
           {action}
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">{children}</CardContent>
+      <CardContent className="space-y-5">{children}</CardContent>
     </Card>
   );
+}
+
+/**
+ * Settings sections side by side on a wide screen, one column below `xl`. Columns flow like a
+ * masonry wall (CSS columns), so a short section never leaves a gap under a tall neighbour the way a
+ * grid row does; no section is ever split across the two.
+ */
+export function SettingsColumns({ children, single, className }: { children: ReactNode; /** One column whatever the width — e.g. beside an open preview. */ single?: boolean; className?: string }) {
+  if (single) return <div className={cn('space-y-4', className)}>{children}</div>;
+  // `max-xl:space-y-4`, not `space-y-4 xl:space-y-0`: space-y's own selector outranks `[&>*]:mb-4`, so
+  // the reset zeroed every section's bottom margin but the first and the columns lost their gaps.
+  return <div className={cn('max-xl:space-y-4 xl:columns-2 xl:gap-4 [&>*]:break-inside-avoid xl:[&>*]:mb-4', className)}>{children}</div>;
 }
 
 /**
@@ -344,11 +373,17 @@ export function PreviewToggle({ visible, onToggle, className }: { visible: boole
 /** What stands in for a hidden preview: one slim line with the button to bring it back. */
 export function PreviewCollapsed({ title = 'Preview', note, onShow }: { title?: string; note?: string; onShow: () => void }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-sm">
+    // On a phone the note drops to its own line under the title and button, instead of being squeezed
+    // into a sliver between them.
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-dashed px-3 py-2 text-sm">
       <Eye className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <span className="font-medium">{title}</span>
-      {note ? <span className="min-w-0 flex-1 text-xs text-muted-foreground">{note}</span> : <span className="flex-1" />}
-      <PreviewToggle visible={false} onToggle={onShow} />
+      {note ? (
+        <span className="order-last w-full text-xs text-muted-foreground sm:order-none sm:w-auto sm:min-w-0 sm:flex-1">{note}</span>
+      ) : (
+        <span className="flex-1" />
+      )}
+      <PreviewToggle visible={false} onToggle={onShow} className="ml-auto" />
     </div>
   );
 }
