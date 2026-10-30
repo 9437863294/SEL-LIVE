@@ -18,6 +18,10 @@
  *               out: a debit note billing the balance of the value — `note-rules.ts`)
  *   certified   what the client approved and deducts
  *
+ * A debit note is certified too when Settings → Workflow says so (`canBeCertified`). Its notes are
+ * those raised to settle it (`adjustsNoteId`): against its invoice, since a note is never raised
+ * against another note, and compared with the debit note alone — never with the invoice.
+ *
  * and `pending = certified − (raised + notes)` is what a note still has to adjust — for the taxable,
  * the GST components and the gross. When the taxable and the GST match within the amount tolerance,
  * the bill is "matched", whatever the deductions did; until then `suggestedNote` spells out the note
@@ -31,24 +35,47 @@
  */
 
 import { roundMoney, subtractMoney, sumBy, sumMoney, toPaise } from './money.ts';
-import type { Bill, BillCertification, BillDeduction, BillTransactionType, CertificationReceiptRule, CertificationState, DeductionKind, GstType } from './types';
+import type { Bill, BillCertification, BillDeduction, BillTrackingSettings, BillTransactionType, CertificationReceiptRule, CertificationState, DeductionKind, GstType } from './types';
 
 export const isNoteType = (type: BillTransactionType): boolean => type === 'credit_note' || type === 'debit_note';
 
-/** Invoices, retention bills, advances and adjustments are certified by the client; notes are SEL's own. */
-export const canBeCertified = (bill: Pick<Bill, 'transactionType' | 'isDeleted'>): boolean => !bill.isDeleted && !isNoteType(bill.transactionType);
+/** A debit note billing the balance under a note rule: it carries lines taken of the invoice plus its notes. */
+export const billsBalanceUnderRule = (bill: Pick<Bill, 'transactionType' | 'deductions'>): boolean =>
+  bill.transactionType === 'debit_note' && (bill.deductions ?? []).some((line) => line.invoiceBase !== undefined || line.ownBase);
 
-/** Types the "no payment before certification" rule can cover (notes are never certified). */
-export const CERTIFIABLE_TYPES: readonly BillTransactionType[] = ['invoice', 'retention_bill', 'adjustment', 'advance'];
+/** What decides whether a bill is certified: which debit notes the client certifies (Settings → Workflow). */
+export type CertificationScope = Pick<BillTrackingSettings, 'debitNoteCertification'>;
+
+type CertifiableBill = Pick<Bill, 'transactionType' | 'isDeleted' | 'deductions' | 'adjustsNoteId'>;
+
+/**
+ * Invoices, retention bills, advances and adjustments are certified by the client; so are the debit
+ * notes Settings names — every one, or only those billing the balance under a note rule. A credit
+ * note, and a note settling a debit note's certification, are SEL's own corrections: never certified.
+ */
+export function canBeCertified(bill: CertifiableBill, settings: CertificationScope): boolean {
+  if (bill.isDeleted || bill.transactionType === 'credit_note') return false;
+  if (bill.transactionType !== 'debit_note') return true;
+  if (bill.adjustsNoteId) return false;
+  const scope = settings.debitNoteCertification ?? 'none';
+  return scope === 'all' || (scope === 'note_rule' && billsBalanceUnderRule(bill));
+}
+
+/** Types the "no payment before certification" rule can cover (a debit note only when Settings has it certified). */
+export const CERTIFIABLE_TYPES: readonly BillTransactionType[] = ['invoice', 'retention_bill', 'adjustment', 'advance', 'debit_note'];
 
 /**
  * Why a receipt cannot be allocated to this bill yet, or null if it can: the rule is on, covers the
- * bill's type, the bill is not exempt (migrated, or dated before the rule's start), and the client
- * has not certified it.
+ * bill's type, the bill is one the client certifies, it is not exempt (migrated, or dated before the
+ * rule's start), and the client has not certified it.
  */
-export function receiptBlockReason(bill: Pick<Bill, 'transactionType' | 'source' | 'billDate' | 'certification' | 'gstInvoiceNumber' | 'billSerialNumber'>, rule: CertificationReceiptRule | undefined): string | null {
+export function receiptBlockReason(
+  bill: CertifiableBill & Pick<Bill, 'source' | 'billDate' | 'certification' | 'gstInvoiceNumber' | 'billSerialNumber'>,
+  settings: CertificationScope & { certificationBeforeReceipt?: CertificationReceiptRule },
+): string | null {
+  const rule = settings.certificationBeforeReceipt;
   if (!rule?.enabled || bill.certification) return null;
-  if (!rule.transactionTypes.includes(bill.transactionType)) return null;
+  if (!rule.transactionTypes.includes(bill.transactionType) || !canBeCertified(bill, settings)) return null;
   if (rule.exemptImported && bill.source === 'excel_import') return null;
   if (rule.fromDate && bill.billDate < rule.fromDate) return null;
   const reference = bill.gstInvoiceNumber || bill.billSerialNumber || 'This bill';
@@ -95,14 +122,16 @@ export const certifiedFigures = (certification: BillCertification): ComparableFi
 });
 
 /**
- * The notes a certification is compared with: the live ones, less any a note rule leaves out — a
- * debit note billing the balance of the value rather than correcting the invoice (`outsideCertification`).
+ * The notes a certification is compared with. For an invoice: the live notes against it, less any a
+ * note rule leaves out — a debit note billing the balance of the value rather than correcting the
+ * invoice (`outsideCertification`) — and less those settling a debit note's own certification. For a
+ * certified debit note: the live notes settling it (`adjustsNoteId`).
  */
-export const comparedNotes = <T extends Pick<Bill, 'isDeleted' | 'outsideCertification'>>(notes: readonly T[]): T[] => notes.filter((note) => !note.isDeleted && !note.outsideCertification);
+export const comparedNotes = <T extends Pick<Bill, 'isDeleted' | 'outsideCertification' | 'adjustsNoteId'>>(bill: Pick<Bill, 'id' | 'transactionType'>, notes: readonly T[]): T[] =>
+  notes.filter((note) => !note.isDeleted && (bill.transactionType === 'debit_note' ? note.adjustsNoteId === bill.id : !note.outsideCertification && !note.adjustsNoteId));
 
-/** The compared notes against one bill, added together (credit notes carry negative figures). */
-export function notesFigures(notes: readonly Bill[]): ComparableFigures {
-  const live = comparedNotes(notes);
+/** Compared notes (`comparedNotes`) added together (credit notes carry negative figures). */
+function notesFigures(live: readonly Bill[]): ComparableFigures {
   return {
     taxableAmount: sumBy(live, (note) => note.taxableAmount),
     gstAmount: sumBy(live, (note) => note.gstAmount),
@@ -194,6 +223,10 @@ export interface CertificationSummary {
 /** The credit (or debit) note that makes the invoice value of raised + notes equal the certification. */
 export interface SuggestedNote {
   transactionType: 'credit_note' | 'debit_note';
+  /** The invoice it is raised against: the certified bill — or, for a certified debit note, that note's invoice (none when unlinked). */
+  againstBillId?: string;
+  /** For a certified debit note: the note it settles (`Bill.adjustsNoteId`). */
+  adjustsNoteId?: string;
   taxableAmount: number;
   gstType?: GstType;
   gstPercent?: number;
@@ -226,7 +259,7 @@ const pendingFigure = (pick: (figures: ComparableFigures) => number, raised: Com
 
 /** Just the state and headline figures — what the register needs per row. */
 export function certificationSummary(bill: Bill, notes: readonly Bill[], tolerance: number): CertificationSummary {
-  const live = comparedNotes(notes);
+  const live = comparedNotes(bill, notes);
   const raised = raisedFigures(bill);
   const fromNotes = notesFigures(live);
   const certification = bill.certification;
@@ -258,7 +291,7 @@ export function certificationSummary(bill: Bill, notes: readonly Bill[], toleran
 
 /** Every line, raised vs notes vs certified, plus the note still to raise. */
 export function compareCertification(bill: Bill, notes: readonly Bill[], tolerance: number): CertificationComparison {
-  const live = comparedNotes(notes);
+  const live = comparedNotes(bill, notes);
   const summary = certificationSummary(bill, live, tolerance);
   const raised = raisedFigures(bill);
   const fromNotes = notesFigures(live);
@@ -369,8 +402,13 @@ function suggestNote(bill: Bill, raised: ComparableFigures, fromNotes: Comparabl
   const reduces = toPaise(gross) !== 0 ? gross < 0 : taxableAmount < 0;
   const reference = bill.certification?.reference ? ` ${bill.certification.reference}` : '';
   const invoice = bill.gstInvoiceNumber || bill.billSerialNumber || bill.id;
+  // A note never adjusts another note: one settling a debit note's certification is raised against
+  // that note's invoice and names the debit note it settles.
+  const ofNote = bill.transactionType === 'debit_note';
   return {
     transactionType: reduces ? 'credit_note' : 'debit_note',
+    againstBillId: ofNote ? bill.againstBillId : bill.id,
+    adjustsNoteId: ofNote ? bill.id : undefined,
     taxableAmount,
     gstType,
     gstPercent: bill.gstPercent ?? bill.certification?.gstPercent,
@@ -379,7 +417,7 @@ function suggestNote(bill: Bill, raised: ComparableFigures, fromNotes: Comparabl
     sgstAmount,
     igstAmount,
     netAmount: roundMoney(gross),
-    description: `To match client certification${reference} of ${bill.certification?.certifiedDate ?? ''} against invoice ${invoice}`.replace(/\s+/g, ' ').trim(),
+    description: `To match client certification${reference} of ${bill.certification?.certifiedDate ?? ''} against ${ofNote ? 'debit note' : 'invoice'} ${invoice}`.replace(/\s+/g, ' ').trim(),
   };
 }
 
@@ -428,12 +466,17 @@ export function certificationTotals(summaries: readonly CertificationSummary[]):
   };
 }
 
-/** Live notes grouped by the bill they are raised against. */
+/**
+ * Live notes grouped by the bill they are raised against — and a note settling a debit note's
+ * certification under that debit note too, so each certified bill finds the notes it is compared with.
+ */
 export function notesByInvoice(bills: readonly Bill[]): Map<string, Bill[]> {
   const map = new Map<string, Bill[]>();
+  const put = (key: string, bill: Bill) => map.set(key, [...(map.get(key) ?? []), bill]);
   for (const bill of bills) {
-    if (bill.isDeleted || !bill.againstBillId || !isNoteType(bill.transactionType)) continue;
-    map.set(bill.againstBillId, [...(map.get(bill.againstBillId) ?? []), bill]);
+    if (bill.isDeleted || !isNoteType(bill.transactionType)) continue;
+    if (bill.againstBillId) put(bill.againstBillId, bill);
+    if (bill.adjustsNoteId) put(bill.adjustsNoteId, bill);
   }
   return map;
 }

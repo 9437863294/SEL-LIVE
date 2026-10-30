@@ -3,7 +3,8 @@
 /**
  * Settings → Workflow: the bill's steps, one card a step, laid out as Recurring Payments' workflow
  * is — the step's number, name and meaning across the top, how it is run on the left and who runs it
- * on the right — plus the rule that payment waits for the client's certification.
+ * on the right — plus which debit notes the client certifies and the rule that payment waits for
+ * the client's certification.
  *
  * The steps are configuration (see `workflow.ts`): review steps can be added, renamed, removed and
  * moved anywhere between Draft and Closed; the role steps — Bill raised, Certified by client,
@@ -14,7 +15,7 @@
  */
 
 import { useId, useState } from 'react';
-import { ArrowDown, ArrowUp, Bell, ChevronDown, KeyRound, Lock, Plus, ShieldCheck, Trash2, Undo2, UserCheck, Users, Workflow } from 'lucide-react';
+import { ArrowDown, ArrowUp, Bell, ChevronDown, ClipboardCheck, KeyRound, Lock, Plus, ShieldCheck, Trash2, Undo2, UserCheck, Users, Workflow } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,10 +27,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { CERTIFIABLE_TYPES } from '@/lib/bill-tracking/certification';
 import { completeWorkflowStep, defaultWorkflowStep, isOptionalStep, isRoleStep, normaliseWorkflowSteps, permissionText, workflowProblem } from '@/lib/bill-tracking/workflow';
 import {
+  DEBIT_NOTE_CERTIFICATION,
+  DEBIT_NOTE_CERTIFICATION_LABELS,
   TRANSACTION_TYPE_LABELS,
   WORKFLOW_STEP_PERMISSIONS,
   type BillWorkflowStatus,
   type CertificationReceiptRule,
+  type DebitNoteCertification,
   type WorkflowAssignment,
   type WorkflowStepPermission,
   type WorkflowStepSetting,
@@ -44,6 +48,12 @@ interface UserOption {
   email?: string;
 }
 
+const DEBIT_NOTE_HINTS: Record<DebitNoteCertification, string> = {
+  none: 'Debit notes are SEL’s own adjustments; they never ask for certification.',
+  note_rule: 'Only a debit note billing the balance under a note rule (SUPPLY-60% / 70%) asks for certification.',
+  all: 'Every debit note asks for certification, like an invoice — except a note settling another debit note’s certification.',
+};
+
 /** A fresh id for a step added here — the shape `workflow.ts` accepts, unlikely to repeat. */
 const newStepId = (taken: readonly string[]) => {
   let id = '';
@@ -55,6 +65,8 @@ const newStepId = (taken: readonly string[]) => {
 export function WorkflowSettings({
   rule,
   onRuleChange,
+  debitNotes,
+  onDebitNotesChange,
   steps,
   onStepsChange,
   users,
@@ -62,6 +74,8 @@ export function WorkflowSettings({
 }: {
   rule: CertificationReceiptRule;
   onRuleChange: (rule: CertificationReceiptRule) => void;
+  debitNotes: DebitNoteCertification;
+  onDebitNotesChange: (value: DebitNoteCertification) => void;
   steps: WorkflowStepSetting[];
   onStepsChange: (steps: WorkflowStepSetting[]) => void;
   users: UserOption[];
@@ -230,6 +244,26 @@ export function WorkflowSettings({
       </div>
 
       <div className="space-y-4 xl:self-start">
+        <FormSection icon={ClipboardCheck} title="Debit notes the client certifies" description="Invoices, retention bills, advances and adjustments are always certified; credit notes never are.">
+          <FormField label="Certified by the client" hint={DEBIT_NOTE_HINTS[debitNotes]}>
+            <Select value={debitNotes} onValueChange={(value) => onDebitNotesChange(value as DebitNoteCertification)} disabled={disabled}>
+              <SelectTrigger aria-label="Debit notes the client certifies" className="text-left">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DEBIT_NOTE_CERTIFICATION.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {DEBIT_NOTE_CERTIFICATION_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+          <p className="text-xs leading-relaxed text-slate-600">
+            When the client certifies a debit note for a different taxable or GST, the note that settles it is raised against the same invoice and names the debit note. It is compared with that debit note only, never with the invoice.
+          </p>
+        </FormSection>
+
         <FormSection icon={ShieldCheck} title="Payment needs client certification" description="Recording or verifying a receipt is refused until the bill’s client certification is recorded.">
           <ToggleRow
             label="Only receive payment against certified bills"
@@ -240,7 +274,7 @@ export function WorkflowSettings({
           />
 
           <div className={cn('space-y-4', !rule.enabled && 'pointer-events-none opacity-50')} aria-disabled={!rule.enabled}>
-            <FormField label="Applies to" hint="Credit and debit notes are never certified, so they are never blocked.">
+            <FormField label="Applies to" hint="Credit notes are never certified, so they are never blocked; a debit note only when the client certifies it (above).">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
                 {CERTIFIABLE_TYPES.map((type) => (
                   <label key={type} className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-sm">

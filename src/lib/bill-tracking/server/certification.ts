@@ -18,8 +18,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { deriveBillTotals, grossAmount, netReceivable, totalDeduction } from '../calculations.ts';
 import { canBeCertified } from '../certification.ts';
 import { roundMoney, toPaise } from '../money.ts';
+import { baseBesidesNote, ruleHeadsOf, withNoteFigures, type BaseBesidesNote } from '../note-rules.ts';
 import type { CertificationInput } from '../schemas';
-import type { Bill, BillCertification } from '../types';
+import type { Bill, BillCertification, BillTrackingConfig } from '../types';
 import { certificationAdvances, certificationBlocked } from '../workflow.ts';
 import { assertMonthOpen, calculationOptions, composeGst, derivedFields, notifyWaiting, resolveDeductions, totalsUpdate, workflowActor } from './bills';
 import { BtError, db, type BtContext } from './context';
@@ -38,9 +39,28 @@ const headline = (certification: Pick<BillCertification, 'taxableAmount' | 'gstA
 const receivable = (bill: Pick<Bill, 'netReceivable' | 'outstandingAmount'>) => ({ netReceivable: bill.netReceivable, outstandingAmount: bill.outstandingAmount });
 const netChange = (before: number, after: number) => (toPaise(before) === toPaise(after) ? `net receivable ${after}, unchanged` : `net receivable ${before} → ${after}`);
 
+/**
+ * A debit note billing the balance under a note rule: the invoice and the notes before it, which its
+ * certified lines of the rule's heads are taken of together with the note as certified — the same
+ * heads, invoice and notes its raised lines were (`note-rules.ts`). Undefined for any other bill.
+ */
+export async function certificationRuleBase(context: BtContext, bill: StoredBill | Bill, types: BillTrackingConfig['deductionTypes']): Promise<BaseBesidesNote | undefined> {
+  const heads = ruleHeadsOf(bill);
+  if (bill.transactionType !== 'debit_note' || !bill.againstBillId || !heads.length) return undefined;
+  const firestore = db();
+  const [invoice, siblings] = await Promise.all([firestore.collection(BT_COLLECTIONS.bills).doc(bill.againstBillId).get(), firestore.collection(BT_COLLECTIONS.bills).where('againstBillId', '==', bill.againstBillId).get()]);
+  const stored = invoice.data() as StoredBill | undefined;
+  if (!stored || stored.organizationId !== context.organizationId) return undefined;
+  const notes = siblings.docs.map((doc) => ({ ...(doc.data() as StoredBill), id: doc.id })).filter((note) => note.organizationId === context.organizationId && !note.isDeleted);
+  return baseBesidesNote(stored, notes, bill, heads, types);
+}
+
 export async function recordCertification(context: BtContext, billId: string, input: CertificationInput): Promise<{ revision: number }> {
   const config = await loadConfig(context.organizationId);
   const ref = db().collection(BT_COLLECTIONS.bills).doc(billId);
+  // Read ahead of the transaction: other bills, which a certification never changes.
+  const preview = await ref.get();
+  const ruleBase = preview.exists ? await certificationRuleBase(context, { ...(preview.data() as StoredBill), id: preview.id }, config.deductionTypes) : undefined;
   let revision = 0;
   let advanced: StoredBill | undefined;
   await db().runTransaction(async (transaction) => {
@@ -51,7 +71,15 @@ export async function recordCertification(context: BtContext, billId: string, in
     if (bill.isDeleted) throw new BtError('A deleted bill cannot be certified.', 410);
     const blocked = certificationBlocked(bill, config.settings, workflowActor(context));
     if (blocked) throw new BtError(blocked, 403);
-    if (!canBeCertified(bill)) throw new BtError('Credit and debit notes are not certified by the client — certify the invoice they adjust.');
+    if (!canBeCertified(bill, config.settings) && !bill.certification) {
+      throw new BtError(
+        bill.transactionType === 'debit_note'
+          ? bill.adjustsNoteId
+            ? 'This note settles another debit note’s certification; it is not certified itself.'
+            : 'Settings → Workflow does not have the client certify this debit note.'
+          : 'Credit notes are not certified by the client — certify the invoice they adjust.',
+      );
+    }
     // The certified deductions change what a bill dated in a closed month is paid.
     assertMonthOpen(context, config, [bill.billDate], 'Recording the client’s certification of a bill dated in it');
     const previous = bill.certification;
@@ -69,8 +97,10 @@ export async function recordCertification(context: BtContext, billId: string, in
       sgstAmount: input.sgstAmount,
       igstAmount: input.igstAmount,
     });
-    // A deduction type retired since stays valid if the bill or the earlier certification used it.
-    const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType }, [...(previous?.deductions ?? []), ...(bill.deductions ?? [])]);
+    // A deduction type retired since stays valid if the bill or the earlier certification used it. A
+    // balance debit note's rule heads are taken of the invoice plus its notes, with this note as certified.
+    const invoiceBase = ruleBase ? withNoteFigures(ruleBase, { taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount }) : undefined;
+    const deductions = resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType, invoiceBase }, [...(previous?.deductions ?? []), ...(bill.deductions ?? [])]);
     const gross = grossAmount(input.taxableAmount, gst.gstAmount);
     const deducted = totalDeduction(deductions);
     revision = (previous?.revision ?? 0) + 1;

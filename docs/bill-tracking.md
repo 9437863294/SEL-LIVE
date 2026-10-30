@@ -149,6 +149,27 @@ kinds of difference are settled differently:
 
 - **Deductions on a note.** If the client also deducts something on a note itself (TDS on a debit
   note, say), enter it on the note. It counts in the note's own net, like any bill's deductions.
+- **Debit notes certified too (2026-10-30).** Settings → Workflow → *Debit notes the client
+  certifies* (`settings.debitNoteCertification`): *No debit notes*, *Only balance debit notes* (those
+  carrying lines a note rule took of the invoice plus its notes) or *Every debit note* — the default.
+  Credit notes are never certified (`canBeCertified` in `certification.ts`).
+  - A certified debit note works like a certified invoice: Record certification, its certified
+    deductions apply, it shows in the Client certified tab, the dashboard and the exceptions, and the
+    *no payment before certification* rule can cover it (tick *Debit Note* under *Applies to*).
+  - **Settled by a note against its invoice.** A note is never raised against another note, so the
+    note settling a debit note's certification is raised against the debit note's invoice and names
+    the debit note (`adjustsNoteId` / `adjustsNoteRef`). The debit note's comparison counts only such
+    notes; the invoice's comparison leaves them out. *Raise credit note* on a certified debit note
+    fills this in. A debit note not linked to an invoice must be linked first.
+  - A settled debit note cannot be deleted, moved, re-linked to another invoice or turned into another
+    type while notes settle it. A note settling one is never certified itself.
+  - **Balance debit notes.** The certified lines of the rule's heads are taken of the invoice plus the
+    notes before it, plus the debit note **as certified**: ₹600 + ₹300 certified at ₹250 → 20% + 10%
+    of ₹850 = ₹170 + ₹85 (`baseBesidesNote` + `withNoteFigures` in `note-rules.ts`). The heads are the
+    ones the note was saved under (`ruleHeadsOf`), whatever the rule says by then. A later balance
+    note counts what a certified one holds as certified.
+  - Narrowing the setting later leaves a debit note already certified with its certification: it
+    still shows, and it can be corrected or removed.
 - **Stored totals.** A bill's `totalDeduction`, `netReceivable`, `retentionDeducted` and
   `outstandingAmount` are worked out from its effective deductions: the certified ones once it is
   certified (`effectiveDeductions` in `calculations.ts`). `raisedTotalDeduction` and
@@ -193,8 +214,8 @@ Where it shows:
     off. A skipped stage gets no button, and a returned bill steps back past it. Up to Bill raised the
     stages are taken strictly in order (2026-10-28): a bill moves only into the next stage in use,
     so it cannot be raised without being submitted, or approved without being verified, while those
-    stages are on. After Bill raised the moves stay free (a note is never certified; a paid bill may
-    close from any later stage).
+    stages are on. After Bill raised the moves stay free (a credit note is never certified; a paid bill
+    may close from any later stage).
   - **Moved here by.** Who moves a bill into the stage:
     - anyone with the role permission (the default);
     - named people;

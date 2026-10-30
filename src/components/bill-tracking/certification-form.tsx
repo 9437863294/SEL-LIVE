@@ -30,6 +30,7 @@ import { grossAmount, netReceivable, totalDeduction } from '@/lib/bill-tracking/
 import { deductionsByType, raisedFigures, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { withNoteFigures, type BaseBesidesNote } from '@/lib/bill-tracking/note-rules';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
@@ -42,6 +43,8 @@ import { DeductionEditor, deductionInputs, emptyDeductionRow, num, rowsFromDeduc
 interface Detail {
   bill: Bill;
   certification: CertificationComparison | null;
+  /** A balance debit note: the invoice plus the notes before it, which its rule heads are taken of with the note as certified. */
+  certificationRuleBase?: BaseBesidesNote | null;
 }
 
 interface FormState {
@@ -200,7 +203,9 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const gross = grossAmount(taxable, gstTotal);
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   const inputs = deductionInputs(form.deductions);
-  const lines = computeDeductions(inputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType });
+  // A balance debit note's rule heads are taken of the invoice plus its notes, with this note as certified — as the server will.
+  const ruleBase = detail.certificationRuleBase ? withNoteFigures(detail.certificationRuleBase, { taxableAmount: taxable, gstAmount: gstTotal }) : undefined;
+  const lines = computeDeductions(inputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: ruleBase });
   const deducted = totalDeduction(lines);
   const net = netReceivable(gross, deducted, config.settings.roundNetToRupee);
   const raisedByType = useMemo(() => new Map([...deductionsByType(bill.deductions ?? []).entries()].map(([id, entry]) => [id, entry.amount])), [bill.deductions]);
@@ -301,7 +306,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
         <dl className="grid grid-cols-2 border-t border-slate-200 sm:grid-cols-4">
           {(
             [
-              ['Invoice', <span key="ref" className="break-all">{reference}</span>],
+              [bill.transactionType === 'debit_note' ? 'Debit note' : 'Invoice', <span key="ref" className="break-all">{reference}</span>],
               ['Bill date', dateText(bill.billDate)],
               ['Raised net', <Amount key="net" value={raised.net} signed />],
               ['Stage', <WorkflowStatusBadge key="stage" status={bill.workflowStatus} />],
@@ -492,6 +497,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               reference={{ label: 'Raised', byType: raisedByType }}
               // Once certified, these are the retention lines the rate slabs hold, read against the certified figures.
               bases={{ taxable, gross }}
+              invoiceBase={ruleBase ? { deductionTypeIds: ruleBase.deductionTypeIds, reference: bill.againstBillRef ?? 'the invoice' } : undefined}
             />
           </FormSection>
         </div>

@@ -26,6 +26,9 @@
  * Retention on such a line counts at its own rate, 20% and 10%, never shared over the invoice's; a line
  * typed as an amount is read against the same base (`retention.ts`).
  *
+ * When the client certifies such a note (Settings → Workflow), its certified lines take the same heads
+ * of the same invoice and earlier notes plus the note as certified (`baseBesidesNote` + `withNoteFigures`).
+ *
  * Pure: the server, the bill form, Settings and the tests share it.
  */
 
@@ -44,8 +47,11 @@ export function noteRuleFor(rules: readonly NoteRule[] | undefined, noteType: Bi
 /** A bill's figures as the base reads them; its deduction lines, when given, say what it already holds. */
 type Figures = Pick<Bill, 'taxableAmount' | 'gstAmount'> & { deductions?: readonly BillDeduction[] | null };
 
-/** A note against the invoice, as the base reads it; `createdAt` orders two notes of the same day. */
-export type GroupNote = Figures & Pick<Bill, 'id' | 'billDate' | 'transactionType'> & { isDeleted?: boolean; createdAt?: string };
+/**
+ * A note against the invoice, as the base reads it; `createdAt` orders two notes of the same day. A
+ * certified debit note holds its certified lines.
+ */
+export type GroupNote = Figures & Pick<Bill, 'id' | 'billDate' | 'transactionType'> & { isDeleted?: boolean; createdAt?: string; certification?: Pick<BillCertification, 'deductions' | 'taxableAmount' | 'grossAmount'> | null };
 
 /** The note being saved: its figures as entered (it may be new, so no id or `createdAt` yet). */
 export type SavingNote = Figures & { id?: string; billDate: string; createdAt?: string };
@@ -101,9 +107,41 @@ function heldBefore(invoice: InvoiceFigures, earlier: readonly GroupNote[], head
   };
   const invoiceGross = invoice.grossAmount ?? sumMoney([invoice.taxableAmount, invoice.gstAmount]);
   add(retentionSource({ deductions: [...(invoice.deductions ?? [])], taxableAmount: invoice.taxableAmount, grossAmount: invoiceGross, certification: invoice.certification }));
-  for (const note of earlier) add({ deductions: note.deductions, taxableAmount: note.taxableAmount, grossAmount: sumMoney([note.taxableAmount, note.gstAmount]) });
+  for (const note of earlier) add(retentionSource({ deductions: [...(note.deductions ?? [])], taxableAmount: note.taxableAmount, grossAmount: sumMoney([note.taxableAmount, note.gstAmount]), certification: note.certification }));
   return held;
 }
+
+/** A note's base under a rule, the note itself left out: the invoice plus the notes before it, and what they hold. */
+export interface BaseBesidesNote extends InvoiceBase {
+  deductionTypeIds: readonly string[];
+  held: Record<string, number>;
+}
+
+/**
+ * The invoice plus the notes before `note` (`notesBefore`), the heads taken of it, and what those
+ * already hold at each of their rates (`types` reads the rates; without it nothing counts as held).
+ * Add the note's own figures (`withNoteFigures`) — as raised, or as the client certified them.
+ */
+export function baseBesidesNote(invoice: InvoiceFigures, notes: readonly GroupNote[], note: SavingNote, headIds: readonly string[], types: readonly DeductionTypeMaster[] = []): BaseBesidesNote {
+  const earlier = notesBefore(notes, note);
+  const all = [invoice, ...earlier];
+  const taxable = sumMoney(all.map((bill) => bill.taxableAmount));
+  return { taxable, gross: sumMoney([taxable, ...all.map((bill) => bill.gstAmount)]), deductionTypeIds: headIds, held: types.length ? heldBefore(invoice, earlier, headIds, types) : {} };
+}
+
+/** The base with the note's own taxable and GST added. */
+export const withNoteFigures = (besides: BaseBesidesNote, note: Pick<Bill, 'taxableAmount' | 'gstAmount'>): BaseBesidesNote => ({
+  ...besides,
+  taxable: sumMoney([besides.taxable, note.taxableAmount]),
+  gross: sumMoney([besides.gross, note.taxableAmount, note.gstAmount]),
+});
+
+/**
+ * The heads a debit note took under its rule, as saved: those of its lines taken of the invoice plus
+ * its notes, or taken of the note alone by choice. Its certification takes the same heads that way,
+ * whatever the rule says by then — the note was issued under it.
+ */
+export const ruleHeadsOf = (note: Pick<Bill, 'deductions'>): string[] => [...new Set((note.deductions ?? []).filter((line) => line.invoiceBase !== undefined || line.ownBase).map((line) => line.deductionTypeId))];
 
 /**
  * What a note's deductions are taken of under a rule — the invoice plus its notes, the heads taken that
@@ -116,11 +154,10 @@ export function noteDeductionBase(
   invoice: InvoiceFigures | null | undefined,
   notes: readonly GroupNote[],
   types: readonly DeductionTypeMaster[] = [],
-): (InvoiceBase & { rule: NoteRule; deductionTypeIds: readonly string[]; held: Record<string, number> }) | undefined {
+): (BaseBesidesNote & { rule: NoteRule }) | undefined {
   const rule = noteRuleFor(rules, note.transactionType, invoice);
   if (!rule || !invoice) return undefined;
-  const held = types.length ? heldBefore(invoice, notesBefore(notes, note), rule.deductionTypeIds, types) : {};
-  return { ...invoiceWithNotes(invoice, notes, note), rule, deductionTypeIds: rule.deductionTypeIds, held };
+  return { ...withNoteFigures(baseBesidesNote(invoice, notes, note, rule.deductionTypeIds, types), note), rule };
 }
 
 /** Rules as saved: names trimmed, each id once, and only sub categories and heads still in Settings. */

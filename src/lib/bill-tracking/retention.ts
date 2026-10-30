@@ -284,7 +284,7 @@ export function retentionBifurcation(bills: readonly Bill[], releases: readonly 
   const ruleLines = new Map<string, BillDeduction[]>();
   for (const bill of byId.values()) {
     if (bill.isDeleted || !bill.againstBillId || !isNoteType(bill.transactionType)) continue;
-    const lines = (bill.deductions ?? []).filter((line) => line.invoiceBase !== undefined);
+    const lines = retentionSource(bill).deductions.filter((line) => line.invoiceBase !== undefined);
     if (lines.length) ruleLines.set(bill.againstBillId, [...(ruleLines.get(bill.againstBillId) ?? []), ...lines]);
   }
   const invoiceSource = (invoice: Bill) => withRuleLines(retentionSource(invoice), ruleLines.get(invoice.id));

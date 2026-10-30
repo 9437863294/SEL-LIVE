@@ -189,7 +189,7 @@ export async function createCollection(context: BtContext, input: CollectionInpu
     for (const { bill } of bills.values()) {
       context.require('Collections', 'Add', bill.projectId);
       if (verify) context.require('Collections', 'Verify', bill.projectId);
-      const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
+      const blocked = receiptBlockReason(bill, config.settings);
       if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
     }
     for (const entry of input.allocations) {
@@ -303,7 +303,7 @@ export async function changeCollectionStatus(context: BtContext, collectionId: s
     // A receipt drafted before the client certified still waits for the certification to count.
     if (action === 'verify') {
       for (const { bill } of bills.values()) {
-        const blocked = receiptBlockReason(bill, config.settings.certificationBeforeReceipt);
+        const blocked = receiptBlockReason(bill, config.settings);
         if (blocked) throw new BtError(blocked, 409, { billId: bill.id, needs: 'certification' });
       }
       // A draft does not hold a note's balance, so a set-off is checked again against the note as it

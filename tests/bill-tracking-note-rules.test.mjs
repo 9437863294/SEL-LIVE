@@ -5,7 +5,7 @@ import { deriveBillTotals, isHeldAsRetention } from '../src/lib/bill-tracking/ca
 import { certificationSummary, compareCertification } from '../src/lib/bill-tracking/certification.ts';
 import { DEFAULT_DEDUCTION_TYPES } from '../src/lib/bill-tracking/defaults.ts';
 import { computeDeductions } from '../src/lib/bill-tracking/gst.ts';
-import { invoiceWithNotes, normaliseNoteRules, noteDeductionBase, noteRuleFor, noteRulesProblem } from '../src/lib/bill-tracking/note-rules.ts';
+import { baseBesidesNote, invoiceWithNotes, normaliseNoteRules, noteDeductionBase, noteRuleFor, noteRulesProblem, ruleHeadsOf, withNoteFigures } from '../src/lib/bill-tracking/note-rules.ts';
 import { billRetentionSlabs } from '../src/lib/bill-tracking/retention.ts';
 
 const types = DEFAULT_DEDUCTION_TYPES;
@@ -221,4 +221,26 @@ test('rules are checked: a name, sub categories and deductions each, and one act
   assert.deepEqual(normaliseNoteRules([{ ...rule, name: ' Balance DN ', billTypeIds: ['bt-s60', 'gone', 'bt-s60'], deductionTypeIds: ['dt-ret-inv', 'dt-gone'] }], billTypes, deductionTypes), [
     { ...rule, name: 'Balance DN', billTypeIds: ['bt-s60'], deductionTypeIds: ['dt-ret-inv'] },
   ]);
+});
+
+test('a balance debit note certified for less takes its rule heads of the invoice plus the note as certified', () => {
+  // ₹600 SUPPLY-60% + ₹300 debit note: 20% + 10% of ₹900. The client certifies the note at ₹250: of ₹850.
+  const inv = invoice('inv', 600, 'bt-s60');
+  const note = debitNote('dn', 300, inv, retention(20, 10), { createdAt: '2026-06-10T10:00:00.000Z' });
+  assert.deepEqual(ruleHeadsOf(note), ['dt-ret-inv', 'dt-ret-cpbg']);
+  const besides = baseBesidesNote(inv, [note], note, ruleHeadsOf(note), types);
+  assert.deepEqual([besides.taxable, besides.gross, besides.held], [600, 600, {}]);
+  // Raised figures give back the base the note was saved with.
+  assert.deepEqual(withNoteFigures(besides, note).taxable, note.deductions[0].invoiceBase);
+  const certified = computeDeductions(retention(20, 10), types, { taxable: 250, gross: 250, roundToRupee: true, gstType: 'none', invoiceBase: withNoteFigures(besides, { taxableAmount: 250, gstAmount: 0 }) });
+  assert.deepEqual(certified.map((line) => [line.amount, line.invoiceBase]), [
+    [170, 850],
+    [85, 850],
+  ]);
+  // A second balance note counts what the first holds as certified, not as raised.
+  const certifiedNote = { ...note, certification: { taxableAmount: 250, grossAmount: 250, deductions: certified } };
+  const second = noteDeductionBase(rules, { id: 'dn2', transactionType: 'debit_note', billDate: '2026-06-20', taxableAmount: 100, gstAmount: 0 }, inv, [certifiedNote], types);
+  assert.deepEqual([second.held['dt-ret-inv|20'], second.held['dt-ret-cpbg|10']], [170, 85]);
+  // A note with no rule lines takes nothing of the invoice.
+  assert.deepEqual(ruleHeadsOf({ deductions: [{ deductionTypeId: 'dt-tds', amount: 3 }] }), []);
 });

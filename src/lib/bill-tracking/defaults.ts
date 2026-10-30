@@ -129,6 +129,8 @@ export const DEFAULT_SETTINGS: BillTrackingSettings = {
   // Payment follows the client's certification of an invoice or retention bill; migrated bills were
   // certified on paper before SEL LIVE, so they are left out.
   certificationBeforeReceipt: { enabled: true, transactionTypes: ['invoice', 'retention_bill'], exemptImported: true },
+  // The client certifies a debit note as it does an invoice; Settings → Workflow can narrow it.
+  debitNoteCertification: 'all',
   // None until an administrator names the invoices whose debit notes take deductions of the invoice
   // plus its notes (Settings → Note rules).
   noteRules: [],

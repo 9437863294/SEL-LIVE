@@ -109,10 +109,13 @@ interface Detail {
   documents: BillDocument[];
   activity: BillActivity[];
   retention: RetentionRelease[];
-  /** Raised vs notes vs the client's certification; null for a credit / debit note. */
+  /** Raised vs notes vs the client's certification; null for a bill the client does not certify. */
   certification: CertificationComparison | null;
-  /** Credit / debit notes raised against this invoice — with their deductions, for the retention they hold. */
-  notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number; deductions?: Bill['deductions']; outsideCertification?: boolean }[];
+  /**
+   * Credit / debit notes raised against this invoice — or, for a debit note, those settling its
+   * certification — with their deductions, for the retention they hold.
+   */
+  notes: { id: string; transactionType: Bill['transactionType']; billSerialNumber?: string; gstInvoiceNumber?: string; billDate: string; taxableAmount: number; gstAmount: number; grossAmount: number; netReceivable: number; deductions?: Bill['deductions']; outsideCertification?: boolean; adjustsNoteRef?: string }[];
   /**
    * For a note: its invoice's retention as the slabs read it (`retentionSource` — the certified lines
    * and taxable once the client has certified the invoice), which decides the slabs the note's lands in.
@@ -425,7 +428,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   const pendingKind = !pendingAction ? null : pendingAction.action === 'return' ? 'return' : pendingAction.action === 'reopen' ? 'reopen' : 'close';
   const reference = billReference(bill);
   // Payment waits for the client's certification when Settings → Workflow says so.
-  const receiptBlock = receiptBlockReason(bill, lookups.config.settings.certificationBeforeReceipt);
+  const receiptBlock = receiptBlockReason(bill, lookups.config.settings);
   // Once certified, the stored deduction total and net are the certified deductions' — what the bill
   // is paid — with the raised ones kept beside them (a bill stored before 2026-10-27 has one pair).
   const raisedNet = bill.raisedNetReceivable ?? bill.netReceivable;
@@ -490,7 +493,7 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
     ...(bill.netMismatch && !bill.netMismatch.resolvedAt && can('Bills', 'Verify')
       ? [{ key: 'mismatch', label: 'Resolve net mismatch', icon: AlertTriangle, onSelect: () => setDialog('mismatch'), priority: 6 } satisfies OverflowAction]
       : []),
-    ...(detail.certification?.suggestedNote && can('Bills', 'Add')
+    ...(detail.certification?.suggestedNote && can('Bills', 'Add') && settlingNoteTarget(bill)
       ? [{ key: 'match-note', label: 'Raise note to match certification', icon: Undo2, href: matchNoteHref(bill), priority: 7 } satisfies OverflowAction]
       : []),
     ...(can('Bills', 'Add') && bill.transactionType !== 'credit_note' && bill.transactionType !== 'debit_note'
@@ -541,10 +544,18 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
       ) : bill.transactionType === 'credit_note' ? (
         <Notice tone="amber" title="Credit note not linked to an invoice">Edit it to choose the invoice it is against.</Notice>
       ) : null}
+      {bill.adjustsNoteId ? (
+        <Notice tone="blue" title={`Settles the client’s certification of debit note ${bill.adjustsNoteRef ?? ''}`}>
+          It is compared with that debit note’s certification, not with the invoice’s.{' '}
+          <Link className="font-medium text-emerald-700 hover:underline" href={`/bill-tracking/bills/${bill.adjustsNoteId}?tab=certification`}>
+            Open the debit note
+          </Link>
+        </Notice>
+      ) : null}
       {/* Only the invoice value takes a note: the certified deductions already apply to the bill. */}
       {comparison?.summary.state === 'adjustment_pending' && bill.certification && !bill.isDeleted ? (
         <Notice tone="blue" title={`Client certified an invoice value of ${formatINR(bill.certification.grossAmount)} against ${formatINR(bill.grossAmount)} raised`}>
-          A {comparison.suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit'} note of <b>{formatINR(Math.abs(comparison.suggestedNote?.netAmount ?? comparison.summary.pendingGross ?? 0))}</b> is still to be raised against this bill for the taxable and GST.
+          A {comparison.suggestedNote?.transactionType === 'debit_note' ? 'debit' : 'credit'} note of <b>{formatINR(Math.abs(comparison.suggestedNote?.netAmount ?? comparison.summary.pendingGross ?? 0))}</b> is still to be raised {settlingNoteTarget(bill) ?? 'against this debit note’s invoice (link it first)'} for the taxable and GST.
           {toPaise(comparison.summary.deductionChange ?? 0) !== 0 ? ' The client’s certified deductions already apply — they need no note.' : ''}{' '}
           <button type="button" className="font-medium text-emerald-700 hover:underline" onClick={() => setTab('certification')}>
             See the comparison
@@ -905,6 +916,14 @@ function OverviewTab({ bill }: { bill: BillRow }) {
 /** The new-note form, pre-filled to make this bill plus its notes equal the client's certification. */
 const matchNoteHref = (bill: Pick<Bill, 'id' | 'projectId'>) => `/bill-tracking/bills/new?match=1&against=${bill.id}&project=${bill.projectId}`;
 
+/**
+ * Where the note settling a certification is raised: against the bill — or, for a debit note, against
+ * its invoice, naming the debit note (a note is never raised against another note). Null for a debit
+ * note not linked to an invoice: it must be linked first.
+ */
+const settlingNoteTarget = (bill: Pick<Bill, 'transactionType' | 'againstBillId' | 'againstBillRef'>): string | null =>
+  bill.transactionType !== 'debit_note' ? 'against this bill' : bill.againstBillId ? `against invoice ${bill.againstBillRef ?? ''}, naming this debit note` : null;
+
 function CertificationTab({ detail, reload }: { detail: Detail; reload: () => void }) {
   const { bill, certification: comparison } = detail;
   const can = useBillCan(bill);
@@ -924,7 +943,7 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
           <BtEmpty
             icon={ClipboardCheck}
             title="The client has not certified this bill yet"
-            description="When the client certifies it, record what they approved and what they deduct. It starts from the raised figures — change only what the client changed. The raised bill itself is never altered: the certified deductions apply to it as they are, and a credit / debit note against it settles any difference in taxable or GST."
+            description={`When the client certifies it, record what they approved and what they deduct. It starts from the raised figures — change only what the client changed. The raised bill itself is never altered: the certified deductions apply to it as they are, and a credit / debit note ${bill.transactionType === 'debit_note' ? 'against its invoice, naming this debit note,' : 'against it'} settles any difference in taxable or GST.`}
             action={
               canCertify ? (
                 <Button asChild size="sm" className="gap-1.5">
@@ -979,11 +998,12 @@ function CertificationTab({ detail, reload }: { detail: Detail; reload: () => vo
               {noteWord === 'credit' ? 'Credit' : 'Debit'} note of {formatINR(Math.abs(suggestedNote.netAmount))} still to raise
             </div>
             <div className="mt-0.5 text-xs">
-              Taxable {formatINR(suggestedNote.taxableAmount)} · GST {formatINR(suggestedNote.gstAmount)} — raised against this bill, it brings the bill plus its notes to the taxable and GST the client certified.
+              Taxable {formatINR(suggestedNote.taxableAmount)} · GST {formatINR(suggestedNote.gstAmount)} —{' '}
+              {settlingNoteTarget(bill) ? `raised ${settlingNoteTarget(bill)}, it brings the bill plus its notes to the taxable and GST the client certified.` : 'link this debit note to its invoice first (Edit): the note settling it is raised against that invoice.'}
             </div>
             {deductionText ? <div className="mt-0.5 text-xs">{deductionText}</div> : null}
           </div>
-          {can('Bills', 'Add') && !bill.isDeleted ? (
+          {can('Bills', 'Add') && !bill.isDeleted && settlingNoteTarget(bill) ? (
             <Button asChild size="sm" className="gap-1.5 bg-violet-700 hover:bg-violet-800">
               <Link href={matchNoteHref(bill)}>
                 <Undo2 className="h-4 w-4" /> Raise {noteWord} note
@@ -1134,7 +1154,11 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
   return (
     <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
       <CardContent className="space-y-2 p-4">
-        <SectionHeader descriptionAs="info" title="Credit / debit notes against this invoice" as="h3" description="Each note is its own document with its own receivable; this shows their effect on the invoice." />
+        {bill.transactionType === 'debit_note' ? (
+          <SectionHeader descriptionAs="info" title="Notes settling this debit note’s certification" as="h3" description="Raised against the invoice and naming this debit note; each is its own document with its own receivable. This shows their effect on the debit note." />
+        ) : (
+          <SectionHeader descriptionAs="info" title="Credit / debit notes against this invoice" as="h3" description="Each note is its own document with its own receivable; this shows their effect on the invoice." />
+        )}
         <ul className="divide-y divide-violet-100 text-sm">
           {notes.map((note) => (
             <li key={note.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
@@ -1148,6 +1172,11 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
                     Outside certification
                   </span>
                 ) : null}
+                {note.adjustsNoteRef && bill.transactionType !== 'debit_note' ? (
+                  <span className="ml-2 rounded bg-white px-1.5 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200" title="Raised to settle that debit note’s own certification: compared with it, not with this invoice.">
+                    Settles {note.adjustsNoteRef}
+                  </span>
+                ) : null}
               </span>
               <Amount value={note.netReceivable} signed />
             </li>
@@ -1155,7 +1184,7 @@ function NotesAgainst({ bill, notes }: { bill: BillRow; notes: Detail['notes'] }
         </ul>
         <div className="flex flex-wrap justify-between gap-2 border-t border-violet-200 pt-2 text-sm font-semibold">
           <span>
-            Invoice net {formatINR(bill.netReceivable)}
+            {bill.transactionType === 'debit_note' ? 'Debit note' : 'Invoice'} net {formatINR(bill.netReceivable)}
             {afterCertified ? ' (after the certified deductions)' : ''} {credited < 0 ? '−' : '+'} notes {formatINR(Math.abs(credited))}
           </span>
           <span>

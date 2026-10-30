@@ -82,6 +82,9 @@ const creditWithDeductions = (id, taxable, deductions) => bill(id, { taxable, de
 
 const penalty = { id: 'c', deductionTypeId: 'dt-other', baseAmount: 25000 };
 
+/** Settings carrying the receipt rule; debit notes certified as `debitNotes` says. */
+const settingsWith = (rule, debitNotes = 'none') => ({ certificationBeforeReceipt: rule, debitNoteCertification: debitNotes });
+
 const raisedDeductions = [
   { id: 'a', deductionTypeId: 'dt-itds', percentage: 2 },
   { id: 'b', deductionTypeId: 'dt-ret-inv', percentage: 5 },
@@ -355,7 +358,7 @@ test('a retention bill certified for a smaller release: matched, and the receiva
   // A retention bill claims released retention as a negative deduction (the legacy layout): net = 0 − (−3,00,000).
   const claim = (amount) => [{ id: 'r', deductionTypeId: 'dt-ret-inv', baseAmount: amount }];
   const retention = bill('r1', { taxable: 0, deductions: claim(-300000) }, { transactionType: 'retention_bill', isRetentionBill: true });
-  assert.equal(canBeCertified(retention), true);
+  assert.equal(canBeCertified(retention, { debitNoteCertification: 'none' }), true);
   assert.equal(retention.netReceivable, 300000);
   const certified = certify(retention, { taxable: 0, deductions: claim(-250000) });
   const summary = certificationSummary(certified, [], 1);
@@ -381,16 +384,55 @@ test('the raised bill edited after certification: its figures move, the certifie
   assert.equal(compareCertification(corrected, [], 1).suggestedNote.taxableAmount, -50000);
 });
 
-test('notes are never certified, and are grouped by the invoice they adjust', () => {
+test('credit notes are never certified, and notes are grouped by the invoice they adjust', () => {
   const invoice = bill('b1', { taxable: 100 });
   const credit = bill('n1', { taxable: -10 }, { transactionType: 'credit_note', againstBillId: 'b1' });
   const deleted = bill('n2', { taxable: -10 }, { transactionType: 'credit_note', againstBillId: 'b1', isDeleted: true });
   const unlinked = bill('n3', { taxable: -10 }, { transactionType: 'credit_note' });
-  assert.equal(canBeCertified(invoice), true);
-  assert.equal(canBeCertified(credit), false);
+  assert.equal(canBeCertified(invoice, { debitNoteCertification: 'none' }), true);
+  assert.equal(canBeCertified(credit, { debitNoteCertification: 'all' }), false);
   const map = notesByInvoice([invoice, credit, deleted, unlinked]);
   assert.deepEqual([...map.keys()], ['b1']);
   assert.deepEqual(map.get('b1').map((note) => note.id), ['n1']);
+});
+
+test('which debit notes the client certifies follows Settings; a note settling one never is', () => {
+  const debit = bill('d1', { taxable: 300 }, { transactionType: 'debit_note', againstBillId: 'b1' });
+  // A balance debit note under a note rule: a line taken of the invoice plus its notes.
+  const balance = { ...debit, id: 'd2', deductions: [{ id: 'a', deductionTypeId: 'dt-ret-inv', deductionTypeName: 'Retention', kind: 'retention_invoice', amount: 180, percentage: 20, invoiceBase: 900 }] };
+  const settling = { ...debit, id: 'd3', adjustsNoteId: 'd1' };
+  const scope = (debitNoteCertification) => ({ debitNoteCertification });
+  assert.deepEqual([debit, balance, settling].map((note) => canBeCertified(note, scope('none'))), [false, false, false]);
+  assert.deepEqual([debit, balance, settling].map((note) => canBeCertified(note, scope('note_rule'))), [false, true, false]);
+  assert.deepEqual([debit, balance, settling].map((note) => canBeCertified(note, scope('all'))), [true, true, false]);
+  assert.equal(canBeCertified({ ...debit, isDeleted: true }, scope('all')), false);
+  // The receipt rule blocks a debit note only when the client certifies it.
+  const rule = { enabled: true, transactionTypes: ['invoice', 'debit_note'], exemptImported: true };
+  assert.equal(receiptBlockReason(debit, settingsWith(rule, 'none')), null);
+  assert.match(receiptBlockReason(debit, settingsWith(rule, 'all')), /not certified/);
+  assert.equal(receiptBlockReason(settling, settingsWith(rule, 'all')), null);
+  assert.equal(receiptBlockReason(debit, settingsWith({ ...rule, transactionTypes: ['invoice'] }, 'all')), null, 'type not covered');
+});
+
+test('a debit note certified short is settled by a credit note against its invoice, compared with the debit note alone', () => {
+  const invoice = certify(bill('b1', { taxable: 600 }), { taxable: 600 });
+  const debit = certify(bill('d1', { taxable: 300 }, { transactionType: 'debit_note', againstBillId: 'b1' }), { taxable: 250 });
+  const before = compareCertification(debit, [], 1);
+  assert.equal(before.summary.state, 'adjustment_pending');
+  const suggestion = before.suggestedNote;
+  assert.deepEqual([suggestion.transactionType, suggestion.taxableAmount, suggestion.againstBillId, suggestion.adjustsNoteId], ['credit_note', -50, 'b1', 'd1']);
+  assert.match(suggestion.description, /against debit note INV-d1/);
+  const credit = { ...noteFrom(invoice, suggestion, 'c1'), adjustsNoteId: 'd1' };
+  // Grouped under the invoice it is raised against and under the debit note it settles.
+  const map = notesByInvoice([invoice, debit, credit]);
+  assert.deepEqual([map.get('b1').map((note) => note.id), map.get('d1').map((note) => note.id)], [['d1', 'c1'], ['c1']]);
+  assert.equal(compareCertification(debit, map.get('d1'), 1).summary.state, 'matched');
+  // The invoice compares with its own notes only: the debit note (it counts there), never the note settling it.
+  const forInvoice = certificationSummary(invoice, map.get('b1'), 1);
+  assert.deepEqual([forInvoice.notesCount, forInvoice.notesNet], [1, debit.raisedNetReceivable]);
+  // An invoice's suggestion goes against itself and settles no debit note.
+  const lower = compareCertification(certify(bill('b2', { taxable: 1000 }), { taxable: 900 }), [], 1).suggestedNote;
+  assert.deepEqual([lower.againstBillId, lower.adjustsNoteId], ['b2', undefined]);
 });
 
 test('register totals compare the certified bills like for like', () => {
@@ -431,16 +473,16 @@ test('the notes to raise leave out a matched bill’s leftover within the tolera
 test('no payment before certification: which bills a receipt is refused for', () => {
   const rule = { enabled: true, transactionTypes: ['invoice', 'retention_bill'], exemptImported: true };
   const invoice = bill('b1', { taxable: 100000 });
-  assert.match(receiptBlockReason(invoice, rule), /not certified by the client/);
-  assert.equal(receiptBlockReason(certify(invoice, { taxable: 100000 }), rule), null, 'certified — receipts allowed');
-  assert.equal(receiptBlockReason(invoice, { ...rule, enabled: false }), null, 'rule off');
-  assert.equal(receiptBlockReason({ ...invoice, transactionType: 'advance' }, rule), null, 'type not covered');
-  assert.equal(receiptBlockReason({ ...invoice, transactionType: 'credit_note' }, rule), null, 'notes are never blocked');
-  assert.equal(receiptBlockReason({ ...invoice, source: 'excel_import' }, rule), null, 'migrated bills exempt');
-  assert.match(receiptBlockReason({ ...invoice, source: 'excel_import' }, { ...rule, exemptImported: false }), /not certified/);
-  assert.equal(receiptBlockReason(invoice, { ...rule, fromDate: '2026-07-01' }), null, 'dated before the rule starts');
-  assert.match(receiptBlockReason(invoice, { ...rule, fromDate: '2026-06-01' }), /not certified/);
-  assert.equal(receiptBlockReason(invoice, undefined), null, 'no rule configured');
+  assert.match(receiptBlockReason(invoice, settingsWith(rule)), /not certified by the client/);
+  assert.equal(receiptBlockReason(certify(invoice, { taxable: 100000 }), settingsWith(rule)), null, 'certified — receipts allowed');
+  assert.equal(receiptBlockReason(invoice, settingsWith({ ...rule, enabled: false })), null, 'rule off');
+  assert.equal(receiptBlockReason({ ...invoice, transactionType: 'advance' }, settingsWith(rule)), null, 'type not covered');
+  assert.equal(receiptBlockReason({ ...invoice, transactionType: 'credit_note' }, settingsWith(rule)), null, 'notes are never blocked');
+  assert.equal(receiptBlockReason({ ...invoice, source: 'excel_import' }, settingsWith(rule)), null, 'migrated bills exempt');
+  assert.match(receiptBlockReason({ ...invoice, source: 'excel_import' }, settingsWith({ ...rule, exemptImported: false })), /not certified/);
+  assert.equal(receiptBlockReason(invoice, settingsWith({ ...rule, fromDate: '2026-07-01' })), null, 'dated before the rule starts');
+  assert.match(receiptBlockReason(invoice, settingsWith({ ...rule, fromDate: '2026-06-01' })), /not certified/);
+  assert.equal(receiptBlockReason(invoice, settingsWith(undefined)), null, 'no rule configured');
 });
 
 test('the workflow runs raised → certified → payment follow-up, and the rule defaults on', () => {
