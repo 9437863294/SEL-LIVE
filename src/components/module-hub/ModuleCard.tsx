@@ -4,12 +4,7 @@ import { useModules } from "@/context/ModuleContext";
 import type { Module } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Edit, EyeOff, GripVertical, Pin, Trash2 } from "lucide-react";
+import { Edit, GripVertical, Trash2 } from "lucide-react";
 import { getModuleIconEntry } from "./module-icon-registry";
 import {
   AlertDialog,
@@ -35,11 +30,6 @@ interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
   isDragging?: boolean;
   /** The user's "Dashboard card density". `standard` is the card exactly as it has always been. */
   density?: Density;
-  /** Whether this module is on the user's pinned list — the pin button's pressed state. */
-  pinned?: boolean;
-  /** Pin/Unpin and Hide appear only when these are given. Both are personal display choices. */
-  onTogglePin?: () => void;
-  onHide?: () => void;
 }
 
 /** Spacing per density. Only padding, clamping and button size change — never what is shown. */
@@ -71,9 +61,6 @@ export default function ModuleCard({
   module,
   isDragging,
   density = "standard",
-  pinned = false,
-  onTogglePin,
-  onHide,
   draggable,
   ...props
 }: ModuleCardProps) {
@@ -189,7 +176,7 @@ export default function ModuleCard({
   const { Icon: ModuleGlyph, gradient } = getModuleIconEntry(module.icon);
   const styles = densityStyles[density];
   const reorderable = draggable === true || draggable === "true";
-  const hasActions = Boolean(onTogglePin || onHide || canEdit || canDelete);
+  const hasActions = canEdit || canDelete;
 
   return (
     <>
@@ -239,9 +226,12 @@ export default function ModuleCard({
               </CardTitle>
             </div>
             {reorderable && (
+              // A pointer-only affordance (the drag itself is the card's), so it is a tooltip rather
+              // than an accessible name: `aria-label` is not allowed on a plain div.
               <div
                 className="relative z-10 ml-auto sm:hidden cursor-grab p-1 text-muted-foreground touch-none"
-                aria-label="Drag to reorder"
+                title="Drag to reorder"
+                aria-hidden="true"
               >
                 <GripVertical className="h-4 w-4" />
               </div>
@@ -265,7 +255,8 @@ export default function ModuleCard({
               <div className="flex items-center -mr-2 -mt-2 self-start shrink-0">
                 <div
                   className="relative z-10 cursor-grab p-2 text-muted-foreground touch-none"
-                  aria-label="Drag to reorder"
+                  title="Drag to reorder"
+                  aria-hidden="true"
                 >
                   <GripVertical className="h-5 w-5" />
                 </div>
@@ -277,60 +268,7 @@ export default function ModuleCard({
           <CardContent
             className={cn("mt-auto flex items-center gap-1 border-t", styles.footer)}
           >
-            {/* Personal display choices on the left; the Module Hub editor's tools on the right. */}
-            <div className="relative z-10 flex items-center gap-1 sm:gap-1.5">
-              {onTogglePin && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      // One fixed name, with `aria-pressed` carrying the state — a label that
-                      // flipped to "Unpin" would be read as "Unpin, pressed".
-                      aria-label={`Pin ${moduleDisplayName(module.title)}`}
-                      aria-pressed={pinned}
-                      data-module-control="pin"
-                      data-module-title={module.title}
-                      className={cn(
-                        styles.button,
-                        pinned && "bg-accent text-accent-foreground",
-                      )}
-                      onClick={onTogglePin}
-                    >
-                      {/* Filled when pinned, so the state is a shape change as well as a colour. */}
-                      <Pin
-                        className={cn(
-                          "h-3.5 w-3.5 sm:h-4 sm:w-4",
-                          pinned && "fill-current",
-                        )}
-                        aria-hidden="true"
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{pinned ? "Unpin" : "Pin to the top"}</TooltipContent>
-                </Tooltip>
-              )}
-              {onHide && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Hide ${moduleDisplayName(module.title)} from the launcher`}
-                      data-module-control="hide"
-                      data-module-title={module.title}
-                      className={styles.button}
-                      onClick={onHide}
-                    >
-                      <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Hide from the launcher</TooltipContent>
-                </Tooltip>
-              )}
-            </div>
+            {/* The Module Hub editor's tools. */}
             <div className="relative z-10 ml-auto flex items-center gap-1 sm:gap-1.5">
               {canEdit && (
                 <Button

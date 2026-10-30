@@ -11,11 +11,11 @@
  *
  * ── Two decisions worth knowing ────────────────────────────────────────────────────────────────
  *
- * **Both panels are `forceMount`ed.** Radix unmounts an inactive tab panel by default, which would
- * make every switch back to "Your work" re-run the whole fan-out in `loadWorkItems` — thirty-one
- * queries, to redraw numbers that were already on screen a second earlier. With `forceMount` the
- * panel keeps its state and Radix hides it with the `hidden` attribute instead. The launcher is
- * mounted the same way, so its drag-to-reorder state survives a trip to the work board too.
+ * **Both panels are `forceMount`ed, and built on first view.** Radix unmounts an inactive tab panel
+ * by default, which would throw away each lane's expanded state and the launcher's drag state on
+ * every switch. With `forceMount` a panel keeps its state and is hidden instead. Neither is built
+ * until its tab is first shown, though: the work data (`useWorkDashboard`, thirty-one queries) is
+ * fetched here on the page, once, for the tab's count, and only drawn when "Your work" is opened.
  *
  * **The opening tab is the person's choice.** Somebody who lives in the launcher should not have to
  * click past the work board every morning. "Default dashboard view" (Settings → Appearance) decides:
@@ -29,11 +29,12 @@ import { useCallback, useState, useSyncExternalStore } from 'react';
 import AppShell from '@/components/app/AppShell';
 import ModuleDashboard from '@/components/module-hub/ModuleDashboard';
 import { useAppearance } from '@/components/theme/ThemeProvider';
-import WorkDashboard from '@/components/work-dashboard/work-dashboard';
+import { useWorkDashboard } from '@/components/work-dashboard/hooks';
+import { WorkBoard } from '@/components/work-dashboard/work-dashboard';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
-import type { WorkSummary } from '@/lib/work-dashboard';
 
 type HomeTab = 'work' | 'modules';
 
@@ -58,7 +59,6 @@ const subscribeToNothing = () => () => {};
 export default function DashboardPage() {
   const { effective, ready } = useAppearance();
   const dashboardView = effective.dashboardView;
-  const [summary, setSummary] = useState<WorkSummary | null>(null);
 
   // The remembered tab. `useSyncExternalStore` hands the server render and the hydrating client
   // render the server snapshot (`undefined`, "not read yet"), so both draw "Your work" and the
@@ -77,6 +77,20 @@ export default function DashboardPage() {
   // Once the person picks a tab, only their own clicks move it.
   const [picked, setPicked] = useState<HomeTab | null>(null);
   const tab = picked ?? settled ?? preferred;
+  // Until the remembered tab has been read — the server render and the hydrating one — no tab is
+  // shown. Drawing "Your work" there and switching to "Modules" a moment later swapped one panel's
+  // skeleton for the other's in front of the person, the biggest layout shift on the page.
+  const tabKnown = picked !== null || storedTab !== undefined;
+
+  // Each panel is built the first time its tab is shown, and kept from then on (see `forceMount`
+  // below). Opening on Modules no longer builds the whole work board out of sight, and the reverse.
+  // Set during render, like `settled` above.
+  const [visited, setVisited] = useState<ReadonlySet<HomeTab>>(() => new Set());
+  if (tabKnown && !visited.has(tab)) setVisited(new Set(visited).add(tab));
+
+  // Run here rather than inside the board, so the tab's pending count is there from the start
+  // whichever tab opens — the board itself only mounts once "Your work" is shown.
+  const work = useWorkDashboard();
 
   const selectTab = useCallback((value: string) => {
     if (!isHomeTab(value)) return;
@@ -89,14 +103,15 @@ export default function DashboardPage() {
     }
   }, []);
 
-  const pending = summary?.action ?? 0;
-  const overdue = summary?.overdue ?? 0;
+  const pending = work.isLoading ? 0 : work.summary.action;
+  const overdue = work.isLoading ? 0 : work.summary.overdue;
 
   return (
     <AppShell>
       {/* Full width with minimal gutters — the page is a working surface, not an article. */}
-      <div className="w-full px-2 pt-3 sm:px-3 md:px-4">
-        <Tabs value={tab} onValueChange={selectTab}>
+      <main className="w-full px-2 pt-3 sm:px-3 md:px-4">
+        {/* An empty value while the tab is unknown: no trigger is active and both panels stay hidden. */}
+        <Tabs value={tabKnown ? tab : ''} onValueChange={selectTab}>
           <TabsList>
             <TabsTrigger value="work" className="gap-2">
               Your work
@@ -117,16 +132,18 @@ export default function DashboardPage() {
             <TabsTrigger value="modules">Modules</TabsTrigger>
           </TabsList>
 
+          {tabKnown ? null : <Skeleton className="mt-2 h-48 rounded-xl" />}
+
           <TabsContent value="work" forceMount className="pb-8 data-[state=inactive]:hidden">
-            <WorkDashboard showTitle={false} onSummaryChange={setSummary} />
+            {visited.has('work') ? <WorkBoard showTitle={false} state={work} /> : null}
           </TabsContent>
 
           <TabsContent value="modules" forceMount className="pb-8 data-[state=inactive]:hidden">
             {/* The launcher's own page padding is dropped: this panel is already inset. */}
-            <ModuleDashboard className="flex flex-col gap-6" />
+            {visited.has('modules') ? <ModuleDashboard className="flex flex-col gap-6" /> : null}
           </TabsContent>
         </Tabs>
-      </div>
+      </main>
     </AppShell>
   );
 }

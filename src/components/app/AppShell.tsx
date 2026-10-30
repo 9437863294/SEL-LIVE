@@ -11,6 +11,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
 import { noteNavigation } from '@/lib/navigation-history';
 import { driverAppModeActive } from '@/lib/driver-app-mode';
+import { cn } from '@/lib/utils';
 
 const SessionExpiryDialog = dynamic(
   () => import('@/components/auth/SessionExpiryDialog').then((m) => m.SessionExpiryDialog),
@@ -76,37 +77,44 @@ export default function AppShell({
         return <>{children}</>;
     }
 
+    // Signed in: the full shell. Loading or signed out: the page alone — the ClientSessionHandler, in
+    // the root layout, handles redirects.
+    const signedIn = !loading && !!user;
+    const showHeader = !shouldUseDriverMobileShell;
+
+    // `children` sits in the same place in the tree whichever way this goes. It used to be inside a
+    // different wrapper before and after sign-in resolved, and React treats a moved subtree as a new
+    // one: the whole page was thrown away and mounted a second time, re-running every hook and query
+    // on it, at the moment the page was busiest.
     return (
-        <>
-            {/* 
-              If we are loading or there's no user, we render a minimal layout or the public page.
-              The ClientSessionHandler, now in the root layout, handles redirects.
-            */}
-            {loading || !user ? (
-                <div className="min-h-screen">{children}</div>
-            ) : (
-                // Once authenticated, render the full application shell with header and footer.
-                <div className="flex flex-col min-h-screen">
+        <div className={cn('min-h-screen', signedIn && 'flex flex-col')}>
+            {signedIn && (
+                <>
                     <CompanyDesignProvider />
                     <ActionAnimationProvider />
-                    {!shouldUseDriverMobileShell && (
+                    {showHeader && (
                         <>
                             <Header />
                             {/* Renders nothing unless the Breadcrumbs layout preference is on. */}
                             <Breadcrumbs />
                         </>
                     )}
-                    <div className="flex-grow">
-                        {children}
-                    </div>
-                    <SessionExpiryDialog
-                        isOpen={isSessionExpired}
-                        onOpenChange={setIsSessionExpired}
-                        onSessionExtend={extendSession}
-                        onLogout={() => handleSignOut(true)}
-                    />
-                </div>
+                </>
             )}
-        </>
+            {/* The header's height (h-14 md:h-16 plus its border), held while sign-in resolves, so the
+                page does not jump down when the real header arrives above it. */}
+            {loading && showHeader && <div aria-hidden="true" className="box-content h-14 border-b md:h-16" />}
+            <div className={cn(signedIn && 'flex-grow')}>
+                {children}
+            </div>
+            {signedIn && (
+                <SessionExpiryDialog
+                    isOpen={isSessionExpired}
+                    onOpenChange={setIsSessionExpired}
+                    onSessionExtend={extendSession}
+                    onLogout={() => handleSignOut(true)}
+                />
+            )}
+        </div>
     );
 }

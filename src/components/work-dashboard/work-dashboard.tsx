@@ -38,7 +38,8 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -76,10 +77,14 @@ import {
   type WorkSummary,
   type WorkUrgency,
 } from '@/lib/work-dashboard';
-import { useWorkDashboard } from './hooks';
+import { useWorkDashboard, type WorkDashboardState } from './hooks';
 import { useCountUp } from './use-count-up';
-import WorkCalendar from './work-calendar';
 import { PageHeader } from '@/components/shared/page-header';
+
+// Downloaded the first time somebody opens the Calendar view, not with the home page.
+const WorkCalendar = dynamic(() => import('./work-calendar'), {
+  loading: () => <Skeleton className="h-96 rounded-xl" />,
+});
 
 /* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
 
@@ -529,35 +534,38 @@ function summaryLine(summary: WorkSummary): string {
   return `${items} you across ${modules}.`;
 }
 
-export default function WorkDashboard({
-  className,
-  showTitle = true,
-  onSummaryChange,
-}: {
+interface WorkDashboardProps {
   className?: string;
   /**
    * False on the home page, where the tab is already labelled "Your work" and an `<h1>` saying the
    * same thing directly under it reads as a mistake. The summary line and Refresh stay either way.
    */
   showTitle?: boolean;
-  /**
-   * Reports the summary upward so a caller can label a tab with the pending count.
-   *
-   * A callback rather than the caller running `useWorkDashboard` itself: the hook fans out across
-   * every module the viewer can see, and two copies of it on one page would mean doing all of that
-   * twice to render the same numbers in two places.
-   */
-  onSummaryChange?: (summary: WorkSummary) => void;
-}) {
-  const { lanes, summary, failures, today, isLoading, isRefreshing, refresh, fetchMeetings } =
-    useWorkDashboard();
-  const [view, setView] = useState<'list' | 'calendar'>('list');
+}
 
-  // `summary` is memoised on the lanes, so this fires when the counts actually change rather than
-  // on every render — which is what stops the callback becoming a render loop.
-  useEffect(() => {
-    onSummaryChange?.(summary);
-  }, [summary, onSummaryChange]);
+/** The board with its own data, for `/my-work`. */
+export default function WorkDashboard(props: WorkDashboardProps) {
+  return <WorkBoard {...props} state={useWorkDashboard()} />;
+}
+
+/**
+ * The board drawn from data the caller already holds.
+ *
+ * The home page runs `useWorkDashboard` itself and passes the result in. That way its tab can show
+ * the pending count while this board is not mounted at all: somebody who opens the home page on
+ * Modules gets the count without paying for every lane's table, both its phone and desktop rows,
+ * built out of sight. The hook is still run exactly once, so the fan-out is never done twice.
+ */
+export function WorkBoard({
+  className,
+  showTitle = true,
+  state,
+}: WorkDashboardProps & { state: WorkDashboardState }) {
+  const { lanes, summary, failures, today, isLoading, isRefreshing, refresh, fetchMeetings } = state;
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  // The calendar is built the first time it is opened, not up front behind the List view; from then
+  // on it stays mounted so the month it was paged to survives a trip back to the list.
+  const [calendarOpened, setCalendarOpened] = useState(false);
 
   const merged = useMemo(() => mergedWorkItems(lanes, today), [lanes, today]);
 
@@ -613,12 +621,20 @@ export default function WorkDashboard({
         no queries of its own — it takes the same `lanes` and groups them by date — so switching is
         free, and the two can never disagree about what is pending.
 
-        Both panels are `forceMount`ed for the same reason as the outer tabs, plus one of its own:
-        each lane's table owns its expand-all state and the calendar remembers the month you paged
-        to. Letting Radix unmount them would reset all of that on every switch. As there, `forceMount`
-        stops Radix applying `hidden`, so `data-[state=inactive]:hidden` does the hiding.
+        Both panels are `forceMount`ed: each lane's table owns its expand-all state and the calendar
+        remembers the month you paged to, and letting Radix unmount them would reset all of that on
+        every switch. `forceMount` stops Radix applying `hidden`, so `data-[state=inactive]:hidden`
+        does the hiding. The calendar itself is only built once it has been opened (and its code only
+        downloaded then), so the List view people mostly use does not wait on it.
       */}
-      <Tabs value={view} onValueChange={(value) => setView(value === 'calendar' ? 'calendar' : 'list')}>
+      <Tabs
+        value={view}
+        onValueChange={(value) => {
+          const next = value === 'calendar' ? 'calendar' : 'list';
+          if (next === 'calendar') setCalendarOpened(true);
+          setView(next);
+        }}
+      >
         <TabsList className="h-9 border border-slate-200/80 bg-slate-100/80 p-1 shadow-sm">
           <TabsTrigger value="list" className='h-7 gap-1.5 px-2.5 text-xs'>
             <ListIcon className="h-3.5 w-3.5" /> List
@@ -639,7 +655,7 @@ export default function WorkDashboard({
         </TabsContent>
 
         <TabsContent value="calendar" forceMount className="data-[state=inactive]:hidden">
-          <WorkCalendar lanes={lanes} today={today} fetchMeetings={fetchMeetings} />
+          {calendarOpened ? <WorkCalendar lanes={lanes} today={today} fetchMeetings={fetchMeetings} /> : null}
         </TabsContent>
       </Tabs>
     </div>
