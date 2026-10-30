@@ -99,6 +99,16 @@ const BELL_ALERT_LIMIT = 50;
 const DEFAULT_LOGO_URL =
   'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788';
 
+/**
+ * The user's photo for a 36px avatar. An uploaded photo (Firebase Storage) is often a full-size
+ * camera image of a megabyte or more, so it goes through the image optimizer at 96px wide — a few KB.
+ * Other hosts are not allowed there (`images.remotePatterns`) and are used as they are.
+ */
+const avatarSrc = (url: string | null | undefined): string | undefined => {
+  if (!url) return undefined;
+  return url.startsWith('https://firebasestorage.googleapis.com/') ? `/_next/image?url=${encodeURIComponent(url)}&w=96&q=75` : url;
+};
+
 const HEADER_OFFSET_VAR = '--app-header-offset';
 
 /**
@@ -575,7 +585,7 @@ export default function Header() {
                 <DropdownMenuTrigger asChild>
                    <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                     <Avatar className="h-9 w-9">
-                      <AvatarImage src={user?.photoURL || undefined} alt={user?.name || 'User avatar'} />
+                      <AvatarImage src={avatarSrc(user?.photoURL)} alt={user?.name || 'User avatar'} />
                       <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
                     </Avatar>
                   </Button>

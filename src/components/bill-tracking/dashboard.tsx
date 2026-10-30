@@ -8,6 +8,8 @@
  * outstanding list or a report pre-filtered to exactly what was counted.
  */
 
+import { useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -38,7 +40,7 @@ import type { AgeingReport, CollectionLine, DashboardKpis, ExceptionItem, Foreca
 import { useBtQuery, useLookups } from './bt-client';
 import { BillFilterBar, useUrlFilters } from './bt-filters';
 import { billReference, type BillRow } from './bill-register';
-import { AgeingChart, BillingCollectionChart, ChartPanel, RankedBars, RetentionBar, TargetActualChart } from './dashboard-charts';
+import { ChartPanel, ChartSkeleton } from './chart-panel';
 import { AgeingBadge, Amount, BtError, BtLoading, DrillLink, MoneyKpi, dateText, percentText, toQuery } from './bt-ui';
 
 interface DashboardData {
@@ -62,11 +64,22 @@ interface DashboardData {
   certification: CertificationTotals;
 }
 
+/**
+ * The charts come in their own chunk (the chart library is most of the page's script), fetched while
+ * the figures load, so the page can draw its cards without waiting to parse it.
+ */
+const loadCharts = () => import('./dashboard-charts');
+const BillingCollectionChart = dynamic(() => loadCharts().then((module) => module.BillingCollectionChart), { ssr: false, loading: () => <ChartSkeleton className="h-72" /> });
+const AgeingChart = dynamic(() => loadCharts().then((module) => module.AgeingChart), { ssr: false, loading: () => <ChartSkeleton /> });
+const RankedBars = dynamic(() => loadCharts().then((module) => module.RankedBars), { ssr: false, loading: () => <ChartSkeleton /> });
+const TargetActualChart = dynamic(() => loadCharts().then((module) => module.TargetActualChart), { ssr: false, loading: () => <ChartSkeleton /> });
+const RetentionBar = dynamic(() => loadCharts().then((module) => module.RetentionBar), { ssr: false, loading: () => <ChartSkeleton className="h-9" /> });
+
 function TableBlock({ title, children, href, linkLabel = 'View all' }: { title: string; children: React.ReactNode; href?: string; linkLabel?: string }) {
   return (
     <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+        <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
         {href ? (
           <Link href={href} className="text-xs font-medium text-emerald-700 hover:underline">
             {linkLabel}
@@ -85,6 +98,10 @@ export default function BillTrackingDashboard() {
   const lookups = useLookups();
   const filters = useUrlFilters();
   const { data, loading, error, reload } = useBtQuery<DashboardData>(`dashboard?${filters.apiQuery()}`);
+  // Start fetching the chart chunk now, alongside the figures, rather than once they arrive.
+  useEffect(() => {
+    void loadCharts();
+  }, []);
   const fy = filters.fy;
   // Links carry every filter in force forward — whatever the bar set — so a figure opens the bills
   // it was worked out from. Paging and sorting stay behind.

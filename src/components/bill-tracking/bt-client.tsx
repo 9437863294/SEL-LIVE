@@ -13,6 +13,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { auth } from '@/lib/firebase';
+import { financialYearOf } from '@/lib/bill-tracking/calculations';
 import type { BillTrackingConfig } from '@/lib/bill-tracking/types';
 import { stepLabel, type WorkflowActor } from '@/lib/bill-tracking/workflow';
 import type { RegistrationSetup } from '@/lib/bill-tracking/gst';
@@ -140,7 +141,10 @@ export function BillTrackingProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     // The ID token is only available once Firebase Auth has restored the session.
     return auth.onAuthStateChanged((user) => {
-      if (user) void reload();
+      if (!user) return;
+      // The page's own figures start loading alongside the lookups rather than after them.
+      prefetchLandingQuery();
+      void reload();
     });
   }, [reload]);
 
@@ -189,6 +193,41 @@ export function useLookups(): Lookups {
 
 /* ── queries ─────────────────────────────────────────────────────────────── */
 
+/**
+ * Requests started before the screen that wants them has mounted, by path. A screen waits for the
+ * lookups before it renders, so without this its own request would only start once they arrive —
+ * two round trips one after the other. Used only while fresh, and dropped once a screen has shown
+ * its answer (kept until then: in development React runs an effect twice on mount).
+ */
+const prefetched = new Map<string, { promise: Promise<unknown>; at: number }>();
+const PREFETCH_FRESH_MS = 30_000;
+
+function takePrefetched<T>(path: string): Promise<T> | null {
+  const entry = prefetched.get(path);
+  if (!entry) return null;
+  if (Date.now() - entry.at < PREFETCH_FRESH_MS) return entry.promise as Promise<T>;
+  prefetched.delete(path);
+  return null;
+}
+
+/** The financial year of today in India (`2026-27`), as the server's lookups give it. */
+const currentFinancialYear = (): string => financialYearOf(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
+
+/**
+ * On the dashboard — where the module opens — its figures are asked for at once, with the same query
+ * the screen will build (`useUrlFilters().apiQuery()`: the URL's filters plus the FY). Should the
+ * two ever differ, the screen just fetches its own.
+ */
+function prefetchLandingQuery() {
+  if (typeof window === 'undefined' || window.location.pathname !== '/bill-tracking/dashboard') return;
+  const query = new URLSearchParams(window.location.search);
+  if (!query.get('fy')) query.set('fy', currentFinancialYear());
+  const path = `dashboard?${query.toString()}`;
+  const promise = btFetch(path);
+  promise.catch(() => undefined);
+  prefetched.set(path, { promise, at: Date.now() });
+}
+
 export interface QueryState<T> {
   data: T | null;
   loading: boolean;
@@ -214,15 +253,19 @@ export function useBtQuery<T>(path: string | null): QueryState<T> {
     if (!path || !key) return;
     const id = ++sequence.current;
     const controller = new AbortController();
-    btFetch<T>(path, { signal: controller.signal })
+    // A first load may already be on its way (`prefetchLandingQuery`); a reload always asks afresh.
+    const early = key.startsWith('0|') ? takePrefetched<T>(path) : null;
+    (early ?? btFetch<T>(path, { signal: controller.signal }))
       .then((result) => {
         if (id !== sequence.current) return;
+        if (early) prefetched.delete(path);
         setData(result);
         setError(null);
         setSettledKey(key);
       })
       .catch((caught: unknown) => {
         if (id !== sequence.current || (caught instanceof DOMException && caught.name === 'AbortError')) return;
+        if (early) prefetched.delete(path);
         setError(caught instanceof Error ? caught.message : 'Could not load.');
         setSettledKey(key);
       });

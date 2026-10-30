@@ -426,6 +426,7 @@
   .dark :where(.ring-red-50:not(.keep-light, .keep-light *)) {
     --tw-ring-color: rgb(239 68 68 / 0.260);
   }
+  .dark :where(.hover\:bg-red-100:not(.keep-light, .keep-light *)):hover,
   .dark :where(.hover\:bg-red-100\/70:not(.keep-light, .keep-light *)):hover {
     background-color: rgb(239 68 68 / 0.240);
   }
