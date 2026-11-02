@@ -9,6 +9,7 @@ import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton } from '@/components/bank-balance/page-kit';
+import { DashboardDesignPicker } from '@/components/bank-balance/dashboard-design-picker';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
@@ -208,6 +209,14 @@ export default function BankBalanceSettingsPage() {
           backHref="/bank-balance"
           backLabel="Back to dashboard"
         />
+        <section id="dashboard-design" className="scroll-mt-20">
+          <SectionHeader
+            title="Dashboard design"
+            description="How the Bank Balance dashboard is laid out, for everyone. Every design shows the same figures from the ledger."
+          />
+          {/* The module's settings right: the same one that edits the rest of bankBalanceSettings. */}
+          <DashboardDesignPicker canEdit={can('Edit', 'Bank Balance.Payment Entry Settings')} />
+        </section>
         <section>
           <SectionHeader title="Setup" description="What the balances, limits and interest are calculated from." />
           {grid(setup)}

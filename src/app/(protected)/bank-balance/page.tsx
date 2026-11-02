@@ -41,6 +41,13 @@ import {
 } from '@/components/bank-balance/dashboard-charts';
 import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
+import { normaliseDashboardDesign, type BankDashboardDesign } from '@/lib/bank-balance-dashboard';
+import {
+  DashboardDesignView,
+  DesignPreviewBanner,
+  readDashboardDesign,
+  type BankDashboardModel,
+} from '@/components/bank-balance/dashboard-designs';
 
 const voucherCount = (n: number) => `${n} voucher${n === 1 ? '' : 's'}`;
 
@@ -137,6 +144,10 @@ export default function BankBalanceDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  // The layout chosen on Bank Balance › Settings, and one opened from there with `?design=` to
+  // preview it (shown to this viewer only, nothing saved).
+  const [design, setDesign] = useState<BankDashboardDesign>('classic');
+  const [preview, setPreview] = useState<BankDashboardDesign | null>(null);
 
   const canView = can('View Module', 'Bank Balance');
   const canViewReports = can('View', 'Bank Balance.Reports');
@@ -148,7 +159,7 @@ export default function BankBalanceDashboard() {
     if (!silent) setIsLoading(true);
     else setRefreshing(true);
     try {
-      const [accountsSnap, expensesSnap, vouchersSnap] = await Promise.all([
+      const [accountsSnap, expensesSnap, vouchersSnap, designSetting] = await Promise.all([
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses')),
         // Caught on its own: a failed voucher read drops the cheque tiles, never the balances.
@@ -159,7 +170,14 @@ export default function BankBalanceDashboard() {
               return null;
             })
           : Promise.resolve(null),
+        // Never throws: an unreadable setting shows Classic.
+        readDashboardDesign(),
       ]);
+      setDesign(designSetting.design);
+      // Read from the address bar rather than useSearchParams, which would need a Suspense boundary
+      // round the whole dashboard.
+      const requested = new URLSearchParams(window.location.search).get('design');
+      setPreview(requested ? normaliseDashboardDesign(requested) : null);
       setAccounts(accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount)));
       setAllTransactions(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
       setVouchers(vouchersSnap ? vouchersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankPaymentVoucher)) : null);
@@ -521,8 +539,48 @@ export default function BankBalanceDashboard() {
     );
   }
 
+  const previewing = preview && preview !== design ? preview : null;
+  const shown = previewing ?? design;
+  const previewBanner = previewing ? <DesignPreviewBanner previewing={previewing} saved={design} /> : null;
+
+  if (shown !== 'classic') {
+    // The newer designs read the same ledgers and checks as the Classic markup below.
+    const model: BankDashboardModel = {
+      now: lastRefreshed,
+      refreshing,
+      onRefresh: () => void fetchData(true),
+      active: activeAccounts,
+      inactive: accounts.filter(account => account.status !== 'Active'),
+      ledgers,
+      figures: calculatedBalances,
+      limitOn: getApplicableCcLimit,
+      interestMtd,
+      attention,
+      attentionHref,
+      staleCheques: chequeSummary ? { count: chequeSummary.stale.count, amount: chequeSummary.stale.amount } : null,
+      links: {
+        addAccount: canViewAccounts ? '/bank-balance/accounts' : undefined,
+        transfer: can('Add', 'Bank Balance.Internal Transaction') ? '/bank-balance/internal-transaction/new' : undefined,
+        payment: can('Add', 'Bank Balance.Expenses') ? '/bank-balance/expenses/new' : undefined,
+        receipt: can('Add', 'Bank Balance.Receipts') ? '/bank-balance/receipts/new' : undefined,
+        ledger: can('View', 'Bank Balance.Daily Log') ? '/bank-balance/daily-log' : undefined,
+        interest: can('View', 'Bank Balance.Monthly Interest')
+          ? '/bank-balance/monthly-interest'
+          : canViewReports ? '/bank-balance/reports/interest-accrual' : undefined,
+        cheques: canViewCheques ? '/bank-balance/cheques' : undefined,
+      },
+    };
+    return (
+      <>
+        {previewBanner}
+        <DashboardDesignView design={shown} model={model} />
+      </>
+    );
+  }
+
   return (
     <>
+      {previewBanner}
       {/* ── Animated Background ── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         {/* Base gradient */}
