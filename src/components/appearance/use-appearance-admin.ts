@@ -38,7 +38,8 @@ interface AdminData {
   versions: VersionSummary[];
 }
 
-async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** An appearance API call as the signed-in user; a refusal throws with the server's own message. */
+export async function callAppearanceApi<T>(path: string, init: RequestInit = {}): Promise<T> {
   const user = auth.currentUser;
   if (!user) throw new Error('Sign in again to continue.');
   const token = await user.getIdToken();
@@ -65,7 +66,7 @@ export function useAppearanceAdmin() {
     setLoading(true);
     setError(null);
     try {
-      const body = await call<{ rights: AppearanceAdminRights; published: unknown; draft: DraftState; versions: VersionSummary[] }>('/api/appearance/admin');
+      const body = await callAppearanceApi<{ rights: AppearanceAdminRights; published: unknown; draft: DraftState; versions: VersionSummary[] }>('/api/appearance/admin');
       const published = sanitizePublished(body.published);
       setData({
         rights: body.rights,
@@ -93,7 +94,7 @@ export function useAppearanceAdmin() {
 
   const saveDraft = useCallback(
     async (config: CompanyAppearanceConfig) => {
-      const body = await call<{ draft: DraftState }>('/api/appearance/admin/draft', {
+      const body = await callAppearanceApi<{ draft: DraftState }>('/api/appearance/admin/draft', {
         method: 'PUT',
         body: JSON.stringify({ draft: { theme: config.theme, defaults: config.defaults } }),
       });
@@ -105,7 +106,7 @@ export function useAppearanceAdmin() {
 
   const publish = useCallback(
     async (note: string) => {
-      const result = await call<{ published: unknown; changes: string[] }>('/api/appearance/admin/publish', { method: 'POST', body: JSON.stringify({ note }) });
+      const result = await callAppearanceApi<{ published: unknown; changes: string[] }>('/api/appearance/admin/publish', { method: 'POST', body: JSON.stringify({ note }) });
       await afterLive();
       return result;
     },
@@ -114,7 +115,7 @@ export function useAppearanceAdmin() {
 
   const restore = useCallback(
     async (version: number, scope: 'all' | 'theme' | 'branding') => {
-      const result = await call<{ published: unknown; changes: string[] }>('/api/appearance/admin/restore', {
+      const result = await callAppearanceApi<{ published: unknown; changes: string[] }>('/api/appearance/admin/restore', {
         method: 'POST',
         body: JSON.stringify({ version, scope }),
       });
@@ -126,7 +127,7 @@ export function useAppearanceAdmin() {
 
   const saveBranding = useCallback(
     async (branding: CompanyBranding, note: string) => {
-      const result = await call<{ published: unknown; changes: string[] }>('/api/appearance/admin/branding', {
+      const result = await callAppearanceApi<{ published: unknown; changes: string[] }>('/api/appearance/admin/branding', {
         method: 'PUT',
         body: JSON.stringify({ branding, note }),
       });
@@ -140,7 +141,7 @@ export function useAppearanceAdmin() {
     const form = new FormData();
     form.append('kind', kind);
     form.append('file', file);
-    const body = await call<{ asset: BrandAsset }>('/api/appearance/admin/assets', { method: 'POST', body: form });
+    const body = await callAppearanceApi<{ asset: BrandAsset }>('/api/appearance/admin/assets', { method: 'POST', body: form });
     return body.asset;
   }, []);
 

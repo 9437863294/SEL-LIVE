@@ -584,6 +584,20 @@ export function sanitizeDefaults(input: unknown, theme: CompanyTheme, fallback: 
   };
 }
 
+/**
+ * The company defaults an administrator can make live straight from their own choice on My
+ * Appearance, one at a time. Each is also a top-level personal preference of the same name.
+ */
+export const DIRECT_DEFAULT_FIELDS = ['mode', 'accent', 'radius', 'textSize', 'density', 'font', 'tableDensity', 'homeDesign', 'dashboardView'] as const;
+export type DirectDefaultField = (typeof DIRECT_DEFAULT_FIELDS)[number];
+
+/** `defaults` with one field set to `value`, or null when that is not a value the company allows. */
+export function withCompanyDefault(defaults: CompanyDefaults, theme: CompanyTheme, field: unknown, value: unknown): CompanyDefaults | null {
+  if (!isOneOf(DIRECT_DEFAULT_FIELDS, field)) return null;
+  const next = sanitizeDefaults({ ...defaults, [field]: value }, theme, defaults);
+  return next[field] === value ? next : null;
+}
+
 const slug = (text: string) =>
   text
     .toLowerCase()

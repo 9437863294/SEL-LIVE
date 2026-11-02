@@ -29,6 +29,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ActionAnimationSettings } from '@/components/appearance/action-animation-settings';
+import { MakeCompanyDefault } from '@/components/appearance/make-company-default';
+import { themeModeMeta } from '@/components/theme/theme-preferences';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { appearanceAdminRights } from '@/lib/appearance/permissions';
 import { AppearanceGallery } from '@/components/appearance/AppearanceGallery';
 import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsColumns, SettingsSection, SwitchRow, usePreviewVisible, type Choice } from '@/components/appearance/controls';
 import { usePreferenceEditor } from '@/components/appearance/use-preference-editor';
@@ -40,8 +44,10 @@ import {
   ACCENTS,
   FONT_META,
   HOME_DESIGNS,
+  THEME_MODES,
   type AccentId,
   type DashboardView,
+  type DirectDefaultField,
   type HomeDesign,
   type Density,
   type DialogSizePreference,
@@ -72,6 +78,33 @@ const bars = (gap: string) => (
     <span className="h-1.5 w-3/5 rounded-full bg-muted-foreground/30" />
   </span>
 );
+
+const radiusOptions: Choice<RadiusStyle>[] = [
+  { value: 'soft', label: 'Soft', preview: <span className="block h-7 w-12 rounded-[0.8rem] border-2 border-foreground/40" /> },
+  { value: 'standard', label: 'Standard', preview: <span className="block h-7 w-12 rounded-[0.5rem] border-2 border-foreground/40" /> },
+  { value: 'sharp', label: 'Sharp', preview: <span className="block h-7 w-12 rounded-[0.2rem] border-2 border-foreground/40" /> },
+];
+
+const textSizeOptions: Choice<TextSize>[] = [
+  { value: 'small', label: 'Small', preview: <span className="block text-[13px] font-semibold leading-none">Aa</span> },
+  { value: 'default', label: 'Default', preview: <span className="block text-[16px] font-semibold leading-none">Aa</span> },
+  { value: 'large', label: 'Large', preview: <span className="block text-[20px] font-semibold leading-none">Aa</span> },
+];
+
+const homeDesignOptions: Choice<HomeDesign>[] = HOME_DESIGNS.map((value) => ({
+  value,
+  label: HOME_DESIGN_META[value].label,
+  description: HOME_DESIGN_META[value].description,
+  preview: <HomeDesignPreview design={value} />,
+}));
+
+const dashboardViewOptions: Choice<DashboardView>[] = [
+  { value: 'last', label: 'Last used', description: 'Reopen whichever tab you used last.' },
+  { value: 'work', label: 'Your work', description: 'Always start with your work board.' },
+  { value: 'modules', label: 'Modules', description: 'Always start with the module launcher.' },
+];
+
+const modeOptions = THEME_MODES.map((value) => ({ value, label: themeModeMeta[value].label }));
 
 const dialogSizeOptions: Choice<DialogSizePreference>[] = [
   { value: 'auto', label: 'As designed', description: 'Each dialog keeps its own width.' },
@@ -116,6 +149,7 @@ function SampleDialog() {
 
 export default function MyAppearancePage() {
   const editor = usePreferenceEditor();
+  const { can } = useAuthorization();
   const companyDialogSize = useCompanyDesign().dialogs.defaultSize;
   const { effective, defaults, company, resolvedMode, ready, preferences, set, clear, inherited, resetPreferences } = editor;
   const [showPreview, setShowPreview] = usePreviewVisible('my-appearance');
@@ -151,6 +185,20 @@ export default function MyAppearancePage() {
 
   const hasChoices = Object.keys(preferences).length > 0;
 
+  // For those who may publish the theme: their own choice, made the company default in one step.
+  const canPublish = appearanceAdminRights(can).publishThemes;
+  const makeDefault = (field: DirectDefaultField, setting: string, options: { value: string; label: string }[]) =>
+    canPublish && (
+      <MakeCompanyDefault
+        field={field}
+        value={effective[field]}
+        companyDefault={defaults[field]}
+        setting={setting}
+        valueLabel={options.find((option) => option.value === effective[field])?.label ?? effective[field]}
+        onDone={() => clear(field)}
+      />
+    );
+
   return (
     <div className={cn('grid gap-4', showPreview && 'xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start')}>
       <div className="min-w-0 space-y-4">
@@ -163,13 +211,16 @@ export default function MyAppearancePage() {
           icon={Moon}
           description="Light, dark, or follow this device. Follow device switches as soon as your phone or computer does."
           action={
-            !inherited('mode') ? (
-              <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => clear('mode')}>
-                <RotateCcw className="h-3 w-3" aria-hidden="true" /> Use company default
-              </Button>
-            ) : (
-              <Badge variant="neutral">Company default</Badge>
-            )
+            <span className="flex flex-wrap items-center justify-end gap-1">
+              {!inherited('mode') ? (
+                <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => clear('mode')}>
+                  <RotateCcw className="h-3 w-3" aria-hidden="true" /> Use company default
+                </Button>
+              ) : (
+                <Badge variant="neutral">Company default</Badge>
+              )}
+              {makeDefault('mode', 'Theme', modeOptions)}
+            </span>
           }
         >
           <ThemeModeControl />
@@ -185,20 +236,18 @@ export default function MyAppearancePage() {
             companyDefault={defaults.accent}
             inherited={inherited('accent')}
             onReset={() => clear('accent')}
+            action={makeDefault('accent', 'Accent colour', accentOptions)}
             columns={4}
           />
           <ChoiceGroup<RadiusStyle>
             label="Border style"
             value={effective.radius}
-            options={[
-              { value: 'soft', label: 'Soft', preview: <span className="block h-7 w-12 rounded-[0.8rem] border-2 border-foreground/40" /> },
-              { value: 'standard', label: 'Standard', preview: <span className="block h-7 w-12 rounded-[0.5rem] border-2 border-foreground/40" /> },
-              { value: 'sharp', label: 'Sharp', preview: <span className="block h-7 w-12 rounded-[0.2rem] border-2 border-foreground/40" /> },
-            ]}
+            options={radiusOptions}
             onChange={(value) => set('radius', value)}
             companyDefault={defaults.radius}
             inherited={inherited('radius')}
             onReset={() => clear('radius')}
+            action={makeDefault('radius', 'Border style', radiusOptions)}
           />
         </SettingsSection>
 
@@ -206,15 +255,12 @@ export default function MyAppearancePage() {
           <ChoiceGroup<TextSize>
             label="Text size"
             value={effective.textSize}
-            options={[
-              { value: 'small', label: 'Small', preview: <span className="block text-[13px] font-semibold leading-none">Aa</span> },
-              { value: 'default', label: 'Default', preview: <span className="block text-[16px] font-semibold leading-none">Aa</span> },
-              { value: 'large', label: 'Large', preview: <span className="block text-[20px] font-semibold leading-none">Aa</span> },
-            ]}
+            options={textSizeOptions}
             onChange={(value) => set('textSize', value)}
             companyDefault={defaults.textSize}
             inherited={inherited('textSize')}
             onReset={() => clear('textSize')}
+            action={makeDefault('textSize', 'Text size', textSizeOptions)}
           />
           <ChoiceGroup<Density>
             label="Display density"
@@ -225,6 +271,7 @@ export default function MyAppearancePage() {
             companyDefault={defaults.density}
             inherited={inherited('density')}
             onReset={() => clear('density')}
+            action={makeDefault('density', 'Display density', densityOptions)}
           />
           <ChoiceGroup
             label="Interface font"
@@ -234,6 +281,7 @@ export default function MyAppearancePage() {
             companyDefault={defaults.font}
             inherited={inherited('font')}
             onReset={() => clear('font')}
+            action={makeDefault('font', 'Interface font', fontOptions)}
             columns={2}
           />
         </SettingsSection>
@@ -297,35 +345,29 @@ export default function MyAppearancePage() {
             companyDefault={defaults.tableDensity}
             inherited={inherited('tableDensity')}
             onReset={() => clear('tableDensity')}
+            action={makeDefault('tableDensity', 'Table row density', densityOptions)}
           />
           <ChoiceGroup<HomeDesign>
             label="Home page design"
             description="How the Modules tab of the home page looks; Your work is the same in every design. Every design lists only the modules you can open."
             value={effective.homeDesign}
-            options={HOME_DESIGNS.map((value) => ({
-              value,
-              label: HOME_DESIGN_META[value].label,
-              description: HOME_DESIGN_META[value].description,
-              preview: <HomeDesignPreview design={value} />,
-            }))}
+            options={homeDesignOptions}
             onChange={(value) => set('homeDesign', value)}
             companyDefault={defaults.homeDesign}
             inherited={inherited('homeDesign')}
             onReset={() => clear('homeDesign')}
+            action={makeDefault('homeDesign', 'Home page design', homeDesignOptions)}
           />
           <ChoiceGroup<DashboardView>
             label="Default dashboard view"
             description="Which tab the home page opens on, in every design."
             value={effective.dashboardView}
-            options={[
-              { value: 'last', label: 'Last used', description: 'Reopen whichever tab you used last.' },
-              { value: 'work', label: 'Your work', description: 'Always start with your work board.' },
-              { value: 'modules', label: 'Modules', description: 'Always start with the module launcher.' },
-            ]}
+            options={dashboardViewOptions}
             onChange={(value) => set('dashboardView', value)}
             companyDefault={defaults.dashboardView}
             inherited={inherited('dashboardView')}
             onReset={() => clear('dashboardView')}
+            action={makeDefault('dashboardView', 'Default dashboard view', dashboardViewOptions)}
           />
         </SettingsSection>
 

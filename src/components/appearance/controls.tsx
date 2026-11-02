@@ -34,6 +34,7 @@ export function ChoiceGroup<T extends string>({
   onReset,
   columns = 3,
   disabled,
+  action,
 }: {
   label: string;
   description?: string;
@@ -46,6 +47,8 @@ export function ChoiceGroup<T extends string>({
   onReset?: () => void;
   columns?: 2 | 3 | 4;
   disabled?: boolean;
+  /** Beside the company-default state, e.g. "Make default for everyone" for administrators. */
+  action?: ReactNode;
 }) {
   const labelId = useId();
   const descriptionId = useId();
@@ -68,6 +71,7 @@ export function ChoiceGroup<T extends string>({
               </Button>
             )
           )}
+          {action}
         </div>
         {description && (
           <p id={descriptionId} className="text-xs text-muted-foreground">

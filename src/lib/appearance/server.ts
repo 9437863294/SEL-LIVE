@@ -15,12 +15,15 @@ import {
   sanitizePreferences,
   sanitizePublished,
   sanitizeTheme,
+  withCompanyDefault,
   type BrandAsset,
   type BrandAssetKind,
   type CompanyAppearanceConfig,
+  type DirectDefaultField,
   type PublishedAppearance,
   type UserAppearancePreferences,
 } from './model';
+import { AccessDeniedError } from '@/lib/access-control-server';
 import type { ImageProbe } from './image-probe';
 import { changedPaths } from './diff';
 
@@ -181,6 +184,65 @@ export async function publishDraft(actor: AppearanceActor, note: string): Promis
     tx.set(versionsRef().doc(String(version)), doc);
     return { published: sanitizePublished(doc), changes };
   });
+}
+
+export interface DefaultChangeResult extends PublishResult {
+  /** How many people's own choice of that setting was removed, so the new default reaches them. */
+  cleared: number;
+}
+
+/**
+ * Make one company default live at once, from an administrator's own choice on My Appearance: a
+ * new version like a draft publish, holding only this change. The draft gets the change too, so
+ * publishing it later does not quietly undo this one. With `clearChoices`, that setting is also
+ * removed from everyone's own preferences, so people who had chosen for themselves follow it.
+ */
+export async function publishDefault(
+  actor: AppearanceActor,
+  field: unknown,
+  value: unknown,
+  options: { clearChoices: boolean; note: string | null },
+): Promise<DefaultChangeResult> {
+  const result = await db().runTransaction(async (tx) => {
+    const [current, draftSnap] = await Promise.all([tx.get(publishedRef()), tx.get(draftRef())]);
+    const before = current.exists ? sanitizePublished(current.data()) : DEFAULT_PUBLISHED;
+    const defaults = withCompanyDefault(before.defaults, before.theme, field, value);
+    if (!defaults) throw new AccessDeniedError('That is not a choice the company default can be set to.', 400);
+    const config: CompanyAppearanceConfig = { ...stripMeta(before), defaults };
+    const changes = changedPaths(stripMeta(before), config);
+    if (!changes.length) return { published: before, changes };
+    const version = before.version + 1;
+    const note = options.note ?? `Company default ${String(field)} set to ${String(value)}`;
+    const doc = versionDoc(config, version, actor, 'publish', note, changes);
+    tx.set(publishedRef(), doc);
+    tx.set(versionsRef().doc(String(version)), doc);
+    if (draftSnap.exists) {
+      const draft = draftSnap.data() ?? {};
+      // A draft that was up to date still is: it now holds the same change as the new version.
+      tx.update(draftRef(), {
+        [`defaults.${String(field)}`]: value,
+        ...(draft.basedOnVersion === before.version ? { basedOnVersion: version } : {}),
+      });
+    }
+    return { published: sanitizePublished(doc), changes };
+  });
+  return { ...result, cleared: options.clearChoices ? await clearPreference(String(field)) : 0 };
+}
+
+/** People who have chosen this setting for themselves, rather than following the company. */
+export async function countPreference(field: DirectDefaultField): Promise<number> {
+  const snapshot = await db().collection(PREFERENCES).where(field, '!=', null).count().get();
+  return snapshot.data().count;
+}
+
+async function clearPreference(field: string): Promise<number> {
+  const snapshot = await db().collection(PREFERENCES).where(field, '!=', null).get();
+  for (let i = 0; i < snapshot.docs.length; i += 400) {
+    const batch = db().batch();
+    for (const entry of snapshot.docs.slice(i, i + 400)) batch.update(entry.ref, { [field]: FieldValue.delete() });
+    await batch.commit();
+  }
+  return snapshot.size;
 }
 
 /** Branding changes go live on save — as a version of their own, so they can be restored. */
