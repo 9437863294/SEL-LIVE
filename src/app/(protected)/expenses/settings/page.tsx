@@ -540,10 +540,6 @@ export default function ExpensesSettingsPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <Link href="/expenses" className="hover:text-foreground">
-          Expenses
-        </Link>
-        <span aria-hidden="true">›</span>
         <span className="text-foreground">Settings</span>
       </nav>
 
