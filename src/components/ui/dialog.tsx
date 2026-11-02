@@ -50,6 +50,8 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
    * Dialogs, on unless they turned it off); pass `false` for a dialog where they make no sense.
    */
   windowControls?: boolean
+  /** Whether the window controls include Minimise. Pass `false` to leave only Maximise / Restore size. */
+  minimisable?: boolean
   /** The label on the minimised bar. Defaults to the DialogTitle's text. */
   windowTitle?: string
 }
@@ -151,7 +153,7 @@ function WindowLifecycle({ onOpen, onClose }: { onOpen: () => void; onClose: () 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
->(({ className, children, size, windowControls, windowTitle, onEscapeKeyDown, onInteractOutside, onFocusCapture, ...props }, ref) => {
+>(({ className, children, size, windowControls, minimisable = true, windowTitle, onEscapeKeyDown, onInteractOutside, onFocusCapture, ...props }, ref) => {
   const closeLabel = useUiText()('close', 'Close')
   const prefs = useDialogPreferences()
   const controls = windowControls ?? prefs.controls
@@ -263,9 +265,11 @@ const DialogContent = React.forwardRef<
             >
               {maximised ? <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />}
             </button>
-            <button type="button" className={WINDOW_BUTTON} onClick={minimise} aria-label="Minimise" title="Minimise">
-              <Minus className="h-4 w-4" aria-hidden="true" />
-            </button>
+            {minimisable && (
+              <button type="button" className={WINDOW_BUTTON} onClick={minimise} aria-label="Minimise" title="Minimise">
+                <Minus className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
         )}
 

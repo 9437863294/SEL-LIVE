@@ -5,7 +5,8 @@
  *
  * One page, one set of filters, every report. The catalogue lives in `@/lib/expenses-reports` and
  * this renders whatever it lists, so a new report is a new entry there rather than another route
- * with its own table and its own idea of how to format a rupee.
+ * with its own table and its own idea of how to format a rupee. Without `?report=` the page lists
+ * every report to choose from (`ExpenseReportsHub`); a report's header switches to another.
  *
  * Scope is a filter, not a fork: the same reports serve one department and the whole organisation,
  * which is what lets a department head and the finance office argue about a number rather than
@@ -39,7 +40,6 @@ import { exportRowsToExcel } from '@/lib/report-excel';
 import type { Department, ExpenseRequest, Project } from '@/lib/types';
 import { requisitionsByRequestNo, type ProgressRequisition } from '@/lib/requisition-progress';
 import {
-  EXPENSE_REPORTS,
   PAYMENT_STAGE_FILTERS,
   PAYMENT_SUMMARY_GROUPINGS,
   enrichExpenses,
@@ -55,6 +55,7 @@ import {
 } from '@/lib/expenses-reports';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { PivotReport } from '@/components/expenses/pivot-report';
+import { ExpenseReportsHub, PIVOT_REPORT_ID, ReportSwitcher, hubReportById } from '@/components/expenses/reports-hub';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -72,9 +73,6 @@ import { format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
-
-/** The custom pivot sits in the list alongside the fixed reports, under its own id. */
-const PIVOT_ID = 'custom-pivot';
 
 /**
  * A department id no grant can name. `can('View', 'Expenses.Departments', …)` passes it only for a
@@ -136,9 +134,10 @@ function ReportCentre() {
   const { may, restrictedToAssignees } = useExpensesActor();
   const { toast } = useToast();
   const searchParams = useSearchParams();
-  // Which report is showing comes from the URL, because the catalogue lives in the module sidebar
-  // now — that also makes a report linkable and survives a refresh or a back button.
-  const reportId = searchParams?.get('report') || EXPENSE_REPORTS[0].id;
+  // Which report is showing comes from the URL, so a report can be linked to and survives a refresh
+  // or a back button. Without one — or with one that no longer exists — the page lists every report.
+  const requestedReport = searchParams?.get('report') ?? null;
+  const reportId = hubReportById(requestedReport) ? (requestedReport as string) : null;
   const viewDecision = may('view-reports');
   const canViewPage = viewDecision.allowed;
 
@@ -293,7 +292,10 @@ function ReportCentre() {
     [permittedExpenses, dateRange, departmentId, projectId, search],
   );
 
-  const definition = reportId === PIVOT_ID ? undefined : expenseReportById(reportId);
+  const definition = useMemo(
+    () => (!reportId || reportId === PIVOT_REPORT_ID ? undefined : expenseReportById(reportId)),
+    [reportId],
+  );
   const result = useMemo(
     () =>
       definition
@@ -400,6 +402,12 @@ function ReportCentre() {
       </div>
     ) : undefined;
 
+  // Every link between the reports keeps the department scope the page was opened with.
+  const scopeQuery = scopedDepartmentId ? `departmentId=${encodeURIComponent(scopedDepartmentId)}` : '';
+  const reportHref = (id: string) => `/expenses/reports?report=${encodeURIComponent(id)}${scopeQuery ? `&${scopeQuery}` : ''}`;
+  const hubHref = `/expenses/reports${scopeQuery ? `?${scopeQuery}` : ''}`;
+  const reportTitle = hubReportById(reportId)?.title ?? 'Report';
+
   if (isAuthLoading) {
     return (
       <div className="w-full space-y-4">
@@ -431,15 +439,24 @@ function ReportCentre() {
     );
   }
 
+  // No report chosen: the page lists them all.
+  if (!reportId) {
+    const scopedName = scopedDepartmentId ? departments.find(entry => entry.id === scopedDepartmentId)?.name : undefined;
+    return <ExpenseReportsHub hrefOf={reportHref} scopeNote={scopedName ? `Department: ${scopedName}` : undefined} />;
+  }
+
   return (
     <div className="w-full space-y-4">
       <PageHeader
         icon={BarChart3}
-        title="Expense Reports"
+        breadcrumbs={[{ label: 'Expenses', href: '/expenses' }, { label: 'Reports', href: hubHref }, { label: reportTitle }]}
+        title={reportTitle}
         description={scopeLabel}
-        backHref="/expenses"
+        backHref={hubHref}
+        backLabel="All reports"
         actions={
           <>
+            <ReportSwitcher value={reportId} hrefOf={reportHref} />
             <Button variant="outline" size="sm" className="gap-2 print:hidden" onClick={() => window.print()}>
               <Printer className="h-3.5 w-3.5" /> Print
             </Button>
@@ -513,10 +530,9 @@ function ReportCentre() {
         </Popover>
       </FilterBar>
 
-      {/* The selected report. The catalogue that used to sit beside it is now nested under
-          Reports in the module sidebar, so the page gets its full width. */}
+      {/* The selected report, at the page's full width; the switcher in the header moves to another. */}
       <div className="min-w-0 space-y-4">
-        {reportId === PIVOT_ID ? (
+        {reportId === PIVOT_REPORT_ID ? (
           <PivotReport expenses={scoped} isLoading={isLoading} />
         ) : definition && result ? (
           <>
