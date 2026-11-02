@@ -483,13 +483,16 @@ export default function WorkCalendar({
   lanes,
   today,
   fetchMeetings,
+  initialDate,
 }: {
   lanes: WorkLanes;
   today: string;
   fetchMeetings: ((from: string, to: string) => Promise<WorkItem[]>) | null;
+  /** Open on this day, in the day view — the board's month glance sends a picked date here. */
+  initialDate?: string;
 }) {
-  const [view, setView] = useState<CalendarView>('month');
-  const [anchor, setAnchor] = useState(today);
+  const [view, setView] = useState<CalendarView>(initialDate ? 'day' : 'month');
+  const [anchor, setAnchor] = useState(initialDate ?? today);
   const [meetings, setMeetings] = useState<WorkItem[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const [failed, setFailed] = useState(false);

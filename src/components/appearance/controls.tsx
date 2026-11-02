@@ -228,12 +228,14 @@ const PREVIEW_EVENT = 'appearance-preview-change';
 /** Used when storage is blocked, so the toggle still works for the visit. */
 const previewMemory = new Map<string, boolean>();
 
-function readPreview(key: string): boolean {
+/** `null` when this device has no choice on record for the screen. */
+function readPreview(key: string): boolean | null {
   if (previewMemory.has(key)) return previewMemory.get(key) === true;
   try {
-    return window.localStorage.getItem(`appearance-preview:${key}`) === '1';
+    const stored = window.localStorage.getItem(`appearance-preview:${key}`);
+    return stored === null ? null : stored === '1';
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -252,7 +254,16 @@ function subscribePreview(onChange: () => void) {
  * remembered per screen on this device (a convenience only; it never reaches the server).
  */
 export function usePreviewVisible(key: string): [boolean, (visible: boolean) => void] {
-  const visible = useSyncExternalStore(subscribePreview, () => readPreview(key), () => false);
+  const [visible, setVisible] = usePreviewPreference(key);
+  return [visible ?? false, setVisible];
+}
+
+/**
+ * The same remembered choice, but `null` until the person makes one — for a screen whose preview
+ * starts shown where there is room for it (Settings › Company Profile).
+ */
+export function usePreviewPreference(key: string): [boolean | null, (visible: boolean) => void] {
+  const visible = useSyncExternalStore(subscribePreview, () => readPreview(key), () => null);
   const setVisible = useCallback(
     (next: boolean) => {
       previewMemory.set(key, next);

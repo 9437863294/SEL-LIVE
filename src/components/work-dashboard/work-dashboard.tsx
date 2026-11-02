@@ -1,489 +1,76 @@
 'use client';
 
 /**
- * The central dashboard.
+ * The central dashboard: what needs you, across every module, one click from where it is done.
  *
- * Four sections, in the order a working day asks for them: what needs you, what your team's queues
- * hold, what you are sitting in today, and what you raised and are waiting on. Every row is a link
- * to the screen where that piece of work is actually done — which is the whole point, and the reason
- * `WorkItem.href` is required rather than optional.
+ * Three parts. The band at the top greets the person and holds four figures — needs your action,
+ * meetings today, your team's queues, waiting on others — which are also the switch for the list.
+ * The list shows one of those lanes at a time, as cards under deadline headings, or as deadline
+ * columns on the Board, or everything on the Calendar. Beside it, the rail previews the other lanes
+ * (today's meetings, what others hold, the queues) and the month, so the lane in the list is never
+ * the only thing in view.
  *
- * ── Why it looks like the rest of the application ──────────────────────────────────────────────
- *
- * The figures are `KpiCard`s and the header is a `PageHeader`, from `@/components/shared/kpi-card` —
- * the same two primitives fifty screens across HR and Employee already render, where they used to
- * live as `HrKpiCard` and `HrPageHeader`. A dashboard that invents its own card, its own header scale
- * and its own tile padding reads as a different application bolted on beside this one, which is
- * exactly how the first cut of this screen looked: outsized tiles with a number floating in the
- * middle of a mostly-empty box.
- *
- * They were moved out of `hr-ui.tsx` rather than imported from it because that file pulls in
- * `@/lib/hr-requirement`, and through it `hr-policy.ts` — some thirty-six hundred lines of HR rules,
- * which have no business loading on the home page.
- *
- * The board runs the full width of the page with minimal gutters — see the note on `shell` below for
- * what that costs and what the better fix would be if it ever starts to grate.
+ * The lanes stay apart on purpose. Work a field names *you* for and work merely open to your role
+ * are different statements — one is yours to answer for, the other anybody in your role could pick
+ * up — and mixing them would be the one genuinely misleading thing this screen could do.
  *
  * ── What this screen deliberately does not do ──────────────────────────────────────────────────
  *
- * No charts, and no per-person productivity figures. A count of somebody's open items is not a
- * measure of their output, and a dashboard that implies otherwise gets gamed rather than used —
- * the same instruction Office Hub's management overview follows ("do not generate employee
- * performance scores or rankings", §73). What is here is operational: what is waiting, how late it
- * is, and where to click.
+ * No per-person productivity figures. A count of somebody's open items is not a measure of their
+ * output, and a dashboard that implies otherwise gets gamed rather than used — the same instruction
+ * Office Hub's management overview follows ("do not generate employee performance scores or
+ * rankings", §73). What is here is operational: what is waiting, how late it is, and where to click.
  *
- * It also does not hide the fact that a source failed. A count of zero because nothing is pending
- * and a count of zero because the query was denied look identical, and only one of them means you
- * can stop worrying — so failures get a visible notice naming the queues that could not be read.
+ * No decisions either: every card opens the module that owns the decision (see `work-items.tsx`).
+ *
+ * And it does not hide a source that failed. A zero because nothing is pending and a zero because
+ * the query was denied look identical, and only one means you can stop worrying — so failures get a
+ * visible notice naming the queues that could not be read.
  */
 
-import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useMemo, useState } from 'react';
-import {
-  AlertTriangle,
-  ArrowRight,
-  CalendarClock,
-  CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  Clock,
-  Inbox,
-  List as ListIcon,
-  RefreshCw,
-  Users,
-  Video,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { useId, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, ArrowLeft, CalendarDays, KanbanSquare, List as ListIcon, Search } from 'lucide-react';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { cn } from '@/lib/utils';
-import { KpiCard, type Tone } from '@/components/shared/kpi-card';
-import { CellLink, DataList, type ListColumn } from '@/components/shared/data-list';
-import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import {
-  WORK_LANES,
   WORK_LANE_HINT,
   WORK_LANE_TITLE,
   calendarItems,
-  mergedWorkItems,
-  dueLabel,
-  workUrgency,
-  type WorkItem,
+  countByModule,
+  searchWorkItems,
+  sortWorkItems,
   type WorkLane,
-  type WorkLanes,
-  type WorkSummary,
-  type WorkUrgency,
+  type WorkSort,
 } from '@/lib/work-dashboard';
+import { cn } from '@/lib/utils';
 import { useWorkDashboard, type WorkDashboardState } from './hooks';
-import { useCountUp } from './use-count-up';
-import { PageHeader } from '@/components/shared/page-header';
+import { WorkHero } from './work-hero';
+import { ModuleTile, WorkColumns, WorkEmpty, WorkList } from './work-items';
+import { workModuleLook } from './work-module';
+import { WorkRail } from './work-rail';
 
 // Downloaded the first time somebody opens the Calendar view, not with the home page.
 const WorkCalendar = dynamic(() => import('./work-calendar'), {
-  loading: () => <Skeleton className="h-96 rounded-xl" />,
+  loading: () => <Skeleton className="h-96 rounded-2xl" />,
 });
 
-/* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
+type WorkView = 'list' | 'board' | 'calendar';
 
-/**
- * Compact above a thousand.
- *
- * A shared queue can genuinely hold four figures — Daily Requisition's open pipeline runs into the
- * thousands — and `1799` sitting next to `1` makes the small number look like the unimportant one,
- * when it is the only one naming this person. `1.8k` keeps the magnitude without the visual weight.
- */
-const formatFigure = (value: number): string =>
-  value >= 1000
-    ? new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
-    : String(value);
+const VIEWS: Array<{ id: WorkView; label: string; icon: React.ElementType }> = [
+  { id: 'list', label: 'List', icon: ListIcon },
+  { id: 'board', label: 'Board', icon: KanbanSquare },
+  { id: 'calendar', label: 'Calendar', icon: CalendarDays },
+];
 
-/**
- * A count, animated to its new value, and muted when it is zero.
- *
- * On a typical day most of these are zero — one person's four counts are not four pieces of news —
- * and four confident black zeroes give a screen with one real item on it the visual weight of a
- * screen with forty. Muting them keeps the eye on the number that is actually saying something.
- */
-function Figure({ value }: { value: number }) {
-  const shown = useCountUp(value);
-  return (
-    <span
-      className={cn(
-        'tabular-nums transition-colors',
-        value === 0 && 'font-normal text-muted-foreground/60',
-      )}
-    >
-      {/* The animated value while counting, the exact one once settled — so a compacted figure never
-          shows a rounding artefact mid-flight. */}
-      {formatFigure(shown)}
-    </span>
-  );
-}
-
-function SummaryFigures({ summary, weekMeetings }: { summary: WorkSummary; weekMeetings: number }) {
-  const overdueHint =
-    summary.overdue > 0
-      ? `${summary.overdue} overdue${summary.dueToday > 0 ? `, ${summary.dueToday} due today` : ''}`
-      : summary.dueToday > 0
-        ? `${summary.dueToday} due today`
-        : undefined;
-
-  const figures: Array<{ label: string; value: number; hint?: string; icon: React.ElementType; tone: Tone }> = [
-    {
-      label: 'Needs your action',
-      value: summary.action,
-      hint: overdueHint,
-      icon: Inbox,
-      // Rose only when something is actually late, so the colour keeps meaning something.
-      tone: summary.overdue > 0 ? 'rose' : summary.action > 0 ? 'indigo' : 'slate',
-    },
-    {
-      label: 'Meetings today',
-      value: summary.meetingsToday,
-      hint: weekMeetings > summary.meetingsToday ? `${weekMeetings} this week` : undefined,
-      icon: CalendarClock,
-      tone: summary.meetingsToday > 0 ? 'blue' : 'slate',
-    },
-    {
-      label: "Your team's queues",
-      value: summary.shared,
-      icon: Users,
-      tone: summary.shared > 0 ? 'violet' : 'slate',
-    },
-    {
-      label: 'Waiting on others',
-      value: summary.watching,
-      icon: Clock,
-      tone: 'slate',
-    },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-      {figures.map((figure, index) => (
-        <KpiCard
-          key={figure.label}
-          label={figure.label}
-          value={<Figure value={figure.value} />}
-          hint={figure.hint}
-          icon={figure.icon}
-          tone={figure.tone}
-          accent
-          accentClassName="animate-wd-accent"
-          className={cn(
-            'animate-wd-card-in',
-            // A lift on hover, so the row reads as a set of objects rather than a painted band.
-            'hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0',
-            'transition-[transform,box-shadow] duration-200',
-          )}
-          /*
-            Staggered by index, so the row assembles left to right rather than appearing at once —
-            which is what makes four cards read as four things rather than one painted band.
-
-            Set as a custom property, not `animationDelay`, because the accent bar inside the card
-            needs the same number plus an offset. A custom property inherits to it; an inline
-            `animationDelay` would apply only to the card itself.
-          */
-          style={{ '--wd-delay': `${index * 70}ms` } as React.CSSProperties}
-        />
-      ))}
-    </div>
-  );
-}
-
-/* ── rows ──────────────────────────────────────────────────────────────────────────────────────── */
-
-const formatAmount = (value: number) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-    notation: value >= 1_00_00_000 ? 'compact' : 'standard',
-  }).format(value);
-
-/**
- * The columns, as a table on a desktop and a card per row on a phone.
- *
- * Declared once and rendered twice by `DataList`, which is why each column carries a `mobile` slot:
- * the phone card needs to know which value is the headline and which belongs in the label/value
- * grid. Getting that wrong is how a register ends up readable on one device and not the other.
- *
- * The urgency colour is a left border on the whole row rather than a column of its own — a column of
- * coloured squares would be a second, worse copy of the Due column, which already says "14 days
- * overdue" in words.
- */
-function workColumns(today: string): Array<ListColumn<WorkItem>> {
-  return [
-    {
-      header: 'Item',
-      mobile: 'title',
-      /**
-       * `w-full max-w-0` is the CSS-table truncation idiom, not a mistake.
-       *
-       * A table cell will not honour `text-overflow: ellipsis` while its intrinsic width can grow to
-       * fit the text, so a long subject either wraps to a second line or pushes the other columns
-       * off. Setting `max-width: 0` with `width: 100%` makes this the one column that absorbs the
-       * leftover width, and lets its content clip inside whatever is left.
-       */
-      className: 'w-full max-w-0',
-      cell: (item) => (
-        <div className="flex min-w-0 items-baseline gap-2">
-          <CellLink
-            href={item.href}
-            className="truncate font-medium hover:underline"
-          >
-            {item.title}
-          </CellLink>
-          {item.reference ? (
-            <span className="shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
-              {item.reference}
-            </span>
-          ) : null}
-        </div>
-      ),
-    },
-    {
-      header: 'Module',
-      mobile: 'detail',
-      className: 'whitespace-nowrap',
-      cell: (item) => (
-        <Badge variant="outline" className="whitespace-nowrap">
-          {item.module}
-        </Badge>
-      ),
-    },
-    {
-      header: 'Stage',
-      mobile: 'detail',
-      className: 'hidden max-w-[14rem] truncate whitespace-nowrap lg:table-cell',
-      cell: (item) => <span className="text-muted-foreground">{item.stage ?? '—'}</span>,
-    },
-    {
-      header: 'With / raised by',
-      mobile: 'detail',
-      className: 'hidden max-w-[12rem] truncate whitespace-nowrap xl:table-cell',
-      cell: (item) => <span className="text-muted-foreground">{item.raisedBy ?? '—'}</span>,
-    },
-    {
-      header: 'Amount',
-      align: 'right',
-      mobile: 'detail',
-      className: 'hidden whitespace-nowrap md:table-cell',
-      cell: (item) => (
-        <span className="tabular-nums">
-          {typeof item.amount === 'number' ? formatAmount(item.amount) : '—'}
-        </span>
-      ),
-    },
-    {
-      header: 'Due',
-      align: 'right',
-      mobile: 'aside',
-      cell: (item) => {
-        if (typeof item.count === 'number' && item.count > 0) {
-          return (
-            <Badge variant="neutral" className="whitespace-nowrap tabular-nums">
-              {item.count} waiting
-            </Badge>
-          );
-        }
-        const urgency = workUrgency(item, today);
-        if (urgency === 'undated') return <span className="text-xs text-muted-foreground">—</span>;
-        return (
-          <div className="flex items-center justify-end gap-1.5">
-            {item.startTime ? (
-              <span className="text-xs font-semibold tabular-nums text-slate-700">{item.startTime}</span>
-            ) : null}
-            <StatusBadge status={urgency} tone={URGENCY_TONE[urgency]}>
-              {dueLabel(item, today)}
-            </StatusBadge>
-          </div>
-        );
-      },
-    },
-    {
-      header: 'Action',
-      align: 'right',
-      // 'footer' puts the button in the card's action strip on a phone, where `DataList` stops
-      // wrapping the card in a link so the button can receive the tap.
-      mobile: 'footer',
-      cell: (item) => (
-        <div className="flex items-center justify-end gap-1.5">
-          {item.actionUrl ? (
-            // `target="_blank"` with `rel="noreferrer"`: a video call belongs in its own tab, and
-            // the dashboard should still be there when the meeting ends.
-            <Button asChild size="sm" className="h-7 gap-1 px-2 text-xs">
-              <a href={item.actionUrl} target="_blank" rel="noreferrer">
-                <Video className="h-3 w-3" /> Join
-              </a>
-            </Button>
-          ) : null}
-          <Button asChild size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs">
-            <Link href={item.href}>
-              {item.lane === 'meeting' ? 'Details' : 'Open'}
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </Button>
-        </div>
-      ),
-    },
-  ];
-}
-
-/**
- * Why the action is "Open" and not "Approve".
- *
- * Every one of these nineteen sources has its own decision rules — E-Approval alone has a policy
- * engine covering the verification stack, return-to-any-step, supersede-on-material-change and the
- * approval matrix, and most modules require a comment or an attachment with the decision. A one-click
- * Approve here would either reimplement all of that (and drift from it) or bypass it. Neither is an
- * acceptable thing to do to an approval trail, so the dashboard's job ends at putting the work one
- * click from the screen that owns the decision.
- */
-const laneRowClass = (item: WorkItem, today: string): string => {
-  const urgency = workUrgency(item, today);
-  if (typeof item.count === 'number' && item.count > 0) return 'border-l-[3px] border-l-transparent';
-  return cn(
-    'border-l-[3px]',
-    urgency === 'overdue' && 'border-l-rose-500',
-    urgency === 'today' && 'border-l-amber-500',
-    urgency === 'soon' && 'border-l-blue-400',
-    (urgency === 'later' || urgency === 'undated') && 'border-l-transparent',
-  );
+const SORT_LABEL: Record<WorkSort, string> = {
+  due: 'Sort: Due date',
+  amount: 'Sort: Amount',
+  module: 'Sort: Module',
 };
-
-/** How many rows a lane shows before it offers to show the rest. */
-const COLLAPSED_ROWS = 8;
-
-/**
- * One table, one header, every lane.
- *
- * It used to be four sections, each with its own `DataList` and therefore its own header row. That
- * repeated ITEM / MODULE / STAGE / … up to four times down the page, and — worse — each table sized
- * its own columns to its own content, so the four header rows did not line up with one another. Four
- * tables of the same thing that disagree about where their columns are is harder to read than one
- * table, whatever the headings say.
- *
- * The lane survives as the `Type` column rather than as a heading. That matters: the distinction
- * between work that names you and work merely open to your role is the one genuinely useful thing
- * this screen knows, and dropping it to merge the tables would have been the wrong trade. Sorting is
- * `compareMergedWorkItems` — lane first, urgency within — so the rows naming you stay at the top and
- * a deep shared queue can never bury them.
- */
-const LANE_TONE: Record<WorkLane, StatusTone> = {
-  action: 'warning',
-  meeting: 'info',
-  shared: 'progress',
-  watching: 'neutral',
-};
-
-/** How close a deadline is, on the shared status palette. */
-const URGENCY_TONE: Record<WorkUrgency, StatusTone> = {
-  overdue: 'danger',
-  today: 'warning',
-  soon: 'info',
-  later: 'neutral',
-  undated: 'neutral',
-};
-
-const LANE_SHORT: Record<WorkLane, string> = {
-  action: 'Needs you',
-  meeting: 'Meeting',
-  shared: 'Team queue',
-  watching: 'Waiting',
-};
-
-function WorkTable({ items, today }: { items: WorkItem[]; today: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? items : items.slice(0, COLLAPSED_ROWS);
-
-  const columns = useMemo<Array<ListColumn<WorkItem>>>(
-    () => [
-      {
-        header: 'Type',
-        mobile: 'detail',
-        className: 'whitespace-nowrap',
-        cell: (item) => (
-          <StatusBadge status={item.lane} tone={LANE_TONE[item.lane]} title={WORK_LANE_HINT[item.lane]}>
-            {LANE_SHORT[item.lane]}
-          </StatusBadge>
-        ),
-      },
-      ...workColumns(today),
-    ],
-    [today],
-  );
-
-  if (!items.length) {
-    return (
-      <Card className="border-dashed border-slate-200 bg-white/60">
-        <CardContent className="flex flex-col items-center gap-1.5 py-10 text-center">
-          <CheckCircle2 className="h-8 w-8 text-emerald-500/70" />
-          <p className="font-medium text-slate-700">Nothing is waiting on you.</p>
-          <p className="max-w-sm text-sm text-muted-foreground">
-            Approvals, tasks, workflow steps and meetings assigned to you will appear here.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div>
-      <DataList
-        rows={visible}
-        columns={columns}
-        rowClassName={(item) => laneRowClass(item, today)}
-        // No `cardHref`: the row holds an Open button, and DataList only leaves a phone card's
-        // footer tappable when the card itself is not wrapped in a link.
-        dense
-        /*
-          The rows scroll inside the table, with the header pinned, instead of lengthening the page.
-          Seventeen overdue approvals should not push the figures off screen. `maxHeightClassName` is
-          DataList's own mechanism — it moves the scroll to the table's wrapper and makes the header
-          sticky against it. Wrapping this in a `ScrollArea` would not work: that wrapper is already a
-          scroll container, so a sticky header pins to the wrong element and rides away with the rows.
-        */
-        maxHeightClassName="sm:max-h-[32rem]"
-      />
-
-      {items.length > COLLAPSED_ROWS ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-1 h-7 gap-1.5 text-xs"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
-          {expanded ? 'Show less' : `Show all ${items.length}`}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-/** The lane counts, as a line of text instead of four section headings. */
-function LaneSummary({ lanes }: { lanes: WorkLanes }) {
-  const present = WORK_LANES.filter((lane) => lanes[lane].length > 0);
-  if (present.length <= 1) return null;
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {present.map((lane) => (
-        <span key={lane} className="inline-flex items-center gap-1" title={WORK_LANE_HINT[lane]}>
-          <StatusBadge status={lane} tone={LANE_TONE[lane]}>
-            {LANE_SHORT[lane]}
-          </StatusBadge>
-          <span className="tabular-nums">{lanes[lane].length}</span>
-          <span className="hidden sm:inline">{WORK_LANE_TITLE[lane].toLowerCase()}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
 
 /* ── failures ──────────────────────────────────────────────────────────────────────────────────── */
 
@@ -492,7 +79,7 @@ function FailureNotice({ failures }: { failures: Array<{ id: string; label: stri
   if (!failures.length) return null;
 
   return (
-    <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-amber-900">
+    <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-amber-900">
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
         <p className="min-w-0 flex-1 text-xs">
@@ -522,23 +109,79 @@ function FailureNotice({ failures }: { failures: Array<{ id: string; label: stri
   );
 }
 
-/* ── the screen ────────────────────────────────────────────────────────────────────────────────── */
+/* ── toolbar ───────────────────────────────────────────────────────────────────────────────────── */
 
-/** "1 item needs you", "4 items need you" — the verb has to agree, and it is the first line read. */
-function summaryLine(summary: WorkSummary): string {
-  if (summary.action === 0) {
-    return 'Pending approvals, tasks, workflow steps and meetings from every module.';
-  }
-  const items = summary.action === 1 ? '1 item needs' : `${summary.action} items need`;
-  const modules = summary.modules === 1 ? '1 module' : `${summary.modules} modules`;
-  return `${items} you across ${modules}.`;
+function ViewSwitch({ view, onView, datedCount }: { view: WorkView; onView: (view: WorkView) => void; datedCount: number }) {
+  return (
+    <div role="group" aria-label="View" className="order-1 inline-flex shrink-0 rounded-xl border bg-card p-1 shadow-sm">
+      {VIEWS.map(({ id, label, icon: Icon }) => {
+        const active = view === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onView(id)}
+            className={cn(
+              'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              active ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+            {label}
+            {id === 'calendar' && datedCount > 0 ? (
+              <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', active ? 'bg-background/20' : 'bg-muted')}>{datedCount}</span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
+
+function ModuleChips({
+  total,
+  modules,
+  active,
+  onPick,
+}: {
+  total: number;
+  modules: Array<{ module: string; count: number }>;
+  active: string | null;
+  onPick: (module: string | null) => void;
+}) {
+  const chip = (selected: boolean) =>
+    cn(
+      'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border bg-card pr-2.5 text-xs font-semibold transition-colors',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      selected ? 'border-foreground text-foreground ring-1 ring-inset ring-foreground' : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+    );
+  return (
+    // A line of its own. On a phone it pans sideways rather than wrapping, where a dozen modules
+    // would take three lines of a small screen; on a desktop it wraps, so no module is out of sight.
+    <div role="group" aria-label="Module" className="order-3 flex w-full min-w-0 gap-1.5 overflow-x-auto pb-0.5 lg:flex-wrap lg:overflow-visible lg:pb-0">
+      <button type="button" aria-pressed={active === null} onClick={() => onPick(null)} className={cn(chip(active === null), 'pl-3')}>
+        All <span className="font-medium tabular-nums text-muted-foreground">{total}</span>
+      </button>
+      {modules.map(({ module, count }) => (
+        <button key={module} type="button" aria-pressed={active === module} onClick={() => onPick(module)} className={cn(chip(active === module), 'pl-1')}>
+          <ModuleTile module={module} size="sm" className="h-6 w-6 rounded-full" />
+          {workModuleLook(module).label}
+          <span className="font-medium tabular-nums text-muted-foreground">{count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── the screen ────────────────────────────────────────────────────────────────────────────────── */
 
 interface WorkDashboardProps {
   className?: string;
   /**
-   * False on the home page, where the tab is already labelled "Your work" and an `<h1>` saying the
-   * same thing directly under it reads as a mistake. The summary line and Refresh stay either way.
+   * False on the home page, where the tab already says "Your work". True on `/my-work`, where the
+   * band is the page's only title, so its eyebrow names the page.
    */
   showTitle?: boolean;
 }
@@ -553,8 +196,8 @@ export default function WorkDashboard(props: WorkDashboardProps) {
  *
  * The home page runs `useWorkDashboard` itself and passes the result in. That way its tab can show
  * the pending count while this board is not mounted at all: somebody who opens the home page on
- * Modules gets the count without paying for every lane's table, both its phone and desktop rows,
- * built out of sight. The hook is still run exactly once, so the fan-out is never done twice.
+ * Modules gets the count without paying for the board, built out of sight. The hook is still run
+ * exactly once, so the fan-out is never done twice.
  */
 export function WorkBoard({
   className,
@@ -562,102 +205,186 @@ export function WorkBoard({
   state,
 }: WorkDashboardProps & { state: WorkDashboardState }) {
   const { lanes, summary, failures, today, isLoading, isRefreshing, refresh, fetchMeetings } = state;
-  const [view, setView] = useState<'list' | 'calendar'>('list');
-  // The calendar is built the first time it is opened, not up front behind the List view; from then
-  // on it stays mounted so the month it was paged to survives a trip back to the list.
+  const { user } = useAuth();
+  const listId = useId();
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const [lane, setLane] = useState<WorkLane>('action');
+  const [view, setView] = useState<WorkView>('list');
+  const [module, setModule] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<WorkSort>('due');
+  // The calendar is built the first time it is opened, then kept, so the month it was paged to
+  // survives a trip back to the list. A day picked on the month glance re-opens it on that day.
   const [calendarOpened, setCalendarOpened] = useState(false);
+  const [calendarDay, setCalendarDay] = useState<string | null>(null);
 
-  const merged = useMemo(() => mergedWorkItems(lanes, today), [lanes, today]);
-
-  // How many rows the calendar can actually place, for the count on its tab.
+  const laneItems = lanes[lane];
+  const modules = useMemo(() => countByModule(laneItems), [laneItems]);
+  // A module filter left over from a lane that no longer has that module filters nothing.
+  const activeModule = module && modules.some((entry) => entry.module === module) ? module : null;
+  const shown = useMemo(() => {
+    const inModule = activeModule ? laneItems.filter((item) => item.module === activeModule) : laneItems;
+    return sortWorkItems(searchWorkItems(inModule, query), sort, today);
+  }, [laneItems, activeModule, query, sort, today]);
   const datedCount = useMemo(() => calendarItems(lanes).dated.length, [lanes]);
 
-  // Full width, by request. There is no `max-w-*` here on purpose: on a wide monitor a row's title
-  // ends up a long way from its deadline badge, and that trade was made knowingly in favour of
-  // fitting more on screen. If the separation ever becomes the complaint, the fix is a two-column
-  // lane layout at `2xl` rather than a width cap — that uses the space instead of discarding it.
-  const shell = 'w-full';
+  /** Bring the list into view when it is below the fold — on a phone it sits under the band. */
+  const revealList = () =>
+    requestAnimationFrame(() => {
+      const list = listRef.current;
+      if (list && list.getBoundingClientRect().top > window.innerHeight * 0.6) {
+        list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+
+  const selectLane = (next: WorkLane) => {
+    setLane(next);
+    setModule(null);
+    if (view === 'calendar') setView('list');
+    revealList();
+  };
+
+  const selectView = (next: WorkView) => {
+    if (next === 'calendar') setCalendarOpened(true);
+    setView(next);
+  };
+
+  const openDay = (date: string) => {
+    setCalendarDay(date);
+    setCalendarOpened(true);
+    setView('calendar');
+    revealList();
+  };
+
+  const clearFilters = () => {
+    setModule(null);
+    setQuery('');
+  };
 
   if (isLoading) {
     return (
-      <div className={cn(shell, 'space-y-3', className)}>
-        <Skeleton className="h-9 w-56 rounded-md" />
-        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((key) => (
-            <Skeleton key={key} className="h-[72px] rounded-xl" />
-          ))}
+      <div className={cn('w-full space-y-4', className)} aria-busy="true">
+        <Skeleton className="h-[19rem] rounded-2xl sm:h-56 lg:h-44" />
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-2.5">
+            <Skeleton className="h-9 w-64 rounded-xl" />
+            {[0, 1, 2].map((key) => (
+              <Skeleton key={key} className="h-20 rounded-2xl" />
+            ))}
+          </div>
+          <div className="hidden space-y-3 xl:block">
+            <Skeleton className="h-40 rounded-2xl" />
+            <Skeleton className="h-40 rounded-2xl" />
+          </div>
         </div>
-        <Skeleton className="h-48 rounded-xl" />
       </div>
     );
   }
 
-  const refreshButton = (
-    <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={refresh} disabled={isRefreshing}>
-      <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-      Refresh
-    </Button>
-  );
+  const filtered = Boolean(activeModule || query.trim());
 
   return (
-    <div className={cn(shell, 'space-y-4', className)}>
-      {showTitle ? (
-        <PageHeader title="Your work" description={summaryLine(summary)} actions={refreshButton} />
-      ) : (
-        // Without the title the description and the button would sit on a row of their own with
-        // nothing to anchor them, so they share one baseline instead.
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">{summaryLine(summary)}</p>
-          {refreshButton}
-        </div>
-      )}
-
-      <SummaryFigures summary={summary} weekMeetings={lanes.meeting.length} />
+    <div className={cn('w-full space-y-4', className)}>
+      <WorkHero
+        firstName={(user?.name ?? '').trim().split(/\s+/)[0] ?? ''}
+        summary={summary}
+        lanes={lanes}
+        today={today}
+        lane={lane}
+        onLane={selectLane}
+        next={lanes.action[0] ?? null}
+        isRefreshing={isRefreshing}
+        onRefresh={refresh}
+        showTitle={showTitle}
+        listId={listId}
+      />
 
       <FailureNotice failures={failures} />
 
-      {/*
-        List and Calendar are two arrangements of one dataset, not two screens. The calendar issues
-        no queries of its own — it takes the same `lanes` and groups them by date — so switching is
-        free, and the two can never disagree about what is pending.
-
-        Both panels are `forceMount`ed: each lane's table owns its expand-all state and the calendar
-        remembers the month you paged to, and letting Radix unmount them would reset all of that on
-        every switch. `forceMount` stops Radix applying `hidden`, so `data-[state=inactive]:hidden`
-        does the hiding. The calendar itself is only built once it has been opened (and its code only
-        downloaded then), so the List view people mostly use does not wait on it.
-      */}
-      <Tabs
-        value={view}
-        onValueChange={(value) => {
-          const next = value === 'calendar' ? 'calendar' : 'list';
-          if (next === 'calendar') setCalendarOpened(true);
-          setView(next);
-        }}
-      >
-        <TabsList className="h-9 border border-slate-200/80 bg-slate-100/80 p-1 shadow-sm">
-          <TabsTrigger value="list" className='h-7 gap-1.5 px-2.5 text-xs'>
-            <ListIcon className="h-3.5 w-3.5" /> List
-          </TabsTrigger>
-          <TabsTrigger value="calendar" className='h-7 gap-1.5 px-2.5 text-xs'>
-            <CalendarDays className="h-3.5 w-3.5" /> Calendar
-            {datedCount > 0 ? (
-              <Badge variant="outline" className="ml-0.5 px-1 py-0 text-[10px] tabular-nums">
-                {datedCount}
-              </Badge>
+      {/* The calendar takes the full width: it is a glance of its own, and beside the rail its one-line
+          toolbar would have to pan to reach the year, month and day switch. */}
+      <div className={cn('grid grid-cols-1 gap-4', view !== 'calendar' && 'xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start')}>
+        <div ref={listRef} id={listId} className="min-w-0 scroll-mt-20 space-y-4">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <ViewSwitch view={view} onView={selectView} datedCount={datedCount} />
+            {view !== 'calendar' && modules.length > 1 ? (
+              <ModuleChips total={laneItems.length} modules={modules} active={activeModule} onPick={setModule} />
             ) : null}
-          </TabsTrigger>
-        </TabsList>
+            {view !== 'calendar' ? (
+              <div className="order-2 ml-auto flex w-full items-center gap-2 md:w-auto">
+                <div className="relative min-w-0 flex-1 md:w-64 md:flex-none">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search title, ref, person…"
+                    aria-label="Search your work"
+                    className="h-9 rounded-xl pl-8"
+                  />
+                </div>
+                <Select value={sort} onValueChange={(value) => setSort(value as WorkSort)}>
+                  <SelectTrigger className="h-9 w-[9.75rem] shrink-0 rounded-xl text-left" aria-label="Sort">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(SORT_LABEL) as WorkSort[]).map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {SORT_LABEL[key]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </div>
 
-        <TabsContent value="list" forceMount className="space-y-4 data-[state=inactive]:hidden">
-          <LaneSummary lanes={lanes} />
-          <WorkTable items={merged} today={today} />
-        </TabsContent>
+          {view !== 'calendar' ? (
+            <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-bold leading-tight">{WORK_LANE_TITLE[lane]}</h2>
+                <p className="text-xs text-muted-foreground">{WORK_LANE_HINT[lane]}</p>
+              </div>
+              {lane !== 'action' ? (
+                <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs" onClick={() => selectLane('action')}>
+                  <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                  Back to what needs you
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
 
-        <TabsContent value="calendar" forceMount className="data-[state=inactive]:hidden">
-          {calendarOpened ? <WorkCalendar lanes={lanes} today={today} fetchMeetings={fetchMeetings} /> : null}
-        </TabsContent>
-      </Tabs>
+          {view === 'calendar' ? null : shown.length === 0 ? (
+            <WorkEmpty lane={lane} filtered={filtered} onClear={clearFilters} />
+          ) : view === 'board' ? (
+            <WorkColumns items={shown} today={today} />
+          ) : (
+            // Keyed on the lane, so "Show all" folds back when the list changes to another lane.
+            <WorkList key={lane} items={shown} today={today} grouped={sort === 'due'} />
+          )}
+
+          {/* Kept mounted once opened, hidden rather than unmounted, so its month and filters survive. */}
+          <div className={view === 'calendar' ? undefined : 'hidden'}>
+            {calendarOpened ? (
+              <WorkCalendar key={calendarDay ?? 'month'} lanes={lanes} today={today} fetchMeetings={fetchMeetings} initialDate={calendarDay ?? undefined} />
+            ) : null}
+          </div>
+        </div>
+
+        {view !== 'calendar' ? (
+          <WorkRail
+            lanes={lanes}
+            today={today}
+            onLane={selectLane}
+            onOpenDay={openDay}
+            onOpenCalendar={() => {
+              selectView('calendar');
+              revealList();
+            }}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

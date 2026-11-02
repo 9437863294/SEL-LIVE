@@ -675,6 +675,34 @@ main {
   }
 }
 
+/*
+  The work dashboard's welcome band. Dark in both themes, with the accent as the light in it: an
+  accent's light-theme colour is chosen to carry white text, but in the dark theme `--primary` turns
+  pale, so the base stays near-black and the accent only tints it there. The element also carries
+  `keep-light`, which keeps the dark-compat layer off its white tiles.
+*/
+.wd-hero {
+  background-color: #0b1220;
+  background-image:
+    radial-gradient(900px 300px at 85% -10%, hsl(var(--primary) / 0.5), transparent 60%),
+    radial-gradient(600px 300px at 0% 120%, hsl(var(--primary) / 0.3), transparent 60%),
+    linear-gradient(120deg, #0b1220 0%, hsl(var(--primary) / 0.85) 100%);
+}
+
+.dark .wd-hero {
+  background-image:
+    radial-gradient(900px 300px at 85% -10%, hsl(var(--primary) / 0.35), transparent 60%),
+    radial-gradient(600px 300px at 0% 120%, hsl(var(--primary) / 0.2), transparent 60%),
+    linear-gradient(120deg, #0b1220 0%, hsl(var(--primary) / 0.45) 100%);
+}
+
+.wd-hero-dots {
+  background-image: radial-gradient(rgb(255 255 255 / 0.08) 1px, transparent 1px);
+  background-size: 18px 18px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 70%);
+  mask-image: linear-gradient(90deg, transparent, #000 70%);
+}
+
 /* ── Employee Management entrance animations ── */
 
 /*

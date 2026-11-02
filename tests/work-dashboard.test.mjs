@@ -42,6 +42,13 @@ import {
   toWorkDate,
   workItemWeight,
   workUrgency,
+  WORK_BUCKETS,
+  formatClock,
+  formatWorkAmount,
+  searchWorkItems,
+  sortWorkItems,
+  workBucket,
+  workWhenLabel,
 } from '../src/lib/work-dashboard.ts';
 
 const TODAY = '2026-09-22';
@@ -786,4 +793,80 @@ test('the stock posting actions are all real inventory permissions', () => {
   for (const action of STOCK_POSTING_ACTIONS) {
     assert.ok(!action.startsWith('View'), `'${action}' is a read permission, not an action`);
   }
+});
+
+/* ── list and board ───────────────────────────────────────────────────────────────────────────── */
+
+test('buckets split overdue, today, the coming week and the rest', () => {
+  assert.equal(workBucket(item({ dueAt: '2026-09-21' }), TODAY), 'overdue');
+  assert.equal(workBucket(item({ dueAt: TODAY }), TODAY), 'today');
+  assert.equal(workBucket(item({ dueAt: '2026-09-23' }), TODAY), 'week');
+  assert.equal(workBucket(item({ dueAt: '2026-09-29' }), TODAY), 'week');
+  assert.equal(workBucket(item({ dueAt: '2026-09-30' }), TODAY), 'later');
+  // No deadline is not "due now"; it waits with the rest.
+  assert.equal(workBucket(item({ dueAt: null }), TODAY), 'later');
+  assert.deepEqual([...WORK_BUCKETS], ['overdue', 'today', 'week', 'later']);
+});
+
+test('sorting by amount puts the largest first and rows without one last', () => {
+  const rows = [
+    item({ id: 'a', amount: null, dueAt: '2026-09-01' }),
+    item({ id: 'b', amount: 500 }),
+    item({ id: 'c', amount: 90_000 }),
+    item({ id: 'd' }),
+  ];
+  assert.deepEqual(sortWorkItems(rows, 'amount', TODAY).map((row) => row.id), ['c', 'b', 'a', 'd']);
+});
+
+test('sorting by module keeps the deadline order inside each module', () => {
+  const rows = [
+    item({ id: 'late', module: 'Insurance', dueAt: '2026-09-30' }),
+    item({ id: 'ea', module: 'E-Approval', dueAt: '2026-09-25' }),
+    item({ id: 'early', module: 'Insurance', dueAt: '2026-09-20' }),
+  ];
+  assert.deepEqual(sortWorkItems(rows, 'module', TODAY).map((row) => row.id), ['ea', 'early', 'late']);
+  // The input is left alone.
+  assert.equal(rows[0].id, 'late');
+});
+
+test('search needs every word, across title, reference, module, stage and person', () => {
+  const rows = [
+    item({ id: 'a', title: 'Premium due', reference: 'POL-77', module: 'Insurance', stage: 'Request Receiving' }),
+    item({ id: 'b', title: 'Cable supply', raisedBy: 'With Accounts' }),
+  ];
+  assert.deepEqual(searchWorkItems(rows, 'pol-77').map((row) => row.id), ['a']);
+  assert.deepEqual(searchWorkItems(rows, 'insurance receiving').map((row) => row.id), ['a']);
+  assert.deepEqual(searchWorkItems(rows, 'insurance accounts').map((row) => row.id), []);
+  assert.deepEqual(searchWorkItems(rows, 'ACCOUNTS').map((row) => row.id), ['b']);
+  assert.equal(searchWorkItems(rows, '   ').length, 2);
+});
+
+test('amounts read in lakh and crore', () => {
+  assert.equal(formatWorkAmount(48_000), '₹48,000');
+  assert.equal(formatWorkAmount(1_68_727), '₹1.69 L');
+  assert.equal(formatWorkAmount(18_40_000), '₹18.40 L');
+  assert.equal(formatWorkAmount(3_20_00_000), '₹3.20 Cr');
+  assert.equal(formatWorkAmount(-5_00_000), '-₹5.00 L');
+});
+
+test('clock times read in twelve-hour form, and anything else is left alone', () => {
+  assert.equal(formatClock('09:05'), '9:05 AM');
+  assert.equal(formatClock('12:00'), '12:00 PM');
+  assert.equal(formatClock('00:30'), '12:30 AM');
+  assert.equal(formatClock('17:45'), '5:45 PM');
+  assert.equal(formatClock('Afternoon'), 'Afternoon');
+  assert.equal(formatClock('25:00'), '25:00');
+});
+
+test('a card says when: relative inside the week, a date beyond it, and a meeting says when it happens', () => {
+  assert.equal(workWhenLabel(item({ dueAt: '2026-09-04' }), TODAY), '18 days overdue');
+  assert.equal(workWhenLabel(item({ dueAt: '2026-09-25' }), TODAY), 'Due in 3 days');
+  assert.equal(workWhenLabel(item({ dueAt: '2026-10-15' }), TODAY), 'Due 15 Oct');
+  assert.equal(workWhenLabel(item({ dueAt: '2027-01-03' }), TODAY), 'Due 3 Jan 2027');
+  assert.equal(workWhenLabel(item({ dueAt: null }), TODAY), 'No deadline');
+
+  const meeting = (dueAt, startTime) => item({ kind: 'meeting', lane: 'meeting', dueAt, startTime });
+  assert.equal(workWhenLabel(meeting(TODAY, '11:30'), TODAY), 'Today · 11:30 AM');
+  assert.equal(workWhenLabel(meeting('2026-09-23', '15:00'), TODAY), 'Tomorrow · 3:00 PM');
+  assert.equal(workWhenLabel(meeting('2026-09-24', null), TODAY), 'Thu 24 Sept');
 });

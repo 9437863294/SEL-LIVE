@@ -851,3 +851,120 @@ export function dueLabel(item: Pick<WorkItem, 'dueAt'>, today: string): string {
   if (days < 0) return `${Math.abs(days)} days overdue`;
   return `Due in ${days} days`;
 }
+
+/* ── list and board ────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The headings of the list and the columns of the board.
+ *
+ * A week rather than `DUE_SOON_DAYS`: that threshold decides when a deadline turns blue, which is
+ * about attention, while these group the work into the spans people plan in. Undated items join
+ * "Later" — a column of their own would be the emptiest one on most days and still say nothing.
+ */
+export type WorkBucket = 'overdue' | 'today' | 'week' | 'later';
+
+export const WORK_BUCKETS: readonly WorkBucket[] = ['overdue', 'today', 'week', 'later'] as const;
+
+export const WORK_BUCKET_LABEL: Record<WorkBucket, string> = {
+  overdue: 'Overdue',
+  today: 'Due today',
+  week: 'This week',
+  later: 'Later',
+};
+
+export const WORK_WEEK_DAYS = 7;
+
+export function workBucket(item: Pick<WorkItem, 'dueAt'>, today: string): WorkBucket {
+  const due = toWorkDate(item.dueAt);
+  if (!due) return 'later';
+  const days = daysUntil(due, today);
+  if (days < 0) return 'overdue';
+  if (days === 0) return 'today';
+  if (days <= WORK_WEEK_DAYS) return 'week';
+  return 'later';
+}
+
+export type WorkSort = 'due' | 'amount' | 'module';
+
+/**
+ * Re-order a lane. Every order falls back to the deadline order, so two rows with the same amount or
+ * module keep a stable place between refreshes. Rows without an amount sort after every amount.
+ */
+export function sortWorkItems(items: WorkItem[], sort: WorkSort, today: string): WorkItem[] {
+  const byDue = (left: WorkItem, right: WorkItem) => compareWorkItems(left, right, today);
+  if (sort === 'amount') {
+    return [...items].sort((left, right) => {
+      const a = typeof left.amount === 'number' ? left.amount : null;
+      const b = typeof right.amount === 'number' ? right.amount : null;
+      if (a !== b) {
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return b - a;
+      }
+      return byDue(left, right);
+    });
+  }
+  if (sort === 'module') {
+    return [...items].sort((left, right) => left.module.localeCompare(right.module) || byDue(left, right));
+  }
+  return [...items].sort(byDue);
+}
+
+/** Every word must appear somewhere in the title, reference, module, stage or person. */
+export function searchWorkItems(items: WorkItem[], query: string): WorkItem[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return items;
+  return items.filter((item) => {
+    const haystack = [item.title, item.reference, item.module, item.stage, item.raisedBy]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return words.every((word) => haystack.includes(word));
+  });
+}
+
+/** "₹48,000", "₹18.40 L", "₹3.20 Cr" — lakh and crore, the way the amounts are spoken here. */
+export function formatWorkAmount(value: number): string {
+  const sign = value < 0 ? '-' : '';
+  const abs = Math.abs(value);
+  if (abs >= 1_00_00_000) return `${sign}₹${(abs / 1_00_00_000).toFixed(2)} Cr`;
+  if (abs >= 1_00_000) return `${sign}₹${(abs / 1_00_000).toFixed(2)} L`;
+  return `${sign}₹${Math.round(abs).toLocaleString('en-IN')}`;
+}
+
+/** `14:30` → `2:30 PM`. Anything that is not a 24-hour clock time comes back unchanged. */
+export function formatClock(value: string): string {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value.trim());
+  if (!match) return value;
+  const hours = Number(match[1]);
+  if (hours > 23) return value;
+  return `${hours % 12 || 12}:${match[2]} ${hours < 12 ? 'AM' : 'PM'}`;
+}
+
+const shortDate = (date: string, today: string, withWeekday: boolean): string =>
+  new Intl.DateTimeFormat('en-GB', {
+    ...(withWeekday ? { weekday: 'short' as const } : {}),
+    day: 'numeric',
+    month: 'short',
+    ...(yearOf(date) === yearOf(today) ? {} : { year: 'numeric' as const }),
+    timeZone: 'UTC',
+  }).format(new Date(`${date}T00:00:00Z`));
+
+/**
+ * The deadline in words, for a card.
+ *
+ * Relative inside the week ("Due in 3 days"), a date beyond it ("Due 15 Nov") — nobody counts
+ * forty-one days. A meeting is not "due": it reads as when it happens ("Today · 11:30 AM").
+ */
+export function workWhenLabel(item: Pick<WorkItem, 'dueAt' | 'startTime' | 'kind'>, today: string): string {
+  const due = toWorkDate(item.dueAt);
+  if (item.kind === 'meeting') {
+    if (!due) return item.startTime ? formatClock(item.startTime) : 'No date';
+    const days = daysUntil(due, today);
+    const day = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : days === -1 ? 'Yesterday' : shortDate(due, today, true);
+    return item.startTime ? `${day} · ${formatClock(item.startTime)}` : day;
+  }
+  if (!due) return 'No deadline';
+  if (daysUntil(due, today) <= WORK_WEEK_DAYS) return dueLabel(item, today);
+  return `Due ${shortDate(due, today, false)}`;
+}

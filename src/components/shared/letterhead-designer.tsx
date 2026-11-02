@@ -28,7 +28,7 @@ import {
 } from '@/lib/company-profile';
 import { normalizeEApprovalPastedStyles } from '@/lib/e-approval-rich-text';
 import { purifyLetterheadHtml } from '@/lib/letterhead-purify';
-import { CompanyFooterLine, CompanyLetterhead, DESIGNED_HTML_CLASS } from '@/components/shared/company-letterhead';
+import { CompanyFooterLine, CompanyLetterhead, DESIGNED_HTML_CLASS, PrintedOnLine, SignatureBlock } from '@/components/shared/company-letterhead';
 import { cn } from '@/lib/utils';
 
 const TOOL = 'h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-foreground';
@@ -61,7 +61,11 @@ function chipsToTokens(html: string): string {
   return doc.body.innerHTML;
 }
 
-async function uploadImage(file: File): Promise<string> {
+/**
+ * Stores an image for the company's documents (`/api/company-profile/assets`, Company Profile ›
+ * Edit) and returns its address. It is used only once a saved profile points at it.
+ */
+export async function uploadLetterheadAsset(file: File): Promise<string> {
   const user = auth.currentUser;
   if (!user) throw new Error('Your session has expired. Please sign in again.');
   const body = new FormData();
@@ -341,7 +345,7 @@ export function LetterheadHtmlEditor({
     if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadImage(file);
+      const url = await uploadLetterheadAsset(file);
       restore();
       document.execCommand('insertHTML', false, `<img src="${escapeHtml(url)}" alt="" style="height:48px;width:auto">`);
       publishNow();
@@ -452,7 +456,10 @@ const PAGE_WIDTH_PX = 210 * MM;
 const SAMPLE_META = [{ label: 'Voucher No', value: 'PV-0142' }, { label: 'Date', value: '14 Oct 2026' }];
 const SAMPLE_CONTEXT: LetterheadContext = { documentTitle: 'Payment Voucher', documentNumber: 'PV-0142', date: '14 Oct 2026', printedOn: '14 Oct 2026, 10:42', preparedBy: 'A. Kumar', meta: SAMPLE_META };
 
-/** A true-to-size A4 sheet (scaled to fit) with the header, a sample body and the footer. */
+/**
+ * A true-to-size A4 sheet (scaled to fit) with the header, a sample body, the signature captions,
+ * the printed-on line and the footer — standard and designed letterheads alike.
+ */
 export function LetterheadA4Preview({ profile }: { profile: CompanyProfile }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.5);
@@ -463,8 +470,10 @@ export function LetterheadA4Preview({ profile }: { profile: CompanyProfile }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const designed = profile.design.letterhead.mode === 'custom';
   const custom = profile.design.letterhead.custom;
-  const margin = custom.marginMm ?? 12;
+  // The margin setting is the designed letterhead's; a standard document keeps its own page margins.
+  const margin = (designed ? custom.marginMm : null) ?? 12;
   return (
     <div ref={outerRef} className="min-w-0">
       <div style={{ height: 297 * MM * scale }} className="relative overflow-hidden">
@@ -478,13 +487,18 @@ export function LetterheadA4Preview({ profile }: { profile: CompanyProfile }) {
             <p>Paid to M/s Example Traders towards supply of 11 kV cable, as per PO-2026-118.</p>
             {[0, 1, 2, 3].map((line) => <div key={line} className="h-3 rounded bg-slate-100" style={{ width: `${92 - line * 9}%` }} />)}
           </div>
-          <div className="mt-auto pt-6">
+          {/* Side by side whatever the screen: the sheet is A4 wide even when the phone is not. */}
+          <SignatureBlock profile={profile} className="grid-cols-[repeat(var(--signature-columns),minmax(0,1fr))]" />
+          <div className="mt-auto space-y-1 pt-6">
+            <PrintedOnLine profile={profile} />
             <CompanyFooterLine profile={profile} context={SAMPLE_CONTEXT} />
           </div>
         </div>
       </div>
       <p className="mt-2 text-[11px] text-muted-foreground">
-        A4, {margin} mm margins. Header on {custom.headerOn === 'every' ? 'every page' : 'the first page'}; footer on {custom.footerOn === 'every' ? 'every page' : custom.footerOn === 'first' ? 'the first page' : 'the last page'}.
+        {designed
+          ? `A4, ${margin} mm margins. Header on ${custom.headerOn === 'every' ? 'every page' : 'the first page'}; footer on ${custom.footerOn === 'every' ? 'every page' : custom.footerOn === 'first' ? 'the first page' : 'the last page'}.`
+          : 'A4. The letterhead heads the first page; the footer line closes the document.'}
       </p>
     </div>
   );
