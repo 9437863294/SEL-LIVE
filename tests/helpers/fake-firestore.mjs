@@ -14,6 +14,7 @@ const autoId = () => `auto${String(++counter).padStart(4, '0')}`;
 export const FieldValue = {
   arrayUnion: (...values) => ({ __op: 'arrayUnion', values }),
   serverTimestamp: () => ({ __op: 'serverTimestamp' }),
+  delete: () => ({ __op: 'delete' }),
 };
 
 function assertNoUndefined(value, path) {
@@ -75,10 +76,16 @@ class DocRef {
     this._db._apply({ type: 'delete', ref: this });
     return Promise.resolve();
   }
+  /** A subcollection, e.g. `settings/appearance/versions`. */
+  collection(name) {
+    return new CollectionRef(this._db, `${this.path}/${name}`);
+  }
 }
 
 const MATCHERS = {
   '==': (field, value) => field === value,
+  // Like the real one, `!=` never matches a document that lacks the field.
+  '!=': (field, value) => field !== undefined && field !== value,
   in: (field, values) => values.includes(field),
   'array-contains': (field, value) => Array.isArray(field) && field.includes(value),
   '>=': (field, value) => field !== undefined && field !== null && field >= value,
@@ -113,6 +120,14 @@ class Query {
       }
     }
     return Promise.resolve({ docs, empty: docs.length === 0, size: docs.length });
+  }
+  count() {
+    return {
+      get: async () => {
+        const { size } = await this.get();
+        return { data: () => ({ count: size }) };
+      },
+    };
   }
 }
 
@@ -182,8 +197,16 @@ export class FakeFirestore {
     else if (type === 'set') this._store.set(ref.path, options?.merge ? deepMerge(current, data) : deepMerge(undefined, data));
     else {
       if (current === undefined) throw new Error(`fake-firestore: no document to update at ${ref.path}`);
-      const next = { ...current };
-      for (const [key, value] of Object.entries(data)) next[key] = resolveSentinel(current[key], value);
+      const next = clone(current);
+      // As in the real SDK, a dotted key in `update` is a path into nested maps.
+      for (const [key, value] of Object.entries(data)) {
+        const parts = key.split('.');
+        let target = next;
+        for (const part of parts.slice(0, -1)) target = isPlainObject(target[part]) ? target[part] : (target[part] = {});
+        const last = parts[parts.length - 1];
+        if (value && value.__op === 'delete') delete target[last];
+        else target[last] = resolveSentinel(target[last], value);
+      }
       this._store.set(ref.path, next);
     }
   }

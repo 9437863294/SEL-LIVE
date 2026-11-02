@@ -1,7 +1,7 @@
 /**
- * The document-number series set on Settings › Serial Nos., and the next number each one will hand
- * out — composed exactly the way its module composes it, so the preview never promises a number the
- * module would not produce:
+ * The document-number series, each set in its own module's Settings › Serial Numbers
+ * (`settingsHref`), and the next number each one will hand out — composed exactly the way its
+ * module composes it, so the preview never promises a number the module would not produce:
  *
  * - Site Fund Requisition: prefix + format + the index padded to four digits. Its allocator
  *   (`AllRequisitionsTab2`) never adds the suffix.
@@ -19,6 +19,10 @@ import type { SerialNumberConfig } from './types';
 export interface DocumentSeries {
   id: string;
   name: string;
+  /** The module that hands the numbers out, as its menus name it. */
+  moduleName: string;
+  /** Where the series is set: a page inside that module's Settings. */
+  settingsHref: string;
   /** False where the module leaves the suffix off. */
   usesSuffix: boolean;
   /** True where `format` is a date pattern rather than literal text. */
@@ -31,6 +35,8 @@ export const DOCUMENT_SERIES: DocumentSeries[] = [
   {
     id: 'site-fund-requisition',
     name: 'Site Fund Requisition',
+    moduleName: 'Site Fund Requisition 2',
+    settingsHref: '/site-fund-requisition-2/settings/serial-numbers',
     usesSuffix: false,
     datedFormat: false,
     suggested: { prefix: 'SEL\\SFR\\', format: '2025-26\\', suffix: '', startingIndex: 10 },
@@ -38,6 +44,8 @@ export const DOCUMENT_SERIES: DocumentSeries[] = [
   {
     id: 'daily-requisition',
     name: 'Daily Requisition',
+    moduleName: 'Daily Requisition',
+    settingsHref: '/daily-requisition/settings/serial-numbers',
     usesSuffix: true,
     datedFormat: false,
     suggested: { prefix: 'SEL\\REC\\', format: '2025-26\\', suffix: '', startingIndex: 7340 },
@@ -45,6 +53,8 @@ export const DOCUMENT_SERIES: DocumentSeries[] = [
   {
     id: 'store-stock-grn',
     name: 'Store Stock GRN',
+    moduleName: 'Store & Stock Management',
+    settingsHref: '/store-stock-management/settings/serial-numbers',
     usesSuffix: true,
     datedFormat: true,
     suggested: { prefix: 'GRN-', format: 'yyyyMMdd-', suffix: '', startingIndex: 1 },
@@ -53,6 +63,13 @@ export const DOCUMENT_SERIES: DocumentSeries[] = [
 
 export function documentSeries(id: string): DocumentSeries | undefined {
   return DOCUMENT_SERIES.find((series) => series.id === id);
+}
+
+/** A series a page is built for: a misspelt id is a bug in that page, not something to draw around. */
+export function requireDocumentSeries(id: string): DocumentSeries {
+  const series = documentSeries(id);
+  if (!series) throw new Error(`Unknown document series "${id}"`);
+  return series;
 }
 
 /** The counter as the allocators read it: anything unusable starts the series at 1. */

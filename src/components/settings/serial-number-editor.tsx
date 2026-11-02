@@ -1,15 +1,14 @@
 'use client';
 
 /**
- * Settings › Serial Nos. — the series list and the form for one series. They only draw and collect
- * values; the page loads and saves. Drafts are text, so a field can be cleared while typing.
+ * A module's Settings › Serial Numbers — the form for its one series. It only draws and collects
+ * values; `serial-number-page.tsx` loads and saves. Drafts are text, so a field can be cleared while
+ * typing.
  */
 
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { DOCUMENT_SERIES, nextDocumentNumber, type DocumentSeries } from '@/lib/document-numbers';
+import { nextDocumentNumber, type DocumentSeries } from '@/lib/document-numbers';
 import type { SerialNumberConfig } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -36,61 +35,6 @@ export function fromDraft(draft: SeriesDraft): SerialNumberConfig | null {
 
 export const sameDraft = (a: SeriesDraft, b: SeriesDraft) =>
   a.prefix === b.prefix && a.format === b.format && a.suffix === b.suffix && a.startingIndex === b.startingIndex;
-
-/** Every series with the number it hands out next — as edited, so the list follows the form. */
-export function SeriesList({
-  stored,
-  drafts,
-  selectedId,
-  onSelect,
-}: {
-  /** Each series' saved config (`null`: never saved); `null` while loading. */
-  stored: Record<string, SerialNumberConfig | null> | null;
-  drafts: Record<string, SeriesDraft>;
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  if (!stored) {
-    return (
-      <div className="space-y-2 p-3">
-        {DOCUMENT_SERIES.map((entry) => <Skeleton key={entry.id} className="h-14 rounded-lg" />)}
-      </div>
-    );
-  }
-  return (
-    <ul className="space-y-1 p-2" aria-label="Document series">
-      {DOCUMENT_SERIES.map((entry) => {
-        const draft = drafts[entry.id];
-        const saved = stored[entry.id] ?? null;
-        const config = draft ? fromDraft(draft) : null;
-        const changed = Boolean(draft && saved && !sameDraft(draft, toDraft(saved)));
-        const active = entry.id === selectedId;
-        return (
-          <li key={entry.id}>
-            <button
-              type="button"
-              onClick={() => onSelect(entry.id)}
-              aria-current={active ? 'true' : undefined}
-              className={cn(
-                'flex w-full min-w-0 flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                active ? 'border-primary/40 bg-primary/5' : 'border-transparent hover:bg-muted/60',
-              )}
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <span className={cn('min-w-0 flex-1 truncate text-sm font-semibold', active && 'text-primary')}>{entry.name}</span>
-                {!saved && <Badge variant="warning" className="shrink-0">Not set up</Badge>}
-                {changed && <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title="Unsaved changes" aria-label="Unsaved changes" />}
-              </span>
-              <code className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-                {saved ? nextDocumentNumber(entry, config ?? saved) ?? 'Invalid date format' : 'No numbers until saved'}
-              </code>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
 
 /** The next number the draft produces, over the four parts that make it. */
 export function SeriesForm({

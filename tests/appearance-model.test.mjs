@@ -15,6 +15,7 @@ import {
   sanitizeConfig,
   sanitizeModuleGroups,
   sanitizePreferences,
+  withCompanyDefault,
 } from '../src/lib/appearance/model.ts';
 import { SEL_CLASSIC, SEL_MIDNIGHT } from '../src/lib/appearance/presets.ts';
 import { accentFor, appearanceAttributes, buildAppearanceCss, resolveAppearance, themeContrastReport } from '../src/lib/appearance/resolve.ts';
@@ -371,4 +372,24 @@ test('tampered cache values are ignored', () => {
   assert.equal(result.attrs['data-onclick'], undefined);
   assert.equal(result.attrs['data-text-size'], 'large');
   assert.doesNotThrow(() => runScript({ [APPEARANCE_USER_KEY]: 'u1', [userCacheKey('u1')]: '{not json' }));
+});
+
+// ── One default at a time, from My Appearance ───────────────────────────────────────────────────
+
+test("one company default can be set on its own, leaving the rest as they were", () => {
+  const { defaults, theme } = DEFAULT_CONFIG;
+  const next = withCompanyDefault(defaults, theme, "homeDesign", "aurora");
+  assert.equal(next.homeDesign, "aurora");
+  assert.deepEqual({ ...next, homeDesign: defaults.homeDesign }, defaults);
+  assert.equal(withCompanyDefault(defaults, theme, "tableDensity", "comfortable").tableDensity, "comfortable");
+});
+
+test("a direct default must be a listed setting and a value the company allows", () => {
+  const { defaults, theme } = DEFAULT_CONFIG;
+  assert.equal(withCompanyDefault(defaults, theme, "homeDesign", "retro"), null);
+  assert.equal(withCompanyDefault(defaults, theme, "moduleGroups", []), null);
+  assert.equal(withCompanyDefault(defaults, theme, "__proto__", "x"), null);
+  const narrow = { ...theme, approvedAccents: ["violet"] };
+  assert.equal(withCompanyDefault(defaults, narrow, "accent", "teal"), null);
+  assert.equal(withCompanyDefault(defaults, narrow, "accent", "violet").accent, "violet");
 });

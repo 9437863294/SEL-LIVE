@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { test } from 'node:test';
-import { DOCUMENT_SERIES, documentSeries, nextDocumentNumber, nextIndexOf } from '../src/lib/document-numbers.ts';
+import { DOCUMENT_SERIES, documentSeries, nextDocumentNumber, nextIndexOf, requireDocumentSeries } from '../src/lib/document-numbers.ts';
 
 const day = new Date(2026, 9, 30, 10, 0, 0);
 
@@ -26,4 +27,14 @@ test('an unusable counter starts at 1, and a format that is not a date pattern h
 test('every series has a suggested starting point', () => {
   assert.deepEqual(DOCUMENT_SERIES.map((series) => series.id), ['site-fund-requisition', 'daily-requisition', 'store-stock-grn']);
   for (const series of DOCUMENT_SERIES) assert.ok(nextDocumentNumber(series, series.suggested, day));
+});
+
+test("every series is set inside its own module's Settings, on a page that exists", () => {
+  for (const series of DOCUMENT_SERIES) {
+    assert.match(series.settingsHref, /^\/[a-z0-9-]+\/settings\/serial-numbers$/, series.id);
+    assert.ok(!series.settingsHref.startsWith('/settings/'), `${series.id} is back in global Settings`);
+    assert.ok(existsSync(`src/app/(protected)${series.settingsHref}/page.tsx`), `${series.settingsHref} has no page`);
+  }
+  assert.equal(requireDocumentSeries('daily-requisition').moduleName, 'Daily Requisition');
+  assert.throws(() => requireDocumentSeries('daily-requistion'), /Unknown document series/);
 });

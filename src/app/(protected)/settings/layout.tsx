@@ -2,8 +2,8 @@
 
 import { useMemo } from 'react';
 import {
-  Activity, Briefcase, Building2, Clock, Construction, DatabaseZap, Hash, LayoutDashboard,
-  LogIn, MailCheck, MapPinned, MonitorSmartphone, Package, Palette, Settings2,
+  Activity, Briefcase, Building2, Clock, Construction, DatabaseZap, LayoutDashboard,
+  LogIn, MailCheck, MapPinned, MonitorSmartphone, Palette, Settings2,
   ShieldCheck, User as UserIcon, Users,
 } from 'lucide-react';
 import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/components/shared/module-shell';
@@ -63,9 +63,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       id: 'config',
       label: 'Config',
       items: [
-        { id: 'serial-no-configuration', href: '/settings/serial-no-configuration', icon: Hash, label: 'Serial Nos.', visible: can('View', 'Settings.Serial No. Config'), tone: 'violet' },
         { id: 'working-hours', href: '/settings/working-hours', icon: Clock, label: 'Working Hrs', visible: can('View', 'Settings.Working Hrs'), tone: 'teal' },
-        { id: 'store-stock', href: '/store-stock-management/settings', icon: Package, label: 'Store & Stock', visible: can('View Module', 'Store & Stock Management'), tone: 'violet' },
       ],
     },
     {
