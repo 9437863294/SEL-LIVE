@@ -2,15 +2,14 @@
 
 /**
  * Expenses Settings (`/expenses/settings`): a launchpad onto the module's masters, controls and
- * access pages. A banner carries the title, how many settings check out, and a search across
- * them; each card shows what it holds today — counted from the same documents its page edits —
+ * access pages. A banner carries the title and how many settings check out; each card shows what it holds today — counted from the same documents its page edits —
  * whether its page's own validator finds anything wrong, and when it last changed.
  *
  * Nothing here is invented: a figure the viewer may not read, or that fails to load, is simply
  * left off its card, and a card the viewer may not open says so instead of linking.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { collection, getCountFromServer } from 'firebase/firestore';
 import {
@@ -26,7 +25,6 @@ import {
   Lock,
   ReceiptIndianRupee,
   ScrollText,
-  Search,
   Settings2,
   ShieldAlert,
   ShieldCheck,
@@ -34,7 +32,6 @@ import {
   Tags,
   UserCog,
   Users,
-  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { format } from 'date-fns';
@@ -497,27 +494,6 @@ export default function ExpensesSettingsPage() {
     .filter((entry): entry is { where: string; at: Date; by: string | undefined } => Boolean(entry.at))
     .sort((a, b) => b.at.getTime() - a.at.getTime())[0];
 
-
-  const [search, setSearch] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
-  // "/" jumps to the search, unless the viewer is already typing somewhere.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
-      event.preventDefault();
-      searchRef.current?.focus();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-  const needle = search.trim().toLowerCase();
-  const sections = SECTIONS.map(section => ({
-    ...section,
-    shown: section.items.filter(item => !needle || `${item.title} ${item.description} ${section.title}`.toLowerCase().includes(needle)),
-  })).filter(section => section.shown.length > 0);
-
   if (isLoading) {
     return (
       <div className="w-full space-y-5">
@@ -564,14 +540,10 @@ export default function ExpensesSettingsPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <Link href="/expenses" className="hover:text-foreground">
-          Expenses
-        </Link>
-        <span aria-hidden="true">›</span>
         <span className="text-foreground">Settings</span>
       </nav>
 
-      {/* The banner: what this is, how the settings check out, and a search across them. */}
+      {/* The banner: what this is and how the settings check out. */}
       <section
         className="relative overflow-hidden rounded-2xl px-5 py-5 text-[color:var(--sel-tab-on)] shadow-[0_18px_40px_-24px_var(--sel-tab-glow)] sm:px-7 sm:py-6"
         style={{ background: BANNER_BACKGROUND }}
@@ -602,26 +574,6 @@ export default function ExpensesSettingsPage() {
               </div>
             </div>
           ) : null}
-          <div className="lg:col-span-3">
-            <label className="flex w-full max-w-xl items-center gap-2.5 rounded-xl bg-white px-3.5 py-2.5 text-slate-500 shadow-lg">
-              <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <input
-                ref={searchRef}
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-                placeholder="Search settings — e.g. GSTIN, serial number, required field…"
-                aria-label="Search settings"
-                className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
-              />
-              {search ? (
-                <button type="button" onClick={() => setSearch('')} aria-label="Clear search" className="rounded p-0.5 text-slate-400 hover:text-slate-700">
-                  <X className="h-4 w-4" />
-                </button>
-              ) : (
-                <kbd className="hidden rounded-md border border-slate-200 px-1.5 text-[11px] font-semibold text-slate-500 sm:inline">/</kbd>
-              )}
-            </label>
-          </div>
         </div>
       </section>
 
@@ -641,39 +593,30 @@ export default function ExpensesSettingsPage() {
         </div>
       ) : null}
 
-      {sections.length === 0 ? (
-        <div className="rounded-2xl border border-dashed bg-card px-6 py-12 text-center">
-          <p className="text-sm text-muted-foreground">No setting matches “{search.trim()}”.</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => setSearch('')}>
-            Clear search
-          </Button>
-        </div>
-      ) : (
-        sections.map(section => {
-          const SectionIcon = section.icon;
-          return (
-            <section key={section.id} aria-labelledby={`settings-${section.id}`} className="space-y-3 pt-2">
-              <div className="flex items-center gap-3">
-                <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-white', section.tone.tile)} aria-hidden="true">
-                  <SectionIcon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <h2 id={`settings-${section.id}`} className="text-base font-bold text-foreground">
-                    {section.title}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">{section.description}</p>
-                </div>
-                <span aria-hidden="true" className="hidden h-px flex-1 bg-border sm:block" />
+      {SECTIONS.map(section => {
+        const SectionIcon = section.icon;
+        return (
+          <section key={section.id} aria-labelledby={`settings-${section.id}`} className="space-y-3 pt-2">
+            <div className="flex items-center gap-3">
+              <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-white', section.tone.tile)} aria-hidden="true">
+                <SectionIcon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 id={`settings-${section.id}`} className="text-base font-bold text-foreground">
+                  {section.title}
+                </h2>
+                <p className="text-xs text-muted-foreground">{section.description}</p>
               </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {section.shown.map(item => (
-                  <SettingCard key={item.id} item={item} view={views[item.id]} disabled={!enabled[item.id]} />
-                ))}
-              </div>
-            </section>
-          );
-        })
-      )}
+              <span aria-hidden="true" className="hidden h-px flex-1 bg-border sm:block" />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {section.items.map(item => (
+                <SettingCard key={item.id} item={item} view={views[item.id]} disabled={!enabled[item.id]} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
 
       {lastChange ? (
         <p className="border-t pt-3 text-xs text-muted-foreground">
