@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle, CreditCard, Gauge, Landmark, RefreshCw, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CreditCard, Download, Gauge, Landmark, RefreshCw, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -31,8 +31,11 @@ import {
   useBankData,
 } from '@/components/bank-balance/page-kit';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useToast } from '@/hooks/use-toast';
+import { LimitUtilisationChart } from '@/components/bank-balance/dashboard-charts';
 import { getApplicableCcLimitEntry, getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedgers, formatDay, formatInr, isCashCredit, utilisationLevel } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedgers, dayKey, formatDay, formatInr, isCashCredit, utilisationLevel } from '@/lib/bank-balance-ledger';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -50,6 +53,7 @@ interface DpRow {
 }
 
 export default function DpUtilizationPage() {
+  const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Reports');
   const { accounts, transactions, isLoading, isRefreshing, refresh, loadedAt } = useBankData({ enabled: canView, transactions: true });
@@ -83,7 +87,9 @@ export default function DpUtilizationPage() {
           fromDate: entry?.fromDate ?? null,
         },
       ];
-    });
+      // Tightest first, so the account closest to its limit heads the report; among equals, the
+      // larger utilisation. Accounts without a limit (percent 0) fall to the bottom with the idle.
+    }).sort((a, b) => b.percent - a.percent || b.utilised - a.utilised || accountLabel(a.account).localeCompare(accountLabel(b.account)));
   }, [ccAccounts, ledgers]);
 
   const totals = useMemo(() => {
@@ -101,6 +107,31 @@ export default function DpUtilizationPage() {
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
   if (!canView) return <BankAccessDenied title="DP Utilisation" what="this report" />;
+
+  const exportExcel = async () => {
+    const exportRows = rows.map((row) => ({
+      Account: accountLabel(row.account),
+      Bank: row.account.bankName || '',
+      'Account No.': row.account.accountNumber || '',
+      Status: row.account.status || '',
+      DP: row.dp,
+      OD: row.od,
+      TOD: row.tod,
+      'Total limit': row.limit,
+      Utilised: row.utilised,
+      Available: row.available,
+      'Utilisation %': row.limit > 0 ? Number(row.percent.toFixed(1)) : '',
+      'Effective from': row.fromDate ? formatDay(row.fromDate) : '',
+    }));
+    try {
+      await exportRowsToExcel('DP Utilisation', exportRows, { filename: `DP Utilisation ${dayKey(new Date())}.xlsx` });
+    } catch (error) {
+      console.error('Error exporting DP utilisation:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
+
+  const chartRows = rows.map((row) => ({ id: row.id, name: accountLabel(row.account), limit: row.limit, utilised: row.utilised }));
 
   const columns: Array<ListColumn<DpRow>> = [
     {
@@ -236,6 +267,12 @@ export default function DpUtilizationPage() {
           count={rows.length}
           noun="account"
           scroll="natural"
+          actions={
+            <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={rows.length === 0}>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
+            </Button>
+          }
           toolbar={
             <FilterBar activeCount={includeInactive ? 1 : 0} onClear={() => setIncludeInactive(false)}>
               <div className="flex h-10 items-center gap-2 rounded-md border px-3">
@@ -272,6 +309,13 @@ export default function DpUtilizationPage() {
             />
           </div>
         </TableCard>
+
+        {chartRows.length > 0 && (
+          <LimitUtilisationChart
+            rows={chartRows}
+            description="Each account's limit in force today (DP + OD + TOD), split into used and available."
+          />
+        )}
       </div>
     </>
   );

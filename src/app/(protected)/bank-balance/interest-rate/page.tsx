@@ -36,6 +36,9 @@ import {
 } from '@/components/bank-balance/dated-log-kit';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { balanceAt, buildLedgers, dailyInterest, entryAppliesOn, formatDay, formatInr, isCashCredit, normaliseDatedLog } from '@/lib/bank-balance-ledger';
 import type { BankAccount, InterestRateLogEntry } from '@/lib/types';
@@ -68,6 +71,8 @@ const VIEW_TITLE: Record<RegisterView, string> = {
 export default function InterestRatePage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  // `log` is taken by the dated register itself (`logOf`), so the audit logger gets a longer name.
+  const { log: logActivity } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
   const canView = !authLoading && can('View', 'Bank Balance.Interest Rate');
   const canAdd = !authLoading && can('Add', 'Bank Balance.Interest Rate');
   const canDelete = !authLoading && can('Delete', 'Bank Balance.Interest Rate');
@@ -169,15 +174,37 @@ export default function InterestRatePage() {
     const sameDay = log.find((e) => e.fromDate === form.fromDate);
     const nextLog = normaliseDatedLog([...log.filter((e) => e.id !== sameDay?.id), { id: sameDay?.id ?? makeId(), fromDate: form.fromDate, toDate: null, rate }]);
     const ok = await saveLog(formAccount, nextLog, `Rate from ${formatDay(form.fromDate)} ${sameDay ? 'updated' : 'saved'} for ${accountLabel(formAccount)}.`);
-    if (ok) setFormOpen(false);
+    if (ok) {
+      const after = { fromDate: form.fromDate, rate };
+      void logActivity(
+        sameDay ? 'Update Interest Rate' : 'Add Interest Rate',
+        {
+          accountId: formAccount.id,
+          account: accountLabel(formAccount),
+          ...after,
+          ...(sameDay ? { changes: diffFields({ fromDate: sameDay.fromDate, rate: Number(sameDay.rate) || 0 }, after) } : {}),
+        },
+        { recordId: formAccount.id, recordRef: accountLabel(formAccount) },
+      );
+      setFormOpen(false);
+    }
   };
 
   const handleDelete = async () => {
     if (!deleteTarget?.entry || !canDelete) return;
-    const entryId = deleteTarget.entry.id;
-    const nextLog = normaliseDatedLog(logOf(deleteTarget.account).filter((e) => e.id !== entryId));
-    const ok = await saveLog(deleteTarget.account, nextLog, 'Rate entry deleted.');
-    if (ok) setDeleteTarget(null);
+    const account = deleteTarget.account;
+    const entry = deleteTarget.entry;
+    const nextLog = normaliseDatedLog(logOf(account).filter((e) => e.id !== entry.id));
+    const ok = await saveLog(account, nextLog, 'Rate entry deleted.');
+    if (ok) {
+      // The entry is gone, so the log row records what the rate was.
+      void logActivity(
+        'Delete Interest Rate',
+        { accountId: account.id, account: accountLabel(account), fromDate: entry.fromDate, rate: Number(entry.rate) || 0 },
+        { recordId: account.id, recordRef: accountLabel(account) },
+      );
+      setDeleteTarget(null);
+    }
   };
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} blocks={1} />;

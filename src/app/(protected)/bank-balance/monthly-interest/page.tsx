@@ -21,10 +21,14 @@ import {
   BankAccessDenied,
   BankBalanceBackground,
   BankPageSkeleton,
+  accountLabel,
   useBankData,
 } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 import {
@@ -69,6 +73,7 @@ const parseActual = (value: string): number | null => {
 export default function MonthlyInterestPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
 
   const canView = can('View', 'Bank Balance.Monthly Interest');
   const canEdit = can('Edit', 'Bank Balance.Monthly Interest');
@@ -221,6 +226,25 @@ export default function MonthlyInterestPage() {
     setIsSaving(true);
     try {
       await setDoc(doc(db, 'monthlyInterest', selectedMonth), data, { merge: true });
+      // Actuals as stored before this save vs. as saved, keyed by account, so the log says which
+      // figures were entered or corrected.
+      const beforeActuals: Record<string, number> = {};
+      const afterActuals: Record<string, number> = {};
+      for (const acc of ccAccounts) {
+        beforeActuals[accountLabel(acc)] = Number(stored?.[acc.id]?.actual) || 0;
+        afterActuals[accountLabel(acc)] = data[acc.id].actual;
+      }
+      void log(
+        'Save Monthly Interest',
+        {
+          month: selectedMonth,
+          accounts: ccAccounts.length,
+          totalProjected: round2(ccAccounts.reduce((sum, acc) => sum + data[acc.id].projected, 0)),
+          totalActual: round2(ccAccounts.reduce((sum, acc) => sum + data[acc.id].actual, 0)),
+          changes: diffFields(beforeActuals, afterActuals),
+        },
+        { recordId: selectedMonth, recordRef: format(monthFromKey(selectedMonth), 'MMMM yyyy') },
+      );
       setInterestDocs((prev) => ({ ...prev, [selectedMonth]: { ...(prev[selectedMonth] || {}), ...data } }));
       setDraft(null);
       toast({ title: 'Saved', description: `Interest for ${format(monthFromKey(selectedMonth), 'MMMM yyyy')} saved.` });

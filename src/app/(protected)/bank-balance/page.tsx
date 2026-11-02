@@ -9,6 +9,7 @@ import {
   ArrowRightLeft, ShieldAlert, Activity, TrendingUp,
   RefreshCw, CreditCard, Building2, Percent, Calendar,
   Gauge, Landmark, Wallet, CalendarClock, Hourglass, CalendarX, CheckCircle2,
+  AlertTriangle, ChevronRight, History,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
@@ -19,23 +20,34 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { endOfDay, format, isToday, subDays, startOfMonth, subMonths } from 'date-fns';
-import { balancesAt, buildLedgers, dailyRows, formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
+import { addDays, endOfDay, format, isToday, subDays, startOfMonth, subMonths } from 'date-fns';
+import { balancesAt, buildLedgers, dailyRows, dayKey, formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
+import { accruedCcInterest, attentionItems, cashOutlook, type AttentionSeverity, type AttentionTarget } from '@/lib/bank-balance-insights';
 import { CHEQUE_VALIDITY_MONTHS, displayStatus, type BankPaymentVoucher } from '@/lib/bank-payments';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { KpiCard } from '@/components/shared/kpi-card';
 import {
+  CashOutlookChart,
+  ChartPanel,
   LimitUtilisationChart,
   MonthlyFlowChart,
   UtilisationTrendChart,
   compactInr,
   type FlowDatedAhead,
   type MonthlyFlowPoint,
+  type OutlookChartPoint,
   type UtilisationTrendPoint,
 } from '@/components/bank-balance/dashboard-charts';
 import { cn } from '@/lib/utils';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
+import { normaliseDashboardDesign, type BankDashboardDesign } from '@/lib/bank-balance-dashboard';
+import {
+  DashboardDesignView,
+  DesignPreviewBanner,
+  readDashboardDesign,
+  type BankDashboardModel,
+} from '@/components/bank-balance/dashboard-designs';
 
 const voucherCount = (n: number) => `${n} voucher${n === 1 ? '' : 's'}`;
 
@@ -49,6 +61,79 @@ const openingMonth = (openingDate: string | null | undefined) => {
   return day ? format(day, 'MMM yy') : '—';
 };
 
+const SEVERITY_DOT: Record<AttentionSeverity, string> = {
+  critical: 'bg-red-500',
+  warning: 'bg-amber-500',
+  info: 'bg-blue-500',
+};
+
+interface RecentRow {
+  id: string;
+  description: string;
+  accountName: string;
+  when: Date;
+  voucherNo?: string;
+  amount: number;
+  type: 'Debit' | 'Credit';
+  isContra: boolean;
+}
+
+/** The latest entries across all accounts, framed like the charts beside it. */
+function RecentActivity({ rows, href }: { rows: RecentRow[]; href?: string }) {
+  return (
+    <ChartPanel
+      title="Recent Activity"
+      description="Latest entries across all accounts, newest first."
+      icon={History}
+      legend={
+        href ? (
+          <Button asChild variant="ghost" size="sm" className="h-7 -mr-1 text-xs text-muted-foreground">
+            <Link href={href}>View all <ChevronRight className="ml-0.5 h-3.5 w-3.5" /></Link>
+          </Button>
+        ) : undefined
+      }
+    >
+      {rows.length === 0 ? (
+        <div className="flex h-[240px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+          No entries yet.
+        </div>
+      ) : (
+        <div className="divide-y divide-border/40">
+          {rows.map(row => {
+            const Icon = row.isContra ? ArrowRightLeft : row.type === 'Credit' ? ArrowUp : ArrowDown;
+            const iconClasses = row.isContra
+              ? 'bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400'
+              : row.type === 'Credit'
+                ? 'bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400'
+                : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400';
+            const amountClasses = row.isContra
+              ? 'text-violet-600 dark:text-violet-400'
+              : row.type === 'Credit'
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-red-600 dark:text-red-400';
+            return (
+              <div key={row.id} className="flex items-center gap-3 py-2 first:pt-0 last:pb-0">
+                <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-full', iconClasses)}>
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{row.description || (row.isContra ? 'Internal transfer' : '—')}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {row.accountName} · {formatDay(row.when)}{row.voucherNo ? ` · ${row.voucherNo}` : ''}
+                  </p>
+                </div>
+                <span className={cn('shrink-0 text-sm font-semibold tabular-nums', amountClasses)}>
+                  {row.type === 'Credit' ? '+' : '−'}{formatInr(row.amount, 0)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </ChartPanel>
+  );
+}
+
 export default function BankBalanceDashboard() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
@@ -59,6 +144,10 @@ export default function BankBalanceDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  // The layout chosen on Bank Balance › Settings, and one opened from there with `?design=` to
+  // preview it (shown to this viewer only, nothing saved).
+  const [design, setDesign] = useState<BankDashboardDesign>('classic');
+  const [preview, setPreview] = useState<BankDashboardDesign | null>(null);
 
   const canView = can('View Module', 'Bank Balance');
   const canViewReports = can('View', 'Bank Balance.Reports');
@@ -70,7 +159,7 @@ export default function BankBalanceDashboard() {
     if (!silent) setIsLoading(true);
     else setRefreshing(true);
     try {
-      const [accountsSnap, expensesSnap, vouchersSnap] = await Promise.all([
+      const [accountsSnap, expensesSnap, vouchersSnap, designSetting] = await Promise.all([
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses')),
         // Caught on its own: a failed voucher read drops the cheque tiles, never the balances.
@@ -81,7 +170,14 @@ export default function BankBalanceDashboard() {
               return null;
             })
           : Promise.resolve(null),
+        // Never throws: an unreadable setting shows Classic.
+        readDashboardDesign(),
       ]);
+      setDesign(designSetting.design);
+      // Read from the address bar rather than useSearchParams, which would need a Suspense boundary
+      // round the whole dashboard.
+      const requested = new URLSearchParams(window.location.search).get('design');
+      setPreview(requested ? normaliseDashboardDesign(requested) : null);
       setAccounts(accountsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankAccount)));
       setAllTransactions(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankExpense)));
       setVouchers(vouchersSnap ? vouchersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as BankPaymentVoucher)) : null);
@@ -281,11 +377,14 @@ export default function BankBalanceDashboard() {
     const now = new Date();
     const today = format(now, 'yyyy-MM-dd');
     const monthStart = format(startOfMonth(now), 'yyyy-MM-dd');
+    const dueSoonCutoff = dayKey(addDays(now, 7));
     const bucket = () => ({ count: 0, amount: 0 });
     const postDated = bucket();
     const issued = bucket();
     const stale = bucket();
     const cleared = bucket();
+    // Post-dated vouchers falling due within 7 days, for the attention list.
+    const dueSoon = bucket();
     let nextDue: string | undefined;
     for (const v of vouchers) {
       const status = displayStatus(v, today);
@@ -298,10 +397,106 @@ export default function BankBalanceDashboard() {
       if (!target) continue;
       target.count += 1;
       target.amount += Number(v.total) || 0;
-      if (status === 'Post-dated' && (!nextDue || v.instrumentDate < nextDue)) nextDue = v.instrumentDate;
+      if (status === 'Post-dated') {
+        if (!nextDue || v.instrumentDate < nextDue) nextDue = v.instrumentDate;
+        if (v.instrumentDate <= dueSoonCutoff) {
+          dueSoon.count += 1;
+          dueSoon.amount += Number(v.total) || 0;
+        }
+      }
     }
-    return { postDated: { ...postDated, nextDue }, issued, stale, cleared };
+    return { postDated: { ...postDated, nextDue }, issued, stale, cleared, dueSoon };
   }, [vouchers]);
+
+  // The flow chart's current-month bar, reused for the This month row so the two always agree.
+  const mtd = monthlyFlow.points[monthlyFlow.points.length - 1] ?? { month: '', receipts: 0, payments: 0 };
+  const mtdNet = mtd.receipts - mtd.payments;
+
+  // Interest accrued so far this month across Cash Credit accounts: each day's closing utilisation
+  // at the rate in force that day — an estimate until the bank debits it.
+  const interestMtd = useMemo(() => {
+    const ccLedgers = ccAccounts.flatMap(account => {
+      const ledger = ledgers.get(account.id);
+      return ledger ? [ledger] : [];
+    });
+    return accruedCcInterest(ccLedgers, startOfMonth(new Date()), new Date());
+  }, [ccAccounts, ledgers]);
+
+  // Total spendable money over the next 30 days as already booked — post-dated cheques dip the
+  // curve on their instrument dates.
+  const outlook = useMemo(() => {
+    const activeLedgers = activeAccounts.flatMap(account => {
+      const ledger = ledgers.get(account.id);
+      return ledger ? [ledger] : [];
+    });
+    const { points, lowest } = cashOutlook(activeLedgers, getApplicableCcLimit, new Date(), 30);
+    return {
+      points: points.map<OutlookChartPoint>(point => ({
+        date: format(point.day, 'dd MMM yyyy'),
+        label: format(point.day, 'dd MMM'),
+        available: point.available,
+        entries: point.entries,
+      })),
+      lowest: lowest ? { date: format(lowest.day, 'dd MMM'), available: lowest.available } : null,
+    };
+  }, [activeAccounts, ledgers]);
+
+  // Everything on the books that needs a decision, worst first.
+  const attention = useMemo(() => attentionItems({
+    cc: ccPosition.rows,
+    current: currentAccounts.map(account => ({
+      name: (account.shortName || account.bankName || '').trim(),
+      balance: calculatedBalances[account.id] || 0,
+    })),
+    cheques: chequeSummary
+      ? {
+          staleCount: chequeSummary.stale.count,
+          staleAmount: chequeSummary.stale.amount,
+          dueSoonCount: chequeSummary.dueSoon.count,
+          dueSoonAmount: chequeSummary.dueSoon.amount,
+        }
+      : null,
+  }), [ccPosition.rows, currentAccounts, calculatedBalances, chequeSummary]);
+
+  // Where acting on an attention item leads — only where the viewer may follow.
+  const attentionHref = (target: AttentionTarget): string | undefined => {
+    switch (target) {
+      case 'utilisation': return canViewReports ? '/bank-balance/reports/dp-utilization' : undefined;
+      case 'limits': return can('View', 'Bank Balance.DP Management') ? '/bank-balance/dp-management' : undefined;
+      case 'cheques': return canViewCheques ? '/bank-balance/cheques' : undefined;
+      case 'accounts': return canViewAccounts ? '/bank-balance/accounts' : undefined;
+    }
+  };
+
+  const accountNames = useMemo(() => {
+    const names = new Map<string, string>();
+    accounts.forEach(account => names.set(account.id, (account.shortName || account.bankName || '').trim() || '—'));
+    return names;
+  }, [accounts]);
+
+  // The latest entries dated up to today. Post-dated entries stay out: they would sit on top of
+  // the list for weeks without being activity.
+  const recentRows = useMemo<RecentRow[]>(() => {
+    const cutoff = endOfDay(new Date());
+    const dated: Array<{ t: BankExpense; at: Date }> = [];
+    allTransactions.forEach(t => {
+      let at: Date;
+      try { at = t.date.toDate(); } catch { return; }
+      if (!at || Number.isNaN(at.getTime()) || at > cutoff) return;
+      dated.push({ t, at });
+    });
+    dated.sort((a, b) => b.at.getTime() - a.at.getTime());
+    return dated.slice(0, 8).map(({ t, at }) => ({
+      id: t.id,
+      description: t.description || '',
+      accountName: accountNames.get(t.accountId) || '—',
+      when: at,
+      voucherNo: t.voucherNo,
+      amount: Number(t.amount) || 0,
+      type: t.type,
+      isContra: Boolean(t.isContra),
+    }));
+  }, [allTransactions, accountNames]);
 
   if (authLoading || (isLoading && canView)) {
     return (
@@ -344,8 +539,48 @@ export default function BankBalanceDashboard() {
     );
   }
 
+  const previewing = preview && preview !== design ? preview : null;
+  const shown = previewing ?? design;
+  const previewBanner = previewing ? <DesignPreviewBanner previewing={previewing} saved={design} /> : null;
+
+  if (shown !== 'classic') {
+    // The newer designs read the same ledgers and checks as the Classic markup below.
+    const model: BankDashboardModel = {
+      now: lastRefreshed,
+      refreshing,
+      onRefresh: () => void fetchData(true),
+      active: activeAccounts,
+      inactive: accounts.filter(account => account.status !== 'Active'),
+      ledgers,
+      figures: calculatedBalances,
+      limitOn: getApplicableCcLimit,
+      interestMtd,
+      attention,
+      attentionHref,
+      staleCheques: chequeSummary ? { count: chequeSummary.stale.count, amount: chequeSummary.stale.amount } : null,
+      links: {
+        addAccount: canViewAccounts ? '/bank-balance/accounts' : undefined,
+        transfer: can('Add', 'Bank Balance.Internal Transaction') ? '/bank-balance/internal-transaction/new' : undefined,
+        payment: can('Add', 'Bank Balance.Expenses') ? '/bank-balance/expenses/new' : undefined,
+        receipt: can('Add', 'Bank Balance.Receipts') ? '/bank-balance/receipts/new' : undefined,
+        ledger: can('View', 'Bank Balance.Daily Log') ? '/bank-balance/daily-log' : undefined,
+        interest: can('View', 'Bank Balance.Monthly Interest')
+          ? '/bank-balance/monthly-interest'
+          : canViewReports ? '/bank-balance/reports/interest-accrual' : undefined,
+        cheques: canViewCheques ? '/bank-balance/cheques' : undefined,
+      },
+    };
+    return (
+      <>
+        {previewBanner}
+        <DashboardDesignView design={shown} model={model} />
+      </>
+    );
+  }
+
   return (
     <>
+      {previewBanner}
       {/* ── Animated Background ── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         {/* Base gradient */}
@@ -415,6 +650,56 @@ export default function BankBalanceDashboard() {
           </div>
         </div>
 
+        {/* ── Needs attention ── (worst first; green when the books are clean) */}
+        {attention.length > 0 ? (
+          <div
+            className={cn(
+              'mb-4 overflow-hidden rounded-xl border shadow-sm',
+              attention[0].severity === 'critical'
+                ? 'border-red-200/70 bg-red-50/50 dark:border-red-800/30 dark:bg-red-950/15'
+                : 'border-amber-200/70 bg-amber-50/50 dark:border-amber-800/30 dark:bg-amber-950/15',
+            )}
+          >
+            <div className="flex items-center gap-2 px-4 pb-1 pt-3">
+              <AlertTriangle
+                className={cn(
+                  'h-4 w-4',
+                  attention[0].severity === 'critical' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400',
+                )}
+              />
+              <span
+                className={cn(
+                  'text-xs font-semibold uppercase tracking-wider',
+                  attention[0].severity === 'critical' ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400',
+                )}
+              >
+                Needs attention
+              </span>
+              <Badge variant="neutral">{attention.length}</Badge>
+            </div>
+            <div className="px-2 pb-2">
+              {attention.map(item => {
+                const href = attentionHref(item.target);
+                const row = (
+                  <div className={cn('flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm', href && 'hover:bg-foreground/5')}>
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', SEVERITY_DOT[item.severity])} />
+                    <span className="min-w-0 flex-1 truncate text-foreground/90">{item.text}</span>
+                    {href && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                  </div>
+                );
+                return href
+                  ? <Link key={item.text} href={href}>{row}</Link>
+                  : <div key={item.text}>{row}</div>;
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-200/60 bg-green-50/50 px-4 py-2.5 text-sm text-green-700 shadow-sm dark:border-green-800/30 dark:bg-green-950/15 dark:text-green-400">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            All clear — no limit breaches, overdrawn accounts or stale cheques on the books.
+          </div>
+        )}
+
         {/* ── Today's Stats Row ── */}
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-green-200/60 bg-green-50/70 dark:bg-green-950/20 dark:border-green-800/30 p-3 flex items-center gap-3 shadow-sm">
@@ -444,6 +729,48 @@ export default function BankBalanceDashboard() {
               <p className="text-sm font-bold text-blue-700 dark:text-blue-400">{todayStats.count} entries</p>
             </div>
           </div>
+        </div>
+
+        {/* ── This month ── (the flow chart's current-month bar, so the two always agree) */}
+        <SectionHeader title="This month" description={`${format(new Date(), 'MMMM yyyy')} to date — internal transfers excluded.`} />
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Receipts (MTD)"
+            value={formatCurrency(mtd.receipts)}
+            hint="money in this month"
+            icon={ArrowUp}
+            tone="emerald"
+            accent
+          />
+          <KpiCard
+            label="Payments (MTD)"
+            value={formatCurrency(mtd.payments)}
+            hint="money out this month"
+            icon={ArrowDown}
+            tone="rose"
+            accent
+          />
+          <KpiCard
+            label="Net flow (MTD)"
+            value={`${mtdNet < 0 ? '−' : '+'}${formatCurrency(Math.abs(mtdNet))}`}
+            hint="receipts less payments"
+            icon={Scale}
+            tone={mtdNet < 0 ? 'amber' : 'teal'}
+            accent
+          />
+          <KpiCard
+            label="Interest accrued (est.)"
+            value={formatCurrency(interestMtd)}
+            hint="Cash Credit, day by day at the rate in force"
+            icon={Percent}
+            tone="violet"
+            accent
+            href={
+              can('View', 'Bank Balance.Monthly Interest')
+                ? '/bank-balance/monthly-interest'
+                : canViewReports ? '/bank-balance/reports/interest-accrual' : undefined
+            }
+          />
         </div>
 
         {/* ── Cash Credit: DP & utilisation ── */}
@@ -696,10 +1023,19 @@ export default function BankBalanceDashboard() {
           )}
 
           {/* ── Charts ── (after the account cards: the cards are the day-to-day view, the charts the trend) */}
-          <SectionHeader title="Trends & Analysis" description="Limit against utilisation, its last 30 days, and money in and out by month." />
+          <SectionHeader title="Trends & Analysis" description="Limit against utilisation, the cash ahead, the latest entries, and money in and out by month." />
           <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
             <LimitUtilisationChart rows={ccPosition.rows} />
             <UtilisationTrendChart points={utilisationTrend} />
+            <CashOutlookChart points={outlook.points} lowest={outlook.lowest} />
+            <RecentActivity
+              rows={recentRows}
+              href={
+                canViewReports
+                  ? '/bank-balance/reports/transaction-summary'
+                  : can('View', 'Bank Balance.Daily Log') ? '/bank-balance/daily-log' : undefined
+              }
+            />
             <div className="min-w-0 xl:col-span-2">
               <MonthlyFlowChart points={monthlyFlow.points} datedAhead={monthlyFlow.datedAhead} />
             </div>

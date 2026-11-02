@@ -3,18 +3,20 @@
 import type { ReactNode } from 'react';
 import {
   Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   ComposedChart,
   LabelList,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
-import { CalendarClock, type LucideIcon } from 'lucide-react';
+import { CalendarClock, TrendingDown, type LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { chartChrome } from '@/components/ui/chart';
 import { useTheme } from '@/components/theme/ThemeProvider';
@@ -129,7 +131,15 @@ export interface CcLimitRow {
 }
 
 /** One bar per CC account: utilised plus what is left, so the whole bar is the sanctioned limit. */
-export function LimitUtilisationChart({ rows }: { rows: CcLimitRow[] }) {
+export function LimitUtilisationChart({
+  rows,
+  title = 'Limit vs Utilisation',
+  description = "Each Cash Credit account's limit (DP + TOD), split into used and available.",
+}: {
+  rows: CcLimitRow[];
+  title?: string;
+  description?: string;
+}) {
   const series = useSeries();
   const data = rows.map((row) => {
     const utilised = Math.max(0, row.utilised);
@@ -144,8 +154,8 @@ export function LimitUtilisationChart({ rows }: { rows: CcLimitRow[] }) {
 
   return (
     <ChartPanel
-      title="Limit vs Utilisation"
-      description="Each Cash Credit account's limit (DP + TOD), split into used and available."
+      title={title}
+      description={description}
       legend={<Legend items={[{ label: 'Utilised', color: series.blue }, { label: 'Available', color: series.aqua }]} />}
     >
       {data.length === 0 ? (
@@ -194,14 +204,22 @@ export interface UtilisationTrendPoint {
 }
 
 /** Total CC utilisation at each day's close against the limit in force that day. */
-export function UtilisationTrendChart({ points }: { points: UtilisationTrendPoint[] }) {
+export function UtilisationTrendChart({
+  points,
+  title = 'Utilisation Trend',
+  description = "All Cash Credit accounts together, at each day's close — last 30 days.",
+}: {
+  points: UtilisationTrendPoint[];
+  title?: string;
+  description?: string;
+}) {
   const series = useSeries();
   const hasData = points.some((point) => point.utilised !== 0 || point.limit !== 0);
 
   return (
     <ChartPanel
-      title="Utilisation Trend"
-      description="All Cash Credit accounts together, at each day's close — last 30 days."
+      title={title}
+      description={description}
       legend={<Legend items={[{ label: 'Utilised', color: series.blue }, { label: 'Total limit', color: series.orange, dashed: true }]} />}
     >
       {!hasData ? (
@@ -244,6 +262,75 @@ export function UtilisationTrendChart({ points }: { points: UtilisationTrendPoin
   );
 }
 
+export interface OutlookChartPoint {
+  date: string;
+  label: string;
+  available: number;
+  entries: number;
+}
+
+/**
+ * Total spendable money over the booked entries ahead: current balances plus Cash Credit headroom,
+ * day by day. The curve dips where post-dated cheques fall due; the note names the tightest point.
+ */
+export function CashOutlookChart({ points, lowest }: { points: OutlookChartPoint[]; lowest?: { date: string; available: number } | null }) {
+  const series = useSeries();
+  const hasData = points.length > 0;
+  const dipsBelowZero = points.some((point) => point.available < 0);
+
+  return (
+    <ChartPanel
+      title="Cash Outlook"
+      description="Spendable across active accounts — balances plus Cash Credit headroom — next 30 days, as booked."
+      legend={<Legend items={[{ label: 'Available', color: series.aqua }]} />}
+    >
+      {!hasData ? (
+        <EmptyChart height={240}>No active accounts to project.</EmptyChart>
+      ) : (
+        <ResponsiveContainer width="100%" height={240}>
+          <AreaChart data={points} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+            <defs>
+              <linearGradient id="bb-outlook-fill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={series.aqua} stopOpacity={0.22} />
+                <stop offset="100%" stopColor={series.aqua} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="label" stroke={chartChrome.axis} fontSize={11} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
+            <YAxis stroke={chartChrome.axis} fontSize={11} tickLine={false} width={64} tickFormatter={(v) => compactInr(Number(v))} />
+            {dipsBelowZero && <ReferenceLine y={0} stroke={chartChrome.axis} strokeDasharray="4 4" />}
+            <Tooltip
+              cursor={{ stroke: chartChrome.axis, strokeDasharray: '3 3' }}
+              content={({ active, payload }) => {
+                const point = active ? (payload?.[0]?.payload as OutlookChartPoint | undefined) : undefined;
+                if (!point) return null;
+                return (
+                  <TooltipBox
+                    title={point.date}
+                    rows={[
+                      { label: 'Available', value: formatInr(point.available), color: series.aqua, strong: true },
+                      { label: 'Entries that day', value: String(point.entries) },
+                    ]}
+                  />
+                );
+              }}
+            />
+            <Area type="monotone" dataKey="available" stroke={series.aqua} strokeWidth={2} fill="url(#bb-outlook-fill)" dot={false} activeDot={{ r: 4, stroke: chartChrome.surface, strokeWidth: 2 }} isAnimationActive={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+      {lowest && (
+        <p className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <TrendingDown aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+          <span>
+            Tightest point ahead: <span className="font-semibold text-foreground">{formatInr(lowest.available)}</span> on {lowest.date}, counting post-dated entries already on the books.
+          </span>
+        </p>
+      )}
+    </ChartPanel>
+  );
+}
+
 export interface MonthlyFlowPoint {
   month: string;
   receipts: number;
@@ -265,7 +352,17 @@ const entryCount = (n: number) => `${n} entr${n === 1 ? 'y' : 'ies'}`;
  * up to today. A post-dated cheque's Debit sits on its instrument date, so it must not swell the
  * current month before then; `datedAhead` names what was left out.
  */
-export function MonthlyFlowChart({ points, datedAhead }: { points: MonthlyFlowPoint[]; datedAhead?: FlowDatedAhead }) {
+export function MonthlyFlowChart({
+  points,
+  datedAhead,
+  title = 'Receipts vs Payments',
+  description = 'Per month across all accounts, internal transfers excluded — last 6 months, up to today.',
+}: {
+  points: MonthlyFlowPoint[];
+  datedAhead?: FlowDatedAhead;
+  title?: string;
+  description?: string;
+}) {
   const series = useSeries();
   const hasData = points.some((point) => point.receipts || point.payments);
   const aheadParts = [
@@ -275,8 +372,8 @@ export function MonthlyFlowChart({ points, datedAhead }: { points: MonthlyFlowPo
 
   return (
     <ChartPanel
-      title="Receipts vs Payments"
-      description="Per month across all accounts, internal transfers excluded — last 6 months, up to today."
+      title={title}
+      description={description}
       legend={<Legend items={[{ label: 'Receipts', color: series.blue }, { label: 'Payments', color: series.orange }]} />}
     >
       {!hasData ? (

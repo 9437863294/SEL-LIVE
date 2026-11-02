@@ -23,6 +23,9 @@ import { PageHeader } from '@/components/shared/page-header';
 import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton } from '@/components/bank-balance/page-kit';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 
 interface MandatoryFields {
@@ -64,6 +67,7 @@ const FIELD_LABELS: Record<keyof MandatoryFields, { label: string; hint: string 
 export default function PaymentEntrySettingsPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
 
   const [mandatoryFields, setMandatoryFields] = useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
   const [savedFields, setSavedFields] = useState<MandatoryFields>(DEFAULT_MANDATORY_FIELDS);
@@ -129,6 +133,16 @@ export default function PaymentEntrySettingsPage() {
     setIsSavingFields(true);
     try {
       await setDoc(doc(db, 'bankBalanceSettings', 'paymentEntry'), { mandatoryFields, allowDirectPayments: allowDirect }, { merge: true });
+      void log(
+        'Update Payment Entry Settings',
+        {
+          changes: diffFields(
+            { ...savedFields, allowDirectPayments: savedAllowDirect },
+            { ...mandatoryFields, allowDirectPayments: allowDirect },
+          ),
+        },
+        { recordId: 'paymentEntry', recordRef: 'Payment Entry Settings' },
+      );
       setSavedFields(mandatoryFields);
       setSavedAllowDirect(allowDirect);
       toast({ title: 'Saved', description: 'Payment entry settings updated.' });
@@ -154,7 +168,8 @@ export default function PaymentEntrySettingsPage() {
     }
     setIsBusy(true);
     try {
-      await addDoc(collection(db, 'paymentMethods'), { name });
+      const ref = await addDoc(collection(db, 'paymentMethods'), { name });
+      void log('Add Payment Method', { name }, { recordId: ref.id, recordRef: name });
       toast({ title: 'Added', description: `"${name}" added.` });
       setNewMethodName('');
       void fetchSettings();
@@ -171,6 +186,7 @@ export default function PaymentEntrySettingsPage() {
     setIsBusy(true);
     try {
       await deleteDoc(doc(db, 'paymentMethods', deleteTarget.id));
+      void log('Delete Payment Method', { name: deleteTarget.name }, { recordId: deleteTarget.id, recordRef: deleteTarget.name });
       toast({ title: 'Deleted', description: `"${deleteTarget.name}" removed.` });
       setDeleteTarget(null);
       void fetchSettings();

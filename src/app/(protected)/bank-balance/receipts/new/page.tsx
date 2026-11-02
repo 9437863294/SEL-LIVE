@@ -10,13 +10,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
 import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
-import { DateBankBar, EntryCard, EntryFooter, EntryTable, TD, TH, cellInput, type FooterNote } from '@/components/bank-balance/entry-grid';
+import { DateBankBar, EntryCard, EntryFooter, EntryTable, TD, TH, cellInput, entryRowCard, type FooterNote } from '@/components/bank-balance/entry-grid';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
-import { dayKey, formatDay, formatInr, parseDay } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit, parseDay } from '@/lib/bank-balance-ledger';
 import type { BankAccount, BankExpense } from '@/lib/types';
 
 type ReceiptLine = {
@@ -50,6 +50,7 @@ export default function NewReceiptPage() {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [selectedBank, setSelectedBank] = useState('');
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [transactions, setTransactions] = useState<BankExpense[]>([]);
   const [lines, setLines] = useState<ReceiptLine[]>(() => [newLine()]);
   const [showErrors, setShowErrors] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -59,8 +60,10 @@ export default function NewReceiptPage() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const snap = await getDocs(collection(db, 'bankAccounts'));
+        // Transactions too, for the balance preview in the footer — as New Payment and New Transfer.
+        const [snap, txnSnap] = await Promise.all([getDocs(collection(db, 'bankAccounts')), getDocs(collection(db, 'bankExpenses'))]);
         setBankAccounts(snap.docs.map((d) => ({ id: d.id, ...d.data() } as BankAccount)).sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))));
+        setTransactions(txnSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankExpense)));
       } catch (error) {
         console.error('Error fetching bank accounts:', error);
         toast({ title: 'Error', description: 'Failed to load bank accounts.', variant: 'destructive' });
@@ -96,6 +99,18 @@ export default function NewReceiptPage() {
   const openingDay = selectedAccount ? parseDay(selectedAccount.openingDate) : null;
   const beforeOpening = Boolean(openingDay && date && date < openingDay);
 
+  // The account's figure at the end of the chosen date, and what these rows make it: receipts add
+  // to a current account's balance and repay Cash Credit utilisation.
+  const preview = (() => {
+    if (!selectedAccount || !date) return null;
+    const figure = balanceAt(
+      buildLedger(selectedAccount, transactions.filter((txn) => txn.accountId === selectedAccount.id)),
+      date,
+    );
+    const cc = isCashCredit(selectedAccount);
+    return { cc, figure, after: cc ? figure - total : figure + total };
+  })();
+
   const update = (id: string, field: 'description' | 'amount', value: string) =>
     setLines((prev) => prev.map((line) => (line.id === id ? { ...line, [field]: value } : line)));
   const addLine = () => setLines((prev) => [...prev, newLine()]);
@@ -119,6 +134,16 @@ export default function NewReceiptPage() {
       toast({
         title: incomplete.length > 1 ? `${incomplete.length} rows are incomplete` : `Row ${lines.indexOf(incomplete[0]) + 1} is incomplete`,
         description: 'Every row needs a description and an amount above zero.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    // A receipt dated before the account opened is already inside its opening figure: the engine
+    // would ignore it and no balance would move. New Payment and New Transfer refuse this too.
+    if (beforeOpening && openingDay) {
+      toast({
+        title: 'Date before the account opened',
+        description: `${accountLabel(selectedAccount)} opened ${formatDay(openingDay)}. Receipts dated earlier would not count toward its balance.`,
         variant: 'destructive',
       });
       return;
@@ -186,7 +211,10 @@ export default function NewReceiptPage() {
         .join(', ')}.`,
     });
   if (beforeOpening && openingDay)
-    notes.push({ tone: 'warning', text: `This date is before the account's opening date (${formatDay(openingDay)}); the receipts will not count toward its balance.` });
+    notes.push({
+      tone: 'error',
+      text: `This date is before the account's opening date (${formatDay(openingDay)}); the receipts would not count toward its balance. Pick a date on or after it.`,
+    });
 
   return (
     <>
@@ -244,9 +272,12 @@ export default function NewReceiptPage() {
             {lines.map((line, index) => {
               const m = missing(line);
               return (
-                <tr key={line.id} className="bg-background/60">
-                  <TD className="pt-4 text-xs font-semibold text-muted-foreground">{index + 1}</TD>
-                  <TD>
+                <tr key={line.id} className={`bg-background/60 ${entryRowCard}`}>
+                  <TD className="pt-4 text-xs font-semibold text-muted-foreground max-sm:pt-0">
+                    <span className="sm:hidden">Row </span>
+                    {index + 1}
+                  </TD>
+                  <TD label="Description">
                     <Input
                       aria-label={`Row ${index + 1} description`}
                       placeholder="e.g. Received from Client X — RA bill 12"
@@ -255,7 +286,7 @@ export default function NewReceiptPage() {
                       onChange={(e) => update(line.id, 'description', e.target.value)}
                     />
                   </TD>
-                  <TD>
+                  <TD label="Amount (₹)">
                     <Input
                       aria-label={`Row ${index + 1} amount`}
                       type="number"
@@ -273,11 +304,12 @@ export default function NewReceiptPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      className="h-9 w-9 text-destructive hover:text-destructive max-sm:w-full"
                       aria-label={`Remove row ${index + 1}`}
                       onClick={() => removeLine(line.id)}
                     >
                       <Trash2 className="h-4 w-4" />
+                      <span className="ml-1.5 sm:hidden">Remove</span>
                     </Button>
                   </TD>
                 </tr>
@@ -288,11 +320,19 @@ export default function NewReceiptPage() {
           <EntryFooter
             addLabel="Add row"
             onAdd={addLine}
-            figures={[{ label: `Total (${lines.length} receipt${lines.length === 1 ? '' : 's'})`, value: formatInr(total) }]}
+            figures={[
+              ...(preview && date
+                ? [
+                    { label: `${preview.cc ? 'Utilisation' : 'Balance'} at end of ${formatDay(date)}`, value: formatInr(preview.figure) },
+                    { label: preview.cc ? 'Utilisation after these receipts' : 'Balance after these receipts', value: formatInr(preview.after) },
+                  ]
+                : []),
+              { label: `Total (${lines.length} receipt${lines.length === 1 ? '' : 's'})`, value: formatInr(total) },
+            ]}
             notes={notes}
             saveLabel={`Save ${lines.length > 1 ? `${lines.length} Receipts` : 'Receipt'}`}
             saving={isSaving}
-            saveDisabled={activeAccounts.length === 0}
+            saveDisabled={activeAccounts.length === 0 || beforeOpening}
             onSave={() => void handleSave()}
           />
         </EntryCard>

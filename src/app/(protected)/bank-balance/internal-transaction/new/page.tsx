@@ -141,6 +141,18 @@ export default function NewInternalTransactionPage() {
     void fetchData();
   }, [authLoading, canAdd, fetchData]);
 
+  // Leaving with typed-in transfers loses them; ask first — as New Payment and New Receipt do.
+  const isDirty = transactions.some((t) => t.fromAccountId || t.toAccountId || t.amount > 0);
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
+
   const handleTransactionChange = (
     id: string,
     field: keyof TransactionItem,
@@ -179,6 +191,12 @@ export default function NewInternalTransactionPage() {
   }, [transactions, bankAccounts, allTransactions, date]);
 
   const totalAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0);
+
+  // A batch drawing more than any source has cannot be saved; the row already says so in red.
+  const overdrawnSources = useMemo(
+    () => [...sources.values()].filter((source) => source.requested > source.available),
+    [sources],
+  );
 
   /**
    * Accounts on this batch whose opening date is after the transfer date. The engine treats an
@@ -331,7 +349,7 @@ export default function NewInternalTransactionPage() {
 
       toast({
         title: 'Success',
-        description: `${transactions.length} transaction(s) totalling ${formatInr(totalAmount)} saved successfully.`,
+        description: `${transactions.length} transfer${transactions.length === 1 ? '' : 's'} totalling ${formatInr(totalAmount)} saved.`,
       });
 
       const nameOf = (accountId: string) => accountLabel(bankAccounts.find((acc) => acc.id === accountId));
@@ -533,6 +551,8 @@ export default function NewInternalTransactionPage() {
                           id={`transfer-amount-${item.id}`}
                           type="number"
                           inputMode="decimal"
+                          min={0}
+                          step="any"
                           placeholder="0.00"
                           value={item.amount || ''}
                           onChange={(e) => handleTransactionChange(item.id, 'amount', e.target.valueAsNumber || 0)}
@@ -546,15 +566,19 @@ export default function NewInternalTransactionPage() {
 
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Button variant="outline" onClick={addTransaction}>
-                <Plus className="mr-2 h-4 w-4" /> Add Another Transaction
+                <Plus className="mr-2 h-4 w-4" /> Add Another Transfer
               </Button>
-              <Button onClick={handleSave} disabled={isSaving || activeBankAccounts.length < 2 || beforeOpening.length > 0}>
+              <Button
+                onClick={handleSave}
+                disabled={isSaving || activeBankAccounts.length < 2 || beforeOpening.length > 0 || overdrawnSources.length > 0}
+                title={overdrawnSources.length > 0 ? 'A source account is drawn beyond what is available.' : undefined}
+              >
                 {isSaving ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Save className="mr-2 h-4 w-4" />
                 )}
-                Save Transactions
+                {transactions.length > 1 ? `Save ${transactions.length} Transfers` : 'Save Transfer'}
               </Button>
             </div>
           </CardContent>

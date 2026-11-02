@@ -24,7 +24,7 @@ import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { compareDesc, endOfDay, format, startOfDay } from 'date-fns';
 import { collection, doc, getDocs, query, runTransaction, where } from 'firebase/firestore';
-import { BookOpenCheck, CheckCircle2, ChevronRight, Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, ChevronRight, Download, Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -61,6 +61,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
 import { compactInr, dayKey, formatDay, formatInr, parseDay, txnDate } from '@/lib/bank-balance-ledger';
 import type { DateRangePreset } from '@/lib/date-range-presets';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { requisitionHref, voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -494,6 +495,34 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
   const bankName = (accountId: string) => (accountById.has(accountId) ? accountLabel(accountById.get(accountId)) : 'N/A');
   const isPostDated = (entry: BankExpense) => txnDate(entry) > todayEnd;
 
+  // What the filters let through, as a workbook — the same rows, columns matching the list view.
+  const exportExcel = async () => {
+    const rows = filtered.map((entry) => {
+      const base: Record<string, unknown> = {
+        Date: formatDay(txnDate(entry)),
+        Bank: bankName(entry.accountId),
+        Description: entry.description || '',
+      };
+      if (kind === 'payment') {
+        base['Requisition Ref'] = entry.paymentRequestRefNo || '';
+        base.UTR = entry.utrNumber || '';
+        base.Method = entry.paymentMethod || '';
+        base['Instrument No.'] = entry.paymentRefNo || '';
+        base['Voucher No.'] = entry.voucherNo || '';
+        base['Cleared on'] = entry.clearedDate ? formatDay(entry.clearedDate) : '';
+      }
+      base['Post-dated'] = isPostDated(entry) ? 'Yes' : '';
+      base.Amount = amountOf(entry);
+      return base;
+    });
+    try {
+      await exportRowsToExcel(config.title, rows, { filename: `${config.title} ${todayKey}.xlsx` });
+    } catch (error) {
+      console.error(`Error exporting ${config.noun}s:`, error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
+
   const actionCell = (entry: BankExpense) =>
         // A line of a payment voucher is reversed with its whole voucher, from the Cheque Register —
         // deleting one line here would leave the voucher and its requisitions out of step.
@@ -694,6 +723,10 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
           scroll={viewMode === 'list' ? 'natural' : 'contained'}
           actions={
             <>
+              <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={filtered.length === 0}>
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                Export
+              </Button>
               {viewMode === 'grouped' && groupedTree.length > 0 && (
                 <Button
                   size="sm"

@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
 import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
-import { EntryCard, EntryFooter, EntryTable, FileCell, TD, TH, cellInput, fileSize, type FooterFigure, type FooterNote } from '@/components/bank-balance/entry-grid';
+import { EntryCard, EntryFooter, EntryTable, FileCell, TD, TH, cellInput, entryRowCard, fileSize, type FooterFigure, type FooterNote } from '@/components/bank-balance/entry-grid';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -939,9 +939,12 @@ function NewPaymentForm() {
               const amount = amountOf(line);
               const partial = payable && amount > 0 && amount < payable.balance - 0.01;
               return (
-                <tr key={line.id} className="bg-background/60">
-                  <TD className="pt-4 text-xs font-semibold text-muted-foreground">{index + 1}</TD>
-                  <TD>
+                <tr key={line.id} className={`bg-background/60 ${entryRowCard}`}>
+                  <TD className="pt-4 text-xs font-semibold text-muted-foreground max-sm:pt-0">
+                    <span className="sm:hidden">Row </span>
+                    {index + 1}
+                  </TD>
+                  <TD label="Requisition / Ref">
                     {line.requisitionId ? (
                       <div className="flex h-9 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 pl-2 pr-1 text-emerald-800">
                         <Link2 className="h-3.5 w-3.5 shrink-0" />
@@ -979,7 +982,7 @@ function NewPaymentForm() {
                       </>
                     )}
                   </TD>
-                  <TD>
+                  <TD label="Payee">
                     <Input
                       aria-label={`Row ${index + 1} payee`}
                       placeholder="Payee / party"
@@ -989,10 +992,10 @@ function NewPaymentForm() {
                       onChange={(ev) => update(line.id, { partyName: ev.target.value })}
                     />
                   </TD>
-                  <TD className="pt-4 text-xs text-muted-foreground">
+                  <TD label="Project" className="pt-4 text-xs text-muted-foreground max-sm:pt-1.5">
                     <span className="line-clamp-2">{line.projectName || '—'}</span>
                   </TD>
-                  <TD>
+                  <TD label="Description">
                     <Input
                       aria-label={`Row ${index + 1} description`}
                       placeholder="What the payment is for"
@@ -1001,7 +1004,7 @@ function NewPaymentForm() {
                       onChange={(ev) => update(line.id, { description: ev.target.value })}
                     />
                   </TD>
-                  <TD className="pt-4 text-right text-xs tabular-nums text-muted-foreground">
+                  <TD label="Due" className="pt-4 text-right text-xs tabular-nums text-muted-foreground max-sm:pt-1.5 max-sm:text-left">
                     {payable ? (
                       <>
                         {formatInr(payable.balance)}
@@ -1011,7 +1014,7 @@ function NewPaymentForm() {
                       '—'
                     )}
                   </TD>
-                  <TD>
+                  <TD label="Amount (₹)">
                     <Input
                       aria-label={`Row ${index + 1} amount`}
                       type="number"
@@ -1027,7 +1030,7 @@ function NewPaymentForm() {
                     {partial && <p className="mt-1 text-right text-[11px] text-sky-700">Part payment</p>}
                   </TD>
                   {cfg.utrPerLine && (
-                    <TD>
+                    <TD label="UTR No.">
                       <Input
                         aria-label={`Row ${index + 1} UTR number`}
                         placeholder="UTR"
@@ -1037,7 +1040,7 @@ function NewPaymentForm() {
                       />
                     </TD>
                   )}
-                  <TD>
+                  <TD label="Approval">
                     <FileCell
                       id={`approval-${line.id}`}
                       label={`Row ${index + 1} approval copy`}
@@ -1052,11 +1055,12 @@ function NewPaymentForm() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      className="h-9 w-9 text-destructive hover:text-destructive max-sm:w-full"
                       aria-label={`Remove row ${index + 1}`}
                       onClick={() => removeLine(line.id)}
                     >
                       <Trash2 className="h-4 w-4" />
+                      <span className="ml-1.5 sm:hidden">Remove</span>
                     </Button>
                   </TD>
                 </tr>

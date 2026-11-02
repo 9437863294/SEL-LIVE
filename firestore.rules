@@ -1607,6 +1607,15 @@ service cloud.firestore {
       allow create, update: if bbPaymentEntryEditor();
     }
 
+    /*
+     * The dashboard design chosen on Bank Balance › Settings (`{ design, updatedAt, updatedById,
+     * updatedByName }`). Every dashboard reads it; it is saved under the rule above. Until this is
+     * published, viewers without Payment Entry Settings simply get the Classic design.
+     */
+    match /bankBalanceSettings/dashboard {
+      allow get: if signedIn();
+    }
+
     match /paymentMethods/{methodId} {
       allow read: if bbPaymentEntryReader();
       allow create, delete: if bbPaymentEntryEditor();
