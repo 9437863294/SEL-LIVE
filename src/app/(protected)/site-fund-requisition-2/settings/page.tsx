@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { GitMerge } from 'lucide-react';
+import { GitMerge, Hash } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,12 @@ const settingsItems = [
     text: 'Workflow Configuration',
     href: '/site-fund-requisition-2/settings/workflow-configuration',
     description: 'Set the steps, users, and TAT for the process.',
+  },
+  {
+    icon: Hash,
+    text: 'Serial Numbers',
+    href: '/site-fund-requisition-2/settings/serial-numbers',
+    description: 'Set how requisition numbers are made and the next running number.',
   },
 ];
 

@@ -29,10 +29,11 @@ const workflowItems = [
 const actionItems = [
   {
     icon: Hash,
-    title: 'Serial No. Configuration',
-    description: 'Configure serial numbers for daily requisitions.',
-    href: '/settings/serial-no-configuration',
-    permission: 'Edit Serial Nos',
+    title: 'Serial Numbers',
+    description: 'Set how Reception Nos are made and the next running number.',
+    href: '/daily-requisition/settings/serial-numbers',
+    // Settings viewers open it read-only; Edit Serial Nos unlocks Save.
+    permission: 'View',
     badge: 'Core',
     accentClassName: 'bg-gradient-to-r from-cyan-400 via-sky-400 to-blue-400',
   },

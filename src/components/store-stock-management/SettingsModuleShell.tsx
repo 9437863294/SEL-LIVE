@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Construction,
   FilePen,
+  Hash,
   LayoutGrid,
   ListTree,
   MapPin,
@@ -28,6 +29,7 @@ const groups: ModuleNavGroup[] = [
       { id: 'sites', href: '/store-stock-management/settings/sites', label: 'Project Sites', icon: MapPin, tone: 'rose' },
       { id: 'units', href: '/store-stock-management/settings/units', label: 'Units of Measure', icon: Ruler, tone: 'sky' },
       { id: 'grn-entry', href: '/store-stock-management/settings/grn-entry', label: 'GRN Entry', icon: FilePen, tone: 'violet' },
+      { id: 'serial-numbers', href: '/store-stock-management/settings/serial-numbers', label: 'Serial Numbers', icon: Hash, tone: 'indigo' },
     ],
   },
   {
@@ -41,7 +43,7 @@ const groups: ModuleNavGroup[] = [
 ];
 
 // The phone's bottom bar leads with the overview and the three masters set up most often; the rest
-// of the menu — units, GRN fields and the inventory masters — follows them, and "More" opens the
+// of the menu — units, GRN fields, serial numbers and the inventory masters — follows them, and "More" opens the
 // bar's pop-up of every page, under the sidebar's two headings. Overview wears the shell's icon
 // rather than its sidebar one, which is the same grid "More" uses.
 const mobileTabs: ModuleNavTab[] = [
