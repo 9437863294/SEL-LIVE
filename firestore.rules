@@ -1602,9 +1602,27 @@ service cloud.firestore {
       return bbHolds('Payment Entry Settings', ['Edit']) || bbHolds('Expenses', ['Add']);
     }
 
+    /* Field Control, Sort Order, Date Control and Month Closure (src/lib/bank-balance-entry-controls.ts). */
+    function bbControlDoc(settingId) {
+      return settingId in ['fieldControl', 'sortControl', 'dateControl', 'monthClosure'];
+    }
+
+    /*
+     * Payment Entry settings, and the four entry controls. The controls are Site Account's model:
+     * every entry form reads them, so any signed-in user may; each is written only from its own
+     * Settings page, by its own right — with the module's settings right (Payment Entry Settings ·
+     * Edit) standing in until the new resources are granted. A payment clerk (Expenses · Add) can
+     * still write Payment Entry's own document, as before, but never the closure calendar.
+     */
     match /bankBalanceSettings/{settingId} {
-      allow get: if bbPaymentEntryReader();
-      allow create, update: if bbPaymentEntryEditor();
+      allow get: if bbPaymentEntryReader() || (bbControlDoc(settingId) && signedIn());
+      allow create, update: if (!bbControlDoc(settingId) && bbPaymentEntryEditor())
+        || ((settingId == 'fieldControl' || settingId == 'sortControl')
+          && bbHolds('Field Control', ['Edit']))
+        || (settingId == 'dateControl'
+          && (bbHolds('Date Control', ['Edit']) || bbHolds('Field Control', ['Edit'])))
+        || (settingId == 'monthClosure' && bbHolds('Month Closure', ['Close', 'Reopen']))
+        || (bbControlDoc(settingId) && bbHolds('Payment Entry Settings', ['Edit']));
     }
 
     /*

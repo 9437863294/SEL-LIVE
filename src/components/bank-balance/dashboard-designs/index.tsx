@@ -78,8 +78,8 @@ export function DesignPreviewBanner({ previewing, saved }: { previewing: BankDas
         Previewing <b>{dashboardDesignLabel(previewing)}</b> with today’s figures. Only you see this; everyone else sees{' '}
         <b>{dashboardDesignLabel(saved)}</b>.
       </span>
-      <Link href="/bank-balance/settings#dashboard-design" className="shrink-0 font-semibold underline-offset-2 hover:underline">
-        Back to settings
+      <Link href="/bank-balance/settings/appearance" className="shrink-0 font-semibold underline-offset-2 hover:underline">
+        Back to Appearance
       </Link>
     </div>
   );

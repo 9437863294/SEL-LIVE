@@ -42,7 +42,7 @@ export const STANDARD_MODES: PaymentModeConfig[] = [
 ];
 
 /**
- * The modes offered: the standard ones, plus any method configured under Payment Entry Settings
+ * The modes offered: the standard ones, plus any method configured under Settings › Field Control › Payment options
  * that is not one of them (treated as a transfer with a reference per line).
  */
 export function paymentModes(customNames: string[] = []): PaymentModeConfig[] {

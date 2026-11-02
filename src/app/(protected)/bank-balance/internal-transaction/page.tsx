@@ -12,7 +12,8 @@ import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { compareDesc, endOfDay, startOfDay } from 'date-fns';
 import { collection, doc, getDocs, query, Timestamp, where, writeBatch } from 'firebase/firestore';
-import { ArrowRight, ArrowRightLeft, Download, Loader2, Pencil, Plus, Route, Save, Trash2, Wallet } from 'lucide-react';
+import { ArrowRight, ArrowRightLeft, Download, Loader2, Lock, Pencil, Plus, Route, Save, Trash2, Wallet } from 'lucide-react';
+import { useEntryControls } from '@/components/bank-balance/controls/use-entry-controls';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -170,6 +171,11 @@ export default function InternalTransactionPage() {
     (accountId: string) => (accountById.has(accountId) ? accountLabel(accountById.get(accountId)) : 'N/A'),
     [accountById],
   );
+  // Date Control (a changed date must be allowed) and Month Closure (nothing in a closed month
+  // moves, and nothing moves into one) for both accounts of a transfer.
+  const controls = useEntryControls('transfer', nameOf);
+  const lockedTransfer = (transfer: { at: Date; fromAccountId: string; toAccountId: string }) =>
+    controls.isLocked(dayKey(transfer.at), [transfer.fromAccountId, transfer.toAccountId]);
 
   const transfers = useMemo(() => groupTransfers(allTransactions), [allTransactions]);
 
@@ -342,6 +348,27 @@ export default function InternalTransactionPage() {
       return;
     }
 
+    const nextDay = dayKey(editDate);
+    const accountsAfter = [form.fromAccountId, form.toAccountId];
+    if (nextDay !== dayKey(editingEntry.at)) {
+      const windowCheck = controls.check(nextDay, accountsAfter);
+      if (!windowCheck.ok) {
+        toast({ title: 'Date not allowed', description: windowCheck.reason, variant: 'destructive' });
+        return;
+      }
+    }
+    const change = controls.checkChange({
+      originalDate: dayKey(editingEntry.at),
+      nextDate: nextDay,
+      action: 'edit',
+      originalAccountIds: [editingEntry.fromAccountId, editingEntry.toAccountId],
+      nextAccountIds: accountsAfter,
+    });
+    if (!change.ok) {
+      toast({ title: 'Month closed', description: change.reason, variant: 'destructive' });
+      return;
+    }
+
     const availableFunds = availableOn(
       fromAccount,
       allTransactions.filter((txn) => txn.contraId !== editingEntry.contraId),
@@ -375,17 +402,27 @@ export default function InternalTransactionPage() {
         ? createdStamps.reduce((earliest, stamp) => (stamp.toMillis() < earliest.toMillis() ? stamp : earliest))
         : Timestamp.now();
 
+      // Mode, reference and narration entered on New Transfer ride on both legs; an edit keeps them.
+      const firstLeg = (existingContraSnap.docs[0]?.data() ?? {}) as Record<string, unknown>;
+      const carried: Record<string, string> = {};
+      for (const key of ['transferMode', 'narration', 'utrNumber', 'paymentRefNo']) {
+        const value = firstLeg[key];
+        if (typeof value === 'string' && value) carried[key] = value;
+      }
+      const suffix = carried.narration ? ` — ${carried.narration}` : '';
+
       const baseData = {
         date: Timestamp.fromDate(editDate),
         isContra: true,
         contraId: editingEntry.contraId,
         createdAt,
+        ...carried,
       };
 
       batch.set(doc(collection(db, 'bankExpenses')), {
         ...baseData,
         accountId: form.fromAccountId,
-        description: `Transfer to ${toAccount.shortName} - ${toAccount.bankName}`,
+        description: `Transfer to ${toAccount.shortName} - ${toAccount.bankName}${suffix}`,
         amount,
         type: 'Debit',
       } as Omit<BankExpense, 'id'>);
@@ -393,7 +430,7 @@ export default function InternalTransactionPage() {
       batch.set(doc(collection(db, 'bankExpenses')), {
         ...baseData,
         accountId: form.toAccountId,
-        description: `Transfer from ${fromAccount.shortName} - ${fromAccount.bankName}`,
+        description: `Transfer from ${fromAccount.shortName} - ${fromAccount.bankName}${suffix}`,
         amount,
         type: 'Credit',
       } as Omit<BankExpense, 'id'>);
@@ -432,6 +469,16 @@ export default function InternalTransactionPage() {
     if (!deleteTarget) return;
     if (!canDelete) {
       toast({ title: 'Not allowed', description: 'You do not have permission to delete internal transactions.', variant: 'destructive' });
+      setDeleteTarget(null);
+      return;
+    }
+    const allowed = controls.checkChange({
+      originalDate: dayKey(deleteTarget.at),
+      action: 'delete',
+      originalAccountIds: [deleteTarget.fromAccountId, deleteTarget.toAccountId],
+    });
+    if (!allowed.ok) {
+      toast({ title: 'Month closed', description: allowed.reason, variant: 'destructive' });
       setDeleteTarget(null);
       return;
     }
@@ -525,7 +572,16 @@ export default function InternalTransactionPage() {
       align: 'right',
       mobile: 'footer',
       cell: (transfer) =>
-        canEdit || canDelete ? (
+        (canEdit || canDelete) && lockedTransfer(transfer) ? (
+          // The courtesy; the checks in the edit and delete handlers are the rule.
+          <span
+            className="inline-flex h-8 items-center justify-end gap-1 whitespace-nowrap px-2 text-xs text-muted-foreground"
+            title="Dated in a closed month — reopen the month in Settings › Month Closure to change it"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Closed
+          </span>
+        ) : canEdit || canDelete ? (
           <div className="flex justify-end gap-1">
             {canEdit && (
               <Button

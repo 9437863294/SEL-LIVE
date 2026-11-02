@@ -403,6 +403,9 @@ export const permissionModules = {
     "Interest Rate": ["View", "Add", "Delete"],
     "Monthly Interest": ["View", "Edit"],
     "Payment Entry Settings": ["View", "Edit"],
+    "Field Control": ["View", "Edit"],
+    "Date Control": ["View", "Edit"],
+    "Month Closure": ["View", "Close", "Reopen"],
     Expenses: ["View", "Add", "Delete"],
     Receipts: ["View", "Add", "Delete"],
     "Internal Transaction": ["View", "Add", "Edit", "Delete"],
@@ -1445,6 +1448,10 @@ export interface BankExpense {
   voucherNo?: string;
   /** yyyy-MM-dd the bank paid it (stamped when its voucher is marked cleared) — for reconciliation. */
   clearedDate?: string;
+  /** Internal transfers: how the money moved (Internal, NEFT, RTGS, IMPS, Cheque), on both legs. */
+  transferMode?: string;
+  /** Internal transfers: the narration typed with it, on both legs (also appended to the description). */
+  narration?: string;
   createdAt: Timestamp;
 }
 

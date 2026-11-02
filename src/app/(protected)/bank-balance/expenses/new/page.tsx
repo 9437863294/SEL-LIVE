@@ -4,20 +4,22 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, BookOpenCheck, CalendarClock, CheckCircle2, History, Link2, ListPlus, Printer, Search, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle, ArrowDown, ArrowLeft, BookOpenCheck, Check, CheckCircle2, FileText, History, Inbox, Info, Link2, ListPlus, Loader2, Plus, Printer, Save,
+  Search, Send, Stamp, Trash2, X,
+} from 'lucide-react';
 import { collection, doc, getDoc, getDocs, query, runTransaction, Timestamp, where, type DocumentReference } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref, uploadBytes, type StorageReference } from 'firebase/storage';
-import { format } from 'date-fns';
+import { differenceInCalendarDays, format } from 'date-fns';
 
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { PageHeader } from '@/components/shared/page-header';
-import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
-import { EntryCard, EntryFooter, EntryTable, FileCell, TD, TH, cellInput, entryRowCard, fileSize, type FooterFigure, type FooterNote } from '@/components/bank-balance/entry-grid';
+import { BANK_PAGE, BankAccessDenied, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
+import { FileCell, fileSize } from '@/components/bank-balance/entry-grid';
+import { AccountPicker, Tile, tileColours } from '@/components/bank-balance/account-picker';
+import heroStyles from '@/components/bank-balance/dashboard-designs/aurora.module.css';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -26,7 +28,8 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit, lowestAvailableFrom, parseDay } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, compactInr, formatDay, formatInr, isCashCredit, lowestAvailableFrom, parseDay } from '@/lib/bank-balance-ledger';
+import { rupeesInWords } from '@/lib/bank-balance-transfer';
 import {
   applyPayments,
   financialYear,
@@ -36,24 +39,19 @@ import {
   paymentModes,
   requisitionBalance,
   type BankPaymentVoucher,
+  type PaymentModeConfig,
   type RequisitionPaymentRef,
   type VoucherLine,
 } from '@/lib/bank-payments';
 import { voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense, DailyRequisitionEntry } from '@/lib/types';
+import { useEntryControls } from '@/components/bank-balance/controls/use-entry-controls';
+import { useBBFieldControl } from '@/components/bank-balance/controls/use-field-control';
 import { cn } from '@/lib/utils';
 
 type MandatoryField = 'paymentRequestRefNo' | 'utrNumber' | 'paymentMethod' | 'paymentRefNo' | 'approvalCopy' | 'bankTransferCopy';
 type MandatoryFields = Record<MandatoryField, boolean>;
 
-const NO_MANDATORY: MandatoryFields = {
-  paymentRequestRefNo: false,
-  utrNumber: false,
-  paymentMethod: false,
-  paymentRefNo: false,
-  approvalCopy: false,
-  bankTransferCopy: false,
-};
 
 /** A requisition that can still be paid (status Received for Payment or Partially Paid). */
 type Payable = DailyRequisitionEntry & { projectName: string; balance: number; dateText: string };
@@ -114,6 +112,64 @@ const spendable = (account: BankAccount) => (day: Date, figure: number) =>
 
 /** The printable voucher, opened from the success panel. */
 const voucherPrintHref = (voucherId: string) => `/bank-balance/cheques/${encodeURIComponent(voucherId)}/print`;
+
+/** How many days a requisition has been waiting, or null when its date cannot be read. */
+const waitingDays = (value: DailyRequisitionEntry['date']): number | null => {
+  if (!value) return null;
+  let day: Date | null = null;
+  if (typeof value === 'string') day = parseDay(value.slice(0, 10));
+  else {
+    try {
+      day = value.toDate();
+    } catch {
+      day = null;
+    }
+  }
+  return day ? Math.max(0, differenceInCalendarDays(new Date(), day)) : null;
+};
+
+/** The line under each payment method on its card; a method added in Settings gets its kind's. */
+const MODE_NOTE: Record<string, string> = {
+  Cheque: 'Can be post-dated',
+  'e-Cheque': 'From net banking, can be post-dated',
+  RTGS: '₹2 lakh and above, same day',
+  NEFT: 'Any amount, in batches',
+  IMPS: 'Instant, up to ₹5 lakh',
+  'Fund Transfer': 'Within the same bank',
+  'Demand Draft': 'Drawn by the bank',
+};
+const KIND_NOTE: Record<PaymentModeConfig['kind'], string> = { cheque: 'Cheque', transfer: 'Bank transfer', draft: 'Bank draft' };
+
+/** A voucher put aside in this browser. Attachments are not kept — a file cannot be stored there. */
+interface PaymentDraft {
+  mode: string;
+  accountId: string;
+  instrumentNo: string;
+  instrumentDate: string;
+  remarks: string;
+  lines: Line[];
+  savedAt: string;
+}
+const PAYMENT_DRAFT_KEY = 'bankBalance.paymentDraft';
+const readPaymentDraft = (): PaymentDraft | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(PAYMENT_DRAFT_KEY);
+    if (!raw) return null;
+    const draft = JSON.parse(raw) as PaymentDraft;
+    return draft && Array.isArray(draft.lines) && typeof draft.savedAt === 'string' && !Number.isNaN(Date.parse(draft.savedAt)) ? draft : null;
+  } catch {
+    return null;
+  }
+};
+const writePaymentDraft = (draft: PaymentDraft | null) => {
+  try {
+    if (draft) window.localStorage.setItem(PAYMENT_DRAFT_KEY, JSON.stringify(draft));
+    else window.localStorage.removeItem(PAYMENT_DRAFT_KEY);
+  } catch {
+    // Storage blocked (a private window, say): the draft is simply not kept.
+  }
+};
 
 /** The note shown when some requisitions sent by "Pay via voucher" could not go on the voucher. */
 const skippedNote = (skipped: number, asked: number) =>
@@ -183,8 +239,24 @@ function NewPaymentForm() {
   const [transactions, setTransactions] = useState<BankExpense[]>([]);
   const [vouchers, setVouchers] = useState<BankPaymentVoucher[]>([]);
   const [payables, setPayables] = useState<Payable[]>([]);
-  const [mandatory, setMandatory] = useState<MandatoryFields>(NO_MANDATORY);
-  /** Settings › Payment Entry: may a row be paid against a typed reference with no requisition behind it? */
+  /*
+   * Field Control: each field's label, whether it is shown and whether it is required. Payment
+   * Entry's old mandatory switches are its defaults until Field Control is saved, so `mandatory`
+   * reads exactly as it did. A hidden field is never required.
+   */
+  const fc = useBBFieldControl('payment');
+  const need = (key: string) => fc.field(key).visible && fc.field(key).required;
+  const mandatory: MandatoryFields = {
+    paymentRequestRefNo: need('ref'),
+    utrNumber: need('utr'),
+    paymentMethod: false,
+    paymentRefNo: need('instrumentNo'),
+    approvalCopy: need('approvalCopy'),
+    bankTransferCopy: need('transferCopy'),
+  };
+  // Date Control's window and Month Closure's calendar for this account — the same for everyone.
+  const controls = useEntryControls('payment', (id) => accountLabel(accounts.find((a) => a.id === id)));
+  /** Field Control › Payment options: may a row be paid against a typed reference with no requisition behind it? */
   const [allowDirect, setAllowDirect] = useState(true);
   const [customMethods, setCustomMethods] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -203,6 +275,15 @@ function NewPaymentForm() {
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerProject, setPickerProject] = useState('all');
   const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  // A row with no requisition behind it has been asked for, so the table shows though it is empty.
+  const [manualOpen, setManualOpen] = useState(false);
+  // The Reception No. typed in the quick-add box under the payees.
+  const [quickRef, setQuickRef] = useState('');
+  // A voucher put aside earlier in this browser, offered back once.
+  const [draft, setDraft] = useState<PaymentDraft | null>(readPaymentDraft);
+  // The number the next voucher should get; the final one is taken inside the save's transaction.
+  const [nextNo, setNextNo] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -228,7 +309,6 @@ function NewPaymentForm() {
       setTransactions(txnSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankExpense)));
       setVouchers(voucherSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankPaymentVoucher)));
       setPayables(payable);
-      setMandatory({ ...NO_MANDATORY, ...(settingsSnap.exists() ? settingsSnap.data().mandatoryFields || {} : {}) });
       // Absent means allowed, so nothing changes for a site that has never opened the setting.
       setAllowDirect(settingsSnap.exists() ? settingsSnap.data().allowDirectPayments !== false : true);
       setCustomMethods(methodSnap.docs.map((d) => String(d.data().name ?? '')));
@@ -297,7 +377,21 @@ function NewPaymentForm() {
   }, [cfg.allowsFutureDate, instrumentDate, today]);
 
   const instrumentDay = useMemo(() => parseDay(instrumentDate), [instrumentDate]);
-  const dateLabel = cfg.kind === 'cheque' ? 'Cheque date' : cfg.kind === 'draft' ? 'DD date' : 'Transfer date';
+  const modeDateLabel = cfg.kind === 'cheque' ? 'Cheque date' : cfg.kind === 'draft' ? 'DD date' : 'Transfer date';
+  const dateLabel = fc.label('instrumentDate', modeDateLabel);
+  const instrumentLabel = fc.label('instrumentNo', cfg.instrumentLabel);
+  // A cheque or DD number is always asked for; for a transfer the reference can be hidden.
+  const showInstrumentNo = cfg.instrumentRequired || fc.field('instrumentNo').visible;
+  const showRemarks = fc.field('remarks').visible;
+  const showTransferCopy = fc.field('transferCopy').visible;
+  const showUtr = cfg.utrPerLine && fc.field('utr').visible;
+  const showApproval = fc.field('approvalCopy').visible;
+  const transferCopyLabel = fc.label('transferCopy', cfg.kind === 'transfer' ? 'Bank advice / upload file' : 'Cheque / covering letter copy');
+  // The window: back-dating, and how far ahead a cheque or DD (or anything else) may be dated.
+  const dateWindow = controls.windowFor([accountId], { postDated: cfg.allowsFutureDate });
+  const dateCheck = instrumentDate && !controls.loading
+    ? controls.check(instrumentDate, [accountId], { postDated: cfg.allowsFutureDate, label: dateLabel })
+    : null;
 
   // An entry dated before the account's opening date is already inside its opening figure, so the ledger
   // ignores it: a payment dated then would never count toward the balance.
@@ -350,6 +444,7 @@ function NewPaymentForm() {
     instrumentNo: (cfg.instrumentRequired || mandatory.paymentRefNo) && !instrumentNo.trim(),
     instrumentDate: !instrumentDay || (!cfg.allowsFutureDate && instrumentDate > today),
     transferCopy: mandatory.bankTransferCopy && !transferCopy,
+    remarks: need('remarks') && !remarks.trim(),
   };
 
   const update = (id: string, patch: Partial<Line>) => setLines((prev) => prev.map((line) => (line.id === id ? { ...line, ...patch } : line)));
@@ -370,7 +465,7 @@ function NewPaymentForm() {
       update(line.id, {
         refNote: allowDirect
           ? 'Not waiting for payment in the system — this row will be paid directly against this reference.'
-          : 'No requisition waiting for payment has this number. Payments without a requisition are switched off in Settings › Payment Entry.',
+          : 'No requisition waiting for payment has this number. Payments without a requisition are switched off in Settings › Field Control › Payment options.',
       });
       return;
     }
@@ -413,6 +508,13 @@ function NewPaymentForm() {
     }
     if (beforeOpening) {
       toast({ title: 'Date before the account opened', description: openingNote, variant: 'destructive' });
+      return;
+    }
+    // Date Control's window and the closed months, checked at the moment of saving. No role lifts
+    // either: the window is widened, or the month reopened, in Settings.
+    const allowed = controls.check(instrumentDate, [accountId], { postDated: cfg.allowsFutureDate, label: dateLabel });
+    if (!allowed.ok) {
+      toast({ title: 'Date not allowed', description: allowed.reason, variant: 'destructive' });
       return;
     }
     if (funds && total > funds.lowest + 0.004) {
@@ -641,6 +743,9 @@ function NewPaymentForm() {
     setTransferCopy(null);
     setShowErrors(false);
     setPreloadNote('');
+    setManualOpen(false);
+    writePaymentDraft(null);
+    setDraft(null);
     void load();
   };
 
@@ -648,6 +753,66 @@ function NewPaymentForm() {
   useEffect(() => {
     if (lastIssued) issuedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [lastIssued]);
+
+  // The voucher number the counter would give now — refreshed after each issue.
+  useEffect(() => {
+    if (!canAdd) return;
+    let cancelled = false;
+    getDoc(doc(db, 'bankBalanceCounters', 'paymentVoucher'))
+      .then((snap) => {
+        if (cancelled) return;
+        const stored = snap.exists() ? (snap.data() as { fy?: string; next?: number }) : undefined;
+        const day = todayKey();
+        setNextNo(stored?.fy && stored.fy > financialYear(day) ? null : nextVoucherNo(stored, day).voucherNo);
+      })
+      .catch(() => {
+        if (!cancelled) setNextNo(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canAdd, lastIssued]);
+
+  // What each active account can spend on the instrument date, for the account picker.
+  const availableByAccount = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!instrumentDay) return map;
+    for (const a of activeAccounts) map.set(a.id, spendable(a)(instrumentDay, balanceAt(buildLedger(a, transactions), instrumentDay)));
+    return map;
+  }, [activeAccounts, transactions, instrumentDay]);
+
+  // One issue at a time, from the button or from Ctrl+Enter.
+  const issuingRef = useRef(false);
+  const issue = async () => {
+    if (issuingRef.current) return;
+    issuingRef.current = true;
+    try {
+      await handleSave();
+    } finally {
+      issuingRef.current = false;
+    }
+  };
+  const issueBlocked =
+    isSaving || isLoading || activeAccounts.length === 0 || overBy > 0 || Boolean(dateCheck && !dateCheck.ok) || !lines.some(hasContent);
+
+  // Ctrl+Enter issues the voucher. Read through refs, so the listener stays one.
+  const issueRef = useRef(issue);
+  const blockedRef = useRef(issueBlocked);
+  useEffect(() => {
+    issueRef.current = issue;
+    blockedRef.current = issueBlocked;
+  });
+  useEffect(() => {
+    if (pickerOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !blockedRef.current) {
+        event.preventDefault();
+        void issueRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pickerOpen]);
 
   // Only the first load blanks the page; a reload after a save refreshes the figures in place (Save waits for it).
   if (authLoading || (isLoading && canAdd && !hasLoaded)) return <BankPageSkeleton kpis={0} blocks={1} />;
@@ -661,76 +826,184 @@ function NewPaymentForm() {
     return !q || [p.receptionNo, p.depNo, p.partyName, p.description, p.projectName].some((field) => norm(field).includes(q));
   });
   const pickedTotal = payables.filter((p) => picked.has(p.id)).reduce((sum, p) => sum + p.balance, 0);
+  const waiting = payables.filter((p) => !linkedIds.has(p.id));
+  const waitingTotal = waiting.reduce((sum, p) => sum + p.balance, 0);
 
-  const figures: FooterFigure[] = [
-    ...(funds ? [{ label: `${fundsLabel} on ${formatDay(instrumentDate)}`, value: formatInr(funds.onDate) }] : []),
-    ...(funds?.lowestAhead ? [{ label: `Lowest ahead on ${formatDay(funds.lowestDay)} (post-dated cheques)`, value: formatInr(funds.lowest) }] : []),
-    { label: `Voucher total (${lines.length} payee${lines.length === 1 ? '' : 's'})`, value: formatInr(total) },
-    ...(remaining !== null
-      ? [
-          {
-            label: funds?.lowestAhead ? `Left on ${formatDay(funds.lowestDay)}` : 'Left after this voucher',
-            value: formatInr(remaining),
-            tone: overBy > 0 ? ('bad' as const) : ('good' as const),
-          },
-        ]
-      : []),
-  ];
+  const payeeLines = lines.filter(hasContent);
+  const showTable = payeeLines.length > 0 || manualOpen;
+  const colourOf = (id: string) => tileColours(activeAccounts.findIndex((a) => a.id === id));
+  const availableOf = (id: string) => availableByAccount.get(id) ?? 0;
 
-  const notes: FooterNote[] = [];
-  if (openingNote) notes.push({ tone: 'error', text: openingNote });
-  if (overBy > 0 && funds)
-    notes.push({
-      tone: 'error',
+  // The last number this account used on this mode, and the one after it, when they are plain digits.
+  const lastUsed = account
+    ? vouchers
+        .filter((v) => v.accountId === account.id && v.mode === mode && v.instrumentNo)
+        .sort((a, b) => (b.instrumentDate || '').localeCompare(a.instrumentDate || '') || (b.voucherNo || '').localeCompare(a.voucherNo || ''))[0]
+    : undefined;
+  const suggested = lastUsed && /^\d+$/.test(lastUsed.instrumentNo) ? String(Number(lastUsed.instrumentNo) + 1).padStart(lastUsed.instrumentNo.length, '0') : null;
+
+  const quickAdd = () => {
+    const code = norm(quickRef);
+    if (!code) return;
+    const match = payables.find((p) => norm(p.receptionNo) === code || (p.depNo && norm(p.depNo) === code));
+    if (!match) {
+      toast({
+        title: 'Not waiting for payment',
+        description: `No requisition ${quickRef.trim()} is waiting for payment.${allowDirect ? ' Use “Payment without a requisition” to pay it directly.' : ''}`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (linkedIds.has(match.id)) {
+      toast({ title: 'Already on this voucher', description: `${match.receptionNo} is already a row.` });
+      return;
+    }
+    setLines((prev) => [...prev.filter(hasContent), lineFromPayable(match)]);
+    setQuickRef('');
+    toast({ title: `Added ${match.receptionNo}`, description: match.partyName || '' });
+  };
+  const addManual = () => {
+    if (!lines.some(hasContent)) setManualOpen(true);
+    else setLines((prev) => [...prev, newLine()]);
+  };
+
+  const saveDraft = () => {
+    writePaymentDraft({
+      mode, accountId, instrumentNo, instrumentDate, remarks,
+      lines: lines.filter(hasContent).map((line) => ({ ...line, approvalCopy: null })),
+      savedAt: new Date().toISOString(),
+    });
+    toast({ title: 'Draft saved', description: 'Kept in this browser. Attachments are not kept in a draft — add them again before issuing.' });
+  };
+  const restoreDraft = () => {
+    if (!draft) return;
+    // A requisition paid (or cancelled) since the draft was put aside no longer belongs on it.
+    const kept = draft.lines.filter((line) => !line.requisitionId || payableById.has(line.requisitionId));
+    const dropped = draft.lines.length - kept.length;
+    setMode(draft.mode);
+    setAccountId(draft.accountId);
+    setInstrumentNo(draft.instrumentNo);
+    setInstrumentDate(draft.instrumentDate);
+    setRemarks(draft.remarks);
+    setLines(kept.length ? kept.map((line) => ({ ...newLine(), ...line, approvalCopy: null })) : [newLine()]);
+    if (kept.some((line) => !line.requisitionId)) setManualOpen(true);
+    writePaymentDraft(null);
+    setDraft(null);
+    if (dropped) {
+      toast({
+        title: 'Draft restored',
+        description: `${dropped} requisition${dropped === 1 ? ' is' : 's are'} no longer waiting for payment and ${dropped === 1 ? 'was' : 'were'} left off.`,
+      });
+    }
+  };
+  const discardDraft = () => {
+    writePaymentDraft(null);
+    setDraft(null);
+  };
+
+  const batchMode = modes.find((m) => m.mode === 'NEFT') ?? modes.find((m) => m.kind === 'transfer');
+  const messages: Array<{ tone: 'bad' | 'warn' | 'info'; text: string; action?: { label: string; run: () => void } }> = [];
+  if (!accountId) messages.push({ tone: 'warn', text: 'Pick the bank account to see the funds available on the instrument date.' });
+  if (openingNote) messages.push({ tone: 'bad', text: openingNote });
+  if (overBy > 0 && funds) {
+    messages.push({
+      tone: 'bad',
       text: funds.lowestAhead
         ? `Over by ${formatInr(overBy)}. ${formatInr(funds.onDate)} is available on ${formatDay(instrumentDate)}, but payments already booked for later dates (post-dated cheques) bring it down to ${formatInr(funds.lowest)} on ${formatDay(funds.lowestDay)} — this voucher has to fit under that, or one of them would bounce.`
-        : `Over the funds available on ${formatDay(instrumentDate)} by ${formatInr(overBy)}.`,
+        : `${accountLabel(account)} has ${formatInr(funds.onDate)} on ${formatDay(instrumentDate)}. This voucher needs ${formatInr(total)} — over by ${formatInr(overBy)}.`,
     });
-  if (showErrors && incomplete.length)
-    notes.push({ tone: 'error', text: `Incomplete rows (marked in red): ${incomplete.map((line) => lines.indexOf(line) + 1).join(', ')}.` });
-  // Why a row with a perfectly good reference is being refused — and, before anything is typed,
-  // why there is no way to add one by hand.
-  if (!allowDirect && lines.some((line) => !line.requisitionId))
-    notes.push({
-      tone: lines.some((line) => hasContent(line) && !line.requisitionId) ? 'error' : 'warning',
-      text: 'Every row has to settle a requisition waiting for payment — add them with "Choose requisitions". Payments without a requisition are switched off in Settings › Payment Entry.',
+  }
+  if (showErrors && incomplete.length) messages.push({ tone: 'bad', text: `Incomplete rows (marked in red): ${incomplete.map((line) => lines.indexOf(line) + 1).join(', ')}.` });
+  if (!allowDirect && lines.some((line) => hasContent(line) && !line.requisitionId)) {
+    messages.push({ tone: 'bad', text: 'Every row has to settle a requisition waiting for payment. Payments without a requisition are switched off in Settings › Field Control › Payment options.' });
+  }
+  if (duplicateInstrument) messages.push({ tone: 'warn', text: `${cfg.instrumentLabel} ${instrumentNo} is already on voucher ${duplicateInstrument.voucherNo} (${formatDay(duplicateInstrument.instrumentDate)}) for this account.` });
+  if (cfg.kind !== 'transfer' && payeeLines.length > 1) {
+    messages.push({
+      tone: 'info',
+      text: `One ${mode} for ${payeeLines.length} payees needs a covering letter to the bank. Paying them as a transfer batch is usually easier.`,
+      ...(batchMode ? { action: { label: `Switch to ${batchMode.mode}`, run: () => setMode(batchMode.mode) } } : {}),
     });
-  if (duplicateInstrument)
-    notes.push({ tone: 'warning', text: `${cfg.instrumentLabel} ${instrumentNo} is already on voucher ${duplicateInstrument.voucherNo} (${formatDay(duplicateInstrument.instrumentDate)}) for this account.` });
-  if (!accountId) notes.push({ tone: 'warning', text: 'Pick the bank account to see the funds available on the instrument date.' });
+  }
+  if (postDated) {
+    messages.push({ tone: 'info', text: `Post-dated ${mode} — it enters the balance on ${formatDay(instrumentDate)}. Until then the Cheque Register lists it as post-dated, and today’s balance is unaffected.` });
+  }
+
+  const checks = [
+    { ok: Boolean(account), text: 'Bank account selected' },
+    ...(cfg.instrumentRequired || mandatory.paymentRefNo ? [{ ok: Boolean(instrumentNo.trim()), text: `${instrumentLabel} entered` }] : []),
+    { ok: payeeLines.length > 0, text: 'At least one payee' },
+    { ok: payeeLines.length > 0 && incomplete.length === 0, text: 'Every payee is complete' },
+    ...(mandatory.bankTransferCopy || need('remarks') ? [{ ok: !headerErrors.transferCopy && !headerErrors.remarks, text: 'Required attachment and remarks' }] : []),
+    { ok: Boolean(account) && overBy === 0 && !beforeOpening, text: 'Enough funds on the instrument date' },
+    { ok: !headerErrors.instrumentDate && !(dateCheck && !dateCheck.ok), text: 'The date is allowed' },
+  ];
+  const singlePayee = payeeLines.length === 1 ? payeeLines[0].partyName.trim() : '';
+  const dateDigits = instrumentDay ? format(instrumentDay, 'ddMMyyyy') : '';
+  // As a cheque is written: "Twelve lakh … five hundred and fifty paise only" after the printed "Rupees".
+  const chequeWords = total ? rupeesInWords(total).replace(/ rupees?(?= and| only)/, '') : '';
+  const chequeFigure = total ? `${total.toLocaleString('en-IN', { minimumFractionDigits: total % 1 ? 2 : 0, maximumFractionDigits: 2 })}/-` : '';
+  /** The caption a phone's stacked row shows in place of the column header. */
+  const phoneLabel = (text: string) => (
+    <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground sm:hidden">{text}</span>
+  );
+  const modeTile = (m: PaymentModeConfig): [string, string] =>
+    m.mode === 'e-Cheque' ? ['#c4b5fd', '#6d28d9'] : m.kind === 'cheque' ? ['#fdba74', '#ea580c'] : m.kind === 'draft' ? ['#93c5fd', '#1d4ed8'] : ['#5eead4', '#0d9488'];
+  const ModeIcon = (m: PaymentModeConfig) => (m.kind === 'cheque' ? FileText : m.kind === 'draft' ? Stamp : Send);
 
   return (
     <>
-      <BankBalanceBackground tone="red" />
-      <div className={BANK_PAGE}>
-        <PageHeader
-          title="New Payment"
-          description="One voucher per cheque, e-cheque or transfer batch — pay one or many requisitions, in full or in part."
-          backHref="/bank-balance/expenses"
-          backLabel="Back to payments"
-          actions={
-            <>
-              <Button asChild variant="outline">
-                <Link href="/bank-balance/cheques">
-                  <BookOpenCheck className="mr-2 h-4 w-4" />
-                  Cheque Register
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/bank-balance/expenses">
-                  <History className="mr-2 h-4 w-4" />
-                  Payments
-                </Link>
-              </Button>
-            </>
-          }
-        />
+      <div className={cn(BANK_PAGE, 'pb-10')}>
+        {/* Where this is, and the way back. */}
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12.5px] font-semibold text-muted-foreground">
+          <Link href="/bank-balance/expenses" aria-label="Back to payments" className="mr-1 flex h-[30px] w-[30px] items-center justify-center rounded-lg border bg-card hover:bg-muted">
+            <ArrowLeft className="h-[15px] w-[15px]" />
+          </Link>
+          <Link href="/bank-balance" className="hover:text-foreground">Bank Balance</Link>
+          <span aria-hidden>›</span>
+          <Link href="/bank-balance/expenses" className="hover:text-foreground">Payments</Link>
+          <span aria-hidden>›</span>
+          <span className="text-foreground">New payment</span>
+        </nav>
+
+        {/* ── The banner ── */}
+        <section className={cn(heroStyles.hero, 'keep-light flex flex-wrap items-center gap-4 p-5 sm:p-6')} data-tint="aurora">
+          <span aria-hidden className={cn(heroStyles.glass, 'flex h-14 w-14 items-center justify-center rounded-2xl')}>
+            <ArrowDown className="h-7 w-7 text-white" />
+          </span>
+          <div className="min-w-0 flex-1 basis-72">
+            <h1 className="text-2xl font-extrabold tracking-tight">New payment voucher</h1>
+            <p className={heroStyles.muted}>One voucher per cheque, e-cheque or transfer batch. Pay one or many requisitions, in full or in part.</p>
+          </div>
+          <div className={cn(heroStyles.glass, 'flex min-w-[130px] flex-1 flex-col rounded-2xl px-4 py-2.5 sm:flex-none')} title="The number this voucher should get. The final one is taken when it is issued.">
+            <span className={cn(heroStyles.muted, 'text-[11.5px] font-semibold')}>Next voucher no.</span>
+            <b className={cn('mt-0.5 text-[15px] font-bold', nextNo && 'font-mono')}>{nextNo ?? 'Given on issue'}</b>
+          </div>
+          <div className={cn(heroStyles.glass, 'flex min-w-[100px] flex-1 flex-col rounded-2xl px-4 py-2.5 sm:flex-none')}>
+            <span className={cn(heroStyles.muted, 'text-[11.5px] font-semibold')}>Payees</span>
+            <b className="text-xl font-extrabold tabular-nums">{payeeLines.length}</b>
+          </div>
+          <div className={cn(heroStyles.glass, 'flex min-w-[120px] flex-1 flex-col rounded-2xl px-4 py-2.5 sm:flex-none')}>
+            <span className={cn(heroStyles.muted, 'text-[11.5px] font-semibold')}>Total</span>
+            <b className="text-xl font-extrabold tabular-nums">{compactInr(total)}</b>
+          </div>
+          <div className="flex flex-wrap gap-2 sm:flex-col">
+            <Link href="/bank-balance/cheques" className={heroStyles.action}>
+              <BookOpenCheck aria-hidden className="h-4 w-4" />
+              Cheque register
+            </Link>
+            <Link href="/bank-balance/expenses" className={heroStyles.action}>
+              <History aria-hidden className="h-4 w-4" />
+              Payments
+            </Link>
+          </div>
+        </section>
 
         {lastIssued && (
           <div
             ref={issuedRef}
             role="status"
-            className="flex flex-col gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 sm:flex-row sm:items-center sm:justify-between"
+            className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-100"
           >
             <div className="flex min-w-0 items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
@@ -738,7 +1011,7 @@ function NewPaymentForm() {
                 <p className="font-semibold">
                   Voucher <span className="font-mono">{lastIssued.voucherNo}</span> issued
                 </p>
-                <p className="break-words text-sm text-emerald-800">
+                <p className="break-words text-sm opacity-90">
                   {formatInr(lastIssued.total)} to {lastIssued.payees} payee{lastIssued.payees === 1 ? '' : 's'} by {lastIssued.mode}
                   {lastIssued.instrumentNo ? ` ${lastIssued.instrumentNo}` : ''}
                   {lastIssued.postDated ? ` — post-dated to ${formatDay(lastIssued.instrumentDate)}` : ''}.
@@ -758,466 +1031,723 @@ function NewPaymentForm() {
                   Print voucher
                 </Link>
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-emerald-800 hover:bg-emerald-100"
-                aria-label="Dismiss"
-                onClick={() => setLastIssued(null)}
-              >
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label="Dismiss" onClick={() => setLastIssued(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
         )}
 
-        <EntryCard>
-          {/* The instrument */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="pay-mode">Payment mode<span className="text-destructive"> *</span></Label>
-              <Select value={mode} onValueChange={setMode}>
-                <SelectTrigger id="pay-mode"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {modes.map((m) => (
-                    <SelectItem key={m.mode} value={m.mode}>
-                      {m.mode}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pay-bank">Bank account<span className="text-destructive"> *</span></Label>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger id="pay-bank" className={cn(err(headerErrors.account) && 'border-destructive')}>
-                  <SelectValue placeholder={activeAccounts.length ? 'Select a bank account' : 'No active accounts'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {accountLabel(a)} — {a.bankName}
-                      {isCashCredit(a) ? ' (CC)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pay-instrument">
-                {cfg.instrumentLabel}
-                {(cfg.instrumentRequired || mandatory.paymentRefNo) && <span className="text-destructive"> *</span>}
-              </Label>
-              <Input
-                id="pay-instrument"
-                placeholder={cfg.kind === 'transfer' ? 'Bank batch / upload reference' : 'e.g. 000451'}
-                value={instrumentNo}
-                className={cn('font-mono', err(headerErrors.instrumentNo) && 'border-destructive', duplicateInstrument && 'border-amber-400')}
-                onChange={(e) => setInstrumentNo(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pay-date">
-                {dateLabel}
-                <span className="text-destructive"> *</span>
-              </Label>
-              <Input
-                id="pay-date"
-                type="date"
-                value={instrumentDate}
-                min={accountStart ? format(accountStart, 'yyyy-MM-dd') : undefined}
-                max={cfg.allowsFutureDate ? undefined : today}
-                className={cn((err(headerErrors.instrumentDate) || beforeOpening) && 'border-destructive')}
-                onChange={(e) => setInstrumentDate(e.target.value)}
-              />
-              {beforeOpening && account && (
-                <p className="text-[11px] leading-snug text-destructive">Before the account&apos;s opening date, {formatDay(account.openingDate)}.</p>
-              )}
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="pay-remarks">Remarks</Label>
-              <Input id="pay-remarks" placeholder="Optional note on the voucher" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
-              <Label htmlFor="pay-transfer-copy">
-                {cfg.kind === 'transfer' ? 'Bank advice / upload file' : 'Cheque / covering letter copy'}
-                {mandatory.bankTransferCopy && <span className="text-destructive"> *</span>}
-              </Label>
-              <FileCell
-                id="pay-transfer-copy"
-                label="Voucher copy"
-                file={transferCopy}
-                onChange={setTransferCopy}
-                onTooLarge={tooLarge}
-                invalid={err(headerErrors.transferCopy)}
-              />
-            </div>
+        {draft && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-950 dark:border-sky-800/50 dark:bg-sky-950/30 dark:text-sky-100">
+            <Info aria-hidden className="h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">
+              A draft voucher with {draft.lines.length} payee{draft.lines.length === 1 ? '' : 's'} from {format(new Date(draft.savedAt), 'd MMM, HH:mm')} is saved in this browser.
+            </span>
+            <Button size="sm" variant="outline" onClick={restoreDraft}>Restore</Button>
+            <Button size="sm" variant="ghost" onClick={discardDraft}>Discard</Button>
           </div>
+        )}
 
-          {postDated && (
-            <p className="flex items-start gap-2 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
-              <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" />
-              Post-dated {mode.toLowerCase()} — it enters the balance on {formatDay(instrumentDate)}. Until then the Cheque Register lists it as
-              post-dated, and today&apos;s balance is unaffected.
-            </p>
-          )}
-
-          {/* Payees */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="font-semibold">Payees</p>
-              <p className="text-xs text-muted-foreground">
-                Pick requisitions waiting for payment, or type a Reception No. in the first column. Amount defaults to what is still due; lower it
-                for a part payment.
-              </p>
-            </div>
-            <Button type="button" variant="outline" onClick={() => setPickerOpen(true)} disabled={payables.length === 0}>
-              <ListPlus className="mr-2 h-4 w-4" />
-              Add from requisitions ({payables.filter((p) => !linkedIds.has(p.id)).length})
-            </Button>
+        {preloadNote && (
+          <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/30 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 flex-1">{preloadNote}</span>
+            <button type="button" className="shrink-0 rounded p-0.5 hover:bg-amber-100" aria-label="Dismiss note" onClick={() => setPreloadNote('')}>
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
+        )}
 
-          {preloadNote && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 flex-1">{preloadNote}</span>
-              <button type="button" className="shrink-0 rounded p-0.5 hover:bg-amber-100" aria-label="Dismiss note" onClick={() => setPreloadNote('')}>
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
-          <EntryTable
-            minWidth={cfg.utrPerLine ? 1420 : 1260}
-            head={
-              <tr>
-                <TH className="w-10">#</TH>
-                <TH className="w-52" required={mandatory.paymentRequestRefNo}>
-                  Requisition / Ref
-                </TH>
-                <TH className="w-48" required>
-                  Payee
-                </TH>
-                <TH className="w-36">Project</TH>
-                <TH required>Description</TH>
-                <TH className="w-32 text-right">Due</TH>
-                <TH className="w-36 text-right" required>
-                  Amount (₹)
-                </TH>
-                {cfg.utrPerLine && (
-                  <TH className="w-44" required={mandatory.utrNumber}>
-                    UTR No.
-                  </TH>
-                )}
-                <TH className="w-32" required={mandatory.approvalCopy}>
-                  Approval
-                </TH>
-                <TH className="w-10">
-                  <span className="sr-only">Remove</span>
-                </TH>
-              </tr>
-            }
-            foot={
-              <tr>
-                <TD />
-                <TD />
-                <TD />
-                <TD />
-                <TD className="py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</TD>
-                <TD />
-                <TD className="py-2.5 text-right font-bold tabular-nums">{formatInr(total)}</TD>
-                {cfg.utrPerLine && <TD />}
-                <TD />
-                <TD />
-              </tr>
-            }
-          >
-            {lines.map((line, index) => {
-              const e = lineErrors(line);
-              const payable = line.requisitionId ? payableById.get(line.requisitionId) : undefined;
-              const amount = amountOf(line);
-              const partial = payable && amount > 0 && amount < payable.balance - 0.01;
-              return (
-                <tr key={line.id} className={`bg-background/60 ${entryRowCard}`}>
-                  <TD className="pt-4 text-xs font-semibold text-muted-foreground max-sm:pt-0">
-                    <span className="sm:hidden">Row </span>
-                    {index + 1}
-                  </TD>
-                  <TD label="Requisition / Ref">
-                    {line.requisitionId ? (
-                      <div className="flex h-9 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 pl-2 pr-1 text-emerald-800">
-                        <Link2 className="h-3.5 w-3.5 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium" title={line.ref}>
-                          {line.ref}
-                        </span>
-                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => unlink(line)} aria-label={`Unlink ${line.ref}`}>
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        <Input
-                          aria-label={`Row ${index + 1} reception no. or reference`}
-                          placeholder="Reception No. + Enter"
-                          value={line.ref}
-                          className={cn(cellInput(err(e.ref)), 'font-mono')}
-                          onChange={(ev) => update(line.id, { ref: ev.target.value, refNote: undefined })}
-                          onBlur={() => lookup(line)}
-                          onKeyDown={(ev) => {
-                            if (ev.key === 'Enter') {
-                              ev.preventDefault();
-                              lookup(line);
-                            }
-                          }}
-                        />
-                        {line.refNote && (
-                          <p className={cn('mt-1 text-[11px] leading-snug', allowDirect ? 'text-slate-500' : 'text-destructive')}>{line.refNote}</p>
-                        )}
-                        {allowDirect && line.ref.trim() && !line.requisitionId && (
-                          <span className="mt-1 inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
-                            Direct payment
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </TD>
-                  <TD label="Payee">
-                    <Input
-                      aria-label={`Row ${index + 1} payee`}
-                      placeholder="Payee / party"
-                      value={line.partyName}
-                      readOnly={!!line.requisitionId}
-                      className={cn(cellInput(err(e.party)), line.requisitionId && 'bg-muted/40')}
-                      onChange={(ev) => update(line.id, { partyName: ev.target.value })}
-                    />
-                  </TD>
-                  <TD label="Project" className="pt-4 text-xs text-muted-foreground max-sm:pt-1.5">
-                    <span className="line-clamp-2">{line.projectName || '—'}</span>
-                  </TD>
-                  <TD label="Description">
-                    <Input
-                      aria-label={`Row ${index + 1} description`}
-                      placeholder="What the payment is for"
-                      value={line.description}
-                      className={cellInput(err(e.description))}
-                      onChange={(ev) => update(line.id, { description: ev.target.value })}
-                    />
-                  </TD>
-                  <TD label="Due" className="pt-4 text-right text-xs tabular-nums text-muted-foreground max-sm:pt-1.5 max-sm:text-left">
-                    {payable ? (
-                      <>
-                        {formatInr(payable.balance)}
-                        {payable.status === 'Partially Paid' && <span className="block text-[10px]">of {formatInr(payable.netAmount)}</span>}
-                      </>
-                    ) : (
-                      '—'
-                    )}
-                  </TD>
-                  <TD label="Amount (₹)">
-                    <Input
-                      aria-label={`Row ${index + 1} amount`}
-                      type="number"
-                      inputMode="decimal"
-                      min={0}
-                      step="any"
-                      placeholder="0.00"
-                      value={line.amount}
-                      className={cn(cellInput(err(e.amount) || (payable ? amount > payable.balance + 0.01 : false)), 'text-right tabular-nums')}
-                      onChange={(ev) => update(line.id, { amount: ev.target.value })}
-                    />
-                    {payable && amount > payable.balance + 0.01 && <p className="mt-1 text-right text-[11px] text-destructive">More than due</p>}
-                    {partial && <p className="mt-1 text-right text-[11px] text-sky-700">Part payment</p>}
-                  </TD>
-                  {cfg.utrPerLine && (
-                    <TD label="UTR No.">
-                      <Input
-                        aria-label={`Row ${index + 1} UTR number`}
-                        placeholder="UTR"
-                        value={line.utr}
-                        className={cn(cellInput(err(e.utr)), 'font-mono')}
-                        onChange={(ev) => update(line.id, { utr: ev.target.value })}
-                      />
-                    </TD>
-                  )}
-                  <TD label="Approval">
-                    <FileCell
-                      id={`approval-${line.id}`}
-                      label={`Row ${index + 1} approval copy`}
-                      file={line.approvalCopy}
-                      onChange={(file) => update(line.id, { approvalCopy: file })}
-                      onTooLarge={tooLarge}
-                      invalid={err(e.approval)}
-                    />
-                  </TD>
-                  <TD>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 text-destructive hover:text-destructive max-sm:w-full"
-                      aria-label={`Remove row ${index + 1}`}
-                      onClick={() => removeLine(line.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="ml-1.5 sm:hidden">Remove</span>
-                    </Button>
-                  </TD>
-                </tr>
-              );
-            })}
-          </EntryTable>
-
-          <EntryFooter
-            addLabel={allowDirect ? 'Add payment without a requisition' : undefined}
-            onAdd={allowDirect ? () => setLines((prev) => [...prev, newLine()]) : undefined}
-            figures={figures}
-            notes={notes}
-            saveLabel={`Issue Voucher${lines.length > 1 ? ` (${lines.length} payees)` : ''}`}
-            saving={isSaving}
-            saveDisabled={activeAccounts.length === 0 || overBy > 0 || isLoading}
-            onSave={() => void handleSave()}
-          />
-        </EntryCard>
-      </div>
-
-      {/* Requisition picker */}
-      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent size="xl" className="hr-mobile-dialog gap-4 sm:max-h-[90dvh]">
-          <DialogHeader className="hr-dialog-header pr-8">
-            <DialogTitle>Requisitions waiting for payment</DialogTitle>
-            <DialogDescription>From Daily Requisition → Processed for Payment. Each is added for the amount still due.</DialogDescription>
-          </DialogHeader>
-          <div className="hr-dialog-body flex min-h-0 flex-1 flex-col gap-3">
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  aria-label="Search requisitions"
-                  placeholder="Search reception no., party, description…"
-                  value={pickerSearch}
-                  className="pl-8"
-                  onChange={(e) => setPickerSearch(e.target.value)}
-                />
-              </div>
-              <Select value={pickerProject} onValueChange={setPickerProject}>
-                <SelectTrigger className="sm:w-56" aria-label="Project">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All projects</SelectItem>
-                  {projects.map(([id, name]) => (
-                    <SelectItem key={id} value={id}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto rounded-lg border sm:max-h-[55dvh]">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="sticky top-0 z-10 bg-muted text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="w-10 px-3 py-2">
-                      <Checkbox
-                        aria-label="Select all shown"
-                        checked={pickerRows.length > 0 && pickerRows.every((p) => linkedIds.has(p.id) || picked.has(p.id))}
-                        onCheckedChange={(checked) =>
-                          setPicked((prev) => {
-                            const next = new Set(prev);
-                            pickerRows.forEach((p) => {
-                              if (linkedIds.has(p.id)) return;
-                              if (checked === true) next.add(p.id);
-                              else next.delete(p.id);
-                            });
-                            return next;
-                          })
-                        }
-                      />
-                    </th>
-                    <th className="px-2 py-2">Reception No.</th>
-                    <th className="px-2 py-2">Date</th>
-                    <th className="px-2 py-2">Project</th>
-                    <th className="px-2 py-2">Party</th>
-                    <th className="px-2 py-2 text-right">Net</th>
-                    <th className="px-3 py-2 text-right">Due</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {pickerRows.map((p) => {
-                    const onVoucher = linkedIds.has(p.id);
+        <div className="grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0 space-y-3.5">
+            {/* ── Step 1: pay from ── */}
+            <section className="rounded-[20px] border bg-card shadow-sm">
+              <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3.5 sm:px-[18px]">
+                <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[12.5px] font-extrabold text-white">1</span>
+                <div className="min-w-0">
+                  <b className="block text-[15px] leading-tight text-foreground">Pay from</b>
+                  <p className="text-xs text-muted-foreground">How the money leaves, and from which account</p>
+                </div>
+              </header>
+              <div className="px-4 pb-[18px] pt-4 sm:px-[18px]">
+                <span className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                  {fc.label('mode')} <span className="text-destructive">*</span>
+                </span>
+                <div role="radiogroup" aria-label={fc.label('mode')} className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4">
+                  {modes.map((m) => {
+                    const Icon = ModeIcon(m);
+                    const on = mode === m.mode;
                     return (
-                      <tr
-                        key={p.id}
-                        className={cn('cursor-pointer hover:bg-muted/40', onVoucher && 'cursor-default opacity-50')}
-                        onClick={() => {
-                          if (onVoucher) return;
-                          setPicked((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(p.id)) next.delete(p.id);
-                            else next.add(p.id);
-                            return next;
-                          });
-                        }}
+                      <button
+                        key={m.mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setMode(m.mode)}
+                        className={cn(
+                          'flex min-w-0 items-center gap-3 rounded-2xl border bg-card px-3 py-2.5 text-left transition hover:border-indigo-200',
+                          on && 'border-violet-600 bg-violet-50 ring-[3px] ring-violet-600/15 dark:bg-violet-950/30',
+                        )}
                       >
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            aria-label={`Select ${p.receptionNo}`}
-                            disabled={onVoucher}
-                            checked={onVoucher || picked.has(p.id)}
-                            onCheckedChange={(checked) =>
-                              setPicked((prev) => {
-                                const next = new Set(prev);
-                                if (checked === true) next.add(p.id);
-                                else next.delete(p.id);
-                                return next;
-                              })
-                            }
-                          />
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-2 font-mono text-xs font-medium">{p.receptionNo}</td>
-                        <td className="whitespace-nowrap px-2 py-2 text-xs">{p.dateText}</td>
-                        <td className="max-w-[12rem] truncate px-2 py-2 text-xs" title={p.projectName}>
-                          {p.projectName}
-                        </td>
-                        <td className="max-w-[14rem] px-2 py-2">
-                          <span className="block truncate font-medium" title={p.partyName}>
-                            {p.partyName || '—'}
-                          </span>
-                          <span className="block truncate text-xs text-muted-foreground" title={p.description}>
-                            {p.description}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{formatInr(p.netAmount)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums">
-                          {formatInr(p.balance)}
-                          {p.status === 'Partially Paid' && <span className="block text-[10px] font-normal text-sky-700">part paid</span>}
-                        </td>
-                      </tr>
+                        <Tile colours={modeTile(m)} size={34}>
+                          <Icon className="h-[17px] w-[17px]" />
+                        </Tile>
+                        <span className="min-w-0">
+                          <b className="block truncate text-[13.5px] text-foreground">{m.mode}</b>
+                          <span className="block text-[11.5px] leading-snug text-muted-foreground">{MODE_NOTE[m.mode] ?? KIND_NOTE[m.kind]}</span>
+                        </span>
+                      </button>
                     );
                   })}
-                  {pickerRows.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                        No requisitions match.
-                      </td>
-                    </tr>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3.5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+                  <AccountPicker
+                    label={`${fc.label('accountId')} *`}
+                    accounts={activeAccounts}
+                    value={accountId}
+                    onChange={setAccountId}
+                    otherId=""
+                    availableOf={availableOf}
+                    effectOf={(id) => (id === accountId ? -total : 0)}
+                    colourOf={colourOf}
+                    invalid={err(headerErrors.account)}
+                  />
+                  <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                    {showInstrumentNo && (
+                      <label className="min-w-0">
+                        <span className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                          {instrumentLabel}
+                          {(cfg.instrumentRequired || mandatory.paymentRefNo) && <span className="text-destructive"> *</span>}
+                        </span>
+                        <Input
+                          placeholder={cfg.kind === 'transfer' ? 'Bank batch / upload reference' : 'e.g. 000451'}
+                          value={instrumentNo}
+                          className={cn('h-10 rounded-xl font-mono', err(headerErrors.instrumentNo) && 'border-destructive', duplicateInstrument && 'border-amber-400')}
+                          onChange={(e) => setInstrumentNo(e.target.value)}
+                        />
+                        <span className="mt-1 block text-[11.5px] text-muted-foreground">
+                          {cfg.kind === 'transfer' ? (
+                            'Can be filled in once the bank confirms the batch.'
+                          ) : lastUsed ? (
+                            <>
+                              Last used on this account: <span className="font-mono">{lastUsed.instrumentNo}</span>
+                              {suggested && suggested !== instrumentNo && (
+                                <>
+                                  {' · '}
+                                  <button type="button" className="font-bold text-violet-700 hover:underline dark:text-violet-400" onClick={() => setInstrumentNo(suggested)}>
+                                    use {suggested}
+                                  </button>
+                                </>
+                              )}
+                            </>
+                          ) : account ? (
+                            'No earlier voucher on this account and mode.'
+                          ) : (
+                            'Pick the account to see the last number it used.'
+                          )}
+                        </span>
+                      </label>
+                    )}
+                    <label className="min-w-0">
+                      <span className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                        {dateLabel} <span className="text-destructive">*</span>
+                      </span>
+                      <Input
+                        type="date"
+                        value={instrumentDate}
+                        min={[accountStart ? format(accountStart, 'yyyy-MM-dd') : '', dateWindow.min ?? ''].sort().pop() || undefined}
+                        max={cfg.allowsFutureDate ? dateWindow.max ?? undefined : dateWindow.max && dateWindow.max < today ? dateWindow.max : today}
+                        className={cn('h-10 rounded-xl', (err(headerErrors.instrumentDate) || beforeOpening || (dateCheck && !dateCheck.ok)) && 'border-destructive')}
+                        onChange={(e) => setInstrumentDate(e.target.value)}
+                      />
+                      <span className={cn('mt-1 block text-[11.5px] leading-snug', beforeOpening || (dateCheck && !dateCheck.ok) ? 'text-destructive' : 'text-muted-foreground')}>
+                        {beforeOpening && account
+                          ? `Before the account’s opening date, ${formatDay(account.openingDate)}.`
+                          : dateCheck && !dateCheck.ok
+                            ? dateCheck.reason
+                            : controls.hintFor([accountId], { postDated: cfg.allowsFutureDate }) ?? (cfg.allowsFutureDate ? 'Can be post-dated.' : 'Up to today.')}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {(showRemarks || showTransferCopy) && (
+                  <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {showRemarks && (
+                      <label className="min-w-0">
+                        <span className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                          {fc.label('remarks')}
+                          {need('remarks') && <span className="text-destructive"> *</span>}
+                        </span>
+                        <Input
+                          placeholder={need('remarks') ? 'Note on the voucher' : 'Optional note on the voucher'}
+                          value={remarks}
+                          className={cn('h-10 rounded-xl', err(headerErrors.remarks) && 'border-destructive')}
+                          onChange={(e) => setRemarks(e.target.value)}
+                        />
+                      </label>
+                    )}
+                    {showTransferCopy && (
+                      <div className="min-w-0">
+                        <span className="mb-1.5 block text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                          {transferCopyLabel}
+                          {mandatory.bankTransferCopy && <span className="text-destructive"> *</span>}
+                        </span>
+                        <FileCell id="pay-transfer-copy" label="Voucher copy" file={transferCopy} onChange={setTransferCopy} onTooLarge={tooLarge} invalid={err(headerErrors.transferCopy)} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* ── Step 2: payees ── */}
+            <section className="rounded-[20px] border bg-card shadow-sm">
+              <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3.5 sm:px-[18px]">
+                <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[12.5px] font-extrabold text-white">2</span>
+                <div className="min-w-0 flex-1 basis-60">
+                  <b className="block text-[15px] leading-tight text-foreground">Payees</b>
+                  <p className="text-xs text-muted-foreground">Pick requisitions waiting for payment. Amount defaults to what is still due; lower it for a part payment.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300"
+                  onClick={() => setPickerOpen(true)}
+                  disabled={payables.length === 0}
+                >
+                  <ListPlus className="mr-2 h-4 w-4" />
+                  Add from requisitions
+                  <span className="ml-1.5 rounded-full bg-violet-600 px-1.5 text-[11px] font-bold text-white">{waiting.length}</span>
+                </Button>
+              </header>
+
+              {!showTable ? (
+                <div className="px-4 py-9 text-center text-muted-foreground">
+                  <span aria-hidden className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center rounded-[18px] bg-gradient-to-br from-violet-400 to-violet-700 text-white shadow-lg shadow-violet-600/30">
+                    <Inbox className="h-[26px] w-[26px]" />
+                  </span>
+                  <b className="block text-[15px] text-foreground">No payees yet</b>
+                  <p className="text-sm">
+                    {waiting.length
+                      ? `${waiting.length} requisition${waiting.length === 1 ? '' : 's'} (${compactInr(waitingTotal)}) ${waiting.length === 1 ? 'is' : 'are'} ready to pay.`
+                      : 'No requisitions are waiting for payment.'}
+                  </p>
+                  {waiting.length > 0 && (
+                    <Button className="mt-3" onClick={() => setPickerOpen(true)}>
+                      <ListPlus className="mr-2 h-4 w-4" />
+                      Pick requisitions
+                    </Button>
                   )}
-                </tbody>
-              </table>
-            </div>
+                </div>
+              ) : (
+                // From `sm` up a table that scrolls in its own box; on a phone each row stacks as a card.
+                // One mount either way, so the inputs and file pickers are never rendered twice.
+                <div className="min-w-0 sm:overflow-x-auto">
+                  <table
+                    className="w-full border-separate border-spacing-0 text-sm max-sm:block sm:min-w-[680px]"
+                  >
+                    <thead className="max-sm:hidden">
+                      <tr className="text-left text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                        <th className="w-10 border-b bg-muted/40 py-2.5 pl-[18px] pr-2 font-bold">#</th>
+                        <th className="w-[160px] border-b bg-muted/40 px-2.5 py-2.5 font-bold">
+                          {fc.label('ref')}
+                          {mandatory.paymentRequestRefNo && <span className="text-destructive"> *</span>}
+                        </th>
+                        <th className="border-b bg-muted/40 px-2.5 py-2.5 font-bold">
+                          {fc.label('partyName')} <span className="text-destructive">*</span>
+                          <span className="font-semibold normal-case tracking-normal"> &amp; </span>
+                          {fc.label('description')} <span className="text-destructive">*</span>
+                        </th>
+                        <th className="w-24 border-b bg-muted/40 px-2.5 py-2.5 text-right font-bold">Due</th>
+                        <th className="w-[150px] border-b bg-muted/40 px-2.5 py-2.5 text-right font-bold">
+                          {fc.label('amount')} (₹) <span className="text-destructive">*</span>
+                          {showUtr && (
+                            <span className="block">
+                              {fc.label('utr')}
+                              {mandatory.utrNumber && <span className="text-destructive"> *</span>}
+                            </span>
+                          )}
+                        </th>
+                        <th className="w-12 border-b bg-muted/40 py-2.5 pl-2 pr-[18px]"><span className="sr-only">Remove</span></th>
+                      </tr>
+                    </thead>
+                    <tbody className="max-sm:block max-sm:space-y-3 max-sm:px-4 max-sm:pt-3">
+                      {lines.map((line, index) => {
+                        const e = lineErrors(line);
+                        const payable = line.requisitionId ? payableById.get(line.requisitionId) : undefined;
+                        const amount = amountOf(line);
+                        const over = payable ? amount > payable.balance + 0.01 : false;
+                        const part = payable && amount > 0 && amount < payable.balance - 0.01;
+                        const days = payable ? waitingDays(payable.date) : null;
+                        const rowBad = showErrors && Object.values(e).some(Boolean);
+                        const cell = cn(
+                          'border-b px-2.5 py-2.5 align-top max-sm:block max-sm:border-0 max-sm:px-0 max-sm:py-1',
+                          rowBad && 'sm:bg-rose-50/60 sm:dark:bg-rose-950/20',
+                        );
+                        return (
+                          <tr
+                            key={line.id}
+                            className={cn(
+                              'max-sm:relative max-sm:block max-sm:rounded-2xl max-sm:border max-sm:p-3',
+                              rowBad && 'max-sm:border-rose-300 max-sm:bg-rose-50/60 max-sm:dark:border-rose-800 max-sm:dark:bg-rose-950/20',
+                            )}
+                          >
+                            <td className={cn(cell, 'pl-[18px] pt-4 font-bold text-muted-foreground max-sm:pt-0 max-sm:text-xs')}>
+                              <span className="sm:hidden">Payee </span>
+                              {index + 1}
+                            </td>
+                            <td className={cell}>
+                              {phoneLabel(fc.label('ref'))}
+                              {line.requisitionId ? (
+                                <div className="min-w-0">
+                                  <span className="flex items-center gap-1.5">
+                                    <Link2 aria-hidden className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                                    <b className="min-w-0 truncate font-mono text-xs text-foreground" title={line.ref}>{line.ref}</b>
+                                    <button type="button" className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted" onClick={() => unlink(line)} aria-label={`Unlink ${line.ref}`}>
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </span>
+                                  {line.projectName && (
+                                    <span className="mt-1 inline-block max-w-full truncate rounded-md bg-sky-100 px-1.5 py-px text-[11px] font-bold text-sky-800 dark:bg-sky-900/40 dark:text-sky-300" title={line.projectName}>
+                                      {line.projectName}
+                                    </span>
+                                  )}
+                                  {days !== null && (
+                                    <span className={cn('mt-0.5 block text-[11px]', days > 90 ? 'font-bold text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
+                                      Waiting {days} day{days === 1 ? '' : 's'}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <>
+                                  <Input
+                                    aria-label={`Row ${index + 1} reception no. or reference`}
+                                    placeholder="Reception No. + Enter"
+                                    value={line.ref}
+                                    className={cn('h-9 rounded-lg font-mono text-[13px]', err(e.ref) && 'border-destructive')}
+                                    onChange={(ev) => update(line.id, { ref: ev.target.value, refNote: undefined })}
+                                    onBlur={() => lookup(line)}
+                                    onKeyDown={(ev) => {
+                                      if (ev.key === 'Enter') {
+                                        ev.preventDefault();
+                                        lookup(line);
+                                      }
+                                    }}
+                                  />
+                                  {line.refNote ? (
+                                    <p className={cn('mt-1 text-[11px] leading-snug', allowDirect ? 'text-muted-foreground' : 'text-destructive')}>{line.refNote}</p>
+                                  ) : (
+                                    <span className="mt-1 inline-block rounded-md bg-amber-100 px-1.5 py-px text-[11px] font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">No requisition</span>
+                                  )}
+                                </>
+                              )}
+                              {/* The approval belongs with the requisition it approves — and keeps the table narrow enough to sit beside the summary. */}
+                              {showApproval && (
+                                <div className="mt-2">
+                                  <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                                    {fc.label('approvalCopy')}
+                                    {mandatory.approvalCopy && <span className="text-destructive"> *</span>}
+                                  </span>
+                                  <FileCell
+                                    id={`approval-${line.id}`}
+                                    label={`Row ${index + 1} approval copy`}
+                                    file={line.approvalCopy}
+                                    onChange={(file) => update(line.id, { approvalCopy: file })}
+                                    onTooLarge={tooLarge}
+                                    invalid={err(e.approval)}
+                                  />
+                                </div>
+                              )}
+                            </td>
+                            <td className={cell}>
+                              {phoneLabel(fc.label('partyName'))}
+                              {line.requisitionId ? (
+                                <b className="block truncate pb-0.5 pt-1.5 text-foreground" title={line.partyName}>{line.partyName || '—'}</b>
+                              ) : (
+                                <Input
+                                  aria-label={`Row ${index + 1} payee`}
+                                  placeholder="Payee / party"
+                                  value={line.partyName}
+                                  className={cn('h-9 rounded-lg', err(e.party) && 'border-destructive')}
+                                  onChange={(ev) => update(line.id, { partyName: ev.target.value })}
+                                />
+                              )}
+                              <span className="mt-2 block sm:hidden">{phoneLabel(fc.label('description'))}</span>
+                              <Input
+                                aria-label={`Row ${index + 1} description`}
+                                placeholder="What the payment is for"
+                                value={line.description}
+                                className={cn('h-8 rounded-lg text-[13px] sm:mt-1.5', err(e.description) && 'border-destructive')}
+                                onChange={(ev) => update(line.id, { description: ev.target.value })}
+                              />
+                            </td>
+                            <td className={cn(cell, 'whitespace-nowrap pt-4 text-right font-semibold tabular-nums text-muted-foreground max-sm:pt-1 max-sm:text-left', !payable && 'max-sm:hidden')}>
+                              {phoneLabel('Due')}
+                              {payable ? (
+                                <>
+                                  {formatInr(payable.balance, 0)}
+                                  {payable.status === 'Partially Paid' && <span className="block text-[10px] font-normal max-sm:inline max-sm:pl-1">of {formatInr(payable.netAmount, 0)}</span>}
+                                </>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className={cn(cell, 'text-right max-sm:text-left')}>
+                              {phoneLabel(`${fc.label('amount')} (₹)`)}
+                              <div
+                                className={cn(
+                                  'flex items-center rounded-lg border bg-card px-2 focus-within:border-violet-600 focus-within:ring-[3px] focus-within:ring-violet-600/15',
+                                  (over || err(e.amount)) && 'border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30',
+                                )}
+                              >
+                                <span aria-hidden className="font-bold text-muted-foreground">₹</span>
+                                <input
+                                  aria-label={`Row ${index + 1} amount`}
+                                  type="number"
+                                  inputMode="decimal"
+                                  min={0}
+                                  step="any"
+                                  placeholder="0"
+                                  value={line.amount}
+                                  className="w-full min-w-0 bg-transparent py-[7px] pl-1.5 text-right font-extrabold tabular-nums text-foreground outline-none"
+                                  onChange={(ev) => update(line.id, { amount: ev.target.value })}
+                                />
+                              </div>
+                              {payable && amount > 0 && (
+                                <span
+                                  className={cn(
+                                    'mt-1 inline-block rounded-md px-1.5 py-px text-[11px] font-bold',
+                                    over
+                                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                                      : part
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                        : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+                                  )}
+                                >
+                                  {over ? 'More than due' : part ? `Part · ${compactInr(payable.balance - amount)} left` : 'Full'}
+                                </span>
+                              )}
+                              {/* Each payee of a transfer batch gets its own UTR from the bank. */}
+                              {showUtr && (
+                                <>
+                                  <span className="mt-2 block sm:hidden">{phoneLabel(fc.label('utr'))}</span>
+                                  <Input
+                                    aria-label={`Row ${index + 1} UTR number`}
+                                    placeholder={mandatory.utrNumber ? 'UTR *' : 'UTR'}
+                                    value={line.utr}
+                                    className={cn('h-8 rounded-lg font-mono text-[12.5px] sm:mt-1.5', err(e.utr) && 'border-destructive')}
+                                    onChange={(ev) => update(line.id, { utr: ev.target.value })}
+                                  />
+                                </>
+                              )}
+                            </td>
+                            <td className={cn(cell, 'pl-2 pr-[18px] max-sm:absolute max-sm:right-2 max-sm:top-2 max-sm:p-0')}>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                className="h-[30px] w-[30px] text-muted-foreground hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                aria-label={`Remove row ${index + 1}`}
+                                onClick={() => removeLine(line.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {/* A phone has the voucher total in the summary below; the per-column totals are for the table. */}
+                    <tfoot className="max-sm:hidden">
+                      <tr className="font-extrabold text-foreground">
+                        <td className="bg-muted/40 pl-[18px]" />
+                        <td colSpan={2} className="bg-muted/40 px-2.5 py-2.5">
+                          Total · {payeeLines.length} payee{payeeLines.length === 1 ? '' : 's'}
+                        </td>
+                        <td className="bg-muted/40 px-2.5 py-2.5 text-right tabular-nums text-muted-foreground">
+                          {formatInr(lines.reduce((sum, line) => sum + (line.requisitionId ? payableById.get(line.requisitionId)?.balance ?? 0 : 0), 0), 0)}
+                        </td>
+                        <td className="bg-muted/40 px-2.5 py-2.5 text-right tabular-nums">{formatInr(total)}</td>
+                        <td className="bg-muted/40 pr-[18px]" />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {messages.length > 0 && (
+                <div className="space-y-2 px-4 pb-1 pt-3 sm:px-[18px]">
+                  {messages.map((message) => (
+                    <div
+                      key={message.text}
+                      className={cn(
+                        'flex flex-wrap items-start gap-2 rounded-xl px-3 py-2 text-[12.5px] font-semibold',
+                        message.tone === 'bad' && 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300',
+                        message.tone === 'warn' && 'bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
+                        message.tone === 'info' && 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300',
+                      )}
+                    >
+                      {message.tone === 'bad' ? <X aria-hidden className="mt-px h-4 w-4 shrink-0" /> : message.tone === 'warn' ? <AlertTriangle aria-hidden className="mt-px h-4 w-4 shrink-0" /> : <Info aria-hidden className="mt-px h-4 w-4 shrink-0" />}
+                      <span className="min-w-0 flex-1">{message.text}</span>
+                      {message.action && (
+                        <button type="button" className="shrink-0 font-extrabold underline" onClick={message.action.run}>{message.action.label}</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t px-4 py-3 sm:px-[18px]">
+                <label className="flex min-w-[240px] flex-1 items-center gap-2 rounded-xl border bg-card px-2.5">
+                  <Search aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="sr-only">Add a requisition by Reception No.</span>
+                  <input
+                    value={quickRef}
+                    onChange={(e) => setQuickRef(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        quickAdd();
+                      }
+                    }}
+                    placeholder="Type a Reception No. and press Enter"
+                    className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
+                  />
+                </label>
+                {allowDirect ? (
+                  <Button type="button" variant="outline" onClick={addManual}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Payment without a requisition
+                  </Button>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Payments without a requisition are switched off in Settings › Field Control › Payment options.</span>
+                )}
+              </div>
+            </section>
           </div>
-          <DialogFooter className="hr-dialog-footer items-center gap-2 sm:justify-between">
-            <p className="text-sm text-muted-foreground">
-              {picked.size} selected · {formatInr(pickedTotal)}
-            </p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setPickerOpen(false)}>
-                Cancel
+
+          {/* ── The voucher as a whole, and issuing it ── */}
+          <aside className="min-w-0 overflow-hidden rounded-[20px] border bg-card shadow-sm xl:sticky xl:top-20">
+            <header className="px-[18px] pb-2.5 pt-4">
+              <p className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Voucher total</p>
+              <p className="text-[30px] font-extrabold leading-tight tracking-tight tabular-nums text-foreground">{formatInr(total, total % 1 ? 2 : 0)}</p>
+              <p className="text-xs text-muted-foreground">{total ? rupeesInWords(total) : 'Add a payee to begin'}</p>
+            </header>
+            <div className="border-t px-[18px] py-3">
+              <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Funds on instrument date</h2>
+              {account && funds ? (
+                <>
+                  <div className="flex items-center gap-2.5">
+                    <Tile colours={colourOf(account.id)} size={30} />
+                    <span className="min-w-0 flex-1">
+                      <b className="block truncate text-[13px] text-foreground">{accountLabel(account)}</b>
+                      <span className="block text-[11.5px] text-muted-foreground">{fundsLabel} {formatInr(funds.onDate, 0)}</span>
+                    </span>
+                    <span className={cn('shrink-0 text-right font-extrabold tabular-nums', overBy > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground')}>
+                      {formatInr(remaining ?? 0, 0)}
+                      <span className="block text-[11px] font-semibold text-muted-foreground">{funds.lowestAhead ? `left on ${formatDay(funds.lowestDay)}` : 'left after'}</span>
+                    </span>
+                  </div>
+                  <div aria-hidden className="mt-2.5 h-2 overflow-hidden rounded bg-muted">
+                    <div
+                      className={cn('h-full rounded', overBy > 0 ? 'bg-rose-600' : 'bg-gradient-to-r from-violet-400 to-violet-600')}
+                      style={{ width: `${funds.lowest > 0 ? Math.min(100, (total / funds.lowest) * 100) : total > 0 ? 100 : 0}%`, minWidth: total ? 3 : 0 }}
+                    />
+                  </div>
+                  {funds.lowestAhead && (
+                    <p className="mt-2 text-[11.5px] text-muted-foreground">
+                      Post-dated cheques bring the account down to {formatInr(funds.lowest, 0)} on {formatDay(funds.lowestDay)}; the voucher has to fit under that.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-[12.5px] text-muted-foreground">{account ? 'Pick a date on or after the account’s opening date.' : 'Select a bank account in step 1.'}</p>
+              )}
+            </div>
+
+            {cfg.kind === 'cheque' && (
+              <div className="border-t px-[18px] pb-4 pt-3">
+                <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Cheque preview</h2>
+                <div
+                  className="keep-light relative overflow-hidden rounded-xl border border-indigo-200 px-3.5 py-3 text-[11px] text-slate-800"
+                  style={{ background: 'repeating-linear-gradient(135deg, #ffffff00 0 8px, #ffffff55 8px 9px), linear-gradient(120deg, #e0f2fe, #ede9fe 60%, #fce7f3)' }}
+                  aria-label="Cheque preview"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span aria-hidden className="mt-1 shrink-0 -rotate-12 border-y-[1.5px] border-rose-700 px-1 text-[9px] font-extrabold leading-tight text-rose-700">A/c Payee</span>
+                    <span className="min-w-0 flex-1 text-xs font-extrabold">
+                      <span className="block truncate">{account?.bankName || 'Bank name'}</span>
+                      <span className="block truncate text-[10px] font-semibold text-slate-500">{account?.branch ? `${account.branch} Branch` : 'Branch'}</span>
+                    </span>
+                    <span className="shrink-0 rounded border border-slate-400 bg-white/70 px-1.5 py-px font-mono text-[10.5px] tracking-[0.2em]">{dateDigits || 'DDMMYYYY'}</span>
+                  </div>
+                  <div className="mt-3.5 flex min-h-[20px] items-end gap-1.5 border-b border-slate-400 pb-px">
+                    <span className="whitespace-nowrap text-[10px] text-slate-500">Pay</span>
+                    <span className="truncate font-serif text-[15px] italic leading-none text-blue-900">{singlePayee || (payeeLines.length > 1 ? 'As per covering letter' : '')}</span>
+                  </div>
+                  <div className="mt-2.5 flex min-h-[20px] items-end gap-1.5 border-b border-slate-400 pb-px">
+                    <span className="whitespace-nowrap text-[10px] text-slate-500">Rupees</span>
+                    <span className="line-clamp-2 min-w-0 font-serif text-[12.5px] italic leading-tight text-blue-900">{chequeWords}</span>
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-between gap-2">
+                    <span className="min-w-0 truncate font-mono text-[10px] tracking-[0.12em] text-slate-600">
+                      {cfg.instrumentLabel} {instrumentNo.trim() || '——'}
+                    </span>
+                    <span className="shrink-0 rounded border-[1.5px] border-slate-500 bg-white px-2 py-0.5 text-[13px] font-extrabold tabular-nums">₹ {chequeFigure}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="border-t px-[18px] py-3">
+              <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground">Before you issue</h2>
+              <ul className="space-y-1">
+                {checks.map((check) => (
+                  <li key={check.text} className="flex items-center gap-2 py-0.5 text-[12.5px] font-semibold text-foreground">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full',
+                        check.ok ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+                      )}
+                    >
+                      {check.ok ? <Check className="h-[11px] w-[11px]" strokeWidth={3} /> : <X className="h-[11px] w-[11px]" strokeWidth={3} />}
+                    </span>
+                    <span className="sr-only">{check.ok ? 'Done:' : 'Not yet:'}</span>
+                    {check.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex flex-col gap-2 border-t px-[18px] pb-[18px] pt-3.5">
+              <Button
+                onClick={() => void issue()}
+                disabled={issueBlocked}
+                className="h-11 gap-2 border-0 bg-gradient-to-r from-teal-700 via-blue-600 to-violet-600 text-white shadow-md hover:opacity-95"
+              >
+                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Issue voucher{payeeLines.length > 1 ? ` (${payeeLines.length} payees)` : ''}
+                <span className="ml-1 hidden rounded border border-white/50 px-1 text-[10.5px] font-semibold opacity-85 sm:inline">Ctrl ↵</span>
               </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={saveDraft} disabled={isSaving || !lines.some(hasContent)}>
+                  Save draft
+                </Button>
+                {lastIssued ? (
+                  <Button asChild variant="outline" className="flex-1">
+                    <Link href={voucherPrintHref(lastIssued.id)} target="_blank" rel="noopener noreferrer" prefetch={false}>
+                      <Printer className="mr-1.5 h-4 w-4" />
+                      Print voucher
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" className="flex-1" disabled title="Available once the voucher is issued">
+                    <Printer className="mr-1.5 h-4 w-4" />
+                    Print voucher
+                  </Button>
+                )}
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      {/* ── Requisition picker ── */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent size="xl" className="hr-mobile-dialog gap-0 overflow-hidden p-0 sm:max-h-[90dvh]">
+          <DialogHeader className="hr-dialog-header flex-row items-center gap-3 space-y-0 border-b px-[18px] py-4 pr-12 text-left">
+            <Tile colours={['#fdba74', '#ea580c']} size={38}>
+              <ListPlus className="h-[18px] w-[18px]" />
+            </Tile>
+            <div className="min-w-0">
+              <DialogTitle>Requisitions waiting for payment</DialogTitle>
+              <DialogDescription>Processed for Payment in Daily Requisition. Each is added for the amount still due.</DialogDescription>
+            </div>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2 border-b px-[18px] py-2.5">
+            <div className="relative min-w-[200px] flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input aria-label="Search requisitions" placeholder="Search payee, project, reception no…" value={pickerSearch} className="pl-8" onChange={(e) => setPickerSearch(e.target.value)} />
+            </div>
+            <Select value={pickerProject} onValueChange={setPickerProject}>
+              <SelectTrigger className="w-full sm:w-52" aria-label="Project"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {projects.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setPicked((prev) => {
+                  const next = new Set(prev);
+                  pickerRows.forEach((p) => {
+                    if (!linkedIds.has(p.id)) next.add(p.id);
+                  });
+                  return next;
+                })
+              }
+            >
+              Select all
+            </Button>
+          </div>
+          <div className="hr-dialog-body min-h-0 flex-1 overflow-y-auto p-0 sm:max-h-[55dvh]">
+            {pickerRows.map((p) => {
+              const onVoucher = linkedIds.has(p.id);
+              const selected = picked.has(p.id);
+              const days = waitingDays(p.date);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={onVoucher}
+                  aria-pressed={selected}
+                  onClick={() =>
+                    setPicked((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(p.id)) next.delete(p.id);
+                      else next.add(p.id);
+                      return next;
+                    })
+                  }
+                  className={cn(
+                    'grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-3 border-b px-[18px] py-2.5 text-left hover:bg-muted/40 disabled:pointer-events-none disabled:opacity-45 sm:grid-cols-[28px_140px_minmax(0,1fr)_110px_100px]',
+                    selected && 'bg-violet-50 dark:bg-violet-950/30',
+                  )}
+                >
+                  <span aria-hidden className={cn('flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border-2', selected ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300 dark:border-slate-600')}>
+                    {selected && <Check className="h-[11px] w-[11px]" strokeWidth={3.2} />}
+                  </span>
+                  <span className="hidden min-w-0 sm:block">
+                    <b className="block truncate font-mono text-xs text-foreground">{p.receptionNo}</b>
+                    <span className={cn('block text-[11.5px]', days !== null && days > 90 ? 'font-bold text-rose-600 dark:text-rose-400' : 'text-muted-foreground')}>
+                      {days !== null ? `Waiting ${days} day${days === 1 ? '' : 's'}` : p.dateText}
+                    </span>
+                  </span>
+                  <span className="min-w-0">
+                    <b className="block truncate text-[13px] text-foreground">{p.partyName || '—'}</b>
+                    <span className="block truncate text-[11.5px] text-muted-foreground">
+                      <span className="font-mono sm:hidden">{p.receptionNo} · </span>
+                      {p.projectName} · {p.description}
+                    </span>
+                  </span>
+                  <span className="hidden text-xs text-muted-foreground sm:block">{onVoucher ? 'Already added' : p.status === 'Partially Paid' ? 'Part paid' : ''}</span>
+                  <b className="text-right tabular-nums text-foreground">{formatInr(p.balance, 0)}</b>
+                </button>
+              );
+            })}
+            {pickerRows.length === 0 && <p className="px-[18px] py-10 text-center text-sm text-muted-foreground">No requisitions match.</p>}
+          </div>
+          <DialogFooter className="hr-dialog-footer items-center gap-2 border-t px-[18px] py-3 sm:justify-between">
+            <p className="text-sm font-bold text-foreground">{picked.size ? `${picked.size} selected · ${formatInr(pickedTotal, 0)}` : 'Nothing selected'}</p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setPickerOpen(false)}>Cancel</Button>
               <Button onClick={addPicked} disabled={picked.size === 0}>
                 <ListPlus className="mr-2 h-4 w-4" />
-                Add {picked.size || ''} to voucher
+                Add {picked.size || ''} selected
               </Button>
             </div>
           </DialogFooter>

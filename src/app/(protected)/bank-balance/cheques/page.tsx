@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import type { DateRange } from 'react-day-picker';
-import { Ban, BookOpenCheck, CalendarClock, CheckCircle2, Download, Eye, Loader2, Plus, Printer, RefreshCw, Undo2, Wallet } from 'lucide-react';
+import { Ban, BookOpenCheck, CalendarClock, CheckCircle2, Download, Eye, Loader2, Lock, Plus, Printer, RefreshCw, Undo2, Wallet } from 'lucide-react';
 import { collection, deleteField, doc, getDocs, runTransaction, Timestamp } from 'firebase/firestore';
 import { format, startOfMonth } from 'date-fns';
 
@@ -29,6 +29,10 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { dayKey, formatDay, formatInr } from '@/lib/bank-balance-ledger';
+import { sortBBRows } from '@/lib/bank-balance-field-registry';
+import { useEntryControls } from '@/components/bank-balance/controls/use-entry-controls';
+import { useBBSortControl } from '@/components/bank-balance/controls/use-field-control';
+import { BankSortControl } from '@/components/bank-balance/controls/sort-control';
 import type { DateRangePreset } from '@/lib/date-range-presets';
 import { exportWorkbook } from '@/lib/report-excel';
 import {
@@ -121,6 +125,11 @@ export default function ChequeRegisterPage() {
   const [closing, setClosing] = useState<Closing | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  // Month Closure: cancelling or bouncing a voucher deletes its ledger lines, so one dated in a
+  // closed month cannot be cancelled or bounced by anyone. Clearing moves no figure and stays open.
+  const controls = useEntryControls('payment', (id) => accountLabel(accounts.find((a) => a.id === id)));
+  // The opening order set in Field Control › Sort order; the viewer may re-sort for themselves.
+  const sortControl = useBBSortControl('cheques');
 
   const load = useCallback(
     async (silent = false) => {
@@ -187,7 +196,7 @@ export default function ChequeRegisterPage() {
 
   const modes = useMemo(() => [...new Set(vouchers.map((v) => v.mode))].sort(), [vouchers]);
 
-  const rows = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const fromKey = dateRange?.from ? dayKey(dateRange.from) : null;
     const toKey = dateRange?.to ? dayKey(dateRange.to) : fromKey;
@@ -204,6 +213,18 @@ export default function ChequeRegisterPage() {
         .some((field) => (field || '').toLowerCase().includes(q));
     });
   }, [vouchers, search, statusFilter, modeFilter, accountFilter, dateRange, today]);
+
+  const sort = sortControl.sort;
+  const rows = useMemo(() => {
+    const labelOf = new Map(accounts.map((a) => [a.id, accountLabel(a)]));
+    return sortBBRows(
+      filteredRows.map((v) => ({ ...v, accountName: labelOf.get(v.accountId) ?? '' })),
+      'cheques',
+      sort,
+      // Equal rows newest voucher first, as the register always listed them.
+      (a, b) => (b.voucherNo || '').localeCompare(a.voucherNo || ''),
+    );
+  }, [filteredRows, accounts, sort]);
 
   const shownTotal = useMemo(() => rows.reduce((sum, v) => sum + (Number(v.total) || 0), 0), [rows]);
 
@@ -320,6 +341,11 @@ export default function ChequeRegisterPage() {
       return;
     }
     const { voucher, action } = closing;
+    const allowed = controls.checkChange({ originalDate: voucher.instrumentDate, action: 'cancel', originalAccountIds: [voucher.accountId], kind: 'payment' });
+    if (!allowed.ok) {
+      toast({ title: 'Month closed', description: allowed.reason, variant: 'destructive' });
+      return;
+    }
     const day = todayKey();
     setBusy(true);
     try {
@@ -534,13 +560,23 @@ export default function ChequeRegisterPage() {
               Clear
             </Button>
           )}
-          {canDelete && v.status === 'Issued' && (
+          {canDelete && v.status === 'Issued' && controls.isLocked(v.instrumentDate, [v.accountId]) && (
+            // The courtesy; the check in handleClose is the rule.
+            <span
+              className="inline-flex h-8 items-center gap-1 whitespace-nowrap px-2 text-xs text-muted-foreground"
+              title="Dated in a closed month — reopen it in Settings › Month Closure to cancel or bounce this voucher"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              Month closed
+            </span>
+          )}
+          {canDelete && v.status === 'Issued' && !controls.isLocked(v.instrumentDate, [v.accountId]) && (
             <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={() => { setReason(''); setClosing({ voucher: v, action: 'Cancelled' }); }}>
               <Ban className="mr-1.5 h-3.5 w-3.5" />
               Cancel
             </Button>
           )}
-          {canDelete && bounceable(v) && (
+          {canDelete && bounceable(v) && !controls.isLocked(v.instrumentDate, [v.accountId]) && (
             <Button variant="ghost" size="sm" className="h-8 text-destructive hover:text-destructive" onClick={() => { setReason(''); setClosing({ voucher: v, action: 'Bounced' }); }}>
               <Undo2 className="mr-1.5 h-3.5 w-3.5" />
               Bounced
@@ -688,6 +724,7 @@ export default function ChequeRegisterPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <BankSortControl control={sortControl} />
             </FilterBar>
           }
           footer={

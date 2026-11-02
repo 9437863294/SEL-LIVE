@@ -18,6 +18,8 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit, parseDay } from '@/lib/bank-balance-ledger';
 import type { BankAccount, BankExpense } from '@/lib/types';
+import { useEntryControls } from '@/components/bank-balance/controls/use-entry-controls';
+import { useBBFieldControl } from '@/components/bank-balance/controls/use-field-control';
 
 type ReceiptLine = {
   id: string;
@@ -55,6 +57,13 @@ export default function NewReceiptPage() {
   const [showErrors, setShowErrors] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // Field Control (labels, the description's visibility and requirement) and the Date Control
+  // window and Month Closure calendar — the same for every user.
+  const fc = useBBFieldControl('receipt');
+  const nameOf = (id: string) => accountLabel(bankAccounts.find((account) => account.id === id));
+  const controls = useEntryControls('receipt', nameOf);
+  const descriptionField = fc.field('description');
+  const dateLabel = fc.label('date');
 
   useEffect(() => {
     const load = async () => {
@@ -91,13 +100,19 @@ export default function NewReceiptPage() {
   const activeAccounts = useMemo(() => bankAccounts.filter((account) => account.status === 'Active'), [bankAccounts]);
   const selectedAccount = bankAccounts.find((account) => account.id === selectedBank);
   const total = lines.reduce((sum, line) => sum + amountOf(line), 0);
-  const missing = (line: ReceiptLine) => ({ description: !line.description.trim(), amount: !(amountOf(line) > 0) });
+  const missing = (line: ReceiptLine) => ({
+    description: descriptionField.visible && descriptionField.required && !line.description.trim(),
+    amount: !(amountOf(line) > 0),
+  });
   const incomplete = lines.filter((line) => {
     const m = missing(line);
     return m.description || m.amount;
   });
   const openingDay = selectedAccount ? parseDay(selectedAccount.openingDate) : null;
   const beforeOpening = Boolean(openingDay && date && date < openingDay);
+  const dateWindow = controls.windowFor([selectedBank]);
+  // The date judged as the save will judge it, so the form says so before Save is pressed.
+  const dateCheck = date && !controls.loading ? controls.check(dayKey(date), [selectedBank], { label: dateLabel }) : null;
 
   // The account's figure at the end of the chosen date, and what these rows make it: receipts add
   // to a current account's balance and repay Cash Credit utilisation.
@@ -133,7 +148,9 @@ export default function NewReceiptPage() {
     if (incomplete.length) {
       toast({
         title: incomplete.length > 1 ? `${incomplete.length} rows are incomplete` : `Row ${lines.indexOf(incomplete[0]) + 1} is incomplete`,
-        description: 'Every row needs a description and an amount above zero.',
+        description: descriptionField.visible && descriptionField.required
+          ? `Every row needs ${descriptionField.label.toLowerCase()} and an amount above zero.`
+          : 'Every row needs an amount above zero.',
         variant: 'destructive',
       });
       return;
@@ -149,6 +166,14 @@ export default function NewReceiptPage() {
       return;
     }
 
+    // Date Control's window and the closed months, checked at the moment of saving. No role
+    // lifts either: the window is widened, or the month reopened, in Settings.
+    const allowed = controls.check(dayKey(date), [selectedBank], { label: dateLabel });
+    if (!allowed.ok) {
+      toast({ title: 'Date not allowed', description: allowed.reason, variant: 'destructive' });
+      return;
+    }
+
     setIsSaving(true);
     // Ids fixed up front, so the activity log can name the documents written.
     const planned = lines.map((line) => ({ line, ref: doc(collection(db, 'bankExpenses')) }));
@@ -158,7 +183,7 @@ export default function NewReceiptPage() {
           const receiptData: Omit<BankExpense, 'id'> = {
             date: Timestamp.fromDate(date),
             accountId: selectedBank,
-            description: line.description.trim(),
+            description: descriptionField.visible ? line.description.trim() : '',
             amount: amountOf(line),
             type: 'Credit',
             isContra: false,
@@ -206,10 +231,11 @@ export default function NewReceiptPage() {
   if (showErrors && incomplete.length)
     notes.push({
       tone: 'error',
-      text: `${incomplete.length} row${incomplete.length === 1 ? ' is' : 's are'} missing a description or amount (marked in red): ${incomplete
+      text: `${incomplete.length} row${incomplete.length === 1 ? ' is' : 's are'} missing ${descriptionField.visible && descriptionField.required ? `${descriptionField.label.toLowerCase()} or ` : 'an '}amount (marked in red): ${incomplete
         .map((line) => `row ${lines.indexOf(line) + 1}`)
         .join(', ')}.`,
     });
+  if (dateCheck && !dateCheck.ok) notes.push({ tone: 'error', text: dateCheck.reason ?? 'This date cannot be used.' });
   if (beforeOpening && openingDay)
     notes.push({
       tone: 'error',
@@ -244,6 +270,11 @@ export default function NewReceiptPage() {
             accountId={selectedBank}
             onAccountChange={setSelectedBank}
             showErrors={showErrors}
+            minDate={dateWindow.min}
+            maxDate={dateWindow.max}
+            hint={controls.hintFor([selectedBank])}
+            dateLabel={dateLabel}
+            accountLabel={fc.label('accountId')}
           />
 
           <EntryTable
@@ -251,9 +282,9 @@ export default function NewReceiptPage() {
             head={
               <tr>
                 <TH className="w-10">#</TH>
-                <TH required>Description</TH>
+                {descriptionField.visible && <TH required={descriptionField.required}>{descriptionField.label}</TH>}
                 <TH className="w-48 text-right" required>
-                  Amount (₹)
+                  {fc.label('amount')} (₹)
                 </TH>
                 <TH className="w-10">
                   <span className="sr-only">Remove</span>
@@ -263,7 +294,7 @@ export default function NewReceiptPage() {
             foot={
               <tr>
                 <TD />
-                <TD className="py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total</TD>
+                <TD className="py-2.5 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">{descriptionField.visible ? 'Total' : ''}</TD>
                 <TD className="py-2.5 text-right font-bold tabular-nums">{formatInr(total)}</TD>
                 <TD />
               </tr>
@@ -277,7 +308,8 @@ export default function NewReceiptPage() {
                     <span className="sm:hidden">Row </span>
                     {index + 1}
                   </TD>
-                  <TD label="Description">
+                  {descriptionField.visible && (
+                  <TD label={descriptionField.label}>
                     <Input
                       aria-label={`Row ${index + 1} description`}
                       placeholder="e.g. Received from Client X — RA bill 12"
@@ -286,7 +318,8 @@ export default function NewReceiptPage() {
                       onChange={(e) => update(line.id, 'description', e.target.value)}
                     />
                   </TD>
-                  <TD label="Amount (₹)">
+                  )}
+                  <TD label={`${fc.label('amount')} (₹)`}>
                     <Input
                       aria-label={`Row ${index + 1} amount`}
                       type="number"
@@ -332,7 +365,7 @@ export default function NewReceiptPage() {
             notes={notes}
             saveLabel={`Save ${lines.length > 1 ? `${lines.length} Receipts` : 'Receipt'}`}
             saving={isSaving}
-            saveDisabled={activeAccounts.length === 0 || beforeOpening}
+            saveDisabled={activeAccounts.length === 0 || beforeOpening || Boolean(dateCheck && !dateCheck.ok)}
             onSave={() => void handleSave()}
           />
         </EntryCard>

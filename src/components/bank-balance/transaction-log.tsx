@@ -24,7 +24,8 @@ import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { compareDesc, endOfDay, format, startOfDay } from 'date-fns';
 import { collection, doc, getDocs, query, runTransaction, where } from 'firebase/firestore';
-import { BookOpenCheck, CheckCircle2, ChevronRight, Download, Landmark, Loader2, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
+import { BookOpenCheck, CheckCircle2, ChevronRight, Download, Landmark, Loader2, Lock, Paperclip, Plus, Receipt, Trash2, TrendingUp, Wallet } from 'lucide-react';
+import { useEntryControls } from '@/components/bank-balance/controls/use-entry-controls';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -259,6 +260,8 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
 
   const [deleteTarget, setDeleteTarget] = useState<BankExpense | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Month Closure: an entry dated in a closed month cannot be deleted by anyone.
+  const controls = useEntryControls(kind, (id) => accountLabel(bankAccounts.find((account) => account.id === id)));
 
   const canView = !authLoading && can('View', config.permission);
   const canAdd = !authLoading && can('Add', config.permission);
@@ -464,6 +467,12 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
       setDeleteTarget(null);
       return;
     }
+    const allowed = controls.checkChange({ originalDate: dayKey(txnDate(deleteTarget)), action: 'delete', originalAccountIds: [deleteTarget.accountId] });
+    if (!allowed.ok) {
+      toast({ title: 'Month closed', description: allowed.reason, variant: 'destructive' });
+      setDeleteTarget(null);
+      return;
+    }
     setIsDeleting(true);
     try {
       await runTransaction(db, async (transaction) => {
@@ -535,6 +544,15 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
             <BookOpenCheck className="h-3.5 w-3.5" />
             Voucher
           </RowLink>
+        ) : canDelete && controls.isLocked(dayKey(txnDate(entry)), [entry.accountId]) ? (
+          // The courtesy; the check in handleConfirmDelete is the rule.
+          <span
+            className="inline-flex h-8 items-center gap-1 whitespace-nowrap px-2 text-xs text-muted-foreground"
+            title="Dated in a closed month — reopen the month in Settings › Month Closure to delete it"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            <span>Closed</span>
+          </span>
         ) : canDelete ? (
           <Button
             variant="ghost"

@@ -84,7 +84,7 @@ export function useBankBalanceNav(): { items: BankBalanceNavItem[]; isLoading: b
 /**
  * The menu entry a path belongs to: the longest matching href or `also` path, so
  * /bank-balance/expenses/new lights up "Payments" and /bank-balance/dp-management (and
- * /bank-balance/settings/payment-entry) light up "Settings".
+ * /bank-balance/settings/field-control) light up "Settings".
  */
 export function activeBankBalanceHref(pathname: string, items: BankBalanceNavItem[]): string | undefined {
   const matches = (base: string) => pathname === base || (base !== '/bank-balance' && pathname.startsWith(`${base}/`));

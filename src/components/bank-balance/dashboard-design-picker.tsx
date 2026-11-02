@@ -177,43 +177,50 @@ const SKETCH: Record<BankDashboardDesign, ComponentType> = {
 };
 
 /**
- * Bank Balance › Settings › Dashboard design: which layout the dashboard opens in, for everyone.
- * Each option can be previewed on the real dashboard (`/bank-balance?design=…`) before saving.
+ * Bank Balance › Settings › Appearance: which layout the dashboard opens in, for everyone.
+ *
+ * The design in use is shown large; the others sit beside it to pick from. Picking one brings up
+ * a bar to apply it for everyone. Previewing is optional — each design can be opened on the real
+ * dashboard with today's figures (`/bank-balance?design=…`, seen only by the viewer), but nothing
+ * has to be previewed before it is applied.
  */
 export function DashboardDesignPicker({ canEdit }: { canEdit: boolean }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const { log } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
   const [saved, setSaved] = useState<DashboardDesignSetting | null>(null);
-  const [choice, setChoice] = useState<BankDashboardDesign>('classic');
+  const [choice, setChoice] = useState<BankDashboardDesign | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     void readDashboardDesign().then((setting) => {
-      if (cancelled) return;
-      setSaved(setting);
-      setChoice(setting.design);
+      if (!cancelled) setSaved(setting);
     });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const dirty = saved !== null && choice !== saved.design;
+  const inUse = saved?.design ?? 'classic';
+  const current = BANK_DASHBOARD_DESIGNS.find((option) => option.id === inUse) ?? BANK_DASHBOARD_DESIGNS[0];
+  const others = BANK_DASHBOARD_DESIGNS.filter((option) => option.id !== inUse);
+  const pending = choice && choice !== inUse ? choice : null;
+  const CurrentSketch = SKETCH[current.id];
 
-  const save = async () => {
-    if (!canEdit || !saved || !dirty || !user?.id) return;
+  const apply = async () => {
+    if (!canEdit || !saved || !pending || !user?.id) return;
     setSaving(true);
     try {
-      await saveDashboardDesign(choice, { id: user.id, name: user.name || '' });
+      await saveDashboardDesign(pending, { id: user.id, name: user.name || '' });
       void log(
         'Update Dashboard Design',
-        { changes: diffFields({ design: dashboardDesignLabel(saved.design) }, { design: dashboardDesignLabel(choice) }) },
+        { changes: diffFields({ design: dashboardDesignLabel(saved.design) }, { design: dashboardDesignLabel(pending) }) },
         { recordId: 'dashboard', recordRef: 'Dashboard design' },
       );
-      setSaved({ design: choice, updatedByName: user.name || '', updatedAt: new Date() });
-      toast({ title: 'Dashboard design saved', description: `Bank Balance now opens in ${dashboardDesignLabel(choice)} for everyone.` });
+      setSaved({ design: pending, updatedByName: user.name || '', updatedAt: new Date() });
+      setChoice(null);
+      toast({ title: 'Dashboard design applied', description: `Everyone now sees ${dashboardDesignLabel(pending)}.` });
     } catch (error) {
       console.error('Could not save the dashboard design:', error);
       toast({ title: 'Could not save', description: 'The dashboard design was not saved. Check your access and try again.', variant: 'destructive' });
@@ -222,97 +229,136 @@ export function DashboardDesignPicker({ canEdit }: { canEdit: boolean }) {
     }
   };
 
+  const initials = (name?: string) =>
+    (name || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || '—';
+
   return (
-    <div className="space-y-3">
-      <div role="radiogroup" aria-label="Dashboard design" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-        {BANK_DASHBOARD_DESIGNS.map((option) => {
-          const Sketch = SKETCH[option.id];
-          const selected = choice === option.id;
-          const inUse = saved?.design === option.id;
-          return (
-            <div
-              key={option.id}
-              className={cn(
-                'flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm transition-shadow',
-                selected ? 'border-primary ring-2 ring-primary/30' : 'hover:shadow-md',
-              )}
-            >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                disabled={!canEdit || saved === null}
-                onClick={() => setChoice(option.id)}
-                className="flex flex-1 flex-col text-left disabled:cursor-default"
-              >
-                <div className="aspect-[16/10] w-full border-b bg-muted/40 p-3" aria-hidden>
-                  <Sketch />
-                </div>
-                <div className="flex flex-1 flex-col gap-1 p-3">
-                  <span className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className={cn(
-                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
-                        selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
-                      )}
-                    >
-                      {selected && <Check className="h-3 w-3" />}
-                    </span>
-                    <span className="font-semibold text-foreground">{option.label}</span>
-                    {inUse && (
-                      <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                        In use
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-xs leading-relaxed text-muted-foreground">{option.description}</span>
-                </div>
-              </button>
-              <div className="border-t px-3 py-2">
-                <Link
-                  href={`/bank-balance?design=${option.id}`}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+    <>
+      <div className="grid grid-cols-1 gap-5 rounded-2xl border bg-card p-4 shadow-sm sm:p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+        {/* What everyone sees now */}
+        <div className="flex min-w-0 flex-col gap-3 rounded-xl border bg-gradient-to-br from-slate-50 to-indigo-50 p-4 dark:from-slate-900/60 dark:to-indigo-950/40">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 normal-case tracking-normal text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              <Check aria-hidden className="h-3 w-3" /> In use
+            </span>
+            What everyone sees now
+          </div>
+          <div className="relative aspect-video overflow-hidden rounded-lg border bg-white p-4 shadow-[0_20px_40px_-24px_rgba(30,41,59,0.5)] dark:bg-slate-900" aria-hidden>
+            {saved ? <CurrentSketch /> : <div className="h-full animate-pulse rounded bg-muted" />}
+          </div>
+          <div>
+            <h3 className="text-lg font-extrabold tracking-tight text-foreground">{saved ? current.label : 'Reading…'}</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">{current.description}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+            {saved?.updatedByName ? (
+              <span className="inline-flex items-center gap-2">
+                <span aria-hidden className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-teal-700 text-[9.5px] font-bold text-white">
+                  {initials(saved.updatedByName)}
+                </span>
+                Set by {saved.updatedByName}
+                {saved.updatedAt ? ` · ${format(saved.updatedAt, 'd MMM yyyy, h:mm a')}` : ''}
+              </span>
+            ) : (
+              <span>{saved ? 'The built-in default — nobody has chosen a design yet.' : ''}</span>
+            )}
+            {/* No preview here: the design in use is what the dashboard already shows. */}
+          </div>
+        </div>
+
+        {/* The alternatives */}
+        <div className="min-w-0">
+          <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <h4 className="text-sm font-bold text-foreground">Other designs</h4>
+            <span className="text-xs font-semibold text-muted-foreground">
+              {canEdit ? 'Pick one and apply — previewing is optional' : 'Preview any of them with today’s figures'}
+            </span>
+          </div>
+          <div role="radiogroup" aria-label="Dashboard design" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {others.map((option) => {
+              const Sketch = SKETCH[option.id];
+              const selected = pending === option.id;
+              return (
+                <div
+                  key={option.id}
+                  className={cn(
+                    'relative min-w-0 rounded-xl border bg-card p-2 transition',
+                    selected ? 'border-violet-600 ring-[3px] ring-violet-600/15' : 'hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md',
+                  )}
                 >
-                  <Eye aria-hidden className="h-3.5 w-3.5" />
-                  Preview with today’s figures
-                </Link>
-              </div>
-            </div>
-          );
-        })}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    disabled={!canEdit || !saved || saving}
+                    onClick={() => setChoice(selected ? null : option.id)}
+                    className="block w-full text-left disabled:cursor-default"
+                  >
+                    <div className="relative aspect-[16/10] overflow-hidden rounded-lg border bg-muted/40 p-2" aria-hidden>
+                      <Sketch />
+                    </div>
+                    <span className="mx-1 mt-2 flex items-center gap-2 text-[13px] font-bold text-foreground">
+                      <span
+                        aria-hidden
+                        className={cn('h-[15px] w-[15px] shrink-0 rounded-full border-2', selected ? 'border-[5px] border-violet-600' : 'border-slate-300 dark:border-slate-600')}
+                      />
+                      {option.label}
+                    </span>
+                    <span className="mx-1 mb-0.5 mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">{option.description.split('.')[0]}.</span>
+                  </button>
+                  <Link
+                    href={`/bank-balance?design=${option.id}`}
+                    className="mx-1 mb-0.5 mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:underline dark:text-indigo-400"
+                  >
+                    <Eye aria-hidden className="h-3.5 w-3.5" />
+                    Preview
+                  </Link>
+                </div>
+              );
+            })}
+          </div>
+          {!canEdit && (
+            <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Lock aria-hidden className="h-3.5 w-3.5" />
+              Changing it needs Edit on Bank Balance › Payment Entry Settings
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 text-sm shadow-sm">
-        <p className="min-w-0 text-muted-foreground">
-          {saved === null ? (
-            'Reading the saved design…'
-          ) : (
-            <>
-              Everyone sees <b className="text-foreground">{dashboardDesignLabel(saved.design)}</b>
-              {saved.updatedByName ? ` · set by ${saved.updatedByName}` : ''}
-              {saved.updatedAt ? ` on ${format(saved.updatedAt, 'd MMM yyyy, HH:mm')}` : ''}.
-            </>
-          )}
-        </p>
-        {canEdit ? (
-          <div className="flex items-center gap-2">
-            {dirty && (
-              <Button variant="ghost" size="sm" onClick={() => saved && setChoice(saved.design)} disabled={saving}>
-                Discard
-              </Button>
-            )}
-            <Button size="sm" onClick={() => void save()} disabled={!dirty || saving}>
-              {saving ? 'Saving…' : 'Save design'}
-            </Button>
-          </div>
-        ) : (
-          <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Lock aria-hidden className="h-3.5 w-3.5" />
-            Changing it needs Edit on Bank Balance › Payment Entry Settings
-          </p>
+      {/* Apply bar: appears once a different design is picked. Above the phone's tab bar. */}
+      <div
+        role="region"
+        aria-label="Apply dashboard design"
+        className={cn(
+          'fixed bottom-24 left-1/2 z-40 flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-2xl bg-slate-900 py-2.5 pl-4 pr-2.5 text-sm text-white shadow-[0_20px_50px_-10px_rgba(15,23,42,0.55)] transition-all duration-200 lg:bottom-6 dark:bg-slate-800',
+          pending ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-6 opacity-0',
         )}
+      >
+        <span>
+          Switch everyone’s dashboard to <b className="text-violet-300">{pending ? dashboardDesignLabel(pending) : ''}</b>?
+        </span>
+        <span className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            onClick={() => setChoice(null)}
+            disabled={saving}
+            tabIndex={pending ? 0 : -1}
+          >
+            Cancel
+          </Button>
+          <Button size="sm" className="bg-white text-slate-900 hover:bg-slate-100" onClick={() => void apply()} disabled={saving || !pending} tabIndex={pending ? 0 : -1}>
+            {saving ? 'Applying…' : 'Apply for everyone'}
+          </Button>
+        </span>
       </div>
-    </div>
+    </>
   );
 }

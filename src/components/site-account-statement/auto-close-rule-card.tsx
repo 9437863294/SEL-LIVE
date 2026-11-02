@@ -29,6 +29,34 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
+/**
+ * The words the card uses for its scopes and records. Site Account's by default; Bank Balance
+ * passes its own ("All accounts", "payment, receipt or transfer").
+ */
+export interface AutoCloseTerms {
+  /** "All projects" */
+  all: string;
+  /** "all projects", mid-sentence */
+  allLower: string;
+  /** "projects", after "Follow all" */
+  plural: string;
+  /** "all-projects rule" */
+  allRule: string;
+  /** "project" */
+  scopeNoun: string;
+  /** "expense or receipt" */
+  records: string;
+}
+
+const SAS_TERMS: AutoCloseTerms = {
+  all: 'All projects',
+  allLower: 'all projects',
+  plural: 'projects',
+  allRule: 'all-projects rule',
+  scopeNoun: 'project',
+  records: 'expense or receipt',
+};
+
 /** For a project: follow the organisation, use its own rule, or never close automatically. */
 type ProjectMode = 'inherit' | 'own' | 'off';
 
@@ -234,7 +262,10 @@ export function AutoCloseRuleCard({
   canClose,
   canReopen,
   onSave,
+  terms,
 }: {
+  /** Wording for the scopes and records; Site Account's when omitted. */
+  terms?: Partial<AutoCloseTerms>;
   closure: SASMonthClosureSettings;
   scopeProject?: string;
   scopeName: string;
@@ -246,6 +277,7 @@ export function AutoCloseRuleCard({
   // A new rule defaults to starting with last month: the month it would close next, and nothing
   // older, so switching it on never sweeps a site's history shut by surprise.
   const fallbackStart = shiftPeriod(currentPeriodKey, -1);
+  const t: AutoCloseTerms = { ...SAS_TERMS, ...terms };
 
   /*
    * The draft is derived from the stored rule until the user changes something, and only then
@@ -347,7 +379,7 @@ export function AutoCloseRuleCard({
               </span>
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {scopeProject ? scopeName : 'All projects'} · months lock themselves on a set day.
+              {scopeProject ? scopeName : t.all} · months lock themselves on a set day.
               A manual close or reopen always wins.
             </p>
           </div>
@@ -372,11 +404,11 @@ export function AutoCloseRuleCard({
            */
           <div
             role="radiogroup"
-            aria-label="Automatic closing for this project"
+            aria-label={`Automatic closing for this ${t.scopeNoun}`}
             className="grid w-full grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1 sm:inline-grid sm:w-auto"
           >
             {([
-              { mode: 'inherit', short: 'Follow all', rest: ' projects', icon: Users },
+              { mode: 'inherit', short: 'Follow all', rest: ` ${t.plural}`, icon: Users },
               { mode: 'own', short: 'Own rule', rest: '', icon: Timer },
               { mode: 'off', short: 'Never', rest: ' automatically', icon: LockOpen },
             ] as const).map(option => {
@@ -449,8 +481,8 @@ export function AutoCloseRuleCard({
             {scopeProject
               ? draft.mode === 'inherit'
                 ? inherited?.enabled
-                  ? `Follows the all-projects rule — closes on the ${ordinal(inherited.dayOfNextMonth)} of the following month, from ${periodLabel(inherited.startPeriod)}.`
-                  : 'Follows all projects, which have no automatic closing — months close only by hand.'
+                  ? `Follows the ${t.allRule} — closes on the ${ordinal(inherited.dayOfNextMonth)} of the following month, from ${periodLabel(inherited.startPeriod)}.`
+                  : `Follows ${t.allLower}, which have no automatic closing — months close only by hand.`
                 : `${scopeName} never closes automatically. Its months close only when someone closes them.`
               : 'Off — months close only when someone closes them by hand. Switch it on to set a day.'}
           </p>
@@ -513,15 +545,15 @@ export function AutoCloseRuleCard({
       <Dialog open={confirmOpen} onOpenChange={open => { if (!open && !saving) setConfirmOpen(false); }}>
         <DialogContent size="md">
           <DialogHeader>
-            <DialogTitle>Save the automatic rule · {scopeProject ? scopeName : 'all projects'}</DialogTitle>
+            <DialogTitle>Save the automatic rule · {scopeProject ? scopeName : t.allLower}</DialogTitle>
             <DialogDescription>
-              {next ? describeAutoRule(next) : `Follow the all-projects rule: ${describeAutoRule(inherited).toLowerCase()}`}.
+              {next ? describeAutoRule(next) : `Follow the ${t.allRule}: ${describeAutoRule(inherited).toLowerCase()}`}.
             </DialogDescription>
           </DialogHeader>
 
           {closesSome && (
             <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs text-indigo-900">
-              <p className="font-medium">Locks now — no expense or receipt dated in these can be added, edited or deleted:</p>
+              <p className="font-medium">Locks now — no {t.records} dated in these can be added, edited or deleted:</p>
               <p className="mt-1">{preview.closesNow.map(periodLabel).join(', ')}</p>
             </div>
           )}

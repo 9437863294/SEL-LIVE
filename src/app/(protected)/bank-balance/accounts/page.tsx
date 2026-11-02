@@ -33,6 +33,9 @@ import {
   accountLabel,
   useBankData,
 } from '@/components/bank-balance/page-kit';
+import { useBBFieldControl, useBBSortControl } from '@/components/bank-balance/controls/use-field-control';
+import { BankSortControl } from '@/components/bank-balance/controls/sort-control';
+import { sortBBRows } from '@/lib/bank-balance-field-registry';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -97,6 +100,10 @@ export default function BankAccountsPage() {
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM);
   const [isSaving, setIsSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BankAccount | null>(null);
+  // Field Control for the form (labels; IFSC and Branch shown and required as set) and the list's
+  // opening order from Field Control › Sort order.
+  const fc = useBBFieldControl('account');
+  const sortControl = useBBSortControl('accounts');
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
   if (!canView) return <BankAccessDenied title="Bank Accounts" backHref="/bank-balance/settings" backLabel="Back to settings" />;
@@ -137,6 +144,11 @@ export default function BankAccountsPage() {
     }
     if (!form.openingDate) {
       toast({ title: 'Check the form', description: 'The opening date is required — balances are calculated from it.', variant: 'destructive' });
+      return;
+    }
+    const missingField = fc.missing({ ifsc: form.ifsc, branch: form.branch });
+    if (missingField) {
+      toast({ title: 'Check the form', description: `${missingField} is required.`, variant: 'destructive' });
       return;
     }
     const openingValue = Number(form.openingAmount || 0);
@@ -337,9 +349,9 @@ export default function BankAccountsPage() {
           />
         </div>
 
-        <TableCard title="Bank accounts" count={accounts.length} noun="account" scroll="natural">
+        <TableCard title="Bank accounts" count={accounts.length} noun="account" scroll="natural" actions={<BankSortControl control={sortControl} />}>
           <DataList
-            rows={accounts}
+            rows={sortBBRows(accounts, 'accounts', sortControl.sort)}
             columns={columns}
             empty={
               <div className="flex flex-col items-center justify-center py-14 text-center">
@@ -365,31 +377,35 @@ export default function BankAccountsPage() {
             <fieldset className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bank details</legend>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-bank">Bank name</Label>
+                <Label htmlFor="acc-bank">{fc.label('bankName')}</Label>
                 <Input id="acc-bank" required value={form.bankName} onChange={(e) => set('bankName', e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-short">Short name</Label>
+                <Label htmlFor="acc-short">{fc.label('shortName')}</Label>
                 <Input id="acc-short" required placeholder="e.g. SBI-CC" value={form.shortName} onChange={(e) => set('shortName', e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-number">Account number</Label>
+                <Label htmlFor="acc-number">{fc.label('accountNumber')}</Label>
                 <Input id="acc-number" required value={form.accountNumber} onChange={(e) => set('accountNumber', e.target.value)} />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="acc-ifsc">IFSC</Label>
-                <Input id="acc-ifsc" value={form.ifsc} onChange={(e) => set('ifsc', e.target.value)} />
-              </div>
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="acc-branch">Branch</Label>
-                <Input id="acc-branch" value={form.branch} onChange={(e) => set('branch', e.target.value)} />
-              </div>
+              {fc.field('ifsc').visible && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="acc-ifsc">{fc.label('ifsc')}{fc.field('ifsc').required && fc.field('ifsc').visible && <span className="text-destructive"> *</span>}</Label>
+                  <Input id="acc-ifsc" value={form.ifsc} onChange={(e) => set('ifsc', e.target.value)} />
+                </div>
+              )}
+              {fc.field('branch').visible && (
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="acc-branch">{fc.label('branch')}{fc.field('branch').required && fc.field('branch').visible && <span className="text-destructive"> *</span>}</Label>
+                  <Input id="acc-branch" value={form.branch} onChange={(e) => set('branch', e.target.value)} />
+                </div>
+              )}
             </fieldset>
 
             <fieldset className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account</legend>
               <div className="space-y-1.5">
-                <Label>Account type</Label>
+                <Label>{fc.label('accountType')}</Label>
                 <Select value={form.accountType} onValueChange={(v) => set('accountType', v as AccountForm['accountType'])}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -399,7 +415,7 @@ export default function BankAccountsPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Status</Label>
+                <Label>{fc.label('status')}</Label>
                 <Select value={form.status} onValueChange={(v) => set('status', v as AccountForm['status'])}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -413,11 +429,11 @@ export default function BankAccountsPage() {
             <fieldset className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Opening figure</legend>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-opening-date">Opening date</Label>
+                <Label htmlFor="acc-opening-date">{fc.label('openingDate')}</Label>
                 <Input id="acc-opening-date" type="date" required value={form.openingDate} onChange={(e) => set('openingDate', e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="acc-opening-amount">{form.accountType === 'Cash Credit' ? 'Opening utilisation (₹)' : 'Opening balance (₹)'}</Label>
+                <Label htmlFor="acc-opening-amount">{fc.label('openingAmount', form.accountType === 'Cash Credit' ? 'Opening utilisation (₹)' : 'Opening balance (₹)')}</Label>
                 <Input
                   id="acc-opening-amount"
                   type="number"

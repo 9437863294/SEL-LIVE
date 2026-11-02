@@ -12,7 +12,7 @@
  * names are Site Account's own, so no module filter is needed.
  */
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronRight, Download, History, Loader2, RefreshCw } from 'lucide-react';
@@ -62,6 +62,10 @@ export interface SettingsHistoryConfig {
   };
   /** For a setting that is not per-project: no Project column, filter or detail row. */
   hideScope?: boolean;
+  /** What a scope is called — "Project" by default; Bank Balance's are "Account". */
+  scopeLabel?: string;
+  /** The whole-organisation scope's name as logged — "All projects" by default. */
+  allScopeLabel?: string;
   /** Further rows for the opened entry, after the reason and project. */
   detailsOf?: (log: AuditLogEntry, ctx: HistoryContext) => Array<[string, string]>;
   /** What the page is a history of, for the empty state: "closed or reopened", "changed". */
@@ -134,6 +138,9 @@ export function SettingsHistory({
   const { toast } = useToast();
   const [exporting, setExporting] = useState(false);
   const showScope = !scopeProject && !hideScope;
+  const scopeWord = config.scopeLabel ?? 'Project';
+  const allScope = config.allScopeLabel ?? ALL_SCOPE;
+  const scopeOfLog = useCallback((log: AuditLogEntry): string => String(log.details?.scope || allScope), [allScope]);
   const actionNames = Object.keys(actions).join('|');
 
   const [rows, setRows] = useState<AuditLogEntry[] | null>(null);
@@ -167,11 +174,11 @@ export function SettingsHistory({
     const map = new Map<string, AuditLogEntry | null>();
     const newestFirst = rows ?? [];
     for (let i = 0; i < newestFirst.length; i++) {
-      const scope = scopeOf(newestFirst[i]);
-      map.set(newestFirst[i].id, newestFirst.slice(i + 1).find(r => scopeOf(r) === scope) ?? null);
+      const scope = scopeOfLog(newestFirst[i]);
+      map.set(newestFirst[i].id, newestFirst.slice(i + 1).find(r => scopeOfLog(r) === scope) ?? null);
     }
     return map;
-  }, [rows]);
+  }, [rows, scopeOfLog]);
   const ctxOf = (log: AuditLogEntry): HistoryContext => ({ previous: previousOf.get(log.id) ?? null });
 
   /*
@@ -181,8 +188,8 @@ export function SettingsHistory({
   const inScope = useMemo(() => {
     if (!rows) return [];
     if (!scopeProject) return rows;
-    return rows.filter(r => scopeOf(r) === scopeName || scopeOf(r) === ALL_SCOPE);
-  }, [rows, scopeProject, scopeName]);
+    return rows.filter(r => scopeOfLog(r) === scopeName || scopeOfLog(r) === allScope);
+  }, [rows, scopeProject, scopeName, scopeOfLog, allScope]);
 
   // Filter choices come from the entries themselves, so no option ever finds nothing.
   const options = useMemo(() => {
@@ -191,7 +198,7 @@ export function SettingsHistory({
     for (const r of inScope) {
       actionSet.add(r.action);
       facet?.valuesOf(r).forEach(v => months.add(v));
-      projects.add(scopeOf(r));
+      projects.add(scopeOfLog(r));
       people.add(userLabel(r));
     }
     const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
@@ -202,14 +209,14 @@ export function SettingsHistory({
       projects: sorted(projects).map(p => ({ value: p, label: p })),
       people: sorted(people).map(p => ({ value: p, label: p })),
     };
-  }, [inScope, facet, actions]);
+  }, [inScope, facet, actions, scopeOfLog]);
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return inScope.filter(r => {
       if (action !== ANY && r.action !== action) return false;
       if (facet && month !== ANY && !facet.valuesOf(r).includes(month)) return false;
-      if (showScope && project !== ANY && scopeOf(r) !== project) return false;
+      if (showScope && project !== ANY && scopeOfLog(r) !== project) return false;
       if (person !== ANY && userLabel(r) !== person) return false;
       const day = dayOf(r);
       if (from && day < from) return false;
@@ -217,13 +224,13 @@ export function SettingsHistory({
       if (needle) {
         const hay = [
           reasonOf(r).text, subjectOf(r, { previous: previousOf.get(r.id) ?? null }),
-          scopeOf(r), userLabel(r), actions[r.action]?.label ?? r.action,
+          scopeOfLog(r), userLabel(r), actions[r.action]?.label ?? r.action,
         ].join(' ').toLowerCase();
         if (!hay.includes(needle)) return false;
       }
       return true;
     });
-  }, [inScope, search, action, month, project, person, from, to, showScope, facet, reasonOf, subjectOf, actions, previousOf]);
+  }, [inScope, search, action, month, project, person, from, to, showScope, facet, reasonOf, subjectOf, actions, previousOf, scopeOfLog]);
 
   const activeCount = [action, facet ? month : ANY, showScope ? project : ANY, person].filter(v => v !== ANY).length
     + (from ? 1 : 0) + (to ? 1 : 0);
@@ -256,7 +263,7 @@ export function SettingsHistory({
         { header: 'When', key: 'when', width: 20 },
         { header: 'Action', key: 'action', width: 20 },
         { header: subjectHeader, key: 'subject', width: 42 },
-        ...(hideScope ? [] : [{ header: 'Project', key: 'project', width: 28 }]),
+        ...(hideScope ? [] : [{ header: scopeWord, key: 'project', width: 28 }]),
         { header: 'By', key: 'by', width: 24 },
         { header: 'Email', key: 'email', width: 30 },
         { header: 'Reason / note', key: 'reason', width: 50 },
@@ -270,7 +277,7 @@ export function SettingsHistory({
           when: when ? format(when, 'dd MMM yyyy, HH:mm:ss') : '',
           action: actions[log.action]?.label ?? log.action,
           subject: subjectOf(log, ctx),
-          project: scopeOf(log),
+          project: scopeOfLog(log),
           by: userLabel(log),
           email: log.userEmail ?? '',
           reason: reasonOf(log).text,
@@ -365,7 +372,7 @@ export function SettingsHistory({
                 <FilterSelect label={facet.label} anyLabel={facet.anyLabel} value={month} onChange={setMonth} options={options.months} width="sm:w-[170px]" />
               )}
               {showScope && (
-                <FilterSelect label="Project" anyLabel="All projects" value={project} onChange={setProject} options={options.projects} width="sm:w-[210px]" />
+                <FilterSelect label={scopeWord} anyLabel={allScope} value={project} onChange={setProject} options={options.projects} width="sm:w-[210px]" />
               )}
               <FilterSelect label="By" anyLabel="Anyone" value={person} onChange={setPerson} options={options.people} />
               <DateBound label="From" value={from} onChange={setFrom} max={to || undefined} />
@@ -392,7 +399,7 @@ export function SettingsHistory({
                     <TableHead className="w-[150px]">When</TableHead>
                     <TableHead className="w-[150px]">Action</TableHead>
                     <TableHead>{subjectHeader}</TableHead>
-                    {showScope && <TableHead>Project</TableHead>}
+                    {showScope && <TableHead>{scopeWord}</TableHead>}
                     <TableHead>By</TableHead>
                     <TableHead className="w-[28%]">Reason / note</TableHead>
                   </TableRow>
@@ -422,7 +429,7 @@ export function SettingsHistory({
                             </span>
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-sm">{subjectOf(log, ctx)}</TableCell>
-                          {showScope && <TableCell className="text-sm">{scopeOf(log)}</TableCell>}
+                          {showScope && <TableCell className="text-sm">{scopeOfLog(log)}</TableCell>}
                           <TableCell className="text-sm">{userLabel(log)}</TableCell>
                           <TableCell className={cn('max-w-0 truncate text-sm', reason.muted && 'text-muted-foreground')}>
                             {reason.text || <span className="text-muted-foreground">—</span>}
@@ -437,8 +444,8 @@ export function SettingsHistory({
                                 <dd className="whitespace-pre-wrap">{reason.text || '—'}</dd>
                                 {!hideScope && (
                                   <>
-                                    <dt className="text-xs font-medium text-muted-foreground">Project</dt>
-                                    <dd>{scopeOf(log)}</dd>
+                                    <dt className="text-xs font-medium text-muted-foreground">{scopeWord}</dt>
+                                    <dd>{scopeOfLog(log)}</dd>
                                   </>
                                 )}
                                 {extra.map(([label, value]) => (

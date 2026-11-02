@@ -7,7 +7,7 @@
  */
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { format } from 'date-fns';
+import { endOfDay, format, startOfDay } from 'date-fns';
 import { AlertCircle, AlertTriangle, Calendar as CalendarIcon, Loader2, Paperclip, Plus, Save, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { accountLabel } from '@/components/bank-balance/page-kit';
-import { isCashCredit } from '@/lib/bank-balance-ledger';
+import { isCashCredit, parseDay } from '@/lib/bank-balance-ledger';
 import type { BankAccount } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -32,8 +32,21 @@ export function DateBankBar({
   accountId,
   onAccountChange,
   showErrors,
+  minDate,
+  maxDate,
+  hint,
+  dateLabel,
+  accountLabel: accountFieldLabel,
 }: {
   kind: 'payment' | 'receipt';
+  /** Date Control's window, `yyyy-MM-dd`. Without a max, nothing after today can be picked. */
+  minDate?: string | null;
+  maxDate?: string | null;
+  /** A line under the date: the window, closed months. */
+  hint?: string | null;
+  /** Field Control's labels for the two fields. */
+  dateLabel?: string;
+  accountLabel?: string;
   date: Date | undefined;
   onDateChange: (date: Date | undefined) => void;
   accounts: BankAccount[];
@@ -42,11 +55,13 @@ export function DateBankBar({
   showErrors: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const earliest = parseDay(minDate ?? null);
+  const latest = parseDay(maxDate ?? null);
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:max-w-3xl">
       <div className="space-y-1.5">
         <Label htmlFor={`${kind}-date`}>
-          {kind === 'payment' ? 'Payment date' : 'Receipt date'}
+          {dateLabel ?? (kind === 'payment' ? 'Payment date' : 'Receipt date')}
           <span className="text-destructive"> *</span>
         </Label>
         <Popover open={open} onOpenChange={setOpen}>
@@ -64,7 +79,10 @@ export function DateBankBar({
             <Calendar
               mode="single"
               selected={date}
-              disabled={{ after: new Date() }}
+              disabled={[
+                { after: latest ? endOfDay(latest) : new Date() },
+                ...(earliest ? [{ before: startOfDay(earliest) }] : []),
+              ]}
               onSelect={(picked) => {
                 onDateChange(picked || undefined);
                 setOpen(false);
@@ -73,10 +91,11 @@ export function DateBankBar({
             />
           </PopoverContent>
         </Popover>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
       <div className="space-y-1.5">
         <Label htmlFor={`${kind}-bank`}>
-          Bank account<span className="text-destructive"> *</span>
+          {accountFieldLabel ?? 'Bank account'}<span className="text-destructive"> *</span>
         </Label>
         <Select value={accountId} onValueChange={onAccountChange}>
           <SelectTrigger id={`${kind}-bank`} className={cn(showErrors && !accountId && 'border-destructive')}>
