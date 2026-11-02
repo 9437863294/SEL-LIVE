@@ -4,7 +4,8 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Ban, BookOpenCheck, CalendarClock, CheckCircle2, Eye, Loader2, Plus, Printer, RefreshCw, Undo2, Wallet } from 'lucide-react';
+import type { DateRange } from 'react-day-picker';
+import { Ban, BookOpenCheck, CalendarClock, CheckCircle2, Download, Eye, Loader2, Plus, Printer, RefreshCw, Undo2, Wallet } from 'lucide-react';
 import { collection, deleteField, doc, getDocs, runTransaction, Timestamp } from 'firebase/firestore';
 import { format, startOfMonth } from 'date-fns';
 
@@ -20,14 +21,16 @@ import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
-import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
+import { BANK_PAGE, BankAccessDenied, BankBalanceBackground, BankDateRangeFilter, BankPageSkeleton, accountLabel } from '@/components/bank-balance/page-kit';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
-import { formatDay, formatInr } from '@/lib/bank-balance-ledger';
+import { dayKey, formatDay, formatInr } from '@/lib/bank-balance-ledger';
+import type { DateRangePreset } from '@/lib/date-range-presets';
+import { exportWorkbook } from '@/lib/report-excel';
 import {
   CHEQUE_VALIDITY_MONTHS,
   canBounce,
@@ -107,6 +110,9 @@ export default function ChequeRegisterPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | VoucherDisplayStatus | 'open'>('open');
   const [modeFilter, setModeFilter] = useState('all');
   const [accountFilter, setAccountFilter] = useState('all');
+  /** On the instrument date — the day a voucher draws on the account. */
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('custom');
 
   const [viewing, setViewing] = useState<BankPaymentVoucher | null>(null);
   const [pendingVoucherId, setPendingVoucherId] = useState<string | null>(null);
@@ -127,7 +133,11 @@ export default function ChequeRegisterPage() {
             .map((d) => ({ id: d.id, ...d.data() } as BankPaymentVoucher))
             .sort((a, b) => (b.instrumentDate || '').localeCompare(a.instrumentDate || '') || (b.voucherNo || '').localeCompare(a.voucherNo || '')),
         );
-        setAccounts(accountSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankAccount)));
+        setAccounts(
+          accountSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() } as BankAccount))
+            .sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))),
+        );
       } catch (error) {
         console.error('Error loading the cheque register:', error);
         toast({ title: 'Error', description: 'Failed to load payment vouchers.', variant: 'destructive' });
@@ -179,17 +189,64 @@ export default function ChequeRegisterPage() {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const fromKey = dateRange?.from ? dayKey(dateRange.from) : null;
+    const toKey = dateRange?.to ? dayKey(dateRange.to) : fromKey;
     return vouchers.filter((v) => {
       const status = displayStatus(v, today);
       if (statusFilter === 'open' && !(status === 'Post-dated' || status === 'Issued' || status === 'Stale')) return false;
       if (statusFilter !== 'all' && statusFilter !== 'open' && status !== statusFilter) return false;
       if (modeFilter !== 'all' && v.mode !== modeFilter) return false;
       if (accountFilter !== 'all' && v.accountId !== accountFilter) return false;
+      if (fromKey && v.instrumentDate < fromKey) return false;
+      if (toKey && v.instrumentDate > toKey) return false;
       if (!q) return true;
       return [v.voucherNo, v.instrumentNo, ...(v.lines || []).flatMap((l) => [l.partyName, l.receptionNo, l.utrNumber, l.description])]
         .some((field) => (field || '').toLowerCase().includes(q));
     });
-  }, [vouchers, search, statusFilter, modeFilter, accountFilter, today]);
+  }, [vouchers, search, statusFilter, modeFilter, accountFilter, dateRange, today]);
+
+  const shownTotal = useMemo(() => rows.reduce((sum, v) => sum + (Number(v.total) || 0), 0), [rows]);
+
+  // The filtered register as a workbook: the vouchers, and each voucher's payee lines on a second
+  // sheet, so a bank statement can be reconciled line by line.
+  const exportExcel = async () => {
+    const sheetOf = (name: string, sheetRows: Array<Record<string, unknown>>) => ({
+      name,
+      columns: Object.keys(sheetRows[0] || {}).map((header) => ({ header, key: header, width: Math.min(40, Math.max(12, header.length + 4)) })),
+      rows: sheetRows,
+    });
+    const voucherRows = rows.map((v) => ({
+      'Voucher No.': v.voucherNo || '',
+      Status: displayStatus(v, today),
+      Mode: v.mode || '',
+      'Instrument No.': v.instrumentNo || '',
+      Dated: formatDay(v.instrumentDate),
+      Account: accountLabel(accountById.get(v.accountId)),
+      Issued: formatDay(v.issueDate),
+      'Cleared on': v.status === 'Cleared' ? formatDay(v.clearedDate) : '',
+      'Closed on': v.status === 'Cancelled' || v.status === 'Bounced' ? formatDay(v.closedAt) : '',
+      Payees: (v.lines || []).length,
+      Amount: Number(v.total) || 0,
+    }));
+    const lineRows = rows.flatMap((v) =>
+      (v.lines || []).map((line, index) => ({
+        'Voucher No.': v.voucherNo || '',
+        Line: index + 1,
+        'Reception No.': line.receptionNo || '',
+        Payee: line.partyName || '',
+        Project: line.projectName || '',
+        Description: line.description || '',
+        UTR: line.utrNumber || '',
+        Amount: Number(line.amount) || 0,
+      })),
+    );
+    try {
+      await exportWorkbook(`Cheque Register ${today}.xlsx`, [sheetOf('Vouchers', voucherRows), sheetOf('Lines', lineRows)]);
+    } catch (error) {
+      console.error('Error exporting the cheque register:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
 
   const handleClear = async () => {
     if (!clearing || !canAdd || !clearDate) return;
@@ -452,7 +509,7 @@ export default function ChequeRegisterPage() {
         );
       },
     },
-    { header: 'Amount', align: 'right', cell: (v) => <span className="font-semibold tabular-nums">{formatInr(v.total)}</span> },
+    { header: 'Amount', align: 'right', mobile: 'aside', cell: (v) => <span className="font-semibold tabular-nums">{formatInr(v.total)}</span> },
     {
       header: '',
       align: 'right',
@@ -563,17 +620,33 @@ export default function ChequeRegisterPage() {
           title="Payment vouchers"
           count={rows.length}
           noun="voucher"
+          actions={
+            <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={rows.length === 0}>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
+            </Button>
+          }
           toolbar={
             <FilterBar
               search={{ value: search, onChange: setSearch, placeholder: 'Voucher, cheque no., payee, reception no., UTR…' }}
-              activeCount={(statusFilter === 'open' ? 0 : 1) + (modeFilter === 'all' ? 0 : 1) + (accountFilter === 'all' ? 0 : 1)}
+              activeCount={(statusFilter === 'open' ? 0 : 1) + (modeFilter === 'all' ? 0 : 1) + (accountFilter === 'all' ? 0 : 1) + (dateRange ? 1 : 0)}
               onClear={() => {
                 setStatusFilter('open');
                 setModeFilter('all');
                 setAccountFilter('all');
                 setSearch('');
+                setDateRange(undefined);
+                setDatePreset('custom');
               }}
             >
+              <BankDateRangeFilter
+                range={dateRange}
+                preset={datePreset}
+                onChange={(range, preset) => {
+                  setDateRange(range);
+                  setDatePreset(preset);
+                }}
+              />
               <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
                 <SelectTrigger className="sm:w-44" aria-label="Status">
                   <SelectValue />
@@ -616,6 +689,14 @@ export default function ChequeRegisterPage() {
                 </SelectContent>
               </Select>
             </FilterBar>
+          }
+          footer={
+            rows.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span>Total of {rows.length} voucher{rows.length === 1 ? '' : 's'} shown</span>
+                <span className="font-semibold tabular-nums text-foreground">{formatInr(shownTotal)}</span>
+              </div>
+            ) : undefined
           }
         >
           <DataList
@@ -696,7 +777,55 @@ export default function ChequeRegisterPage() {
                   {viewing.closedReason ? `: ${viewing.closedReason}` : ''}
                 </p>
               )}
-              <div className="overflow-x-auto rounded-lg border">
+              {/* The payee lines: one card each on a phone — the table below needs 720px. */}
+              <div className="space-y-2 sm:hidden">
+                {(viewing.lines || []).map((line, index) => (
+                  <div key={line.lineId} className="rounded-lg border bg-background/60 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-medium">
+                          <span className="mr-1.5 text-xs font-semibold text-muted-foreground">{index + 1}.</span>
+                          {line.partyName || '—'}
+                        </p>
+                        {line.projectName && <p className="text-xs text-muted-foreground">{line.projectName}</p>}
+                      </div>
+                      <span className="shrink-0 font-semibold tabular-nums">{formatInr(line.amount)}</span>
+                    </div>
+                    {line.description && <p className="mt-1 break-words text-xs text-muted-foreground">{line.description}</p>}
+                    <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-2 text-xs">
+                      <div>
+                        <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Requisition / Ref</dt>
+                        <dd className="break-all font-mono">
+                          {line.requisitionId && line.receptionNo ? (
+                            <Link href={requisitionHref(line.receptionNo)} className="text-primary underline-offset-2 hover:underline" title="Open in Daily Requisition">
+                              {line.receptionNo}
+                            </Link>
+                          ) : (
+                            line.receptionNo || '—'
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">UTR</dt>
+                        <dd className="break-all font-mono">{line.utrNumber || '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Approval</dt>
+                        <dd>
+                          {line.approvalCopyUrl ? (
+                            <a href={line.approvalCopyUrl} target="_blank" rel="noreferrer" className="text-primary underline-offset-2 hover:underline">
+                              Open
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto rounded-lg border sm:block">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     <tr>
@@ -779,6 +908,9 @@ export default function ChequeRegisterPage() {
                 This cheque is more than {CHEQUE_VALIDITY_MONTHS} months past its date. Mark it cleared only if the bank statement shows it was paid.
               </p>
             )}
+            {clearing && clearing.instrumentDate > today && (
+              <p className="text-xs text-amber-700">This cheque is post-dated to {formatDay(clearing.instrumentDate)} and cannot clear before then.</p>
+            )}
           </div>
           <DialogFooter className="hr-dialog-footer gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setClearing(null)} disabled={busy}>
@@ -789,9 +921,6 @@ export default function ChequeRegisterPage() {
               Mark Cleared
             </Button>
           </DialogFooter>
-          {clearing && clearing.instrumentDate > today && (
-            <p className="px-6 pb-4 text-xs text-amber-700">This cheque is post-dated to {formatDay(clearing.instrumentDate)} and cannot clear before then.</p>
-          )}
         </DialogContent>
       </Dialog>
 

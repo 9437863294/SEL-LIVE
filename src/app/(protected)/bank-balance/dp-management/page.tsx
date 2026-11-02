@@ -36,6 +36,9 @@ import {
 } from '@/components/bank-balance/dated-log-kit';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { diffFields } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
 import { entryAppliesOn, formatDay, formatInr, isCashCredit, normaliseDatedLog } from '@/lib/bank-balance-ledger';
@@ -72,6 +75,8 @@ const VIEW_TITLE: Record<RegisterView, string> = {
 export default function DpManagementPage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
+  // `log` is taken by the dated register itself (`logOf`), so the audit logger gets a longer name.
+  const { log: logActivity } = useActivityLogger(ACTIVITY_MODULES.BANK_BALANCE);
   const canView = !authLoading && can('View', 'Bank Balance.DP Management');
   const canAdd = !authLoading && can('Add', 'Bank Balance.DP Management');
   const canDelete = !authLoading && can('Delete', 'Bank Balance.DP Management');
@@ -170,15 +175,46 @@ export default function DpManagementPage() {
       { id: sameDay?.id ?? makeId(), fromDate: form.fromDate, toDate: null, amount, odAmount: 0, todAmount },
     ]);
     const ok = await saveLog(formAccount, nextLog, `Limit from ${formatDay(form.fromDate)} ${sameDay ? 'updated' : 'saved'} for ${accountLabel(formAccount)}.`);
-    if (ok) setFormOpen(false);
+    if (ok) {
+      const after = { fromDate: form.fromDate, dp: amount, tod: todAmount, totalLimit: amount + todAmount };
+      void logActivity(
+        sameDay ? 'Update DP Limit' : 'Add DP Limit',
+        {
+          accountId: formAccount.id,
+          account: accountLabel(formAccount),
+          ...after,
+          ...(sameDay
+            ? { changes: diffFields({ fromDate: sameDay.fromDate, dp: dpOf(sameDay), tod: sameDay.todAmount || 0, totalLimit: getEffectiveCcLimitFromEntry(sameDay) }, after) }
+            : {}),
+        },
+        { recordId: formAccount.id, recordRef: accountLabel(formAccount) },
+      );
+      setFormOpen(false);
+    }
   };
 
   const handleDelete = async () => {
     if (!deleteTarget?.entry || !canDelete) return;
-    const entryId = deleteTarget.entry.id;
-    const nextLog = normaliseDatedLog(logOf(deleteTarget.account).filter((e) => e.id !== entryId));
-    const ok = await saveLog(deleteTarget.account, nextLog, 'Limit entry deleted.');
-    if (ok) setDeleteTarget(null);
+    const account = deleteTarget.account;
+    const entry = deleteTarget.entry;
+    const nextLog = normaliseDatedLog(logOf(account).filter((e) => e.id !== entry.id));
+    const ok = await saveLog(account, nextLog, 'Limit entry deleted.');
+    if (ok) {
+      // The entry is gone, so the log row records what the limit was.
+      void logActivity(
+        'Delete DP Limit',
+        {
+          accountId: account.id,
+          account: accountLabel(account),
+          fromDate: entry.fromDate,
+          dp: dpOf(entry),
+          tod: entry.todAmount || 0,
+          totalLimit: getEffectiveCcLimitFromEntry(entry),
+        },
+        { recordId: account.id, recordRef: accountLabel(account) },
+      );
+      setDeleteTarget(null);
+    }
   };
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} blocks={1} />;

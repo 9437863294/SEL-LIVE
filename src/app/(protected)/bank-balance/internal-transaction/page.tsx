@@ -12,7 +12,7 @@ import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { compareDesc, endOfDay, startOfDay } from 'date-fns';
 import { collection, doc, getDocs, query, Timestamp, where, writeBatch } from 'firebase/firestore';
-import { ArrowRight, ArrowRightLeft, Loader2, Pencil, Plus, Route, Save, Trash2, Wallet } from 'lucide-react';
+import { ArrowRight, ArrowRightLeft, Download, Loader2, Pencil, Plus, Route, Save, Trash2, Wallet } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,8 +50,9 @@ import { diffFields } from '@/lib/activity-logger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { db } from '@/lib/firebase';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit, parseDay, txnDate } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, compactInr, dayKey, formatDay, formatInr, isCashCredit, parseDay, txnDate } from '@/lib/bank-balance-ledger';
 import type { DateRangePreset } from '@/lib/date-range-presets';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import type { BankAccount, BankExpense } from '@/lib/types';
 
 type Transfer = {
@@ -200,6 +201,18 @@ export default function InternalTransactionPage() {
     const topRoute = Array.from(routes.values()).sort((a, b) => b.count - a.count || b.amount - a.amount)[0];
     return { total, topRoute };
   }, [filtered]);
+
+  // With one account picked, its two directions — the plain total would add them together.
+  const accountFlow = useMemo(() => {
+    if (accountFilter === 'all') return null;
+    let moneyIn = 0;
+    let moneyOut = 0;
+    for (const transfer of filtered) {
+      if (transfer.toAccountId === accountFilter) moneyIn += Number(transfer.amount) || 0;
+      if (transfer.fromAccountId === accountFilter) moneyOut += Number(transfer.amount) || 0;
+    }
+    return { in: moneyIn, out: moneyOut, net: moneyIn - moneyOut };
+  }, [filtered, accountFilter]);
 
   // Date-wise pivot: one column per route, keyed by account ids so two accounts sharing a short
   // name do not merge.
@@ -557,6 +570,23 @@ export default function InternalTransactionPage() {
   const todayKey = dayKey(new Date());
   const editMaxDay = editingEntry && dayKey(editingEntry.at) > todayKey ? undefined : todayKey;
 
+  // What the filters let through, as a workbook — same rows as the current view.
+  const exportExcel = async () => {
+    const rows = filtered.map((transfer) => ({
+      Date: formatDay(transfer.at),
+      From: nameOf(transfer.fromAccountId),
+      To: nameOf(transfer.toAccountId),
+      Description: transfer.description || '',
+      Amount: Number(transfer.amount) || 0,
+    }));
+    try {
+      await exportRowsToExcel('Transfers', rows, { filename: `Transfers ${todayKey}.xlsx` });
+    } catch (error) {
+      console.error('Error exporting transfers:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
+
   return (
     <>
       <BankBalanceBackground tone="blue" />
@@ -587,7 +617,18 @@ export default function InternalTransactionPage() {
             tone="blue"
             accent
           />
-          <KpiCard label="Total moved" value={formatInr(summary.total)} icon={Wallet} tone="indigo" accent />
+          <KpiCard
+            label="Total moved"
+            value={formatInr(summary.total)}
+            hint={
+              accountFlow
+                ? `${nameOf(accountFilter)}: in ${compactInr(accountFlow.in)} · out ${compactInr(accountFlow.out)}`
+                : 'Sum of the transfers in range'
+            }
+            icon={Wallet}
+            tone="indigo"
+            accent
+          />
           <KpiCard
             label="Most-used route"
             value={topRoute ? `${nameOf(topRoute.fromAccountId)} → ${nameOf(topRoute.toAccountId)}` : '—'}
@@ -605,6 +646,10 @@ export default function InternalTransactionPage() {
           scroll={viewMode === 'dateWise' ? 'contained' : 'natural'}
           actions={
             <>
+              <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={filtered.length === 0}>
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                Export
+              </Button>
               <Button size="sm" variant={viewMode === 'current' ? 'default' : 'outline'} onClick={() => setViewMode('current')}>
                 Current view
               </Button>
@@ -647,7 +692,10 @@ export default function InternalTransactionPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span>
                   Total of {plural(filtered.length, 'transfer')}
-                  {accountFilter !== 'all' && ` involving ${nameOf(accountFilter)}`}
+                  {accountFlow &&
+                    ` involving ${nameOf(accountFilter)} — in ${formatInr(accountFlow.in)} · out ${formatInr(accountFlow.out)} · net ${
+                      accountFlow.net < 0 ? '−' : '+'
+                    }${formatInr(Math.abs(accountFlow.net))}`}
                 </span>
                 <span className="font-semibold tabular-nums text-foreground">{formatInr(summary.total)}</span>
               </div>
@@ -661,6 +709,33 @@ export default function InternalTransactionPage() {
           ) : dateWiseRows.length === 0 ? (
             emptyMessage
           ) : (
+            <>
+              {/* Phone: one card per date — the pivot grows a column per route and cannot fit. */}
+              <div className="space-y-2.5 p-3 sm:hidden">
+                {dateWiseRows.map((row) => (
+                  <div key={row.key} className="rounded-xl border bg-background/60 p-3.5">
+                    <div className="flex items-baseline justify-between gap-2 border-b pb-2">
+                      <span className="text-sm font-semibold">{formatDay(row.key)}</span>
+                      <span className="font-semibold tabular-nums">{formatInr(row.total)}</span>
+                    </div>
+                    <dl className="mt-2 space-y-1.5">
+                      {routeColumns
+                        .filter((column) => row.totals[column.key])
+                        .map((column) => (
+                          <div key={column.key} className="flex items-baseline justify-between gap-3">
+                            <dt className="min-w-0 break-words text-xs text-muted-foreground">{column.label}</dt>
+                            <dd className="shrink-0 text-sm tabular-nums">{formatInr(row.totals[column.key])}</dd>
+                          </div>
+                        ))}
+                    </dl>
+                  </div>
+                ))}
+                <div className="flex items-baseline justify-between gap-2 rounded-xl border bg-muted/40 p-3.5 text-sm font-semibold">
+                  <span>Total</span>
+                  <span className="tabular-nums">{formatInr(summary.total)}</span>
+                </div>
+              </div>
+              <div className="hidden sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -698,6 +773,8 @@ export default function InternalTransactionPage() {
                 </TableRow>
               </TableFooter>
             </Table>
+              </div>
+            </>
           )}
         </TableCard>
       </div>

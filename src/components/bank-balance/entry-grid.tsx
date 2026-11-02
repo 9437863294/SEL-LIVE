@@ -6,7 +6,7 @@
  * with the running figures and the Save button underneath the table — nothing in a side panel.
  */
 
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { format } from 'date-fns';
 import { AlertCircle, AlertTriangle, Calendar as CalendarIcon, Loader2, Paperclip, Plus, Save, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -96,14 +96,30 @@ export function DateBankBar({
   );
 }
 
-/** The scrolling table frame: a native overflow box, so the scrollbar is real on every width. */
+/**
+ * Classes a body `<tr>` needs so the row stacks into a card on a phone — alongside its own
+ * background. Literal here so Tailwind generates them once for every entry form.
+ */
+export const entryRowCard = 'max-sm:block max-sm:rounded-lg max-sm:border max-sm:p-3';
+
+/**
+ * The scrolling table frame: a native overflow box from `sm` up, so the scrollbar is real on every
+ * width. Below `sm` the grid stacks instead — the header row is hidden and each body `<tr>` (given
+ * `entryRowCard`) renders as a card, with `TD label` supplying the caption the header no longer
+ * gives. One mount either way: the inputs are not rendered twice, so controlled fields, file
+ * pickers and their ids keep working.
+ */
 export function EntryTable({ minWidth, head, children, foot }: { minWidth: number; head: ReactNode; children: ReactNode; foot?: ReactNode }) {
   return (
-    <div className="min-w-0 overflow-x-auto rounded-lg border">
-      <table className="w-full border-collapse text-sm" style={{ minWidth }}>
-        <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">{head}</thead>
-        <tbody className="divide-y">{children}</tbody>
-        {foot && <tfoot className="border-t bg-muted/30">{foot}</tfoot>}
+    <div className="min-w-0 overflow-x-auto rounded-lg border max-sm:rounded-none max-sm:border-0">
+      <table
+        className="w-full border-collapse text-sm max-sm:block sm:min-w-[var(--entry-min-width)]"
+        style={{ '--entry-min-width': `${minWidth}px` } as CSSProperties}
+      >
+        <thead className="bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground max-sm:hidden">{head}</thead>
+        <tbody className="divide-y max-sm:block max-sm:space-y-3 max-sm:divide-y-0">{children}</tbody>
+        {/* The totals live in the EntryFooter figures too, which is what a phone shows. */}
+        {foot && <tfoot className="border-t bg-muted/30 max-sm:hidden">{foot}</tfoot>}
       </table>
     </div>
   );
@@ -116,8 +132,12 @@ export const TH = ({ children, className, required }: { children?: ReactNode; cl
   </th>
 );
 
-export const TD = ({ children, className }: { children?: ReactNode; className?: string }) => (
-  <td className={cn('px-2 py-2 align-top first:pl-3 last:pr-3', className)}>{children}</td>
+export const TD = ({ children, className, label }: { children?: ReactNode; className?: string; label?: string }) => (
+  <td className={cn('px-2 py-2 align-top first:pl-3 last:pr-3 max-sm:block max-sm:px-0 max-sm:py-1.5 max-sm:first:pl-0 max-sm:last:pr-0', className)}>
+    {/* The stacked card has no header row, so the cell carries its own caption on a phone. */}
+    {label && <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:hidden">{label}</span>}
+    {children}
+  </td>
 );
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;

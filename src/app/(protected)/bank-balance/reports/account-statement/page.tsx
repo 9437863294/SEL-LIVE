@@ -15,7 +15,7 @@ import { Fragment, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
 import { endOfDay, startOfDay, subDays, subMonths } from 'date-fns';
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, FileText, Flag, RefreshCw, Search, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, Download, FileText, Flag, RefreshCw, Search, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,8 +35,10 @@ import {
   useBankData,
 } from '@/components/bank-balance/page-kit';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useToast } from '@/hooks/use-toast';
 import type { DateRangePreset } from '@/lib/date-range-presets';
-import { balanceAt, buildLedger, formatDay, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedger, dayKey, formatDay, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { modeConfig } from '@/lib/bank-payments';
 import { requisitionHref, voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense } from '@/lib/types';
@@ -119,6 +121,7 @@ function ReferenceCell({ row }: { row: StatementRow }) {
 }
 
 export default function AccountStatementPage() {
+  const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Reports');
   const { accounts, transactions, isLoading, isRefreshing, refresh } = useBankData({ enabled: canView, transactions: true });
@@ -214,6 +217,44 @@ export default function AccountStatementPage() {
             pd.count === 1 ? 'is' : 'are'
           } included, so the closing ${figureWord} is projected, not actual.`
         : `This range runs past today (${formatDay(statement.today)}), so the closing ${figureWord} is projected — no post-dated entries fall in it yet.`;
+
+  // The statement as a workbook, opening row first, the same columns as the table plus the
+  // references split out — what an auditor or the bank asks for.
+  const exportExcel = async () => {
+    if (!account || !statement) return;
+    const blankRefs = { Transfer: '', 'Post-dated': '', 'Voucher No.': '', Instrument: '', 'Reception / Ref': '', UTR: '' };
+    const exportRows: Array<Record<string, unknown>> = [
+      {
+        Date: formatDay(statement.openingDay),
+        Description: `Opening ${figureWord}`,
+        ...blankRefs,
+        Debit: '',
+        Credit: '',
+        [figureLabel]: statement.opening,
+      },
+      ...statement.rows.map((row) => ({
+        Date: formatDay(row.date),
+        Description: row.description || (row.isContra ? 'Internal transfer' : ''),
+        Transfer: row.isContra ? 'Yes' : '',
+        'Post-dated': row.postDated ? 'Yes' : '',
+        'Voucher No.': row.voucherNo || '',
+        Instrument: row.instrumentNo || '',
+        'Reception / Ref': row.requestRef || '',
+        UTR: row.utr || '',
+        Debit: row.debit || '',
+        Credit: row.credit || '',
+        [figureLabel]: row.figure,
+      })),
+    ];
+    try {
+      await exportRowsToExcel(`Statement ${accountLabel(account)}`, exportRows, {
+        filename: `Statement ${accountLabel(account)} ${dayKey(statement.from)} to ${dayKey(statement.to)}.xlsx`,
+      });
+    } catch (error) {
+      console.error('Error exporting the statement:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
 
   const toolbar = (
     <FilterBar>
@@ -317,9 +358,85 @@ export default function AccountStatementPage() {
           }
           count={statement?.rows.length ?? 0}
           noun="transaction"
-          actions={account ? <StatusBadge status={account.status} /> : undefined}
+          actions={
+            account ? (
+              <>
+                <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={!statement || statement.rows.length === 0}>
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  Export
+                </Button>
+                <StatusBadge status={account.status} />
+              </>
+            ) : undefined
+          }
           toolbar={toolbar}
         >
+          {/* Phone: one card per entry, opening and closing figures as cards — the table needs 880px. */}
+          <div className="space-y-2.5 p-3 sm:hidden">
+            {statement && (
+              <div className="flex items-baseline justify-between gap-3 rounded-xl border bg-muted/40 p-3.5 text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium">Opening {figureWord}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatDay(statement.openingDay)}
+                    {statement.startsAtOpening ? ' · account opening date' : ''}
+                  </p>
+                </div>
+                <span className="shrink-0 font-semibold tabular-nums">{formatInr(statement.opening)}</span>
+              </div>
+            )}
+            {!statement || statement.rows.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+                <Search className="h-8 w-8 opacity-30" />
+                <p className="text-sm">{statement ? 'No transactions in this period.' : 'Pick an account and a date range.'}</p>
+              </div>
+            ) : (
+              statement.rows.map((row) => (
+                <div key={row.id} className="rounded-xl border bg-background/60 p-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{formatDay(row.date)}</p>
+                      {(row.isContra || row.postDated) && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {row.isContra && <Badge variant="progress">Transfer</Badge>}
+                          {row.postDated && (
+                            <Badge variant="info" title="Dated after today — it has not happened yet">
+                              Post-dated
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {row.debit > 0 && <p className="whitespace-nowrap font-semibold tabular-nums text-rose-600">− {formatInr(row.debit)}</p>}
+                      {row.credit > 0 && <p className="whitespace-nowrap font-semibold tabular-nums text-emerald-600">+ {formatInr(row.credit)}</p>}
+                    </div>
+                  </div>
+                  <p className="mt-1 break-words text-sm">{row.description || (row.isContra ? 'Internal transfer' : '—')}</p>
+                  <div className="mt-2 border-t pt-2 text-xs">
+                    <ReferenceCell row={row} />
+                  </div>
+                  <div className="mt-2 flex items-baseline justify-between gap-3 border-t pt-2 text-xs">
+                    <span className="text-muted-foreground">{figureLabel}</span>
+                    <span className={cn('font-semibold tabular-nums', row.figure < 0 && 'text-rose-600')}>{formatInr(row.figure)}</span>
+                  </div>
+                </div>
+              ))
+            )}
+            {statement && statement.rows.length > 0 && (
+              <div className="rounded-xl border bg-muted/40 p-3.5 text-sm">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-medium">{statement.runsPastToday ? 'Projected closing' : 'Closing'} {figureWord}</span>
+                  <span className={cn('font-semibold tabular-nums', statement.closing < 0 && 'text-rose-700')}>{formatInr(statement.closing)}</span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-3 text-xs text-muted-foreground">
+                  <span>Debits {formatInr(totalDebit)}</span>
+                  <span>Credits {formatInr(totalCredit)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="hidden sm:block">
           <Table className="w-full min-w-[880px]">
             <TableHeader>
               <TableRow>
@@ -400,6 +517,7 @@ export default function AccountStatementPage() {
               </TableFooter>
             )}
           </Table>
+          </div>
         </TableCard>
       </div>
     </>
