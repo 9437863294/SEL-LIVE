@@ -332,9 +332,12 @@ export function effectNotes({
   if (replaces) notes.push(`A ${noun} already starts on ${formatDay(fromDate)}. Saving replaces it.`);
   if (previous && !replaces) notes.push(`The previous ${noun} will end on ${dayBefore(fromDate)}.`);
   if (next) {
+    // Worded for any date slotted before a later entry — a back-dated one, or a future date placed
+    // before an already scheduled change. "This is a past date" was wrong for the second case.
     notes.push(
-      <span className="text-amber-700">
-        This is a past date: the entry applies until {dayBefore(next.fromDate)}, when the {noun} from {formatDay(next.fromDate)} takes over.
+      <span key="next" className="text-amber-700">
+        A later {noun} is already scheduled: this entry applies until {dayBefore(next.fromDate)}, when the {noun} from {formatDay(next.fromDate)} takes
+        over.
       </span>,
     );
   }

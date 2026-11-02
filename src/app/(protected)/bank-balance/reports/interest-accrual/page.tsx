@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import type { DateRange } from 'react-day-picker';
-import { CalendarDays, Coins, Info, Landmark, Percent, ReceiptText, RefreshCw } from 'lucide-react';
+import { CalendarDays, Coins, Download, Info, Landmark, Percent, ReceiptText, RefreshCw } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import {
   addDays,
@@ -49,6 +49,7 @@ import {
   getApplicableRate,
   isCashCredit,
 } from '@/lib/bank-balance-ledger';
+import { exportWorkbook } from '@/lib/report-excel';
 import type { MonthlyInterestData } from '@/lib/types';
 
 type MonthRange = '6' | '12' | 'fy' | '24';
@@ -289,6 +290,46 @@ export default function InterestReportPage() {
   const thisMonthLabel = format(today, 'MMMM');
   const lastMonthDiff = kpis.actualLastMonth === null ? null : kpis.actualLastMonth - kpis.projectedLastMonth;
 
+  // Both tabs as one workbook, in long form (one row per account per month / per day), so Excel can
+  // re-pivot them.
+  const exportExcel = async () => {
+    const sheetOf = (name: string, sheetRows: Array<Record<string, unknown>>) => ({
+      name,
+      columns: Object.keys(sheetRows[0] || {}).map((header) => ({ header, key: header, width: Math.min(40, Math.max(12, header.length + 4)) })),
+      rows: sheetRows,
+    });
+    const monthly = monthlyRows.flatMap((row) =>
+      row.cells.map((cell, index) => ({
+        Month: format(row.month, 'MMM yyyy'),
+        Account: accountLabel(ccAccounts[index]),
+        Projected: Number(cell.projected.toFixed(2)),
+        Actual: cell.actual === null ? '' : cell.actual,
+        Diff: cell.diff === null ? '' : Number(cell.diff.toFixed(2)),
+      })),
+    );
+    const daily = dailyTable.rows.flatMap((row) =>
+      row.cells.flatMap((cell, index) =>
+        cell
+          ? [
+              {
+                Date: formatDay(row.day),
+                Account: accountLabel(dailyAccounts[index]),
+                Utilised: cell.utilised,
+                'Rate %': cell.rate,
+                Interest: Number(cell.interest.toFixed(2)),
+              },
+            ]
+          : [],
+      ),
+    );
+    try {
+      await exportWorkbook(`Interest Report ${monthKeyOf(today)}.xlsx`, [sheetOf('Monthly', monthly), sheetOf('Daily', daily)]);
+    } catch (error) {
+      console.error('Error exporting the interest report:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
+
   return (
     <>
       <BankBalanceBackground tone="violet" />
@@ -301,6 +342,10 @@ export default function InterestReportPage() {
           backLabel="Back to dashboard"
           actions={
             <>
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={ccAccounts.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
               <Button variant="outline" onClick={() => void handleRefresh()} disabled={isRefreshing}>
                 <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
                 Refresh

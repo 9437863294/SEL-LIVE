@@ -22,6 +22,7 @@ import {
   ArrowUpDown,
   ArrowUpRight,
   CalendarDays,
+  Download,
   RefreshCw,
   Settings2,
 } from 'lucide-react';
@@ -56,12 +57,14 @@ import {
   buildLedgers,
   dailyInterest,
   dailyRows,
+  dayKey,
   formatDay,
   formatInr,
   getApplicableRate,
   isCashCredit,
   type DailyRow,
 } from '@/lib/bank-balance-ledger';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import type { BankAccount, BankExpense, UserSettings } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -487,6 +490,30 @@ export default function DailyLogPage() {
       : `${formatDay(span.from)} – ${formatDay(span.to)}`
     : 'No days in range';
 
+  // The day-by-day register as a workbook: one row per account per open day, both views' figures.
+  const exportExcel = async () => {
+    if (!span) return;
+    const rows = accountRows.map((r) => ({
+      Date: formatDay(r.row.day),
+      Account: accountLabel(r.account),
+      Type: isCashCredit(r.account) ? 'Cash Credit' : 'Current Account',
+      Opening: r.row.opening,
+      Receipts: r.row.receipts,
+      Payments: r.row.payments,
+      'Transfers in': r.row.transfersIn,
+      'Transfers out': r.row.transfersOut,
+      Closing: r.row.closing,
+      Available: r.available,
+      Entries: r.row.count,
+    }));
+    try {
+      await exportRowsToExcel('Daily Log', rows, { filename: `Daily Log ${dayKey(span.from)} to ${dayKey(span.to)}.xlsx` });
+    } catch (error) {
+      console.error('Error exporting the daily log:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
+
   return (
     <>
       <BankBalanceBackground tone="blue" />
@@ -498,10 +525,16 @@ export default function DailyLogPage() {
           backHref="/bank-balance"
           backLabel="Back to dashboard"
           actions={
-            <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={isRefreshing}>
-              <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
-              Refresh
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={() => void exportExcel()} disabled={accountRows.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={isRefreshing}>
+                <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing && 'animate-spin')} />
+                Refresh
+              </Button>
+            </>
           }
         />
 

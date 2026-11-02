@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 
 import { Fragment, useMemo, useState } from 'react';
 import { eachMonthOfInterval, endOfDay, endOfMonth, format, isSameMonth, parse, startOfMonth, subMonths } from 'date-fns';
-import { ArrowDownLeft, ArrowUpRight, Building2, CalendarClock, CalendarRange, CreditCard, LayoutGrid, RefreshCw, Scale } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Building2, CalendarClock, CalendarRange, CreditCard, Download, LayoutGrid, RefreshCw, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,7 +38,10 @@ import {
   useBankData,
 } from '@/components/bank-balance/page-kit';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useToast } from '@/hooks/use-toast';
+import { MonthlyFlowChart, type MonthlyFlowPoint } from '@/components/bank-balance/dashboard-charts';
 import { buildLedgers, formatDay, formatInr, isCashCredit } from '@/lib/bank-balance-ledger';
+import { exportWorkbook } from '@/lib/report-excel';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -82,6 +85,7 @@ function getRangeMonths(option: RangeOption, customFrom: string, customTo: strin
 const netClass = (net: number) => (net < 0 ? 'text-rose-600' : net > 0 ? 'text-emerald-600' : 'text-muted-foreground');
 
 export default function TransactionSummaryPage() {
+  const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Reports');
   const { accounts, transactions, isLoading, isRefreshing, refresh } = useBankData({ enabled: canView, transactions: true });
@@ -159,6 +163,16 @@ export default function TransactionSummaryPage() {
     [months, grandMonths],
   );
 
+  // The cashflow statement's rows, oldest first, as the flow chart wants them.
+  const flowPoints = useMemo<MonthlyFlowPoint[]>(
+    () =>
+      months.map((month) => {
+        const cell = grandMonths[monthKey(month)] ?? emptyCell();
+        return { month: format(month, 'MMM yy'), receipts: cell.receipts, payments: cell.payments };
+      }),
+    [months, grandMonths],
+  );
+
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} blocks={2} />;
   if (!canView) return <BankAccessDenied title="Transaction Summary" what="this report" />;
 
@@ -204,6 +218,47 @@ export default function TransactionSummaryPage() {
     { header: 'Payments', align: 'right', cell: (row) => <span className="whitespace-nowrap tabular-nums text-rose-700">{formatInr(row.payments)}</span> },
     { header: 'Entries', align: 'right', cell: (row) => <span className="tabular-nums">{row.count || '—'}</span> },
   ];
+
+  // Both tables as one workbook: the pivot in long form (one row per account per month, so Excel
+  // can re-pivot it), and the cashflow statement as shown.
+  const exportExcel = async () => {
+    const sheetOf = (name: string, sheetRows: Array<Record<string, unknown>>) => ({
+      name,
+      columns: Object.keys(sheetRows[0] || {}).map((header) => ({ header, key: header, width: Math.min(40, Math.max(12, header.length + 4)) })),
+      rows: sheetRows,
+    });
+    const byAccount = summaryRows.flatMap((row) =>
+      months.map((month) => {
+        const cell = row.months[monthKey(month)] ?? emptyCell();
+        return {
+          Account: accountLabel(row.account),
+          Bank: row.account.bankName || '',
+          Type: isCashCredit(row.account) ? 'Cash Credit' : 'Current Account',
+          Month: format(month, 'MMM yyyy'),
+          Receipts: cell.receipts,
+          Payments: cell.payments,
+          Net: cell.receipts - cell.payments,
+          Entries: cell.count,
+        };
+      }),
+    );
+    const cashflow = cashflowRows.map((row) => ({
+      Month: format(row.month, 'MMMM yyyy'),
+      Receipts: row.receipts,
+      Payments: row.payments,
+      Net: row.net,
+      Entries: row.count,
+    }));
+    try {
+      await exportWorkbook(`Transaction Summary ${firstMonth ? monthKey(firstMonth) : ''} to ${lastMonth ? monthKey(lastMonth) : ''}.xlsx`, [
+        sheetOf('By account & month', byAccount),
+        sheetOf('Cashflow', cashflow),
+      ]);
+    } catch (error) {
+      console.error('Error exporting the transaction summary:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
 
   const toolbar = (
     <FilterBar
@@ -286,6 +341,11 @@ export default function TransactionSummaryPage() {
           </p>
         )}
 
+        <MonthlyFlowChart
+          points={flowPoints}
+          description={`Per month across all accounts — ${periodLabel}, internal transfers ${excludeContra ? 'excluded' : 'included'}.`}
+        />
+
         <TableCard
           title="Monthly breakdown by account"
           description={
@@ -296,6 +356,12 @@ export default function TransactionSummaryPage() {
           }
           count={summaryRows.length}
           noun="account"
+          actions={
+            <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={summaryRows.length === 0}>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
+            </Button>
+          }
           toolbar={toolbar}
         >
           <Table className="w-max min-w-full">

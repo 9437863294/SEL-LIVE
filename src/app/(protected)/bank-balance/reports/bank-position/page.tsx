@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
-import { Building2, CreditCard, Gauge, Landmark, RefreshCw, Scale, TrendingUp, Wallet } from 'lucide-react';
+import { Building2, CreditCard, Download, Gauge, Landmark, RefreshCw, Scale, TrendingUp, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -34,8 +34,10 @@ import {
   useBankData,
 } from '@/components/bank-balance/page-kit';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useToast } from '@/hooks/use-toast';
 import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
-import { balanceAt, buildLedgers, formatDay, formatInr, isCashCredit, utilisationLevel } from '@/lib/bank-balance-ledger';
+import { balanceAt, buildLedgers, dayKey, formatDay, formatInr, isCashCredit, utilisationLevel } from '@/lib/bank-balance-ledger';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -52,6 +54,7 @@ interface PositionRow {
 }
 
 export default function BankPositionReportPage() {
+  const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
   const canView = !authLoading && can('View', 'Bank Balance.Reports');
   const { accounts, transactions, isLoading, isRefreshing, refresh, loadedAt } = useBankData({ enabled: canView, transactions: true });
@@ -108,6 +111,26 @@ export default function BankPositionReportPage() {
 
   if (authLoading || (isLoading && canView)) return <BankPageSkeleton kpis={4} />;
   if (!canView) return <BankAccessDenied title="Bank Position" what="this report" />;
+
+  const exportExcel = async () => {
+    const exportRows = rows.map((row) => ({
+      Account: accountLabel(row.account),
+      Bank: row.account.bankName || '',
+      'Account No.': row.account.accountNumber || '',
+      Type: row.cc ? 'Cash Credit' : 'Current Account',
+      Status: row.account.status || '',
+      'Balance / Utilisation': row.figure,
+      Limit: row.cc ? row.limit : '',
+      Available: row.available,
+      'Utilisation %': row.cc && row.limit > 0 ? Number(row.percent.toFixed(1)) : '',
+    }));
+    try {
+      await exportRowsToExcel('Bank Position', exportRows, { filename: `Bank Position ${dayKey(new Date())}.xlsx` });
+    } catch (error) {
+      console.error('Error exporting the bank position:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be built.', variant: 'destructive' });
+    }
+  };
 
   const columns: Array<ListColumn<PositionRow>> = [
     {
@@ -233,6 +256,12 @@ export default function BankPositionReportPage() {
           count={rows.length}
           noun="account"
           scroll="natural"
+          actions={
+            <Button size="sm" variant="outline" onClick={() => void exportExcel()} disabled={rows.length === 0}>
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export
+            </Button>
+          }
           toolbar={
             <FilterBar activeCount={includeInactive ? 1 : 0} onClear={() => setIncludeInactive(false)}>
               <div className="flex h-10 items-center gap-2 rounded-md border px-3">
