@@ -156,6 +156,13 @@ html[data-dialog-minimised] body {
   :where([data-slot='dialog-content'][data-window-controls='on']) :where([data-slot='dialog-header']) {
     padding-inline-end: 4rem;
   }
+  /* Vehicle Management's dialogs draw their own header, flush with the frame and padded only for
+     the ×, so the controls landed on whatever sits at its right (Insurance's "Document" chip). The
+     controls and the × reach about 90px in from the frame's right edge; this clears them. Not
+     wrapped in :where — it must outweigh the header's own `pr-*` and the phone rule in globals.css. */
+  [data-slot='dialog-content'][data-window-controls='on'] .vm-dialog-header {
+    padding-inline-end: 6.5rem;
+  }
 }
 
 /* The user's dialog text size: scales what is inside a dialog, not its frame, so the frame's
