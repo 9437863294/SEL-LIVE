@@ -81,8 +81,12 @@ export const BB_FORM_REGISTRY: Record<BBFormKey, BBFormDef> = {
     fields: [
       { key: 'date', defaultLabel: 'Receipt date', defaultRequired: true, locked: true },
       { key: 'accountId', defaultLabel: 'Bank account', defaultRequired: true, locked: true },
-      { key: 'description', defaultLabel: 'Description', defaultRequired: true, hint: 'Who paid, and for what.' },
+      { key: 'receiptType', defaultLabel: 'Receipt type', defaultRequired: false, hint: 'Client bill, Retention, Security deposit, Advance, Refund, Interest or Other. Always has a value while shown.' },
+      { key: 'payer', defaultLabel: 'Received from', defaultRequired: true, hint: 'A client from the client list, or any name typed in. Also written into the description.' },
       { key: 'amount', defaultLabel: 'Amount', defaultRequired: true, locked: true },
+      { key: 'mode', defaultLabel: 'Mode', defaultRequired: false, hint: 'RTGS, NEFT, IMPS, Cheque, DD or Internal. Always has a value while shown.' },
+      { key: 'ref', defaultLabel: 'UTR / Ref no.', defaultRequired: false, followsForm: true, hint: 'Shown as "Cheque no." or "DD no." for those modes.' },
+      { key: 'description', defaultLabel: 'Description', defaultRequired: true, hint: 'What the money was for.' },
     ],
   },
   transfer: {

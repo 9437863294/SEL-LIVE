@@ -139,8 +139,11 @@ test('field control: defaults, legacy payment switches, overrides and locked fie
   const saved = resolveFormFields('payment', { utr: { required: false, visible: false }, amount: { required: false, label: 'Paid (₹)' } }, { utrNumber: true });
   assert.deepEqual([saved.utr.required, saved.utr.visible], [false, false]);
   assert.deepEqual(saved.amount, { visible: true, required: true, label: 'Paid (₹)' });
-  assert.equal(missingRequiredField('receipt', { description: ' ' }, resolveFormFields('receipt', null)), 'Description');
-  assert.equal(missingRequiredField('receipt', { description: ' ' }, resolveFormFields('receipt', { description: { required: false } })), null);
+  // A receipt needs who paid (since New Receipt's redesign) and what for, until Field Control says otherwise.
+  assert.equal(missingRequiredField('receipt', { description: 'RA bill 14' }, resolveFormFields('receipt', null)), 'Received from');
+  assert.equal(missingRequiredField('receipt', { payer: 'OPTCL', description: ' ' }, resolveFormFields('receipt', null)), 'Description');
+  assert.equal(missingRequiredField('receipt', { payer: 'OPTCL', description: ' ' }, resolveFormFields('receipt', { description: { required: false } })), null);
+  assert.equal(missingRequiredField('receipt', { description: ' ' }, resolveFormFields('receipt', { payer: { visible: false }, description: { required: false } })), null);
   assert.equal(fieldLabel('payment', 'instrumentNo', fresh.instrumentNo, 'Cheque no.'), 'Cheque no.');
   const renamed = resolveFormFields('payment', { instrumentNo: { label: 'Instrument ref' } });
   assert.equal(fieldLabel('payment', 'instrumentNo', renamed.instrumentNo, 'Cheque no.'), 'Instrument ref');

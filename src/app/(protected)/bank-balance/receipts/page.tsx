@@ -1,8 +1,8 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { BankTransactionLog } from '@/components/bank-balance/transaction-log';
+import { ReceiptsLog } from '@/components/bank-balance/receipts-log';
 
 export default function ReceiptsLogPage() {
-  return <BankTransactionLog kind="receipt" />;
+  return <ReceiptsLog />;
 }

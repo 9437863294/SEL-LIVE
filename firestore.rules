@@ -1542,9 +1542,11 @@ service cloud.firestore {
           : bbEntryPage(request.resource.data) != '' && bbHolds(bbEntryPage(request.resource.data), ['Add']));
       allow update: if bbEntryPage(resource.data) == 'Expenses' && bbHolds('Expenses', ['Add'])
         && bbChanged().hasOnly(['clearedDate']);
-      allow delete: if bbEntryPage(resource.data) == 'Internal Transaction'
+      // A Credit Bill Tracking posted is removed by cancelling its receipt there, never from here:
+      // deleting it alone would leave the receipt verified with no money behind it.
+      allow delete: if !resource.data.keys().hasAny(['billCollectionId']) && (bbEntryPage(resource.data) == 'Internal Transaction'
         ? bbHolds('Internal Transaction', ['Add', 'Edit', 'Delete'])
-        : bbEntryPage(resource.data) != '' && bbHolds(bbEntryPage(resource.data), ['Delete']);
+        : bbEntryPage(resource.data) != '' && bbHolds(bbEntryPage(resource.data), ['Delete']));
     }
 
     /*

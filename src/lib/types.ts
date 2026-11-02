@@ -1452,6 +1452,12 @@ export interface BankExpense {
   transferMode?: string;
   /** Internal transfers: the narration typed with it, on both legs (also appended to the description). */
   narration?: string;
+  /** Receipts: what the money was (Client bill, Retention, Advance…), from New Receipt. */
+  receiptType?: string;
+  /** Receipts: who paid, as entered on New Receipt (also named in the description). */
+  payerName?: string;
+  /** Receipts: the payer's `clients` id, when it was picked from the client list. */
+  payerClientId?: string;
   createdAt: Timestamp;
 }
 
