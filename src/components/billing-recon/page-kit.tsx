@@ -7,7 +7,7 @@
  *  - `BrPage` — the page container plus `BillingReconBackground`, a tinted drifting-orb backdrop,
  *    one colour per page family (`BR_TONE`).
  *  - `BrHero` — the colour banner with glass panels (`HeroStat`) and banner actions, as on Bank
- *    Balance's Aurora dashboard. Its tint is each viewer's own choice, kept in this browser.
+ *    Balance's Aurora dashboard, always in the default "lagoon" tint.
  *  - `AppTile`, `ActionCard`, `BrSection` — gradient icon tiles, the action / work-queue cards
  *    that replace the old grids of link cards, and section headings.
  *  - `BrNotice` — the attention strip (amber / sky / emerald).
@@ -17,7 +17,7 @@
  */
 
 import Link from 'next/link';
-import { useCallback, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageAccessDenied } from '@/components/shared/module-shell';
@@ -106,51 +106,6 @@ export function AppTile({ tone, icon: Icon, size = 40, className }: { tone: BrTo
 
 /* ── the banner ─────────────────────────────────────────────────────────────────────────────── */
 
-export type HeroTint = 'lagoon' | 'aurora' | 'ember' | 'forest' | 'dusk';
-
-const TINTS: ReadonlyArray<{ id: HeroTint; label: string; swatch: string }> = [
-  { id: 'lagoon', label: 'Lagoon', swatch: 'linear-gradient(135deg, #0f766e, #0891b2, #2563eb, #4f46e5)' },
-  { id: 'aurora', label: 'Aurora', swatch: 'conic-gradient(#0f766e, #2563eb, #7c3aed, #db2777, #f59e0b, #0f766e)' },
-  { id: 'ember', label: 'Ember', swatch: 'linear-gradient(135deg, #9a3412, #ea580c, #d97706, #db2777)' },
-  { id: 'forest', label: 'Forest', swatch: 'linear-gradient(135deg, #065f46, #0891b2, #a3e635)' },
-  { id: 'dusk', label: 'Dusk', swatch: 'linear-gradient(135deg, #312e81, #7c3aed, #0e7490)' },
-];
-const TINT_IDS = TINTS.map((t) => t.id);
-const TINT_KEY = 'billingRecon.hero.tint';
-const TINT_EVENT = 'billing-recon-hero-tint';
-
-function readTint(): HeroTint {
-  try {
-    const value = window.localStorage.getItem(TINT_KEY);
-    return value && (TINT_IDS as string[]).includes(value) ? (value as HeroTint) : 'lagoon';
-  } catch {
-    return 'lagoon';
-  }
-}
-
-function subscribeTint(onChange: () => void) {
-  window.addEventListener('storage', onChange);
-  window.addEventListener(TINT_EVENT, onChange);
-  return () => {
-    window.removeEventListener('storage', onChange);
-    window.removeEventListener(TINT_EVENT, onChange);
-  };
-}
-
-/** The viewer's banner colour, shared by every Billing Recon banner and kept in this browser only. */
-export function useHeroTint(): [HeroTint, (tint: HeroTint) => void] {
-  const tint = useSyncExternalStore(subscribeTint, readTint, () => 'lagoon' as HeroTint);
-  const setTint = useCallback((next: HeroTint) => {
-    try {
-      window.localStorage.setItem(TINT_KEY, next);
-    } catch {
-      // Private window or blocked storage: the choice just isn't remembered.
-    }
-    window.dispatchEvent(new Event(TINT_EVENT));
-  }, []);
-  return [tint, setTint];
-}
-
 export interface HeroAction {
   href: string;
   label: string;
@@ -182,26 +137,10 @@ export function BrHero({
   children?: ReactNode;
   className?: string;
 }) {
-  const [tint, setTint] = useHeroTint();
   return (
-    <section className={cn(styles.hero, 'keep-light p-5 sm:p-7', className)} data-tint={tint}>
-      <div className={styles.swatches} role="group" aria-label="Banner colour">
-        {TINTS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            title={option.label}
-            aria-label={option.label}
-            aria-pressed={tint === option.id}
-            className={styles.swatch}
-            style={{ background: option.swatch }}
-            onClick={() => setTint(option.id)}
-          />
-        ))}
-      </div>
-
+    <section className={cn(styles.hero, 'keep-light p-5 sm:p-7', className)}>
       <div className={cn('grid grid-cols-1 items-end gap-6', aside && 'lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]')}>
-        <div className="min-w-0 pt-6 sm:pt-0">
+        <div className="min-w-0">
           <div className={cn(styles.muted, 'flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.08em]')}>
             {eyebrow}
             {live && (

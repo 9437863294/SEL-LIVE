@@ -1,15 +1,15 @@
 /*
  * Billing Recon's colour banner, glass panels and gradient icon tiles — the same construction as
  * Bank Balance's Aurora band (src/components/bank-balance/dashboard-designs/aurora.module.css), in
- * Billing Recon's own tints.
+ * Billing Recon's own colours.
  *
  * No color-mix(): the office's Windows 7 PCs run Chrome 109, which drops a background that uses
- * it, leaving white text on a white card. Each tint lists its colours twice: solid, and with the
+ * it, leaving white text on a white card. The colours are listed twice: solid, and with the
  * alpha the gradient layers want (8-digit hex, fine on Chrome 62+).
  */
 
 .hero {
-  /* Default tint: "lagoon" — teal into blue, Billing Recon's colour. */
+  /* "Lagoon" — teal into blue, Billing Recon's colour. */
   --c1: #0f766e;
   --c2: #0891b2;
   --c3: #2563eb;
@@ -44,50 +44,6 @@
   to {
     background-position: 100% 50%;
   }
-}
-
-.hero[data-tint='aurora'] {
-  --c1: #0f766e;
-  --c2: #2563eb;
-  --c3: #7c3aed;
-  --c4: #db2777;
-  --c1a: #0f766ef2;
-  --c3a: #7c3aedcc;
-  --c4a: #db2777bf;
-  --c5a: #f59e0bb3;
-}
-
-.hero[data-tint='ember'] {
-  --c1: #9a3412;
-  --c2: #ea580c;
-  --c3: #d97706;
-  --c4: #db2777;
-  --c1a: #9a3412f2;
-  --c3a: #d97706cc;
-  --c4a: #db2777bf;
-  --c5a: #facc15b3;
-}
-
-.hero[data-tint='forest'] {
-  --c1: #065f46;
-  --c2: #0f766e;
-  --c3: #0891b2;
-  --c4: #65a30d;
-  --c1a: #065f46f2;
-  --c3a: #0891b2cc;
-  --c4a: #65a30dbf;
-  --c5a: #a3e635b3;
-}
-
-.hero[data-tint='dusk'] {
-  --c1: #312e81;
-  --c2: #4f46e5;
-  --c3: #7c3aed;
-  --c4: #0e7490;
-  --c1a: #312e81f2;
-  --c3a: #7c3aedcc;
-  --c4a: #0e7490bf;
-  --c5a: #a78bfab3;
 }
 
 /* A faint dot grid, fading in from the left. */
@@ -167,35 +123,6 @@
 
 .actionPrimary:hover {
   background: #f1f5f9;
-}
-
-/* Out-specifies `.hero > *`, which would otherwise pull the swatches back into the flow. */
-.hero > .swatches {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  z-index: 2;
-}
-
-.swatches {
-  display: flex;
-  gap: 6px;
-  padding: 4px;
-  border-radius: 999px;
-  background: #0000002a;
-  border: 1px solid #ffffff30;
-}
-
-.swatch {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  padding: 0;
-}
-
-.swatch[aria-pressed='true'] {
-  border-color: #fff;
 }
 
 /* A gradient icon tile; --a and --b are set inline. */
