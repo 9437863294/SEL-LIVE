@@ -1,88 +1,81 @@
 'use client';
 
-import Link from 'next/link';
-import { ChevronRight, Hash, Settings, Split, type LucideIcon } from 'lucide-react';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CheckCircle2, GitBranch, Hash, Settings, Split, ToggleRight } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
-import { PageAccessDenied } from '@/components/shared/module-shell';
-import { Skeleton } from '@/components/ui/skeleton';
+import { KpiCard } from '@/components/shared/kpi-card';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
+import { ActionCard, BrAccessDenied, BrPage, BrPageSkeleton, BrSection, BR_TONE } from '@/components/billing-recon/page-kit';
 import { isBillingReconSeparated } from '@/lib/billing-recon/register';
 
-interface SettingsCard {
-  icon: LucideIcon;
-  title: string;
-  href: string;
-  description: string;
-  status?: string;
-  visible: boolean;
-}
-
+/**
+ * Billing Recon › Settings: the module's own settings, as cards with their live state. Per-project
+ * JMC / MVAC workflows live under each project's JMC / MVAC › Settings.
+ */
 export default function BillingReconSettingsPage() {
   const { can, isLoading } = useAuthorization();
-  const { billingProjects, loading } = useBillingReconProjects();
+  const { projects, billingProjects, loading } = useBillingReconProjects();
 
   const canViewModule = can('View Module', 'Billing Recon');
+  const canSerials = canViewModule || can('Edit Serial Nos', 'Billing Recon.JMC') || can('Edit Serial Nos', 'Billing Recon.MVAC');
+  const canSeparation = can('View', 'Billing Recon.Data Separation') || can('Run', 'Billing Recon.Data Separation');
   const separated = billingProjects.filter((p) => isBillingReconSeparated(p)).length;
+  const shared = billingProjects.length - separated;
 
-  const cards: SettingsCard[] = [
-    {
-      icon: Settings,
-      title: 'Billing Status',
-      href: '/billing-recon/settings/billing-status',
-      description: 'Switch billing on or off for each project. Billing Recon lists the projects switched on.',
-      status: loading ? undefined : `${billingProjects.length} projects with billing on`,
-      visible: canViewModule,
-    },
-    {
-      icon: Hash,
-      title: 'Serial No. Configuration',
-      href: '/billing-recon/settings/serial-no',
-      description: 'JMC and MVAC number series, per project and BOQ scope.',
-      visible:
-        canViewModule ||
-        can('Edit Serial Nos', 'Billing Recon.JMC') ||
-        can('Edit Serial Nos', 'Billing Recon.MVAC'),
-    },
-    {
-      icon: Split,
-      title: 'Data Separation',
-      href: '/billing-recon/settings/data-separation',
-      description: "Give a project's Billing Recon its own BOQ, JMC and MVAC records, apart from Project Management.",
-      status: loading ? undefined : `${separated} of ${billingProjects.length} separated`,
-      visible: can('View', 'Billing Recon.Data Separation') || can('Run', 'Billing Recon.Data Separation'),
-    },
-  ];
-  const visible = cards.filter((c) => c.visible);
-
-  if (isLoading) return <Skeleton className="h-64 w-full rounded-xl" />;
-  if (visible.length === 0) return <PageAccessDenied message="You don't have access to Billing Recon settings." />;
+  if (isLoading) return <BrPageSkeleton kpis={3} />;
+  if (!canViewModule && !canSerials && !canSeparation) return <BrAccessDenied message="You don't have access to Billing Recon settings." />;
 
   return (
-    <div className="space-y-5">
-      <PageHeader title="Settings" description="Billing Recon's own settings. Each project's JMC and MVAC workflows are under that project's JMC / MVAC › Settings." />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {visible.map((card) => (
-          <Link key={card.href} href={card.href} className="group h-full no-underline">
-            <Card className="flex h-full flex-col rounded-xl transition-all duration-200 hover:border-primary/50 hover:shadow-md">
-              <CardHeader className="flex-row items-start gap-4 space-y-0 p-4">
-                <div className="rounded-lg bg-primary/10 p-3">
-                  <card.icon className="h-5 w-5 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <CardTitle className="flex items-center justify-between gap-2 text-base">
-                    {card.title}
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
-                  </CardTitle>
-                  <CardDescription className="mt-1 text-xs">{card.description}</CardDescription>
-                  {card.status && <div className="mt-2 text-xs font-medium text-foreground/80">{card.status}</div>}
-                </div>
-              </CardHeader>
-            </Card>
-          </Link>
-        ))}
+    <BrPage tone={BR_TONE.settings}>
+      <PageHeader
+        title="Settings"
+        description="Billing Recon's own settings. Each project's JMC and MVAC workflows are under that project's JMC / MVAC › Settings."
+        icon={Settings}
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard label="Projects with billing on" value={loading ? '—' : billingProjects.length} hint={loading ? undefined : `of ${projects.length} projects`} icon={ToggleRight} tone="cyan" accent />
+        <KpiCard label="Separated from Project Management" value={loading ? '—' : separated} hint={loading ? undefined : `${shared} still shared`} icon={GitBranch} tone={shared ? 'amber' : 'emerald'} accent />
+        <KpiCard label="Register" value={loading ? '—' : shared ? 'Mixed' : 'Own'} hint={shared ? 'Some projects still share BOQ & JMC' : 'Every billing project has its own records'} icon={CheckCircle2} tone={shared ? 'amber' : 'emerald'} accent />
       </div>
-    </div>
+
+      <BrSection title="Module settings" description="Open a card to change it." icon={Settings} tone={BR_TONE.settings}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {canViewModule && (
+            <ActionCard
+              href="/billing-recon/settings/billing-status"
+              title="Billing Status"
+              description="Switch billing on or off per project, with its work order, name of work and signatories. Billing Recon lists the projects switched on."
+              icon={ToggleRight}
+              tone="cyan"
+              figure={loading ? '—' : billingProjects.length}
+              figureLabel="projects on"
+            />
+          )}
+          {canSerials && (
+            <ActionCard
+              href="/billing-recon/settings/serial-no"
+              title="Serial No. Configuration"
+              description="JMC and MVAC number series — prefix, format and next number — per project and BOQ scope."
+              icon={Hash}
+              tone="indigo"
+            />
+          )}
+          {canSeparation && (
+            <ActionCard
+              href="/billing-recon/settings/data-separation"
+              title="Data Separation"
+              description="Give a project's Billing Recon its own BOQ, JMC and MVAC records, apart from Project Management."
+              icon={Split}
+              tone="violet"
+              figure={loading ? '—' : `${separated}/${billingProjects.length}`}
+              figureLabel="separated"
+              badge={!loading && shared > 0 ? <StatusBadge tone="warning" status={`${shared} shared`} /> : !loading && billingProjects.length ? <StatusBadge tone="success" status="All separated" /> : undefined}
+            />
+          )}
+        </div>
+      </BrSection>
+    </BrPage>
   );
 }

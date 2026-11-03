@@ -35,6 +35,7 @@ import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { projectMatchesSlug, projectSlugCanonical } from '@/lib/project-slug';
 import { billingReconRegister, type BillingReconRegister } from '@/lib/billing-recon/register';
+import { BR_TONE } from './page-kit';
 
 const MODULE = 'Billing Recon';
 const BASE = '/billing-recon';
@@ -177,30 +178,43 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
 
   const groups = useMemo<ModuleNavGroup[]>(() => {
     const p = menuSlug ? `${BASE}/${menuSlug}` : '';
+    // Grouped like Bank Balance's menu; each entry's colour is its page family's (BR_TONE), so the
+    // menu tile, the page backdrop and the page's section tiles agree.
+    const has = Boolean(p);
     return [
       {
         id: 'overview',
+        label: 'Overview',
         items: [
-          { id: 'dashboard', label: 'Dashboard', href: BASE, icon: BarChart3, tone: 'cyan', match: 'exact', visible: canViewModule },
+          { id: 'dashboard', label: 'Dashboard', href: BASE, icon: BarChart3, tone: BR_TONE.dashboard, match: 'exact', visible: canViewModule },
+          // Named after the project, so the dashboard and settings pages show which project the
+          // register links below point at (the last one opened on this device).
+          { id: 'project-overview', label: menuProject?.projectName ?? 'Project Overview', href: p, icon: LayoutDashboard, tone: BR_TONE.project, match: 'exact', visible: has && canViewModule },
         ],
       },
       {
-        id: 'project',
-        label: menuProject?.projectName ?? 'Project',
+        id: 'registers',
+        label: 'Registers',
         items: [
-          { id: 'project-overview', label: 'Project Overview', href: p, icon: LayoutDashboard, tone: 'blue', match: 'exact', visible: Boolean(p) && canViewModule },
-          { id: 'boq', label: 'BOQ', href: `${p}/boq`, icon: ClipboardList, tone: 'emerald', visible: Boolean(p) && sees('BOQ') },
-          { id: 'jmc', label: 'JMC', href: `${p}/jmc`, icon: HardHat, tone: 'orange', visible: Boolean(p) && sees('JMC') },
-          { id: 'mvac', label: 'MVAC', href: `${p}/mvac`, icon: Truck, tone: 'amber', visible: Boolean(p) && sees('MVAC') },
-          { id: 'combined-log', label: 'Combined Log', href: `${p}/combined-log`, icon: History, tone: 'slate', visible: Boolean(p) && sees('Combined Log') },
-          { id: 'reconciliation', label: 'Reconciliation', href: `${p}/reconciliation`, icon: Scale, tone: 'violet', visible: Boolean(p) && sees('Reconciliation') },
-          { id: 'billing', label: 'RA Bills', href: `${p}/billing`, icon: Calculator, tone: 'sky', visible: Boolean(p) && sees('Billing') },
+          { id: 'boq', label: 'BOQ', href: `${p}/boq`, icon: ClipboardList, tone: BR_TONE.boq, visible: has && sees('BOQ') },
+          { id: 'jmc', label: 'JMC', href: `${p}/jmc`, icon: HardHat, tone: BR_TONE.jmc, visible: has && sees('JMC') },
+          { id: 'mvac', label: 'MVAC', href: `${p}/mvac`, icon: Truck, tone: BR_TONE.mvac, visible: has && sees('MVAC') },
+          { id: 'combined-log', label: 'Combined Log', href: `${p}/combined-log`, icon: History, tone: BR_TONE.log, visible: has && sees('Combined Log') },
         ],
       },
       {
-        id: 'settings',
+        id: 'billing',
+        label: 'Billing',
         items: [
-          { id: 'settings', label: 'Settings', href: `${BASE}/settings`, icon: Settings2, tone: 'slate', visible: canSettings },
+          { id: 'reconciliation', label: 'Reconciliation', href: `${p}/reconciliation`, icon: Scale, tone: BR_TONE.reconciliation, visible: has && sees('Reconciliation') },
+          { id: 'billing', label: 'RA Bills', href: `${p}/billing`, icon: Calculator, tone: BR_TONE.billing, visible: has && sees('Billing') },
+        ],
+      },
+      {
+        id: 'setup',
+        label: 'Setup',
+        items: [
+          { id: 'settings', label: 'Settings', href: `${BASE}/settings`, icon: Settings2, tone: BR_TONE.settings, visible: canSettings },
         ],
       },
     ];

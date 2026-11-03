@@ -23,9 +23,13 @@ import {
   FileWarning,
   FolderOpen,
   GitBranch,
+  HardHat,
   Layers,
   Loader2,
+  Plus,
+  Receipt,
   RefreshCw,
+  Scale,
   TrendingUp,
   Wallet,
 } from 'lucide-react';
@@ -34,7 +38,6 @@ import { KpiCard } from '@/components/shared/kpi-card';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { FormDialog } from '@/components/shared/form-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -42,6 +45,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { billingReconSlug, useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
+import { BR_TONE, BrHero, BrNotice, BrPage, HeroBar, HeroPanelTitle, HeroStat, type HeroAction } from '@/components/billing-recon/page-kit';
 import { useProjectSummaries } from '@/components/billing-recon/dashboard/use-project-summaries';
 import {
   ProjectValueChart,
@@ -322,11 +326,21 @@ export default function BillingReconDashboardPage() {
     { header: 'Value', align: 'right', cell: (p) => <span className="tabular-nums">{compactInr(p.executedValue)}</span> },
   ];
 
+  const singleSlug = projectFilter !== 'all' && views[0] ? billingReconSlug(views[0].project) : '';
+  const heroActions: HeroAction[] = singleSlug
+    ? [
+        ...(can('Create Bill', 'Billing Recon.Billing') ? [{ href: `/billing-recon/${singleSlug}/billing/create`, label: 'New RA bill', icon: Plus, primary: true }] : []),
+        ...(can('View', 'Billing Recon.Reconciliation') ? [{ href: `/billing-recon/${singleSlug}/reconciliation`, label: 'Reconciliation', icon: Scale }] : []),
+        ...(can('Create JMC Entry', 'Billing Recon.JMC') ? [{ href: `/billing-recon/${singleSlug}/jmc/entry`, label: 'New JMC', icon: HardHat }] : []),
+      ]
+    : [];
+
   return (
-    <div className="space-y-5">
+    <BrPage tone={BR_TONE.dashboard}>
       <PageHeader
         title="Billing Recon"
         description="Client billing reconciliation across projects: what is measured, certified by the client, billed — and what is waiting."
+        icon={Receipt}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => void onExport()} disabled={busy || exporting || views.length === 0}>
@@ -371,36 +385,75 @@ export default function BillingReconDashboardPage() {
         <span className="text-xs text-muted-foreground">{busy ? 'Loading…' : `Updated ${now ? format(new Date(now), 'dd MMM, HH:mm') : '—'}`}</span>
       </div>
 
+      {!projectsLoading && billingProjects.length > 0 && (
+        busy ? (
+          <Skeleton className="h-48 w-full rounded-3xl" />
+        ) : (
+          <BrHero
+            eyebrow="Certified, not billed"
+            live={now ? `Updated ${format(new Date(now), 'HH:mm')}` : undefined}
+            value={formatInr(v.certifiedUnbilled)}
+            caption={
+              <>
+                Ready for the next RA bill across {views.length} project{views.length === 1 ? '' : 's'} · <b className="text-white">{percent(v.billed, v.certified)}%</b> of certified value billed
+                {boq.loaded && boq.value ? (
+                  <>
+                    {' '}
+                    · <b className="text-white">{percent(v.executed, boq.value)}%</b> of {compactInr(boq.value)} BOQ executed
+                  </>
+                ) : null}
+              </>
+            }
+            actions={heroActions}
+            aside={
+              <>
+                <HeroPanelTitle left="Where executed work stands" right={`Executed ${compactInr(v.executed)}`} />
+                <HeroBar
+                  parts={[
+                    { label: 'Billed', value: v.billed, color: '#4ade80' },
+                    { label: 'Certified, not billed', value: v.certifiedUnbilled, color: '#ffffff' },
+                    { label: 'Awaiting certification', value: v.awaitingCertification, color: '#fbbf24' },
+                  ]}
+                />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <HeroStat label="Billed (RA bills)" value={compactInr(v.billed)} swatch="#4ade80" title={formatInr(v.billed)} hint={`${combined.counts.bills} bills`} />
+                  <HeroStat label="Certified, not billed" value={compactInr(v.certifiedUnbilled)} swatch="#ffffff" title={formatInr(v.certifiedUnbilled)} hint="next RA bill" />
+                  <HeroStat label="Awaiting certification" value={compactInr(v.awaitingCertification)} swatch="#fbbf24" title={formatInr(v.awaitingCertification)} hint={`${combined.pendingCount} open entries`} />
+                </div>
+              </>
+            }
+          />
+        )
+      )}
+
       {!projectsLoading && canSeparate && sharedProjects.length > 0 && (
-        <Alert>
-          <GitBranch className="h-4 w-4" />
-          <AlertTitle>
-            {sharedProjects.length} of {billingProjects.length} billing projects still share their register with Project Management
-          </AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>Their BOQ and JMC entries are the same records Project Management sees. Separate them to give Billing Recon its own copy.</span>
-            <Button asChild size="sm" variant="secondary">
+        <BrNotice
+          tone="warning"
+          icon={GitBranch}
+          title={`${sharedProjects.length} of ${billingProjects.length} billing projects still share their register with Project Management`}
+          action={
+            <Button asChild size="sm" variant="outline" className="bg-white/70 dark:bg-transparent">
               <Link href="/billing-recon/settings/data-separation">Review separation</Link>
             </Button>
-          </AlertDescription>
-        </Alert>
+          }
+        >
+          Their BOQ and JMC entries are the same records Project Management sees. Separate them to give Billing Recon its own copy.
+        </BrNotice>
       )}
 
       {!projectsLoading && billingProjects.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FolderOpen className="h-4 w-4 text-muted-foreground" />
-              No project has billing switched on
-            </CardTitle>
-            <CardDescription>Billing Recon lists the projects marked as billing-required.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild size="sm" variant="secondary">
+        <BrNotice
+          tone="info"
+          icon={FolderOpen}
+          title="No project has billing switched on"
+          action={
+            <Button asChild size="sm" variant="outline">
               <Link href="/billing-recon/settings/billing-status">Open Billing Status</Link>
             </Button>
-          </CardContent>
-        </Card>
+          }
+        >
+          Billing Recon lists the projects marked as billing-required.
+        </BrNotice>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -408,14 +461,14 @@ export default function BillingReconDashboardPage() {
               Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
             ) : (
               <>
-                <KpiCard label="BOQ value" value={boq.loaded ? compactInr(boq.value) : '—'} hint={`${boq.items.toLocaleString('en-IN')} BOQ items · ${views.length} project${views.length === 1 ? '' : 's'}`} icon={ClipboardList} tone="slate" />
-                <KpiCard label="Executed" value={compactInr(v.executed)} hint={boq.value ? `${percent(v.executed, boq.value)}% of BOQ · ${combined.counts.jmc} JMC · ${combined.counts.mvac} MVAC` : `${combined.counts.jmc} JMC · ${combined.counts.mvac} MVAC`} icon={Layers} tone="blue" />
-                <KpiCard label="Certified" value={compactInr(v.certified)} hint={`${percent(v.certified, v.executed)}% of executed`} icon={TrendingUp} tone="orange" />
-                <KpiCard label="Billed" value={compactInr(v.billed)} hint={`${percent(v.billed, v.certified)}% of certified · ${combined.counts.bills} RA bills`} icon={Wallet} tone="teal" />
-                <KpiCard label="Certified, not billed" value={compactInr(v.certifiedUnbilled)} hint="Ready for the next RA bill" icon={Wallet} tone="emerald" />
-                <KpiCard label="Awaiting certification" value={compactInr(v.awaitingCertification)} hint="Executed, not yet certified" icon={Clock} tone="amber" />
-                <KpiCard label="Open entries" value={combined.pendingCount.toLocaleString('en-IN')} hint={`${combined.overdueCount} overdue · ${combined.counts.draftBills} draft bills`} icon={AlertTriangle} tone={combined.overdueCount ? 'rose' : 'slate'} />
-                <KpiCard label="Exceptions" value={exceptionCount.toLocaleString('en-IN')} hint={`${exceptions.counts['Over-executed']} over-executed · ${exceptions.counts['Unmatched line']} unmatched`} icon={FileWarning} tone={exceptionCount ? 'violet' : 'slate'} />
+                <KpiCard label="BOQ value" value={boq.loaded ? compactInr(boq.value) : '—'} hint={`${boq.items.toLocaleString('en-IN')} BOQ items · ${views.length} project${views.length === 1 ? '' : 's'}`} icon={ClipboardList} tone="slate" accent />
+                <KpiCard label="Executed" value={compactInr(v.executed)} hint={boq.value ? `${percent(v.executed, boq.value)}% of BOQ · ${combined.counts.jmc} JMC · ${combined.counts.mvac} MVAC` : `${combined.counts.jmc} JMC · ${combined.counts.mvac} MVAC`} icon={Layers} tone="blue" accent />
+                <KpiCard label="Certified" value={compactInr(v.certified)} hint={`${percent(v.certified, v.executed)}% of executed`} icon={TrendingUp} tone="orange" accent />
+                <KpiCard label="Billed" value={compactInr(v.billed)} hint={`${percent(v.billed, v.certified)}% of certified · ${combined.counts.bills} RA bills`} icon={Wallet} tone="teal" accent />
+                <KpiCard label="Certified, not billed" value={compactInr(v.certifiedUnbilled)} hint="Ready for the next RA bill" icon={Wallet} tone="emerald" accent />
+                <KpiCard label="Awaiting certification" value={compactInr(v.awaitingCertification)} hint="Executed, not yet certified" icon={Clock} tone="amber" accent />
+                <KpiCard label="Open entries" value={combined.pendingCount.toLocaleString('en-IN')} hint={`${combined.overdueCount} overdue · ${combined.counts.draftBills} draft bills`} icon={AlertTriangle} tone={combined.overdueCount ? 'rose' : 'slate'} accent />
+                <KpiCard label="Exceptions" value={exceptionCount.toLocaleString('en-IN')} hint={`${exceptions.counts['Over-executed']} over-executed · ${exceptions.counts['Unmatched line']} unmatched`} icon={FileWarning} tone={exceptionCount ? 'violet' : 'slate'} accent />
               </>
             )}
           </div>
@@ -544,7 +597,7 @@ export default function BillingReconDashboardPage() {
         onClose={() => setSelected(null)}
         onOpen={(path) => router.push(path)}
       />
-    </div>
+    </BrPage>
   );
 }
 

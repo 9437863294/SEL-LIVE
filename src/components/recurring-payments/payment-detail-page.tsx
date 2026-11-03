@@ -34,6 +34,8 @@ import {
 } from '@/lib/recurring-payments';
 import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
 import PaymentPrintNote from './payment-print-note';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
+import { diffFields } from '@/lib/activity-logger';
 import { paymentModeFieldRequired, useFieldControl, type RPFieldSetting } from './use-field-control';
 import { PaymentEApprovalCard } from './e-approval-link-card';
 import { Badge } from '@/components/ui/badge';
@@ -167,6 +169,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         userId: user.id, userName: user.name, createdAt: serverTimestamp(),
       });
       await batch.commit();
+      logRecurringActivity(user, 'Upload Payment Receipt', { transactionAmount: original.amount, transactionDate: original.paymentDate }, { recordId: payment.id, recordRef: payment.title });
       setUploadingReceiptFor(null);
       toast({ title: 'Receipt uploaded' });
     } catch (error) {
@@ -244,6 +247,10 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         userId: user.id, userName: user.name, createdAt: serverTimestamp(),
       });
       await batch.commit();
+      logRecurringActivity(user, 'Edit Payment Transaction', {
+        transactionId: original.id,
+        changes: diffFields(pickTransactionSnapshot(original), pickTransactionSnapshot(updated)),
+      }, { recordId: payment.id, recordRef: payment.title });
       setEditingTransaction(null);
       toast(statusHeldByWorkflow
         ? { title: 'Transaction updated', description: `Status stays ${payment.status} while the payment is at a workflow step; complete it through the ${payment.stage || 'current'} step to move it on.` }
@@ -278,6 +285,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       batch.set(commentRef, { organizationId, paymentId: payment.id, message: comment.trim(), userId: user.id, userName: user.name, mentions, createdAt: serverTimestamp() });
       batch.set(auditRef, { organizationId, paymentId: payment.id, action: 'Comment added', summary: comment.trim(), page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
       await batch.commit();
+      logRecurringActivity(user, 'Add Payment Comment', { comment: comment.trim(), mentions: mentions.length || undefined }, { recordId: payment.id, recordRef: payment.title });
       setComment('');
       toast({ title: 'Comment added' });
     } catch (error) {
@@ -296,6 +304,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { status: 'Cancelled', workflowStatus: 'Completed', currentStepId: null, assignees: [], updatedAt: serverTimestamp() });
       batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment cancelled', summary: `${previousStatus} → Cancelled`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { status: previousStatus }, newValue: { status: 'Cancelled' }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
       await batch.commit();
+      logRecurringActivity(user, 'Cancel Payment', { previousStatus }, { recordId: payment.id, recordRef: payment.title });
       // Withdraws any mirrored E-Approval request, which would otherwise stay open on a dead payment.
       syncRecurringPaymentApprovalInBackground(payment.id, user);
       toast({ title: 'Payment cancelled and retained for audit' });
@@ -328,6 +337,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { deleted: true, deletedAt: serverTimestamp(), deletedBy: user.id, updatedAt: serverTimestamp() });
       batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment deleted', summary: `${payment.title} (${payment.status}) hidden from registers and reports`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { deleted: false, status: payment.status }, newValue: { deleted: true }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
       await batch.commit();
+      logRecurringActivity(user, 'Delete Payment', { status: payment.status, dueDate: payment.dueDate }, { recordId: payment.id, recordRef: payment.title });
       syncRecurringPaymentApprovalInBackground(payment.id, user);
       toast({ title: 'Payment deleted and retained for audit' });
       router.push('/recurring-payments/payments');

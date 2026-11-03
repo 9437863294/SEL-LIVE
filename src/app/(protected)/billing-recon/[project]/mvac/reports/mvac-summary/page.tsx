@@ -1,19 +1,14 @@
-
 'use client';
 export const dynamic = 'force-dynamic';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Home, Loader2, ShieldAlert, Users, CheckCircle, BarChart, Activity, XCircle } from 'lucide-react';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
+import { useParams } from 'next/navigation';
+import { collection, getDocs, doc, getDoc, query } from 'firebase/firestore';
+import { AlertTriangle, Ban, BarChart3, CheckCircle2, FileCheck2, Truck, IndianRupee, Info, Users } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -30,397 +25,386 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
-import type { MvacEntry, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
+import type { MvacEntry, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { personOptionLabel } from '@/lib/people-directory';
 import { withDesignations } from '@/lib/people-directory-client';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { useParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
-import { projectMatchesSlug } from '@/lib/project-slug';
-import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
-
-interface SummaryStats {
-    totalMVACs: number;
-    totalExecutedValue: number;
-    totalCertifiedValue: number;
-    rejected: number;
-    completed: number;
-}
+import { useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
+import { BrAccessDenied, BrNotice, BrPage, BrPageSkeleton, BrSection, BR_TONE } from '@/components/billing-recon/page-kit';
+import { WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
+import { formatAmountCompact, toIsoDate } from '@/lib/billing-recon/lines';
 
 interface StepWiseReportData {
-    [stepName: string]: {
-        [userName: string]: {
-            total: number;
-            completed: number;
-            rejected: number;
-        }
-    }
+  [stepName: string]: {
+    [userName: string]: {
+      total: number;
+      completed: number;
+      rejected: number;
+    };
+  };
 }
+
+const MONTHS = Array.from({ length: 12 }, (_, i) => ({
+  value: (i + 1).toString(),
+  label: new Date(2000, i, 1).toLocaleString('en-GB', { month: 'long' }),
+}));
+
+/** Year and month (1–12, as text) of a MVAC date — yyyy-mm-dd text or a Timestamp — or null. */
+function dateParts(value: unknown): { year: string; month: string } | null {
+  const iso = toIsoDate(value);
+  return iso ? { year: iso.slice(0, 4), month: String(Number(iso.slice(5, 7))) } : null;
+}
+
+const lines = (task: { items?: unknown }): any[] => (Array.isArray(task.items) ? task.items : []);
+
+const computeExecutedValue = (items: any[]) =>
+  items.reduce((sum, it) => {
+    const rate = Number(it?.rate ?? 0);
+    const qty = Number(it?.executedQty ?? 0);
+    return sum + (Number.isFinite(rate * qty) ? rate * qty : 0);
+  }, 0);
+
+const computeCertifiedValue = (items: any[]) =>
+  items.reduce((sum, it) => {
+    const value = (Number(it?.certifiedQty) || 0) * (Number(it?.rate) || 0);
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(
+    Number.isFinite(amount) ? amount : 0
+  );
 
 export default function MvacSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { project: projectSlug } = useParams() as { project: string };
-  const [summaryStats, setSummaryStats] = useState<SummaryStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [allTasks, setAllTasks] = useState<MvacEntry[]>([]);
-  const [filteredTasks, setFilteredTasks] = useState<MvacEntry[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [workflow, setWorkflow] = useState<{steps: WorkflowStep[]} | null>(null);
+  const { currentProject, register: reg, loading: projectsLoading } = useBillingReconProjects();
+  const projectId = currentProject?.id ?? '';
   const { toast } = useToast();
 
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [allTasks, setAllTasks] = useState<MvacEntry[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [workflow, setWorkflow] = useState<{ steps: WorkflowStep[] } | null>(null);
+
   const [filters, setFilters] = useState({
-      year: 'all',
-      month: 'all',
-      applicant: 'all',
+    year: 'all',
+    month: 'all',
+    applicant: 'all',
   });
-  
+
   const canViewPage = can('View Reports', 'Billing Recon.MVAC');
 
-  const computeExecutedValue = (items: any[] = []) => {
-    return items.reduce((sum, it) => {
-        const rate = Number(it?.rate ?? 0);
-        const qty = Number(it?.executedQty ?? 0);
-        return sum + (rate * qty);
-    }, 0);
-  };
-  
   const fetchSummaryData = useCallback(async () => {
-      setIsLoading(true);
-      try {
-        const projectsQuery = query(collection(db, 'projects'));
-        const projectsSnapshot = await getDocs(projectsQuery);
-        
-        const allProjects = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-        
-        const currentProject = allProjects.find(p => projectMatchesSlug(p.projectName, projectSlug));
+    if (!projectId) return;
+    setIsLoading(true);
+    setLoadFailed(false);
+    try {
+      const [tasksSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
+        getDocs(query(collection(db, 'projects', projectId, reg.mvacEntries))),
+        getDocs(collection(db, 'users')),
+        getDoc(doc(db, WORKFLOWS_COLLECTION, reg.mvacWorkflowId)),
+      ]);
 
-        if (!currentProject) {
-          console.error("Project not found for slug:", projectSlug);
-          setIsLoading(false);
-          return;
-        }
+      setAllTasks(tasksSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as MvacEntry)));
+      setUsers(await withDesignations(usersSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as User))));
 
-        const currentProjectId = currentProject.id;
-        const reg = billingReconRegister(currentProject);
-
-        const [tasksSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-          getDocs(query(collection(db, 'projects', currentProjectId, reg.mvacEntries))),
-          getDocs(collection(db, 'users')),
-          getDoc(doc(db, WORKFLOWS_COLLECTION, reg.mvacWorkflowId)),
-        ]);
-        
-        const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MvacEntry));
-        setAllTasks(tasksData);
-        setFilteredTasks(tasksData);
-
-        setProjects(allProjects);
-        setUsers(await withDesignations(usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User))));
-        
-        if(workflowDoc.exists()) {
-          setWorkflow(workflowDoc.data() as { steps: WorkflowStep[] });
-        }
-
-      } catch (error) {
-          console.error("Error fetching summary data: ", error);
-      }
+      const data = workflowDoc.exists() ? (workflowDoc.data() as { steps?: unknown }) : null;
+      setWorkflow(data ? { steps: (Array.isArray(data.steps) ? data.steps : []) as WorkflowStep[] } : null);
+    } catch (error) {
+      console.error('Error fetching summary data: ', error);
+      setLoadFailed(true);
+      toast({ title: 'Error', description: 'Could not load the MVAC summary.', variant: 'destructive' });
+    } finally {
       setIsLoading(false);
-  }, [projectSlug]);
-  
+    }
+  }, [projectId, reg.mvacEntries, reg.mvacWorkflowId, toast]);
+
   useEffect(() => {
     if (!isAuthLoading) {
-      if(canViewPage) {
-          fetchSummaryData();
+      if (canViewPage) {
+        fetchSummaryData();
       } else {
-          setIsLoading(false);
+        setIsLoading(false);
       }
     }
   }, [isAuthLoading, canViewPage, fetchSummaryData]);
 
-    useEffect(() => {
-        let items = allTasks;
+  const filteredTasks = useMemo(() => {
+    let items = allTasks;
 
-        if (filters.year !== 'all') {
-            items = items.filter(task => {
-              const date = (task as any).mvacDate;
-              return date && new Date(date).getFullYear().toString() === filters.year;
-            });
-        }
-        if (filters.month !== 'all') {
-            items = items.filter(task => {
-              const date = (task as any).mvacDate;
-              return date && (new Date(date).getMonth() + 1).toString() === filters.month;
-            });
-        }
-        if (filters.applicant !== 'all') {
-            const firstActorId = (task: MvacEntry) => (task.history && task.history.length > 0) ? task.history[0].userId : null;
-            items = items.filter(task => firstActorId(task) === filters.applicant);
-        }
-        
-        setFilteredTasks(items);
-    }, [filters, allTasks]);
+    if (filters.year !== 'all') {
+      items = items.filter((task) => dateParts((task as any).mvacDate)?.year === filters.year);
+    }
+    if (filters.month !== 'all') {
+      items = items.filter((task) => dateParts((task as any).mvacDate)?.month === filters.month);
+    }
+    if (filters.applicant !== 'all') {
+      const firstActorId = (task: MvacEntry) =>
+        Array.isArray(task.history) && task.history.length > 0 ? task.history[0]?.userId : null;
+      items = items.filter((task) => firstActorId(task) === filters.applicant);
+    }
 
-  useEffect(() => {
-        if (isLoading || allTasks.length === 0) {
-           setSummaryStats({ totalMVACs: 0, totalExecutedValue: 0, totalCertifiedValue: 0, rejected: 0, completed: 0 });
-           return;
-        };
-        
-        const totalMVACs = filteredTasks.length;
-        const totalExecutedValue = filteredTasks.reduce((sum, task) => sum + computeExecutedValue(task.items), 0);
-        const totalCertifiedValue = filteredTasks.reduce((sum, task) => sum + (task.items.reduce((itemSum, item) => itemSum + (item.certifiedQty || 0) * item.rate, 0) || 0), 0);
-        const rejected = filteredTasks.filter(task => task.status === 'Rejected').length;
-        const completed = filteredTasks.filter(req => req.status === 'Completed').length;
-        
-        setSummaryStats({ totalMVACs, totalExecutedValue, totalCertifiedValue, rejected, completed });
-  }, [filteredTasks, isLoading, allTasks]);
-  
+    return items;
+  }, [filters, allTasks]);
+
+  const summaryStats = useMemo(
+    () => ({
+      totalMVACs: filteredTasks.length,
+      totalExecutedValue: filteredTasks.reduce((sum, task) => sum + computeExecutedValue(lines(task)), 0),
+      totalCertifiedValue: filteredTasks.reduce((sum, task) => sum + computeCertifiedValue(lines(task)), 0),
+      rejected: filteredTasks.filter((task) => task.status === 'Rejected').length,
+      completed: filteredTasks.filter((task) => task.status === 'Completed').length,
+    }),
+    [filteredTasks]
+  );
+
   const stepWiseReport = useMemo((): StepWiseReportData => {
     if (!workflow || !users.length || !filteredTasks.length) {
       return {};
     }
-  
+
     const report: StepWiseReportData = {};
-    const userMap = new Map(users.map(u => [u.id, u.name]));
-    
+    const userMap = new Map(users.map((u) => [u.id, u.name]));
+
     // Manually add a "Created" step at the beginning
     const allSteps = [{ id: 'created', name: 'Created' }, ...workflow.steps];
 
-    allSteps.forEach(step => {
-        report[step.name] = {};
+    allSteps.forEach((step) => {
+      report[step.name] = {};
     });
-  
+
     const initializeUserInStep = (stepName: string, userName: string) => {
       if (!report[stepName]) report[stepName] = {};
       if (!report[stepName][userName]) {
         report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
       }
     };
-    
-    const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(action.toLowerCase());
-  
-    filteredTasks.forEach(task => {
-        const history: ActionLog[] = (task as any).history || [];
-        
-        // Handle "Created" stage
-        const creationLog = history.find(h => h.action === 'Created');
-        if (creationLog) {
-            const creatorName = userMap.get(creationLog.userId) || 'Unknown User';
-            initializeUserInStep('Created', creatorName);
-            report['Created'][creatorName].total++;
-            report['Created'][creatorName].completed++; // Creation is always a "completed" action for this stage
+
+    const isCompletionAction = (action: string) => ['approve', 'complete', 'verified'].includes(String(action ?? '').toLowerCase());
+
+    filteredTasks.forEach((task) => {
+      const history: ActionLog[] = Array.isArray((task as any).history) ? (task as any).history : [];
+
+      // Handle "Created" stage
+      const creationLog = history.find((h) => h?.action === 'Created');
+      if (creationLog) {
+        const creatorName = userMap.get(creationLog.userId) || 'Unknown User';
+        initializeUserInStep('Created', creatorName);
+        report['Created'][creatorName].total++;
+        report['Created'][creatorName].completed++; // Creation is always a "completed" action for this stage
+      }
+
+      // Handle workflow stages
+      const stepAssignments: { [stepName: string]: string } = {};
+
+      workflow.steps.forEach((step) => {
+        const stepLogs = history.filter((h) => h?.stepName === step.name);
+        const assigneeLog = stepLogs.find((l) => l.userId); // First user to act on this step is the assignee
+
+        if (assigneeLog) {
+          stepAssignments[step.name] = assigneeLog.userId;
+        } else if (task.currentStepId === step.id && task.assignees?.length > 0) {
+          // If it's the current step, the assignee is known
+          stepAssignments[step.name] = task.assignees[0];
         }
-        
-        // Handle workflow stages
-        const stepAssignments: { [stepName: string]: string } = {};
+      });
 
-        workflow.steps.forEach((step, index) => {
-            const stepLogs = history.filter(h => h.stepName === step.name);
-            const assigneeLog = stepLogs.find(l => l.userId); // First user to act on this step is the assignee
-            
-            if (assigneeLog) {
-                stepAssignments[step.name] = assigneeLog.userId;
-            } else if (task.currentStepId === step.id && task.assignees?.length > 0) {
-                 // If it's the current step, the assignee is known
-                stepAssignments[step.name] = task.assignees[0];
-            }
-        });
+      Object.entries(stepAssignments).forEach(([stepName, userId]) => {
+        const userName = userMap.get(userId) || 'Unknown User';
+        initializeUserInStep(stepName, userName);
 
-        Object.entries(stepAssignments).forEach(([stepName, userId]) => {
-            const userName = userMap.get(userId) || 'Unknown User';
-            initializeUserInStep(stepName, userName);
+        report[stepName][userName].total++;
 
-            report[stepName][userName].total++;
+        const completionLog = history.find((h) => h?.stepName === stepName && isCompletionAction(h.action));
+        const rejectionLog = history.find((h) => h?.stepName === stepName && String(h.action ?? '').toLowerCase() === 'reject');
 
-            const completionLog = history.find(h => h.stepName === stepName && isCompletionAction(h.action));
-            const rejectionLog = history.find(h => h.stepName === stepName && h.action.toLowerCase() === 'reject');
-
-            if (completionLog) {
-                report[stepName][userName].completed++;
-            }
-            if (rejectionLog) {
-                report[stepName][userName].rejected++;
-            }
-        });
+        if (completionLog) {
+          report[stepName][userName].completed++;
+        }
+        if (rejectionLog) {
+          report[stepName][userName].rejected++;
+        }
+      });
     });
-  
+
     return report;
   }, [filteredTasks, workflow, users]);
-  
-  
-  const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
-      const unique = (arr: any[]) => [...new Set(arr)];
-      switch (key) {
-          case 'year':
-              const allYears = allTasks.map(r => (r as any).mvacDate ? new Date((r as any).mvacDate).getFullYear().toString() : null).filter(Boolean);
-              return unique(allYears).sort((a,b) => Number(b) - Number(a));
-          case 'month':
-              return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
-          case 'project':
-              const projectIdsInTasks = new Set(allTasks.map(t => t.projectId));
-              return projects.filter(p => projectIdsInTasks.has(p.id));
-          case 'applicant':
-               const applicantIds = new Set(allTasks.map(r => (r.history && r.history.length > 0) ? r.history[0].userId : null).filter(Boolean));
-              return users.filter(u => applicantIds.has(u.id));
-          default:
-              return [];
-      }
-  }
 
-  const handleFilterChange = (filterName: string, value: string) => {
-      setFilters(prev => ({ ...prev, [filterName]: value }));
+  const yearOptions = useMemo(() => {
+    const years = new Set<string>();
+    for (const r of allTasks) {
+      const parts = dateParts((r as any).mvacDate);
+      if (parts) years.add(parts.year);
+    }
+    return Array.from(years).sort((a, b) => Number(b) - Number(a));
+  }, [allTasks]);
+
+  const applicantOptions = useMemo(() => {
+    const applicantIds = new Set(
+      allTasks
+        .map((r) => (Array.isArray(r.history) && r.history.length > 0 ? r.history[0]?.userId : null))
+        .filter(Boolean)
+    );
+    return users.filter((u) => applicantIds.has(u.id));
+  }, [allTasks, users]);
+
+  const handleFilterChange = (filterName: keyof typeof filters, value: string) => {
+    setFilters((prev) => ({ ...prev, [filterName]: value }));
   };
 
-  const formatCurrency = (amount: number) => {
-    if (isNaN(amount)) amount = 0;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);
+  const activeFilters = Object.values(filters).filter((v) => v !== 'all').length;
+  const stepCards = [{ id: 'created', name: 'Created' }, ...(workflow?.steps || [])]
+    .map((step) => ({ step, rows: Object.entries(stepWiseReport[step.name] ?? {}).filter(([, d]) => d.total > 0 || d.completed > 0 || d.rejected > 0) }))
+    .filter((card) => card.rows.length > 0);
+
+  /* ---------- states ---------- */
+  if (isAuthLoading || projectsLoading) return <BrPageSkeleton kpis={5} />;
+  if (!canViewPage) return <BrAccessDenied message="You don't have permission to view MVAC reports." />;
+
+  const header = (
+    <PageHeader
+      title="MVAC Summary"
+      description="How many MVACs were raised, their value, and who handled each workflow step."
+      icon={BarChart3}
+      backHref={`/billing-recon/${projectSlug}/mvac/reports`}
+      backLabel="Back to MVAC reports"
+    />
+  );
+
+  if (!currentProject) {
+    return (
+      <BrPage tone={BR_TONE.mvac}>
+        {header}
+        <BrNotice tone="warning" icon={AlertTriangle} title="Project not found">
+          No project matches this address. Choose a project from the switcher at the top of the menu.
+        </BrNotice>
+      </BrPage>
+    );
   }
 
-  const statsToDisplay = [
-      { title: 'Total MVACs', value: summaryStats?.totalMVACs.toLocaleString() || '0' },
-      { title: 'MVAC Executed Value', value: formatCurrency(summaryStats?.totalExecutedValue || 0) },
-      { title: 'Total Certified Value', value: formatCurrency(summaryStats?.totalCertifiedValue || 0) },
-      { title: 'Completed', value: summaryStats?.completed.toLocaleString() || '0' },
-      { title: 'Rejected', value: summaryStats?.rejected.toLocaleString() || '0' },
-  ];
-  
-  if (isAuthLoading || (isLoading && canViewPage)) {
-    return (
-        <div className="w-full pr-14">
-            <Skeleton className="h-10 w-80 mb-6" />
-            <Skeleton className="h-24 w-full mb-6" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-6 mb-8">
-                {Array.from({length: 5}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
-            </div>
-            <Skeleton className="h-6 w-48 mb-6" />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
-            </div>
-        </div>
-    )
-  }
-
-  if(!canViewPage) {
-    return (
-        <div className="w-full pr-14">
-            <PageHeader title="MVAC Summary" backHref={`/billing-recon/${projectSlug}/mvac/reports`} backLabel="Back to MVAC reports" />
-            <Card>
-                <CardHeader>
-                    <CardTitle>Access Denied</CardTitle>
-                    <CardDescription>You do not have permission to view this page.</CardDescription>
-                </CardHeader>
-                <CardContent className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContent>
-            </Card>
-        </div>
-    )
-  }
+  if (isLoading) return <BrPageSkeleton kpis={5} blocks={1} />;
 
   return (
-    <div className="w-full pr-14">
-      <PageHeader title="MVAC Summary" backHref={`/billing-recon/${projectSlug}/mvac/reports`} backLabel="Back to MVAC reports" />
+    <BrPage tone={BR_TONE.mvac}>
+      {header}
 
       <FilterBar
-        className="mb-6"
-        activeCount={Object.values(filters).filter((v) => v !== 'all').length}
+        activeCount={activeFilters}
         onClear={() => setFilters({ year: 'all', month: 'all', applicant: 'all' })}
+        summary={`${filteredTasks.length} of ${allTasks.length} MVAC${allTasks.length === 1 ? '' : 's'}`}
       >
-            <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
-              <SelectTrigger><SelectValue placeholder="All Years" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Years</SelectItem>
-                {(getFilterOptions('year') as string[]).map(year => (
-                  <SelectItem key={year} value={year}>{year}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
-              <SelectTrigger><SelectValue placeholder="All Months" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Months</SelectItem>
-                {(getFilterOptions('month') as { value: string, label: string }[]).map(month => (
-                  <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
-              <SelectTrigger><SelectValue placeholder="All Applicants" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Applicants</SelectItem>
-                {(getFilterOptions('applicant') as User[]).map(user => (
-                  <SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
+          <SelectTrigger className="text-left" aria-label="Year"><SelectValue placeholder="All Years" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Years</SelectItem>
+            {yearOptions.map((year) => (
+              <SelectItem key={year} value={year}>{year}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
+          <SelectTrigger className="text-left" aria-label="Month"><SelectValue placeholder="All Months" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Months</SelectItem>
+            {MONTHS.map((month) => (
+              <SelectItem key={month.value} value={month.value}>{month.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
+          <SelectTrigger className="min-w-0 text-left sm:max-w-[16rem]" aria-label="Raised by"><SelectValue placeholder="All Applicants" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Applicants</SelectItem>
+            {applicantOptions.map((user) => (
+              <SelectItem key={user.id} value={user.id}>{personOptionLabel(user)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </FilterBar>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
-        {isLoading ? (
-            Array.from({ length: 5 }).map((_, index) => (
-                <Card key={index}>
-                    <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
-                    <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
-                </Card>
-            ))
-        ) : (
-            statsToDisplay.map((stat) => (
-              <Card key={stat.title}>
-                <CardHeader className="p-4 flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">{stat.title}</CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <p className="text-2xl font-bold">{stat.value}</p>
-                </CardContent>
-              </Card>
-            ))
-        )}
+      {loadFailed && (
+        <BrNotice tone="danger" icon={AlertTriangle} title="The summary couldn't be loaded">
+          Check the connection and open the page again.
+        </BrNotice>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <KpiCard label="Total MVACs" value={summaryStats.totalMVACs.toLocaleString('en-IN')} hint={activeFilters ? 'Matching the filters' : 'On this project'} icon={Truck} tone="amber" accent />
+        <KpiCard
+          label="MVAC Executed Value"
+          value={formatAmountCompact(summaryStats.totalExecutedValue)}
+          hint={formatCurrency(summaryStats.totalExecutedValue)}
+          icon={IndianRupee}
+          tone="indigo"
+          accent
+        />
+        <KpiCard
+          label="Total Certified Value"
+          value={formatAmountCompact(summaryStats.totalCertifiedValue)}
+          hint={formatCurrency(summaryStats.totalCertifiedValue)}
+          icon={FileCheck2}
+          tone="teal"
+          accent
+        />
+        <KpiCard label="Completed" value={summaryStats.completed.toLocaleString('en-IN')} hint="Through every step" icon={CheckCircle2} tone="emerald" accent />
+        <KpiCard
+          label="Rejected"
+          value={summaryStats.rejected.toLocaleString('en-IN')}
+          hint="Stopped at a step"
+          icon={Ban}
+          tone={summaryStats.rejected ? 'rose' : 'slate'}
+          accent
+          className="col-span-2 sm:col-span-1"
+        />
       </div>
 
-      <SectionHeader title="Step-wise Report" />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {isLoading ? (
-          Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
+      <BrSection
+        title="Step-wise Report"
+        description="For each workflow step: how many entries each person handled, finished and rejected."
+        icon={Users}
+        tone={BR_TONE.mvac}
+      >
+        {!workflow && !loadFailed && (
+          <BrNotice tone="info" icon={Info} title="The MVAC workflow isn't set up">
+            Only who raised each MVAC can be shown until the workflow has steps.
+          </BrNotice>
+        )}
+        {stepCards.length === 0 ? (
+          <BrNotice tone="info" icon={Info} title={allTasks.length === 0 ? 'No MVACs on this project yet' : 'No MVACs match these filters'}>
+            {allTasks.length === 0 ? 'The report fills in as MVACs are raised and approved.' : 'Clear a filter to see more.'}
+          </BrNotice>
         ) : (
-          [{ id: 'created', name: 'Created' }, ...(workflow?.steps || [])].map((step) => {
-              const stepData = stepWiseReport[step.name];
-              if (!stepData || Object.keys(stepData).length === 0) {
-                return null; 
-              }
-              return (
-              <TableCard key={step.id} title={step.name} scroll="natural">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>User</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead>Done</TableHead>
-                        <TableHead>Rejected</TableHead>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {stepCards.map(({ step, rows }) => (
+              <TableCard key={step.id} title={step.name} count={rows.length} noun="user" scroll="natural">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Done</TableHead>
+                      <TableHead className="text-right">Rejected</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map(([userName, data]) => (
+                      <TableRow key={userName}>
+                        <TableCell className="max-w-[12rem] truncate" title={userName}>{userName}</TableCell>
+                        <TableCell className="text-right tabular-nums">{data.total}</TableCell>
+                        <TableCell className="text-right tabular-nums">{data.completed}</TableCell>
+                        <TableCell className="text-right tabular-nums">{data.rejected}</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                     {Object.entries(stepData).map(([userName, data]) => {
-                         if (data.total === 0 && data.completed === 0 && data.rejected === 0) return null;
-                         return (
-                             <TableRow key={userName}>
-                                 <TableCell>{userName}</TableCell>
-                                 <TableCell>{data.total}</TableCell>
-                                 <TableCell>{data.completed}</TableCell>
-                                 <TableCell>{data.rejected}</TableCell>
-                             </TableRow>
-                         )
-                     })}
-                    </TableBody>
-                  </Table>
+                    ))}
+                  </TableBody>
+                </Table>
               </TableCard>
-            )})
+            ))}
+          </div>
         )}
-      </div>
-    </div>
+      </BrSection>
+    </BrPage>
   );
 }

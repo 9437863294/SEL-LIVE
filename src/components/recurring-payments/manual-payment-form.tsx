@@ -35,6 +35,7 @@ import {
   RP_COLLECTIONS,
   currency,
 } from "@/lib/recurring-payments";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
 import { addBusinessHours } from "@/lib/working-hours";
 import { ControlledField } from "./controlled-field";
 import {
@@ -416,6 +417,12 @@ export default function ManualPaymentForm() {
         createdAt: timestamp,
       });
       await batch.commit();
+      logRecurringActivity(user, intent === "submit" ? "Create Manual Payment" : "Save Manual Payment Draft", {
+        status,
+        vendor: String(form.get("vendorName") || "") || undefined,
+        category: String(form.get("category") || "") || undefined,
+        netPayable,
+      }, { recordId: paymentRef.id, recordRef: String(form.get("title") || "").trim() });
       toast({
         title:
           intent === "submit"

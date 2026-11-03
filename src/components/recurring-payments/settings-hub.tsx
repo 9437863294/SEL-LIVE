@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronRight,
   GitBranch,
+  History,
   KeyRound,
   Link2,
   Loader2,
@@ -101,6 +102,17 @@ const SETTINGS_ITEMS = [
     iconColor: 'text-rose-600',
     // Everyone who can open Settings sees it: the page has a read-only mode, and gating the card on
     // 'Manage Field Control' hid it from most administrators, who then couldn't find it at all.
+    scope: 'View',
+  },
+  {
+    icon: History,
+    text: 'Audit Log',
+    href: '/recurring-payments/settings/audit-log',
+    description: 'Every action in the module — who did it, when, and what changed.',
+    gradient: 'from-amber-500 to-orange-600',
+    bg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    // Same rows as Settings › Audit Logs; anyone who may open this module's Settings may review them.
     scope: 'View',
   },
 ] as const;

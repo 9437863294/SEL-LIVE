@@ -64,6 +64,7 @@ import { ControlledField } from './controlled-field';
 import { TableCard } from '@/components/shared/table-card';
 import { ListSortControl, type ListSortControlState } from '@/components/shared/list-sort-control';
 import { useRecurringSortControl } from './use-sort-control';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
 import { paymentModeFieldRequired, useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
 import { dispatchNotification } from '@/lib/notifications';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
@@ -504,6 +505,18 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       // on, otherwise recording this step against it. A no-op when the bridge is off, and never a
       // reason for the action above to be reported as failed: it is already committed.
       syncRecurringPaymentApprovalInBackground(selected.id, user);
+      logRecurringActivity(user, `Workflow: ${action}`, {
+        step: stage.name,
+        movedTo: destination,
+        comment: comment || undefined,
+        billNumber: action === 'Submit Bill' ? billNumber : undefined,
+        billAmount: action === 'Submit Bill' ? billAmount : undefined,
+        paidAmount: action === 'Record Payment' && !confirmingSettled ? paymentAmount : undefined,
+        paymentMode: action === 'Record Payment' && !confirmingSettled ? paymentMode : undefined,
+        transactionReference: transactionReference || undefined,
+        expenseRequestNo: expenseRequestNo || undefined,
+        billingPeriodChange: periodNote.trim() || undefined,
+      }, { recordId: selected.id, recordRef: selected.title });
       toast({
         title: action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created` : `${action} completed`,
         description: destination === stage.name ? 'The item remains in your queue for the next action.' : `Moved to ${destination}.`,
@@ -527,6 +540,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           userName: user.name,
           createdAt: Timestamp.now(),
         }).catch(() => undefined);
+        logRecurringActivity(user, 'Workflow Action Blocked', { step: stage?.name, attempted: action, reason: message }, { recordId: selected.id, recordRef: selected.title });
       }
     } finally {
       setWorking(false);

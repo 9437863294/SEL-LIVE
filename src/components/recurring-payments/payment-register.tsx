@@ -75,6 +75,7 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { ListSortControl } from "@/components/shared/list-sort-control";
 import { useRecurringSortControl } from "./use-sort-control";
 import { paymentModeFieldRequired, useFieldControl } from "./use-field-control";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { TableCard } from "@/components/shared/table-card";
 import {
@@ -394,6 +395,7 @@ function PaymentRegisterView() {
         },
       );
       await batch.commit();
+      logRecurringActivity(user, "Delete Payment", { status: payment.status, dueDate: payment.dueDate }, { recordId: payment.id, recordRef: payment.title });
       syncRecurringPaymentApprovalInBackground(payment.id, user);
       toast({ title: "Payment deleted and retained for audit" });
     } catch {
@@ -1254,6 +1256,13 @@ function TransactionDialog({
         });
         return newStatus;
       });
+      logRecurringActivity(user, "Record Legacy Payment", {
+        amount,
+        appliedAmount,
+        mode: String(mode || ""),
+        transactionReference: transactionReference || undefined,
+        resultingStatus: newStatus,
+      }, { recordId: payment.id, recordRef: payment.title });
       toast({
         title: "Payment transaction recorded",
         description:

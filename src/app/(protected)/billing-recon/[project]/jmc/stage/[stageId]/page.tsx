@@ -1,15 +1,27 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import {
+  AlarmClock,
+  AlertTriangle,
+  Calendar as CalendarIcon,
   Check,
+  CheckCircle2,
   Clock,
+  Hourglass,
+  Inbox,
+  IndianRupee,
+  Info,
   Loader2,
   MoreHorizontal,
-  Calendar as CalendarIcon,
+  RefreshCw,
+  Workflow,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -17,6 +29,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableEmpty,
   TableHead,
   TableHeader,
   TableRow,
@@ -25,7 +38,6 @@ import { db } from '@/lib/firebase';
 import {
   collection,
   query,
-  where,
   getDocs,
   doc,
   getDoc,
@@ -39,11 +51,9 @@ import type {
   ActionLog,
   BoqItem,
   ActionConfig,
-  Project,
   JmcItem,
 } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
@@ -67,21 +77,23 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
-import { projectMatchesSlug } from '@/lib/project-slug';
-import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
+import { useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
+import { BrNotice, BrPage, BrPageSkeleton, BR_TONE } from '@/components/billing-recon/page-kit';
+import { WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
+import { formatAmountCompact } from '@/lib/billing-recon/lines';
 
 /* -------- helpers -------- */
+/** A Date from a stored value, or null — never an Invalid Date, which `format()` throws on. */
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
-  if (value instanceof Timestamp) return value.toDate();
-  if (value instanceof Date) return value;
-  if (typeof value === 'number') return new Date(value);
-  if (typeof value === 'string') {
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  if (value?.seconds) return new Date(value.seconds * 1000);
-  return null;
+  let d: Date | null = null;
+  if (value instanceof Timestamp) d = value.toDate();
+  else if (value instanceof Date) d = value;
+  else if (typeof value === 'number') d = new Date(value);
+  else if (typeof value === 'string') d = new Date(value);
+  else if (typeof value?.toDate === 'function') d = value.toDate();
+  else if (typeof value?.seconds === 'number') d = new Date(value.seconds * 1000);
+  return d && !Number.isNaN(d.getTime()) ? d : null;
 }
 
 function humanDate(value: any) {
@@ -122,15 +134,32 @@ function computeTotalAmount(entry: JmcEntry | undefined): number {
   if (!entry) return 0;
   const explicit = (entry as any).totalAmount;
   if (Number.isFinite(explicit)) return explicit as number;
-  const items = entry.items ?? [];
+  const items = Array.isArray(entry.items) ? entry.items : [];
   let total = 0;
   for (const it of items) {
-    const qty = Number(it.certifiedQty ?? it.executedQty ?? 0);
-    const rate = Number(it.rate ?? 0);
+    const qty = Number(it?.certifiedQty ?? it?.executedQty ?? 0);
+    const rate = Number(it?.rate ?? 0);
     if (Number.isFinite(qty) && Number.isFinite(rate)) total += qty * rate;
   }
   return total;
 }
+
+/**
+ * The workflow's steps, as the JMC desk reads them: named steps only, each with an id (its
+ * position when a saved step has none), so a stage link from the desk always finds its step.
+ */
+function readSteps(raw: unknown): WorkflowStep[] {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .filter((s): s is WorkflowStep => Boolean(s && typeof s === 'object' && (s as { name?: unknown }).name))
+    .map((s, index) => ({ ...s, id: String(s.id || index + 1), name: String(s.name) }) as WorkflowStep);
+}
+
+const DAY_MS = 86_400_000;
+const CLOSED = new Set(['completed', 'certified', 'rejected', 'cancelled', 'canceled']);
+const isOpenStatus = (status: unknown) => !CLOSED.has(String(status ?? '').trim().toLowerCase());
+
+type LoadProblem = 'workflow' | 'stage' | 'error' | null;
 
 /* -------- component -------- */
 export default function StagePage() {
@@ -143,83 +172,63 @@ export default function StagePage() {
   const userName = (user as any)?.name ?? (user as any)?.displayName ?? 'User';
 
   const { toast } = useToast();
-  const router = useRouter();
+  const { currentProject, register: reg, loading: projectsLoading } = useBillingReconProjects();
+  const projectId = currentProject?.id ?? null;
 
   const [tasks, setTasks] = useState<JmcEntry[]>([]);
   const [stage, setStage] = useState<WorkflowStep | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadProblem, setLoadProblem] = useState<LoadProblem>(null);
+  const [loadedAt, setLoadedAt] = useState(0);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isUpdateQtyOpen, setIsUpdateQtyOpen] = useState(false);
   const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [projectId, setProjectId] = useState<string | null>(null);
-  const [project, setProject] = useState<Project | null>(null);
-  const reg = useMemo(() => billingReconRegister(project), [project]);
 
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
   const [completionDate, setCompletionDate] = useState<Date | undefined>(new Date());
 
   const fetchTasks = useCallback(async () => {
-    if (!userId || !stageId || !projectSlug) return;
+    if (!userId || !stageId || !projectId) return;
 
     setIsLoading(true);
+    setLoadProblem(null);
     try {
-      // 1) project by slug (cache id) — first, because its register says which workflow to read
-      const projectsQueryRef = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQueryRef);
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
-
-      if (!projectData) throw new Error('Project not found');
-      const pid = projectData.id;
-      const projectReg = billingReconRegister(projectData);
-
-      // 2) workflow + stage
-      const workflowRef = doc(db, WORKFLOWS_COLLECTION, projectReg.jmcWorkflowId);
+      // 1) workflow + stage — the project's register says which workflow to read. A missing
+      // workflow or stage is shown on the page (it used to bounce back with router.back(), which
+      // leaves the app when the stage was opened from a link).
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.jmcWorkflowId);
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
-        toast({
-          title: 'Error',
-          description: 'Workflow not found.',
-          variant: 'destructive',
-        });
-        router.back();
+        setWorkflow([]);
+        setStage(null);
+        setLoadProblem('workflow');
         return;
       }
-      const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
+      const steps = readSteps(workflowSnap.data().steps);
       setWorkflow(steps);
-      const currentStage = steps.find((s) => s.id === stageId);
+      const currentStage = steps.find((s) => s.id === stageId) ?? null;
+      setStage(currentStage);
       if (!currentStage) {
-        toast({
-          title: 'Error',
-          description: 'Workflow stage not found.',
-          variant: 'destructive',
-        });
-        router.back();
+        setLoadProblem('stage');
         return;
       }
-      setStage(currentStage);
-      setProjectId(pid);
-      setProject(projectData);
 
-      // 3) stage tasks + BOQ (for cached project id). Subcontractors' `bills` are no longer read:
-      // nothing here showed them, and they are what the company pays, not client billing.
-      const [stageTasksSnap, boqSnap] = await Promise.all([
-        getDocs(
-          query(
-            collection(db, 'projects', pid, projectReg.jmcEntries),
-            where('currentStepId', '==', stageId)
-          )
-        ),
-        getDocs(query(collection(db, 'projects', pid, projectReg.boqItems))),
+      // 2) the project's JMC entries + BOQ. All entries, not just those at this step: the
+      // Completed tab lists entries you acted on here, which have since moved on to the next step
+      // (a query on `currentStepId` could never return them, so that tab stayed empty).
+      // Subcontractors' `bills` are no longer read: nothing here showed them, and they are what
+      // the company pays, not client billing.
+      const [entriesSnap, boqSnap] = await Promise.all([
+        getDocs(query(collection(db, 'projects', projectId, reg.jmcEntries))),
+        getDocs(query(collection(db, 'projects', projectId, reg.boqItems))),
       ]);
 
       setTasks(
-        stageTasksSnap.docs.map(
+        entriesSnap.docs.map(
           (d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)
         )
       );
@@ -228,21 +237,29 @@ export default function StagePage() {
           (d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)
         )
       );
+      setLoadedAt(Date.now());
     } catch (error: any) {
+      console.error('Error fetching tasks for stage:', error);
+      setLoadProblem('error');
       toast({
         title: 'Error',
-        description: error.message,
+        description: error?.message || 'Failed to fetch tasks.',
         variant: 'destructive',
       });
-      router.back();
     } finally {
       setIsLoading(false);
     }
-  }, [projectSlug, stageId, toast, router, userId]);
+  }, [projectId, reg.jmcWorkflowId, reg.jmcEntries, reg.boqItems, stageId, toast, userId]);
 
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
+
+  /** Every open entry at this step, whoever it is assigned to. */
+  const waitingHere = useMemo(
+    () => tasks.filter((t) => t.currentStepId === stageId && isOpenStatus(t.status)),
+    [tasks, stageId]
+  );
 
   const { pendingTasks, completedTasks } = useMemo(() => {
     if (!userId || !stage)
@@ -250,6 +267,7 @@ export default function StagePage() {
 
     const myPending = tasks.filter(
       (t) =>
+        t.currentStepId === stage.id &&
         (t.assignees ?? []).includes(userId) &&
         t.status !== 'Completed' &&
         t.status !== 'Rejected'
@@ -258,13 +276,30 @@ export default function StagePage() {
     const myCompleted = tasks.filter(
       (t) =>
         !myPending.some((pt) => pt.id === t.id) &&
-        (t.history ?? []).some(
-          (h) => h.stepName === stage.name && h.userId === userId
+        (Array.isArray(t.history) ? t.history : []).some(
+          (h) => h?.stepName === stage.name && h?.userId === userId
         )
     );
 
     return { pendingTasks: myPending, completedTasks: myCompleted };
   }, [tasks, userId, stage]);
+
+  const kpis = useMemo(() => {
+    let overdue = 0;
+    let oldestDays: number | null = null;
+    let value = 0;
+    for (const t of waitingHere) {
+      const deadline = toDateSafe(t.deadline)?.getTime();
+      if (deadline !== undefined && deadline < loadedAt) overdue += 1;
+      const raised = toDateSafe(t.createdAt)?.getTime() ?? toDateSafe(t.jmcDate)?.getTime();
+      if (raised !== undefined) {
+        const days = Math.max(0, Math.floor((loadedAt - raised) / DAY_MS));
+        if (oldestDays === null || days > oldestDays) oldestDays = days;
+      }
+      value += computeTotalAmount(t);
+    }
+    return { waiting: waitingHere.length, overdue, oldestDays, value };
+  }, [waitingHere, loadedAt]);
 
   // Dialog visibility
   const handleDialogOpenChange = (open: boolean) => {
@@ -463,137 +498,309 @@ export default function StagePage() {
   }
 
   const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') => (
-    <TableCard>
-        <Table className="min-w-[880px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="whitespace-nowrap">JMC No.</TableHead>
-              <TableHead className="whitespace-nowrap">JMC Date</TableHead>
-              <TableHead className="text-right whitespace-nowrap">
-                Total Amount
-              </TableHead>
-              <TableHead className="whitespace-nowrap">Status</TableHead>
-              <TableHead className="text-right whitespace-nowrap">
-                Actions
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={5}>
-                    <Skeleton className="h-8" />
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : data.length > 0 ? (
-              data.map((entry) => {
-                const currentStep = workflow?.find(
-                  (s) => s.id === entry.currentStepId
-                );
-                const actions = Array.isArray(currentStep?.actions)
-                  ? (currentStep!.actions as (string | ActionConfig)[])
-                  : [];
-                const total = computeTotalAmount(entry);
-
-                return (
-                  <TableRow
-                    key={entry.id}
-                    onClick={() => handleViewDetails(entry)}
-                    className="cursor-pointer"
-                  >
-                    <TableCell className="whitespace-nowrap">
-                      {entry.jmcNo ?? '-'}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {humanDate(entry.jmcDate)}
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      {formatINR(total)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <StatusBadge status={entry.status} />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {isActionLoading === entry.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin ml-auto" />
-                      ) : (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={(e) => e.stopPropagation()}
-                              aria-label="Actions"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent
-                            align="end"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {type === 'pending' &&
-                              actions.map((action) => {
-                                const actionName =
-                                  typeof action === 'string'
-                                    ? action
-                                    : action.name;
-                                const isVerify = actionName
-                                  .toLowerCase()
-                                  .includes('verify');
-                                const isUpdateQty =
-                                  actionName === 'Update Certified Qty';
-                                const isComplete = actionName === 'Complete';
-
-                                return (
-                                  <DropdownMenuItem
-                                    key={actionName}
-                                    onSelect={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      if (isVerify) {
-                                        handleVerifyClick(entry);
-                                      } else if (isUpdateQty) {
-                                        handleUpdateQtyClick(entry);
-                                      } else if (isComplete) {
-                                        openCompleteDialog(entry);
-                                      } else {
-                                        handleAction(entry.id!, action);
-                                      }
-                                    }}
-                                  >
-                                    {actionName}
-                                  </DropdownMenuItem>
-                                );
-                              })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center h-24">
-                  No {type} tasks found.
+    <TableCard
+      title={type === 'pending' ? 'Waiting for you' : 'Acted on by you'}
+      description={
+        type === 'pending'
+          ? 'Open a row to see its lines; the menu on the right holds this step’s actions.'
+          : 'Entries you have already acted on at this step, wherever they are now.'
+      }
+      count={isLoading ? undefined : data.length}
+      noun="JMC"
+    >
+      <Table className="min-w-[880px]">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="whitespace-nowrap">JMC No.</TableHead>
+            <TableHead className="whitespace-nowrap">JMC Date</TableHead>
+            <TableHead className="whitespace-nowrap">WO No.</TableHead>
+            <TableHead className="text-right whitespace-nowrap">
+              Total Amount
+            </TableHead>
+            <TableHead className="whitespace-nowrap">{type === 'pending' ? 'Deadline' : 'Now at'}</TableHead>
+            <TableHead className="whitespace-nowrap">Status</TableHead>
+            <TableHead className="text-right whitespace-nowrap">
+              Actions
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <TableRow key={i}>
+                <TableCell colSpan={7}>
+                  <Skeleton className="h-8" />
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
+            ))
+          ) : data.length > 0 ? (
+            data.map((entry) => {
+              // A pending row is at this step by definition; fall back to it when the entry's
+              // own step id isn't in the workflow, so the actions menu is never empty.
+              const currentStep =
+                workflow?.find((s) => s.id === entry.currentStepId) ??
+                (type === 'pending' ? stage ?? undefined : undefined);
+              const actions = Array.isArray(currentStep?.actions)
+                ? (currentStep!.actions as (string | ActionConfig)[])
+                : [];
+              const total = computeTotalAmount(entry);
+              const deadline = toDateSafe(entry.deadline);
+              const overdue = deadline !== null && deadline.getTime() < loadedAt;
+
+              return (
+                <TableRow
+                  key={entry.id}
+                  onClick={() => handleViewDetails(entry)}
+                  className="cursor-pointer"
+                >
+                  <TableCell className="whitespace-nowrap font-medium">
+                    {entry.jmcNo ?? '-'}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {humanDate(entry.jmcDate)}
+                  </TableCell>
+                  <TableCell className="max-w-[12rem] truncate whitespace-nowrap" title={entry.woNo || undefined}>
+                    {entry.woNo || '—'}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap tabular-nums">
+                    {formatINR(total)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {type === 'pending' ? (
+                      <span className="inline-flex items-center gap-2">
+                        {humanDate(entry.deadline)}
+                        {overdue && <StatusBadge tone="danger" status="Overdue" />}
+                      </span>
+                    ) : (
+                      entry.stage || '—'
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <StatusBadge status={entry.status} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {isActionLoading === entry.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                    ) : type === 'completed' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewDetails(entry);
+                        }}
+                      >
+                        View
+                      </Button>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label="Actions"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {actions.length === 0 && (
+                            <DropdownMenuItem disabled>No actions set for this step</DropdownMenuItem>
+                          )}
+                          {actions.map((action) => {
+                            const actionName =
+                              typeof action === 'string'
+                                ? action
+                                : action.name;
+                            const isVerify = actionName
+                              .toLowerCase()
+                              .includes('verify');
+                            const isUpdateQty =
+                              actionName === 'Update Certified Qty';
+                            const isComplete = actionName === 'Complete';
+
+                            return (
+                              <DropdownMenuItem
+                                key={actionName}
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (isVerify) {
+                                    handleVerifyClick(entry);
+                                  } else if (isUpdateQty) {
+                                    handleUpdateQtyClick(entry);
+                                  } else if (isComplete) {
+                                    openCompleteDialog(entry);
+                                  } else {
+                                    handleAction(entry.id!, action);
+                                  }
+                                }}
+                              >
+                                {actionName}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          ) : (
+            <TableEmpty colSpan={7} icon={<Inbox />}>
+              {type === 'pending' ? 'Nothing is waiting for you at this step.' : 'You haven’t acted on any entry at this step yet.'}
+            </TableEmpty>
+          )}
+        </TableBody>
+      </Table>
     </TableCard>
   );
 
+  /* ---------- states ---------- */
+  const deskHref = `/billing-recon/${projectSlug}/jmc`;
+  const stepIndex = stage ? workflow.findIndex((s) => s.id === stage.id) : -1;
+
+  if (projectsLoading || (currentProject && isLoading && !stage && !loadProblem)) return <BrPageSkeleton kpis={4} />;
+
+  if (!currentProject || loadProblem === 'workflow' || loadProblem === 'stage' || (loadProblem === 'error' && !stage)) {
+    return (
+      <BrPage tone={BR_TONE.jmc}>
+        <PageHeader title="JMC Stage" icon={Workflow} backHref={currentProject ? deskHref : '/billing-recon'} backLabel={currentProject ? 'Back to JMC' : 'Back to Billing Recon'} />
+        {!currentProject ? (
+          <BrNotice tone="warning" icon={AlertTriangle} title="Project not found">
+            No project matches this address. Choose a project from the switcher at the top of the menu.
+          </BrNotice>
+        ) : loadProblem === 'workflow' ? (
+          <BrNotice
+            tone="warning"
+            icon={AlertTriangle}
+            title="The JMC workflow isn't set up"
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/billing-recon/${projectSlug}/jmc/settings/workflow-configuration`}>Workflow settings</Link>
+              </Button>
+            }
+          >
+            This project&apos;s JMC workflow has no saved steps yet, so there are no stage queues.
+          </BrNotice>
+        ) : loadProblem === 'stage' ? (
+          <BrNotice
+            tone="warning"
+            icon={AlertTriangle}
+            title="This stage isn't in the JMC workflow"
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link href={deskHref}>JMC desk</Link>
+              </Button>
+            }
+          >
+            The link may be from before the workflow&apos;s steps were changed. Open the stage again from the JMC desk.
+          </BrNotice>
+        ) : (
+          <BrNotice
+            tone="danger"
+            icon={AlertTriangle}
+            title="This stage couldn't be loaded"
+            action={
+              <Button size="sm" variant="outline" onClick={() => fetchTasks()}>
+                <RefreshCw className="mr-2 h-4 w-4" /> Try again
+              </Button>
+            }
+          >
+            Check the connection and try again.
+          </BrNotice>
+        )}
+      </BrPage>
+    );
+  }
+
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader title={stage?.name || 'JMC Stage'} backHref={`/billing-recon/${projectSlug}/jmc`} backLabel="Back to JMC" />
+      <BrPage tone={BR_TONE.jmc}>
+        <PageHeader
+          title={stage?.name || 'JMC Stage'}
+          eyebrow={stepIndex >= 0 ? `JMC workflow · step ${stepIndex + 1} of ${workflow.length}` : 'JMC workflow'}
+          description={stage?.description || 'JMC entries waiting for you at this step, and the ones you have already acted on.'}
+          icon={Workflow}
+          backHref={deskHref}
+          backLabel="Back to JMC"
+          actions={
+            <Button variant="outline" onClick={() => fetchTasks()} disabled={isLoading}>
+              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Refresh
+            </Button>
+          }
+        />
+
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <KpiCard
+            label="Waiting at this stage"
+            value={isLoading ? '—' : kpis.waiting}
+            hint={isLoading ? undefined : `${pendingTasks.length} assigned to you`}
+            icon={Clock}
+            tone="orange"
+            accent
+          />
+          <KpiCard
+            label="Overdue"
+            value={isLoading ? '—' : kpis.overdue}
+            hint="Past the step's turnaround"
+            icon={AlarmClock}
+            tone={kpis.overdue ? 'rose' : 'emerald'}
+            accent
+          />
+          <KpiCard
+            label="Oldest waiting"
+            value={isLoading ? '—' : kpis.oldestDays === null ? '—' : `${kpis.oldestDays} d`}
+            hint="Days since it was raised"
+            icon={Hourglass}
+            tone="amber"
+            accent
+          />
+          <KpiCard
+            label="Value waiting"
+            value={isLoading ? '—' : formatAmountCompact(kpis.value)}
+            hint={isLoading ? undefined : formatINR(kpis.value)}
+            icon={IndianRupee}
+            tone="indigo"
+            accent
+          />
+        </div>
+
+        {loadProblem === 'error' && (
+          <BrNotice
+            tone="danger"
+            icon={AlertTriangle}
+            title="The queue couldn't be refreshed"
+            action={
+              <Button size="sm" variant="outline" onClick={() => fetchTasks()}>
+                <RefreshCw className="mr-2 h-4 w-4" /> Try again
+              </Button>
+            }
+          >
+            The figures below are from the last successful load.
+          </BrNotice>
+        )}
+        {!isLoading && !loadProblem && kpis.waiting === 0 && (
+          <BrNotice tone="success" icon={CheckCircle2} title={`Nothing is waiting at ${stage?.name ?? 'this stage'}`}>
+            Every JMC on this project has moved past this step, or none has reached it yet.
+          </BrNotice>
+        )}
+        {!isLoading && !loadProblem && kpis.waiting > 0 && pendingTasks.length === 0 && (
+          <BrNotice tone="info" icon={Info} title="None of these is assigned to you">
+            {kpis.waiting} {kpis.waiting === 1 ? 'entry is' : 'entries are'} waiting here with other assignees.
+          </BrNotice>
+        )}
+
         <Tabs defaultValue="pending">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-2 sm:max-w-md">
             <TabsTrigger value="pending">
               <Clock className="mr-2 h-4 w-4" /> Pending ({pendingTasks.length})
             </TabsTrigger>
@@ -608,7 +815,7 @@ export default function StagePage() {
             {renderTable(completedTasks, 'completed')}
           </TabsContent>
         </Tabs>
-      </div>
+      </BrPage>
 
       {/* Complete dialog with custom date */}
       <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
@@ -655,7 +862,7 @@ export default function StagePage() {
                   completionDate
                 )
               }
-              disabled={!completionDate}
+              disabled={!completionDate || (selectedJmc ? isActionLoading === selectedJmc.id : false)}
             >
               Confirm
             </Button>

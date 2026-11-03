@@ -20,6 +20,8 @@ import {
   recurringDateOnly,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
+import { diffFields } from "@/lib/activity-logger";
 import { ControlledField } from "./controlled-field";
 import { useFieldControl, validateFieldControlRequirements } from "./use-field-control";
 import { Button } from "@/components/ui/button";
@@ -153,6 +155,8 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
     setSaving(true);
     try {
       const paymentRef = doc(db, RP_COLLECTIONS.payments, payment.id);
+      // Filled inside the transaction from the record it actually updated, so the log says what changed.
+      let changes: ReturnType<typeof diffFields> = {};
       await runTransaction(db, async (transaction) => {
         // Re-read, so a payment verified or approved since this form opened is refused rather than
         // edited on the strength of a stale lock check.
@@ -179,6 +183,7 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
           next.outstandingAmount = outstandingAmountOf({ ...current, billAmount });
         }
         transaction.update(paymentRef, next);
+        changes = diffFields(current as unknown as Record<string, unknown>, next);
         transaction.set(
           doc(
             collection(
@@ -208,6 +213,7 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
           },
         );
       });
+      logRecurringActivity(user, "Edit Payment", { changes }, { recordId: payment.id, recordRef: payment.title });
       toast({ title: "Payment updated" });
       router.push(`/recurring-payments/payments/${payment.id}`);
     } catch (error) {

@@ -14,22 +14,21 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { deleteField, doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { Calculator, Eye, FilePlus, Hourglass, IndianRupee, Link2, Pencil, Printer, Receipt, Scale, Send, XCircle } from 'lucide-react';
+import { AlertTriangle, Calculator, Eye, FilePlus, Hourglass, IndianRupee, Link2, Pencil, Printer, Receipt, Scale, Send, XCircle } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { logUserActivity } from '@/lib/activity-logger';
 import { PageHeader } from '@/components/shared/page-header';
-import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { FormDialog } from '@/components/shared/form-dialog';
-import { PageAccessDenied } from '@/components/shared/module-shell';
+import { BrAccessDenied, BrNotice, BrPage, BrPageSkeleton, BR_TONE } from '@/components/billing-recon/page-kit';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -304,45 +303,29 @@ export default function RaBillRegisterPage() {
     />
   );
 
-  if (authLoading) {
-    return (
-      <div className="min-w-0 space-y-4">
-        <Skeleton className="h-12 w-72" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
+  if (authLoading) return <BrPageSkeleton kpis={4} />;
 
-  if (!canView) {
-    return (
-      <div className="min-w-0 space-y-4">
-        <PageHeader title="RA Bills" icon={Calculator} />
-        <PageAccessDenied message="You do not have permission to view this project's RA bills." />
-      </div>
-    );
-  }
+  if (!canView) return <BrAccessDenied message="You do not have permission to view this project's RA bills." />;
 
   if (error) {
     return (
-      <div className="min-w-0 space-y-4">
+      <BrPage tone={BR_TONE.billing}>
         {header}
-        <Card>
-          <CardContent className="space-y-3 py-12 text-center">
-            <p className="font-semibold text-foreground">{error === 'not-found' ? 'Project not found' : 'Could not load the RA bills'}</p>
-            <p className="text-sm text-muted-foreground">
-              {error === 'not-found'
-                ? 'This link does not match any project. It may have been renamed or removed.'
-                : 'Check your connection and try again.'}
-            </p>
-            {error === 'failed' && (
-              <Button type="button" variant="outline" onClick={() => void reload()}>
+        <BrNotice
+          tone="danger"
+          icon={AlertTriangle}
+          title={error === 'not-found' ? 'Project not found' : 'Could not load the RA bills'}
+          action={
+            error === 'failed' ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => void reload()}>
                 Try again
               </Button>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            ) : undefined
+          }
+        >
+          {error === 'not-found' ? 'This link does not match any project. It may have been renamed or removed.' : 'Check your connection and try again.'}
+        </BrNotice>
+      </BrPage>
     );
   }
 
@@ -365,7 +348,7 @@ export default function RaBillRegisterPage() {
         <Button
           type="button"
           variant="outline"
-          className="border-rose-200 text-rose-700 hover:bg-rose-50"
+          className="border-rose-200 text-rose-700 hover:bg-rose-50 dark:border-rose-800/60 dark:text-rose-300 dark:hover:bg-rose-950/40"
           onClick={() => {
             setCancelReason('');
             setCancelId(viewing.id);
@@ -383,16 +366,17 @@ export default function RaBillRegisterPage() {
   ) : null;
 
   return (
-    <div className="min-w-0 space-y-4">
+    <BrPage tone={BR_TONE.billing}>
       {header}
 
-      <KpiGrid>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <KpiCard
           label="RA bills"
           value={loading ? '…' : summary.count}
           hint={loading ? undefined : `${summary.submittedCount} submitted · ${summary.cancelledCount} cancelled`}
           icon={Receipt}
-          tone="blue"
+          tone="cyan"
+          accent
         />
         <KpiCard
           label="Billed value"
@@ -400,6 +384,7 @@ export default function RaBillRegisterPage() {
           hint={loading ? undefined : formatAmount(summary.billedValue)}
           icon={IndianRupee}
           tone="emerald"
+          accent
           info="The total of every RA bill that is not cancelled, drafts included — quantity × the JMC / MVAC line's rate."
         />
         <KpiCard
@@ -408,6 +393,7 @@ export default function RaBillRegisterPage() {
           hint="Not yet submitted"
           icon={Hourglass}
           tone="amber"
+          accent
         />
         <KpiCard
           label="Certified, not billed"
@@ -415,12 +401,29 @@ export default function RaBillRegisterPage() {
           hint={loading ? undefined : `${linesWithBalance} line${linesWithBalance === 1 ? '' : 's'} with a balance`}
           icon={Scale}
           tone="violet"
+          accent
           info="Certified JMC and MVAC quantities not yet on any RA bill, at each line's rate. Rejected and cancelled entries are left out."
         />
-      </KpiGrid>
+      </div>
+
+      {!loading && summary.draftCount > 0 && status !== 'Draft' && (
+        <BrNotice
+          tone="warning"
+          icon={Hourglass}
+          title={`${summary.draftCount} draft${summary.draftCount === 1 ? '' : 's'} not yet submitted`}
+          action={
+            <Button type="button" size="sm" variant="outline" onClick={() => setStatus('Draft')}>
+              Show drafts
+            </Button>
+          }
+        >
+          A draft&apos;s quantities already count as billed, so other bills can&apos;t take them. Submit it, or cancel it to free them.
+        </BrNotice>
+      )}
 
       <TableCard
         title="Bills"
+        icon={Receipt}
         count={loading ? undefined : rows.length}
         total={loading ? undefined : bills.length}
         noun="bill"
@@ -539,6 +542,6 @@ export default function RaBillRegisterPage() {
           <p className="text-xs text-muted-foreground">Leave it empty to remove the link.</p>
         </div>
       </FormDialog>
-    </div>
+    </BrPage>
   );
 }

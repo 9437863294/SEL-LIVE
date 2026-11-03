@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { dispatchNotification } from '@/lib/notifications';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
 
 type BankSnapshot = Pick<RecurringVendor, 'bankName' | 'maskedAccountNumber' | 'ifsc'>;
 
@@ -164,6 +165,13 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
       });
 
       await batch.commit();
+      // Banking values go in masked, as they are stored; a change of account is fraud-relevant, so it is flagged.
+      logRecurringActivity(user, vendorId ? 'Update Vendor' : 'Create Vendor', {
+        bankChanged: bankChanged || undefined,
+        previousBank: vendorId && bankChanged ? previousBank : undefined,
+        newBank: bankChanged ? nextBank : undefined,
+        gstin: normalized.gstin || undefined,
+      }, { recordId: reference.id, recordRef: normalized.name });
 
       if (bankChanged) {
         // Users with no organizationId belong to 'default', exactly as this page scopes them.

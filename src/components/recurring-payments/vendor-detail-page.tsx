@@ -8,6 +8,7 @@ import { AlertTriangle, Edit3, Loader2, Power } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
 import { useToast } from '@/hooks/use-toast';
 import { type PaymentObligation, RP_COLLECTIONS, currency, isOpenObligation, maskAccount, outstandingAmountOf, visibleObligations } from '@/lib/recurring-payments';
 import type { RecurringVendor } from './vendor-management';
@@ -59,6 +60,7 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
     if (status === 'Inactive' && !window.confirm(`Deactivate ${vendor.name}? Its existing payments and history are kept.`)) return;
     try {
       await updateDoc(doc(db, RP_COLLECTIONS.vendors, vendor.id), { status, updatedAt: serverTimestamp() });
+      logRecurringActivity(user, status === 'Active' ? 'Activate Vendor' : 'Deactivate Vendor', {}, { recordId: vendor.id, recordRef: vendor.name });
       toast({ title: `Vendor ${status.toLowerCase()}` });
     } catch {
       toast({ title: `Vendor could not be ${status === 'Active' ? 'activated' : 'deactivated'}`, variant: 'destructive' });

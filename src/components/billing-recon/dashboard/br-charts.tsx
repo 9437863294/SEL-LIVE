@@ -26,7 +26,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { LucideIcon } from 'lucide-react';
+import { BarChart3, GitMerge, TrendingUp, type LucideIcon } from 'lucide-react';
+import { AppTile, type BrTone } from '../page-kit';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { chartChrome } from '@/components/ui/chart';
 import { useTheme } from '@/components/theme/ThemeProvider';
@@ -87,7 +88,8 @@ export function ChartLegend({ items }: { items: Array<{ label: string; color: st
 export function ChartPanel({
   title,
   description,
-  icon: Icon,
+  icon,
+  tone = 'cyan',
   legend,
   className,
   children,
@@ -95,20 +97,21 @@ export function ChartPanel({
   title: string;
   description?: string;
   icon?: LucideIcon;
+  tone?: BrTone;
   legend?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <Card className={cn('min-w-0 shadow-sm', className)}>
-      <CardHeader className="space-y-1 p-4 pb-2">
+    <Card className={cn('min-w-0 rounded-2xl shadow-sm', className)}>
+      <CardHeader className="p-4 pb-2">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-base">
-              {Icon && <Icon className="h-4 w-4 text-muted-foreground" aria-hidden />}
-              {title}
-            </CardTitle>
-            {description && <CardDescription className="text-xs">{description}</CardDescription>}
+          <div className="flex min-w-0 items-start gap-3">
+            {icon && <AppTile tone={tone} icon={icon} size={34} />}
+            <div className="min-w-0">
+              <CardTitle className="text-base leading-tight">{title}</CardTitle>
+              {description && <CardDescription className="mt-0.5 text-xs">{description}</CardDescription>}
+            </div>
           </div>
           {legend}
         </div>
@@ -154,6 +157,8 @@ export function ValueTrendChart({ points, title = 'Monthly value', description }
     <ChartPanel
       title={title}
       description={description ?? 'By JMC / MVAC date and bill date, last 12 months.'}
+      icon={TrendingUp}
+      tone="blue"
       legend={
         <ChartLegend
           items={[
@@ -216,6 +221,8 @@ export function ProjectValueChart({ rows }: { rows: ProjectValueRow[] }) {
     <ChartPanel
       title="Value by project"
       description="Executed, certified and billed — the gaps are what is waiting."
+      icon={BarChart3}
+      tone="cyan"
       legend={
         <ChartLegend
           items={[
@@ -278,6 +285,8 @@ export function StagePipelineChart({ stages, title = 'Waiting at each stage' }: 
     <ChartPanel
       title={title}
       description="Open entries by the stage they wait at."
+      icon={GitMerge}
+      tone="orange"
       legend={
         <ChartLegend
           items={[

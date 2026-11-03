@@ -54,6 +54,7 @@ import {
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
 import { makeIsWorkingDay } from "@/lib/working-hours";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
 import {
   generateMasterCycle,
   loadManualGenerationContext,
@@ -466,6 +467,14 @@ export default function RecurringMasterFormPage({
         createdAt: serverTimestamp(),
       });
       await batch.commit();
+      logRecurringActivity(user, masterId ? "Update Master" : "Create Master", {
+        status,
+        category: draft.category,
+        vendor: draft.vendorName,
+        frequency: draft.frequency,
+        amount: Number(draft.amount || 0),
+        owner: owner?.name || draft.assignedTo,
+      }, { recordId: masterRef.id, recordRef: draft.title });
       let generationNote: string | undefined;
       let generationFailed = false;
       if (intent === "generate") {

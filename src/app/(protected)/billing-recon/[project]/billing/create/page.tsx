@@ -9,31 +9,49 @@
  *
  * Saving re-reads the entries and bills first and re-validates against them, so a quantity billed
  * or decertified elsewhere since the page opened is caught instead of over-billed.
+ *
+ * The lines are shown as one card per JMC / MVAC entry, and the bill's running total and the save
+ * buttons stay pinned at the bottom of the screen while scrolling them.
  */
 
-import { Fragment, Suspense, useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { addDoc, collection, deleteField, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { AlertTriangle, Calculator, Layers, Loader2, Save, Send, Wand2, XCircle } from 'lucide-react';
+import {
+  AlertTriangle,
+  Calculator,
+  CheckCircle2,
+  HardHat,
+  Hash,
+  IndianRupee,
+  Layers,
+  Loader2,
+  Receipt,
+  Save,
+  Send,
+  Truck,
+  Wand2,
+  XCircle,
+} from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { logUserActivity } from '@/lib/activity-logger';
 import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { PageAccessDenied } from '@/components/shared/module-shell';
+import { AppTile, BrAccessDenied, BrNotice, BrPage, BrPageSkeleton, BR_TONE } from '@/components/billing-recon/page-kit';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { readBillingReconRegisters, useBillingReconData } from '@/components/billing-recon/ra-bills/use-billing-recon-data';
 import {
   computeBillableLines,
@@ -41,6 +59,7 @@ import {
   isDuplicateBillNo,
   lineRef,
   nextRaSequence,
+  unbilledCertifiedValue,
   validateRaBillDraft,
   type BillableLine,
   type RaBillDraftInput,
@@ -49,6 +68,7 @@ import {
   QTY_TOLERANCE,
   compareNatural,
   formatAmount,
+  formatAmountCompact,
   formatIsoDate,
   formatQty,
   localIsoDate,
@@ -60,18 +80,11 @@ import { cn } from '@/lib/utils';
 
 const MODULE = 'Billing Recon';
 const RESOURCE = 'Billing Recon.Billing';
-const COLS = 9;
 
 type SourceFilter = 'all' | 'JMC' | 'MVAC';
 
 function PageSkeleton() {
-  return (
-    <div className="min-w-0 space-y-4">
-      <Skeleton className="h-12 w-72" />
-      <Skeleton className="h-40 w-full" />
-      <Skeleton className="h-72 w-full" />
-    </div>
-  );
+  return <BrPageSkeleton kpis={4} blocks={2} />;
 }
 
 export default function NewRaBillPage() {
@@ -91,6 +104,8 @@ interface EntryGroup {
   entryDate: string;
   lines: BillableLine[];
 }
+
+const hasOwn = (record: Record<string, string>, key: string) => Object.prototype.hasOwnProperty.call(record, key);
 
 function RaBillForm() {
   const { project: projectSlug } = useParams() as { project: string };
@@ -217,7 +232,7 @@ function RaBillForm() {
     return billableLines.filter((line) => {
       // A line stays on screen while it has an input value, even one being retyped from blank;
       // "Clear" removes it from the form.
-      const onForm = Object.prototype.hasOwnProperty.call(qty, line.ref);
+      const onForm = hasOwn(qty, line.ref);
       if (onlyOnBill && !onForm) return false;
       if (!showBilled && line.balanceQty <= QTY_TOLERANCE && !onForm) return false;
       if (source !== 'all' && line.source !== source) return false;
@@ -284,6 +299,16 @@ function RaBillForm() {
   const duplicateBillNo = isDuplicateBillNo(billNo, bills, editId || undefined);
   const typedLineCount = Object.values(qty).filter((value) => parseQtyInput(value) !== 0).length;
   const lineErrorCount = Object.keys(validation.lineErrors).length;
+
+  /** What one line adds to the bill (null when it adds nothing or needs correcting). */
+  const lineAmount = (line: BillableLine): number | null => {
+    const parsed = parseQtyInput(qty[line.ref] ?? '');
+    if (validation.lineErrors[line.ref] || !Number.isFinite(parsed) || parsed <= 0) return null;
+    return round2(Math.min(parsed, line.balanceQty) * line.rate);
+  };
+
+  const billableBalanceValue = useMemo(() => unbilledCertifiedValue(billableLines), [billableLines]);
+  const linesWithBalance = useMemo(() => billableLines.filter((line) => line.balanceQty > QTY_TOLERANCE).length, [billableLines]);
 
   /* ── Saving ──────────────────────────────────────────────────────────────────────────────── */
 
@@ -407,14 +432,7 @@ function RaBillForm() {
   if (authLoading) return <PageSkeleton />;
 
   if (!allowed) {
-    return (
-      <div className="min-w-0 space-y-4">
-        <PageHeader title={title} icon={Calculator} backHref={backHref} backLabel="Back to RA bills" />
-        <PageAccessDenied
-          message={editId ? 'You do not have permission to edit RA bills.' : 'You do not have permission to create RA bills.'}
-        />
-      </div>
-    );
+    return <BrAccessDenied message={editId ? 'You do not have permission to edit RA bills.' : 'You do not have permission to create RA bills.'} />;
   }
 
   if (loading && !initialised) return <PageSkeleton />;
@@ -432,25 +450,28 @@ function RaBillForm() {
 
   if (blocked) {
     return (
-      <div className="min-w-0 space-y-4">
+      <BrPage tone={BR_TONE.billing}>
         <PageHeader title={title} icon={Calculator} backHref={backHref} backLabel="Back to RA bills" />
-        <Card>
-          <CardContent className="space-y-3 py-12 text-center">
-            <p className="font-semibold text-foreground">{blocked.title}</p>
-            <p className="text-sm text-muted-foreground">{blocked.text}</p>
-            <div className="flex flex-wrap justify-center gap-2">
+        <BrNotice
+          tone="danger"
+          icon={AlertTriangle}
+          title={blocked.title}
+          action={
+            <div className="flex flex-wrap gap-2">
               {error === 'failed' && (
-                <Button type="button" variant="outline" onClick={() => void reload()}>
+                <Button type="button" size="sm" variant="outline" onClick={() => void reload()}>
                   Try again
                 </Button>
               )}
-              <Button asChild variant="outline">
+              <Button asChild size="sm" variant="outline">
                 <Link href={backHref}>Back to RA bills</Link>
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          }
+        >
+          {blocked.text}
+        </BrNotice>
+      </BrPage>
     );
   }
 
@@ -470,8 +491,10 @@ function RaBillForm() {
     </>
   );
 
+  const entriesOnBill = new Set(validation.items.map((item) => `${item.source}|${item.entryId}`)).size;
+
   return (
-    <div className="min-w-0 space-y-4 pb-24">
+    <BrPage tone={BR_TONE.billing} className="pb-24">
       <PageHeader
         title={editing ? `Edit ${editing.billNo}` : title}
         icon={Calculator}
@@ -481,70 +504,116 @@ function RaBillForm() {
         meta={project ? [{ label: 'Project', value: project.projectName }, { label: 'RA no', value: String(suggestedSequence) }] : undefined}
       />
 
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <KpiCard
+          label="Lines with a balance"
+          value={linesWithBalance.toLocaleString('en-IN')}
+          hint={`of ${billableLines.length.toLocaleString('en-IN')} certified lines`}
+          icon={Layers}
+          tone="blue"
+          accent
+        />
+        <KpiCard
+          label="Billable balance"
+          value={formatAmountCompact(billableBalanceValue)}
+          hint={formatAmount(billableBalanceValue)}
+          icon={IndianRupee}
+          tone="violet"
+          accent
+          info="Certified JMC and MVAC quantities no other bill carries, at each line's rate."
+        />
+        <KpiCard
+          label="On this bill"
+          value={formatAmountCompact(validation.totalAmount)}
+          hint={`${validation.items.length} line${validation.items.length === 1 ? '' : 's'} · ${entriesOnBill} entr${entriesOnBill === 1 ? 'y' : 'ies'}`}
+          icon={Receipt}
+          tone="cyan"
+          accent
+        />
+        <KpiCard
+          label="RA no"
+          value={`RA ${suggestedSequence}`}
+          hint={billNo.trim() || suggestedBillNo}
+          icon={Hash}
+          tone="slate"
+          accent
+        />
+      </div>
+
       {/* Header fields */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Bill details</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="ra-bill-no">Bill no</Label>
-            <Input
-              id="ra-bill-no"
-              value={billNo}
-              onChange={(event) => setBillNo(event.target.value)}
-              autoComplete="off"
-              aria-invalid={duplicateBillNo}
-              className={cn(duplicateBillNo && 'border-rose-400')}
-            />
-            {duplicateBillNo && <p className="text-xs text-rose-700">Another RA bill of this project already has this number.</p>}
-            {!editId && billNo.trim() !== suggestedBillNo && (
-              <button type="button" className="text-xs text-primary hover:underline" onClick={() => setBillNo(suggestedBillNo)}>
-                Use {suggestedBillNo}
-              </button>
-            )}
+      <Card className="min-w-0">
+        <CardContent className="space-y-4 p-4 sm:p-5">
+          <div className="flex items-center gap-2.5">
+            <AppTile tone="sky" icon={Receipt} size={30} />
+            <div className="min-w-0">
+              <h2 className="text-base font-bold leading-tight text-foreground">Bill details</h2>
+              <p className="text-xs text-muted-foreground">The number is suggested from the project&apos;s site code and the next RA sequence.</p>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ra-bill-date">Bill date</Label>
-            <Input id="ra-bill-date" type="date" value={billDate} onChange={(event) => setBillDate(event.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ra-bill-from">Period from (optional)</Label>
-            <Input id="ra-bill-from" type="date" value={periodFrom} onChange={(event) => setPeriodFrom(event.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ra-bill-to">Period to (optional)</Label>
-            <Input id="ra-bill-to" type="date" value={periodTo} onChange={(event) => setPeriodTo(event.target.value)} />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
-            <Label htmlFor="ra-bill-remarks">Remarks (optional)</Label>
-            <Textarea id="ra-bill-remarks" value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={2} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="ra-bill-no">Bill no</Label>
+              <Input
+                id="ra-bill-no"
+                value={billNo}
+                onChange={(event) => setBillNo(event.target.value)}
+                autoComplete="off"
+                aria-invalid={duplicateBillNo}
+                className={cn(duplicateBillNo && 'border-rose-400')}
+              />
+              {duplicateBillNo && <p className="text-xs text-rose-700 dark:text-rose-300">Another RA bill of this project already has this number.</p>}
+              {!editId && billNo.trim() !== suggestedBillNo && (
+                <button type="button" className="text-xs text-primary hover:underline" onClick={() => setBillNo(suggestedBillNo)}>
+                  Use {suggestedBillNo}
+                </button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ra-bill-date">Bill date</Label>
+              <Input id="ra-bill-date" type="date" value={billDate} onChange={(event) => setBillDate(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ra-bill-from">Period from (optional)</Label>
+              <Input id="ra-bill-from" type="date" value={periodFrom} onChange={(event) => setPeriodFrom(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ra-bill-to">Period to (optional)</Label>
+              <Input id="ra-bill-to" type="date" value={periodTo} onChange={(event) => setPeriodTo(event.target.value)} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
+              <Label htmlFor="ra-bill-remarks">Remarks (optional)</Label>
+              <Textarea id="ra-bill-remarks" value={remarks} onChange={(event) => setRemarks(event.target.value)} rows={2} />
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {showBillErrors && (
-        <div role="alert" className="flex gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <ul className="space-y-0.5">
-            {validation.errors.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
+        <div role="alert">
+          <BrNotice tone="danger" icon={AlertTriangle} title="Check the bill before saving">
+            <ul className="list-disc space-y-0.5 pl-4">
+              {validation.errors.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          </BrNotice>
         </div>
       )}
 
       {staleRefs.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 sm:flex-row sm:items-center">
-          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="flex-1">
-            {staleRefs.length} line{staleRefs.length === 1 ? ' on this draft is' : 's on this draft are'} no longer certified (the entry was
-            rejected, cancelled or changed). Remove {staleRefs.length === 1 ? 'it' : 'them'} to save.
-          </span>
-          <Button type="button" size="sm" variant="outline" onClick={() => clearLines(staleRefs)}>
-            <XCircle className="mr-2 h-4 w-4" /> Remove
-          </Button>
-        </div>
+        <BrNotice
+          tone="warning"
+          icon={AlertTriangle}
+          title={`${staleRefs.length} line${staleRefs.length === 1 ? ' is' : 's are'} no longer certified`}
+          action={
+            <Button type="button" size="sm" variant="outline" onClick={() => clearLines(staleRefs)}>
+              <XCircle className="mr-2 h-4 w-4" /> Remove
+            </Button>
+          }
+        >
+          The entry was rejected, cancelled or changed since {staleRefs.length === 1 ? 'this line was' : 'these lines were'} put on the draft. Remove{' '}
+          {staleRefs.length === 1 ? 'it' : 'them'} to save.
+        </BrNotice>
       )}
 
       <TableCard
@@ -554,12 +623,13 @@ function RaBillForm() {
         total={billableLines.length}
         noun="line"
         scroll="natural"
+        description="One card per JMC / MVAC entry. Type the quantity to bill, or fill a line's whole balance."
         actions={
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => fillLines(visibleLines)} disabled={!visibleLines.some((l) => l.balanceQty > QTY_TOLERANCE)}>
               <Wand2 className="mr-2 h-4 w-4" /> Fill balance (shown)
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => clearLines(visibleLines.map((l) => l.ref))} disabled={!visibleLines.some((l) => qty[l.ref])}>
+            <Button type="button" variant="outline" size="sm" onClick={() => clearLines(visibleLines.map((l) => l.ref))} disabled={!visibleLines.some((l) => hasOwn(qty, l.ref))}>
               Clear (shown)
             </Button>
           </>
@@ -654,147 +724,185 @@ function RaBillForm() {
           </FilterBar>
         }
       >
-        <Table className="min-w-[44rem]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>BOQ SL No</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="hidden md:table-cell">Unit</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Rate</TableHead>
-              <TableHead className="hidden text-right lg:table-cell">Certified</TableHead>
-              <TableHead className="hidden text-right lg:table-cell">Prev. billed</TableHead>
-              <TableHead className="text-right">Balance</TableHead>
-              <TableHead className="text-right">This bill</TableHead>
-              <TableHead className="hidden text-right sm:table-cell">Amount</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {billableLines.length === 0 ? (
-              <TableEmpty colSpan={COLS}>
-                Nothing is certified yet. Certify quantities on the project&apos;s JMC or MVAC entries, then bill them here.
-              </TableEmpty>
-            ) : groups.length === 0 ? (
-              <TableEmpty colSpan={COLS}>
-                {showBilled || activeFilters || search ? 'No lines match these filters.' : 'Every certified line is fully billed. Turn on “Show fully billed” to see them.'}
-              </TableEmpty>
-            ) : (
-              groups.map((group) => {
-                const fillable = group.lines.filter((line) => line.balanceQty > QTY_TOLERANCE);
-                return (
-                  <Fragment key={group.key}>
-                    <TableRow className="bg-muted/60 hover:bg-muted/60">
-                      <TableCell colSpan={COLS} className="py-2">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <span className="rounded bg-background px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground ring-1 ring-border">
-                            {group.source}
-                          </span>
-                          <span className="font-semibold text-foreground">{group.entryNo || group.entryId}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatIsoDate(group.entryDate, 'No date')} · {group.lines.length} line{group.lines.length === 1 ? '' : 's'}
-                          </span>
-                          {fillable.length > 0 && (
-                            <Button type="button" variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => fillLines(fillable)}>
-                              <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Fill this entry
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {group.lines.map((line) => {
-                      const typed = qty[line.ref] ?? '';
-                      const parsed = parseQtyInput(typed);
-                      const lineError = validation.lineErrors[line.ref];
-                      const amount =
-                        !lineError && Number.isFinite(parsed) && parsed > 0 ? round2(Math.min(parsed, line.balanceQty) * line.rate) : null;
-                      return (
-                        <TableRow key={line.ref} className={cn(lineError && 'bg-rose-50')}>
-                          <TableCell className="whitespace-nowrap align-top font-medium">{line.boqSlNo || '—'}</TableCell>
-                          <TableCell className="min-w-[12rem] max-w-md align-top">
-                            <div className="line-clamp-2" title={line.description}>
-                              {line.description || '—'}
-                            </div>
-                            {(line.scope1 || line.scope2) && (
-                              <div className="text-xs text-muted-foreground">{[line.scope1, line.scope2].filter(Boolean).join(' / ')}</div>
-                            )}
-                            <div className="mt-0.5 text-xs text-muted-foreground lg:hidden">
-                              Cert {formatQty(line.certifiedQty)} · Prev {formatQty(line.previouslyBilledQty)}
-                              <span className="md:hidden">
-                                {' '}
-                                · {formatAmount(line.rate)}/{line.unit || 'unit'}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden align-top md:table-cell">{line.unit || '—'}</TableCell>
-                          <TableCell className="hidden whitespace-nowrap text-right align-top tabular-nums md:table-cell">{formatAmount(line.rate)}</TableCell>
-                          <TableCell className="hidden text-right align-top tabular-nums lg:table-cell">{formatQty(line.certifiedQty)}</TableCell>
-                          <TableCell className="hidden text-right align-top tabular-nums lg:table-cell">{formatQty(line.previouslyBilledQty)}</TableCell>
-                          <TableCell
-                            className={cn(
-                              'text-right align-top tabular-nums',
-                              line.balanceQty > QTY_TOLERANCE ? 'font-medium text-foreground' : 'text-muted-foreground',
-                            )}
+        <div className="space-y-3 p-3 sm:p-4">
+          {billableLines.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
+              <Layers className="h-6 w-6 opacity-60" aria-hidden />
+              Nothing is certified yet. Certify quantities on the project&apos;s JMC or MVAC entries, then bill them here.
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
+              <CheckCircle2 className="h-6 w-6 opacity-60" aria-hidden />
+              {showBilled || activeFilters || search ? 'No lines match these filters.' : 'Every certified line is fully billed. Turn on “Show fully billed” to see them.'}
+            </div>
+          ) : (
+            groups.map((group) => {
+              const fillable = group.lines.filter((line) => line.balanceQty > QTY_TOLERANCE);
+              const balanceValue = round2(fillable.reduce((sum, line) => sum + line.balanceQty * line.rate, 0));
+              const onBill = group.lines.reduce((sum, line) => sum + (lineAmount(line) ?? 0), 0);
+              const errors = group.lines.filter((line) => validation.lineErrors[line.ref]).length;
+              const isJmc = group.source === 'JMC';
+              return (
+                <section
+                  key={group.key}
+                  aria-label={`${group.source} ${group.entryNo || group.entryId}`}
+                  className={cn(
+                    'min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm',
+                    errors ? 'border-rose-300 dark:border-rose-800/70' : onBill > 0 ? 'border-sky-300 dark:border-sky-800/70' : 'border-border',
+                  )}
+                >
+                  <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-muted/40 px-3 py-2.5 sm:px-4">
+                    <AppTile tone={isJmc ? 'orange' : 'amber'} icon={isJmc ? HardHat : Truck} size={30} />
+                    <div className="min-w-0 flex-1 basis-[12rem]">
+                      <div className="truncate font-semibold text-foreground">
+                        <span className="mr-1.5 text-xs font-bold text-muted-foreground">{group.source}</span>
+                        {group.entryNo || group.entryId}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatIsoDate(group.entryDate, 'No date')} · {group.lines.length} line{group.lines.length === 1 ? '' : 's'}
+                        {balanceValue > 0 ? ` · ${formatAmount(balanceValue)} to bill` : ''}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {errors > 0 && (
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
+                          {errors} to correct
+                        </span>
+                      )}
+                      {onBill > 0 && (
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-sky-800 dark:bg-sky-950/50 dark:text-sky-200">
+                          On bill {formatAmount(onBill)}
+                        </span>
+                      )}
+                      {fillable.length > 0 && (
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => fillLines(fillable)}>
+                          <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Fill this entry
+                        </Button>
+                      )}
+                    </div>
+                  </header>
+
+                  <Table className="min-w-[38rem]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>BOQ SL No</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="hidden md:table-cell">Unit</TableHead>
+                        <TableHead className="hidden text-right md:table-cell">Rate</TableHead>
+                        <TableHead className="hidden text-right lg:table-cell">Certified</TableHead>
+                        <TableHead className="hidden text-right lg:table-cell">Prev. billed</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
+                        <TableHead className="text-right">This bill</TableHead>
+                        <TableHead className="hidden text-right sm:table-cell">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {group.lines.map((line) => {
+                        const typed = qty[line.ref] ?? '';
+                        const lineError = validation.lineErrors[line.ref];
+                        const amount = lineAmount(line);
+                        return (
+                          <TableRow
+                            key={line.ref}
+                            className={cn(lineError ? 'bg-rose-50 dark:bg-rose-950/30' : amount !== null && 'bg-sky-50/60 dark:bg-sky-950/20')}
                           >
-                            {formatQty(line.balanceQty)}
-                          </TableCell>
-                          <TableCell className="align-top">
-                            <div className="flex items-center justify-end gap-1">
-                              <Input
-                                inputMode="decimal"
-                                value={typed}
-                                onChange={(event) => setLineQty(line.ref, event.target.value)}
-                                placeholder="0"
-                                aria-label={`Quantity to bill on ${line.entryNo} line ${line.boqSlNo}`}
-                                aria-invalid={Boolean(lineError)}
-                                className={cn('h-8 w-24 text-right tabular-nums', lineError && 'border-rose-400')}
-                              />
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0"
-                                title="Fill the balance"
-                                aria-label={`Fill the balance on ${line.entryNo} line ${line.boqSlNo}`}
-                                disabled={line.balanceQty <= QTY_TOLERANCE}
-                                onClick={() => setLineQty(line.ref, String(line.balanceQty))}
-                              >
-                                <Wand2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            {lineError && <p className="mt-1 max-w-[14rem] text-right text-xs text-rose-700 sm:ml-auto">{lineError}</p>}
-                            {amount !== null && <p className="mt-1 text-right text-xs text-muted-foreground sm:hidden">{formatAmount(amount)}</p>}
-                          </TableCell>
-                          <TableCell className="hidden whitespace-nowrap text-right align-top tabular-nums sm:table-cell">
-                            {amount !== null ? formatAmount(amount) : <span className="text-muted-foreground">—</span>}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </Fragment>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
+                            <TableCell className="whitespace-nowrap align-top font-medium">{line.boqSlNo || '—'}</TableCell>
+                            <TableCell className="min-w-[12rem] max-w-md align-top">
+                              <div className="line-clamp-2" title={line.description}>
+                                {line.description || '—'}
+                              </div>
+                              {(line.scope1 || line.scope2) && (
+                                <div className="text-xs text-muted-foreground">{[line.scope1, line.scope2].filter(Boolean).join(' / ')}</div>
+                              )}
+                              <div className="mt-0.5 text-xs text-muted-foreground lg:hidden">
+                                Cert {formatQty(line.certifiedQty)} · Prev {formatQty(line.previouslyBilledQty)}
+                                <span className="md:hidden">
+                                  {' '}
+                                  · {formatAmount(line.rate)}/{line.unit || 'unit'}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden align-top md:table-cell">{line.unit || '—'}</TableCell>
+                            <TableCell className="hidden whitespace-nowrap text-right align-top tabular-nums md:table-cell">{formatAmount(line.rate)}</TableCell>
+                            <TableCell className="hidden text-right align-top tabular-nums lg:table-cell">{formatQty(line.certifiedQty)}</TableCell>
+                            <TableCell className="hidden text-right align-top tabular-nums lg:table-cell">{formatQty(line.previouslyBilledQty)}</TableCell>
+                            <TableCell
+                              className={cn(
+                                'text-right align-top tabular-nums',
+                                line.balanceQty > QTY_TOLERANCE ? 'font-medium text-foreground' : 'text-muted-foreground',
+                              )}
+                            >
+                              {formatQty(line.balanceQty)}
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <div className="flex items-center justify-end gap-1">
+                                <Input
+                                  inputMode="decimal"
+                                  value={typed}
+                                  onChange={(event) => setLineQty(line.ref, event.target.value)}
+                                  placeholder="0"
+                                  aria-label={`Quantity to bill on ${line.entryNo} line ${line.boqSlNo}`}
+                                  aria-invalid={Boolean(lineError)}
+                                  className={cn('h-8 w-24 text-right tabular-nums', lineError && 'border-rose-400')}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0"
+                                  title="Fill the balance"
+                                  aria-label={`Fill the balance on ${line.entryNo} line ${line.boqSlNo}`}
+                                  disabled={line.balanceQty <= QTY_TOLERANCE}
+                                  onClick={() => setLineQty(line.ref, String(line.balanceQty))}
+                                >
+                                  <Wand2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              {lineError && <p className="mt-1 max-w-[14rem] text-right text-xs text-rose-700 dark:text-rose-300 sm:ml-auto">{lineError}</p>}
+                              {amount !== null && <p className="mt-1 text-right text-xs text-muted-foreground sm:hidden">{formatAmount(amount)}</p>}
+                            </TableCell>
+                            <TableCell className="hidden whitespace-nowrap text-right align-top tabular-nums sm:table-cell">
+                              {amount !== null ? formatAmount(amount) : <span className="text-muted-foreground">—</span>}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </section>
+              );
+            })
+          )}
+        </div>
       </TableCard>
 
       {/* Totals and save, kept in reach while scrolling the lines (above the phone's tab bar). */}
       <div className="sticky bottom-20 z-20 -mx-1 print:hidden lg:bottom-3">
-        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-lg sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1 text-sm">
-            <div className="font-semibold text-foreground">
-              {validation.items.length} line{validation.items.length === 1 ? '' : 's'} · {formatAmount(validation.totalAmount)}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {lineErrorCount > 0
-                ? `${lineErrorCount} line${lineErrorCount === 1 ? ' needs' : 's need'} correcting`
-                : typedLineCount === 0
-                  ? 'Enter a quantity on the lines to bill'
-                  : 'Quantity × each line’s rate — GST, retention and deductions are recorded in Bill Tracking'}
+        <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-card/95 p-3 shadow-lg backdrop-blur dark:border-sky-900/60 sm:flex-row sm:items-center sm:px-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="hidden shrink-0 sm:block">
+              <AppTile tone="sky" icon={Calculator} size={38} />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="text-xl font-extrabold tabular-nums text-foreground">{formatAmount(validation.totalAmount)}</span>
+                <span className="text-sm text-muted-foreground">
+                  {validation.items.length} line{validation.items.length === 1 ? '' : 's'}
+                  {entriesOnBill > 0 ? ` · ${entriesOnBill} entr${entriesOnBill === 1 ? 'y' : 'ies'}` : ''}
+                </span>
+              </div>
+              <div className={cn('text-xs', lineErrorCount > 0 ? 'font-medium text-rose-700 dark:text-rose-300' : 'text-muted-foreground')}>
+                {lineErrorCount > 0
+                  ? `${lineErrorCount} line${lineErrorCount === 1 ? ' needs' : 's need'} correcting`
+                  : typedLineCount === 0
+                    ? 'Enter a quantity on the lines to bill'
+                    : 'Quantity × each line’s rate — GST, retention and deductions are recorded in Bill Tracking'}
+              </div>
             </div>
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">{saveButtons}</div>
         </div>
       </div>
-    </div>
+    </BrPage>
   );
 }

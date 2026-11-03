@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { dispatchNotification } from '@/lib/notifications';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { addBusinessHours } from '@/lib/working-hours';
 import {
@@ -241,6 +242,14 @@ async function advancePayment(
     result = { moved: true, stage: routed.stage, notify: routed.notify, destinationStepId: routed.destinationStepId };
   });
 
+  if (result.moved) {
+    logRecurringActivity(
+      { id: actor.userId, name: actor.userName, email: actor.userEmail },
+      `Workflow: ${action}`,
+      { step: step.name, movedTo: result.stage, source: 'E-Approval', comment: comment || undefined },
+      { recordId: payment.id, recordRef: payment.title },
+    );
+  }
   return result;
 }
 
@@ -662,6 +671,12 @@ export async function detachRecurringPaymentApproval(
     detachedReason: reason || 'Detached by an administrator.',
     lastError: null,
   });
+  logRecurringActivity(
+    { id: actor.userId, name: actor.userName, email: actor.userEmail },
+    'Unlink E-Approval',
+    { requestId: payment.eApproval.requestId, referenceNo: payment.eApproval.referenceNo, reason: reason || undefined },
+    { recordId: paymentId, recordRef: payment.title },
+  );
   await updateEApprovalSourceLink(
     payment.eApproval.requestId,
     {

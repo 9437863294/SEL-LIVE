@@ -6,6 +6,7 @@ import { ALL_WEEKDAYS, automationRunDue, DEFAULT_AUTOMATION_RUN_TIME, buildPayme
 import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
 import { dispatchNotificationOnce } from '@/lib/notifications-server';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { logServerActivity, requestProvenance, SYSTEM_LOG_ACTOR } from '@/lib/activity-logger-server';
 import type { Holiday } from '@/lib/types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -102,6 +103,14 @@ export async function GET(request: Request) {
     }
     try {
       const result = await runRecurringAutomation(organizationId, 'Scheduled automation run');
+      // The system audit trail's record of the run; the automation log beside it keeps the detail.
+      await logServerActivity({
+        ...SYSTEM_LOG_ACTOR,
+        module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
+        action: 'Scheduled Automation Run',
+        details: { organizationId, localDate: check.localDate, ...result },
+        source: 'cron',
+      });
       await claim.update({ status: 'Completed', completedAt: FieldValue.serverTimestamp(), result });
       ran.push({ organizationId, localDate: check.localDate, result });
     } catch (error) {
@@ -418,6 +427,7 @@ async function runRecurringAutomation(targetOrganizationId: string, jobName = 'M
  */
 export async function POST(request: Request) {
   let organizationId: string;
+  let actor: { userId: string; userName: string; userEmail?: string };
   try {
     const context = await authenticateAccess(request);
     requireAnyAccess(context, [
@@ -425,9 +435,19 @@ export async function POST(request: Request) {
       { resource: 'Recurring Payments.Settings', action: 'Edit' },
     ]);
     organizationId = context.organizationId;
+    actor = { userId: context.userId, userName: context.userName, userEmail: context.userEmail ?? undefined };
   } catch (error) {
     const { message, status } = accessErrorResponse(error);
     return NextResponse.json({ error: message }, { status });
   }
-  return NextResponse.json(await runRecurringAutomation(organizationId));
+  const result = await runRecurringAutomation(organizationId);
+  await logServerActivity({
+    ...actor,
+    module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
+    action: 'Run Automation Now',
+    details: { organizationId, ...result },
+    ...requestProvenance(request),
+    source: 'api',
+  });
+  return NextResponse.json(result);
 }

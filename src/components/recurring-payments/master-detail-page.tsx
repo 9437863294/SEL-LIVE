@@ -47,6 +47,7 @@ import {
   loadManualGenerationContext,
 } from "@/lib/recurring-payments-generation";
 import { makeIsWorkingDay } from "@/lib/working-hours";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -212,6 +213,7 @@ export default function RecurringMasterDetailPage({
           createdAt: serverTimestamp(),
         },
       );
+      logRecurringActivity(user, next === "Active" ? "Resume Master" : "Pause Master", { from: master.status, to: next }, { recordId: master.id, recordRef: master.title });
       toast({ title: `Master ${next.toLowerCase()}` });
     });
 
@@ -233,6 +235,7 @@ export default function RecurringMasterDetailPage({
         createdBy: user.id,
         updatedBy: user.id,
       });
+      logRecurringActivity(user, "Duplicate Master", { copiedFrom: master.id, copyId: copy.id }, { recordId: copy.id, recordRef: `${master.title} (Copy)` });
       toast({ title: "Draft copy created" });
       router.push(`/recurring-payments/masters/${copy.id}/edit`);
     });
@@ -296,6 +299,7 @@ export default function RecurringMasterDetailPage({
         userName: user.name,
         createdAt: serverTimestamp(),
       });
+      logRecurringActivity(user, "Archive Master", { from: "master details" }, { recordId: master.id, recordRef: master.title });
       toast({ title: "Master archived; historical payments retained" });
       router.push("/recurring-payments/masters");
     });

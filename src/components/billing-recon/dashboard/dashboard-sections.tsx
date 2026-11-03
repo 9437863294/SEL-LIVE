@@ -8,8 +8,9 @@
  * also carries its count and value as text.
  */
 
-import type { ElementType, ReactNode } from 'react';
-import { ArrowRight, Clock, FileWarning, ListChecks, Receipt, Scale, TrendingUp } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ArrowRight, CalendarDays, Clock, FileWarning, ListChecks, Receipt, Scale, TrendingUp, type LucideIcon } from 'lucide-react';
+import { AppTile, type BrTone } from '../page-kit';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { StatusBadge } from '@/components/shared/status-badge';
@@ -34,29 +35,34 @@ const AGE_RAMP = {
   dark: ['#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4'],
 } as const;
 
-function Panel({
+/** A dashboard panel: Bank-Balance-style card with a gradient icon tile beside the title. */
+export function Panel({
   title,
   description,
-  icon: Icon,
+  icon,
+  tone = 'cyan',
   className,
   bodyClassName,
   children,
 }: {
   title: string;
   description?: string;
-  icon?: ElementType;
+  icon?: LucideIcon;
+  tone?: BrTone;
   className?: string;
   bodyClassName?: string;
   children: ReactNode;
 }) {
   return (
-    <Card className={cn('min-w-0 shadow-sm', className)}>
-      <CardHeader className="space-y-1 p-4 pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          {Icon && <Icon className="h-4 w-4 text-muted-foreground" aria-hidden />}
-          {title}
-        </CardTitle>
-        {description && <CardDescription className="text-xs">{description}</CardDescription>}
+    <Card className={cn('min-w-0 rounded-2xl shadow-sm', className)}>
+      <CardHeader className="p-4 pb-2">
+        <div className="flex items-start gap-3">
+          {icon && <AppTile tone={tone} icon={icon} size={34} />}
+          <div className="min-w-0">
+            <CardTitle className="text-base leading-tight">{title}</CardTitle>
+            {description && <CardDescription className="mt-0.5 text-xs">{description}</CardDescription>}
+          </div>
+        </div>
       </CardHeader>
       <CardContent className={cn('p-4 pt-2', bodyClassName)}>{children}</CardContent>
     </Card>
@@ -94,7 +100,7 @@ export function ConversionPanel({ boq, executed, certified, billed, boqLoaded }:
     { label: 'Billed', value: billed, color: series.billed, ratio: `${percent(billed, certified)}% of certified` },
   ];
   return (
-    <Panel title="From BOQ to billed" description="How far the work has moved through measurement, client certification and billing." icon={TrendingUp}>
+    <Panel title="From BOQ to billed" description="How far the work has moved through measurement, client certification and billing." icon={TrendingUp} tone="blue">
       <div className="space-y-3.5">
         {steps.map((step, i) => (
           <div key={step.label} className="space-y-1">
@@ -149,7 +155,7 @@ export function PeriodPanel({ comparison }: { comparison: PeriodComparison }) {
     { label: comparison.financialYearLabel, figures: comparison.financialYear },
   ];
   return (
-    <Panel title="This month, last month, this year" description="By JMC / MVAC date and bill date. The arrow compares with last month." icon={Clock} bodyClassName="p-0 sm:p-4 sm:pt-2">
+    <Panel title="This month, last month, this year" description="By JMC / MVAC date and bill date. The arrow compares with last month." icon={CalendarDays} tone="indigo" bodyClassName="p-0 sm:p-4 sm:pt-2">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[26rem] text-sm">
           <thead>
@@ -189,7 +195,7 @@ export function AgeingPanel({ buckets, undated }: { buckets: AgeBucket[]; undate
   const max = Math.max(1, ...buckets.map((b) => b.count));
   const total = buckets.reduce((s, b) => s + b.count, 0);
   return (
-    <Panel title="How long open entries have waited" description="Open JMC and MVAC entries by days since they were raised." icon={Clock}>
+    <Panel title="How long open entries have waited" description="Open JMC and MVAC entries by days since they were raised." icon={Clock} tone="amber">
       {total === 0 && undated === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No open entries.</p>
       ) : (
@@ -226,7 +232,7 @@ export function StatusPanel({ rows }: { rows: StatusRow[] }) {
   const series = useBrSeries();
   const max = Math.max(1, ...rows.map((r) => r.jmc + r.mvac));
   return (
-    <Panel title="Entries by status" description="Every JMC and MVAC entry, open or closed." icon={ListChecks}>
+    <Panel title="Entries by status" description="Every JMC and MVAC entry, open or closed." icon={ListChecks} tone="slate">
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">No entries yet.</p>
       ) : (
@@ -279,7 +285,7 @@ export function ScopesPanel({ rows, showProject }: { rows: ScopeRow[]; showProje
     { header: 'To bill', align: 'right', mobile: 'aside', cell: (r) => <span className="font-semibold tabular-nums text-foreground">{compactInr(r.toBillValue)}</span> },
   ];
   return (
-    <Panel title="Scopes waiting to be billed" description="Certified value not yet on an RA bill, by BOQ scope, at BOQ rates." icon={Receipt} bodyClassName="p-0 sm:p-4 sm:pt-2">
+    <Panel title="Scopes waiting to be billed" description="Certified value not yet on an RA bill, by BOQ scope, at BOQ rates." icon={Receipt} tone="emerald" bodyClassName="p-0 sm:p-4 sm:pt-2">
       <DataList rows={rows} columns={columns} dense empty="Nothing certified is waiting to be billed." />
     </Panel>
   );
@@ -321,7 +327,7 @@ export function ExceptionsPanel({ summary, showProject, limit = 8 }: { summary: 
   ];
   const kinds = Object.keys(summary.counts) as ExceptionKind[];
   return (
-    <Panel title="Exceptions" description="Where the BOQ, the measurements and the bills don't agree." icon={FileWarning} bodyClassName="space-y-3 p-0 pb-2 sm:p-4 sm:pt-2">
+    <Panel title="Exceptions" description="Where the BOQ, the measurements and the bills don't agree." icon={FileWarning} tone="rose" bodyClassName="space-y-3 p-0 pb-2 sm:p-4 sm:pt-2">
       <div className="grid grid-cols-2 gap-2 px-4 sm:grid-cols-4 sm:px-0">
         {kinds.map((k) => (
           <div key={k} className="rounded-lg border border-border bg-card px-3 py-2" title={EXCEPTION_HINT[k]}>
@@ -370,7 +376,7 @@ export function BillsPanel({ rows, showProject, limit = 8 }: { rows: BillRow[]; 
     { header: 'Amount', align: 'right', cell: (r) => <span className="tabular-nums">{formatInr(r.amount)}</span> },
   ];
   return (
-    <Panel title="RA bills" description="Quantity bills to the client; their money is followed in Bill Tracking." icon={Scale} bodyClassName="space-y-4 p-0 pb-2 sm:p-4 sm:pt-2">
+    <Panel title="RA bills" description="Quantity bills to the client; their money is followed in Bill Tracking." icon={Scale} tone="sky" bodyClassName="space-y-4 p-0 pb-2 sm:p-4 sm:pt-2">
       <div className="space-y-2">
         <p className="px-4 text-sm font-medium text-foreground sm:px-0">
           Needs attention <span className="font-normal text-muted-foreground">({attention.length})</span>

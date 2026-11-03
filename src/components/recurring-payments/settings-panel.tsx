@@ -25,6 +25,8 @@ import {
 import { db } from "@/lib/firebase";
 import type { Project } from "@/lib/types";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
+import { diffFields } from "@/lib/activity-logger";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -126,9 +128,11 @@ export default function RecurringPaymentSettingsPanel({
   organizationId: string;
   section: "approvals" | "notifications" | "automation" | "organization";
 }) {
-  const { users } = useAuth();
+  const { user, users } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  /** The settings as stored — what a save is compared against, so its log names what changed. */
+  const [storedSettings, setStoredSettings] = useState<RecurringPaymentSettings | null>(null);
   const { projects, loading: scopesLoading } = useGlobalScopes();
   const [settings, setSettings] = useState<RecurringPaymentSettings>({
     ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
@@ -164,6 +168,7 @@ export default function RecurringPaymentSettingsPanel({
         organizationId,
       );
       setSettings(merged);
+      setStoredSettings(merged);
       setDaysBeforeText(merged.notifications.daysBefore.join(", "));
       setDaysAfterText(merged.notifications.daysAfter.join(", "));
       setRecipientsText(merged.notifications.recipients.join(", "));
@@ -248,6 +253,17 @@ export default function RecurringPaymentSettingsPanel({
         },
         { merge: true },
       );
+      const group = section === "organization" ? "controls" : section;
+      logRecurringActivity(user, "Update Settings", {
+        section,
+        changes: {
+          ...diffFields(storedSettings?.[group] ?? null, valueToSave[group]),
+          ...(section === "organization"
+            ? diffFields({ organizationName: storedSettings?.organizationName }, { organizationName: valueToSave.organizationName })
+            : {}),
+        },
+      });
+      setStoredSettings(valueToSave);
       setSettings(valueToSave);
       setVarianceText(String(valueToSave.controls.varianceWarningPercent));
       setPeriodAdjustmentText(String(valueToSave.controls.billingPeriodAdjustmentDays));
@@ -275,6 +291,7 @@ export default function RecurringPaymentSettingsPanel({
         active,
         updatedAt: serverTimestamp(),
       });
+      logRecurringActivity(user, active ? "Activate Approval Rule" : "Deactivate Approval Rule", {}, { recordId: rule.id, recordRef: rule.name });
     } catch {
       toast({
         title: "Approval rule could not be updated",
@@ -750,7 +767,7 @@ function ApprovalRuleDialog({
   organizationId: string;
   rules: ApprovalRule[];
 }) {
-  const { users } = useAuth();
+  const { user, users } = useAuth();
   const { projects, activeProjects, loading: scopesLoading } = useGlobalScopes();
   const { toast } = useToast();
   const { field } = useFieldControl("approvalRule");
@@ -860,16 +877,20 @@ function ApprovalRuleDialog({
       });
     setSaving(true);
     try {
-      if (rule)
+      if (rule) {
         await updateDoc(
           doc(db, RP_COLLECTIONS.approvalRules, rule.id),
           payload,
         );
-      else
-        await addDoc(collection(db, RP_COLLECTIONS.approvalRules), {
+        logRecurringActivity(user, "Update Approval Rule", { changes: diffFields(rule, payload) }, { recordId: rule.id, recordRef: payload.name });
+      } else {
+        const created = await addDoc(collection(db, RP_COLLECTIONS.approvalRules), {
           ...payload,
           createdAt: serverTimestamp(),
         });
+        const { updatedAt: _updatedAt, ...rulePayload } = payload;
+        logRecurringActivity(user, "Create Approval Rule", rulePayload, { recordId: created.id, recordRef: payload.name });
+      }
       toast({
         title: rule ? "Approval rule updated" : "Approval rule created",
       });

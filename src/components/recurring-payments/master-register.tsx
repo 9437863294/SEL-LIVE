@@ -56,6 +56,7 @@ import {
   loadManualGenerationContext,
 } from "@/lib/recurring-payments-generation";
 import { makeIsWorkingDay } from "@/lib/working-hours";
+import { logRecurringActivity } from "@/lib/recurring-payments-activity";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -268,6 +269,7 @@ export default function RecurringMasterRegister() {
         userName: user?.name || "",
         createdAt: serverTimestamp(),
       });
+      logRecurringActivity(user, next === "Active" ? "Activate Master" : "Pause Master", { from: master.status, to: next }, { recordId: master.id, recordRef: master.title });
       toast({ title: `Master ${next.toLowerCase()}` });
     } catch (error) {
       toast({ title: "Status change failed", description: error instanceof Error ? error.message : "Please try again.", variant: "destructive" });
@@ -295,6 +297,7 @@ export default function RecurringMasterRegister() {
         userName: user?.name || "",
         createdAt: serverTimestamp(),
       });
+      logRecurringActivity(user, "Archive Master", { from: "master register" }, { recordId: master.id, recordRef: master.title });
       toast({
         title: "Master archived",
         description: "Generated payments and audit history were retained.",
@@ -322,6 +325,7 @@ export default function RecurringMasterRegister() {
         updatedAt: serverTimestamp(),
         updatedBy: user?.id || "",
       });
+      logRecurringActivity(user, "Duplicate Master", { copiedFrom: master.id, copyId: created.id }, { recordId: created.id, recordRef: `${master.title} (Copy)` });
       toast({
         title: "Draft copy created",
         description: `Master ${created.id} is ready for review.`,
@@ -601,6 +605,7 @@ export default function RecurringMasterRegister() {
       const batch = writeBatch(db);
       for (const record of records) batch.set(doc(collection(db, RP_COLLECTIONS.masters)), record);
       await batch.commit();
+      logRecurringActivity(user, "Import Masters", { count: records.length, file: file.name, titles: records.slice(0, 20).map((record) => record.title) });
       toast({
         title: `${records.length} draft master(s) imported`,
         description:

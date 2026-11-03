@@ -8,6 +8,8 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
+import { diffFields } from '@/lib/activity-logger';
 import {
   DEFAULT_RECURRING_E_APPROVAL_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
@@ -103,6 +105,7 @@ export default function RecurringEApprovalSettingsPage() {
         { organizationId, eApproval: settings, updatedAt: serverTimestamp() },
         { merge: true },
       );
+      logRecurringActivity(user, 'Update E-Approval Settings', { changes: diffFields(savedSettings, settings) });
       toast({ title: 'E-Approval bridge saved' });
     } catch {
       toast({ title: 'Settings could not be saved', variant: 'destructive' });
@@ -127,6 +130,7 @@ export default function RecurringEApprovalSettingsPage() {
       const snapshot = await getDocs(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)));
       const payments = visibleObligations(snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as PaymentObligation)));
       const result = await sweepRecurringPaymentApprovals(payments, actor);
+      logRecurringActivity(user, 'Mirror Payments to E-Approval', { scanned: result.scanned, raised: result.raised, updated: result.updated, failed: result.failed });
       toast({
         title: result.scanned ? `${result.raised} raised, ${result.updated} updated` : 'Nothing to mirror',
         description: result.failed

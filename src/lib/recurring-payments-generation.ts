@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { dispatchNotification } from '@/lib/notifications';
+import { logRecurringActivity } from '@/lib/recurring-payments-activity';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { addBusinessHours, makeIsWorkingDay } from '@/lib/working-hours';
 import {
@@ -184,6 +185,15 @@ export async function generateMasterCycle(
     return true;
   });
   if (!created) return { kind: 'exists', paymentId };
+  logRecurringActivity(actor, 'Generate Payment', {
+    masterId: master.id,
+    master: master.title,
+    billingPeriod: `${cycle.billingPeriodStart} to ${cycle.billingPeriodEnd}`,
+    dueDate: fields.dueDate,
+    expectedAmount: fields.expectedAmount,
+    enteredStep: activation?.stage ?? null,
+    noAssignee: noAssignee || undefined,
+  }, { recordId: paymentId, recordRef: fields.title });
 
   if (activation) {
     // Same notice the cron sends on activation. Best-effort: the obligation exists either way, and

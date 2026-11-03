@@ -1,50 +1,50 @@
-
-
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { TableCard } from '@/components/shared/table-card';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { collection, getDocs, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
+import { AlertTriangle, ClipboardList, FileText, Truck, Library, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { PageHeader } from '@/components/shared/page-header';
+import { TableCard } from '@/components/shared/table-card';
+import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { db } from '@/lib/firebase';
 import type {
   BoqItem as BoqItemBase,
   MvacEntry,
-  MvacItem as MvacItemType,
   WorkflowStep,
   ActionLog,
-  Project,
   SerialNumberConfig,
 } from '@/lib/types';
 import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
-import { useParams, useRouter } from 'next/navigation';
+import { useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
+import { AppTile, BrAccessDenied, BrNotice, BrPage, BrPageSkeleton, BR_TONE } from '@/components/billing-recon/page-kit';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { projectMatchesSlug } from '@/lib/project-slug';
 import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
+import { localIsoDate } from '@/lib/billing-recon/lines';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
 
-const initialMvacDetails = {
+/** A blank header. The date is today's in local time (a UTC date is yesterday before 05:30 IST). */
+const freshDetails = (woNo = '') => ({
   mvacNo: '',
-  woNo: '',
-  mvacDate: new Date().toISOString().split('T')[0],
-};
+  woNo,
+  mvacDate: localIsoDate(),
+});
 
 const initialItem = {
-  erpSlNo: '',
+  erpSlNo: '',         // ✅ store ERP SL NO on each MVAC item
   boqSlNo: '',
   description: '',
   unit: '',
@@ -141,100 +141,121 @@ const sortItemsByErp = (arr: MvacItem[]): MvacItem[] => {
   });
 };
 
+const formatCurrency = (amount: number) =>
+  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(
+    Number.isFinite(amount) ? amount : 0
+  );
+
+/** Label + control, one cell of the details grid. */
+function Field({ label, htmlFor, hint, children }: { label: string; htmlFor?: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+      {hint && <p className="text-[11px] leading-snug text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+/** One figure in the totals bar. */
+function Figure({ label, value, title, className }: { label: string; value: React.ReactNode; title?: string; className?: string }) {
+  return (
+    <div className={`min-w-0 ${className ?? ''}`} title={title}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="truncate text-base font-bold tabular-nums text-foreground">{value}</p>
+    </div>
+  );
+}
+
 export default function MvacEntryPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const { project: projectSlug } = useParams() as { project: string };
 
-  const [details, setDetails] = useState(initialMvacDetails);
-  const [items, setItems] = useState<MvacItem[]>([initialItem]);
+  // The project comes from the URL (the menu's switcher changes it), so the entry can't be filed
+  // under one project while carrying another's slug.
+  const { currentProject, loading: projectsLoading } = useBillingReconProjects();
+  const reg = useMemo(() => billingReconRegister(currentProject), [currentProject]);
+  const projectId = currentProject?.id ?? '';
+  const projectWoNo = String((currentProject as any)?.woNo ?? '');
+
+  const [details, setDetails] = useState(() => freshDetails());
+  const [items, setItems] = useState<MvacItem[]>([{ ...initialItem }]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
-  const [allMvacEntries, setAllMvacEntries] = useState<(MvacEntry & { projectId: string })[]>([]);
+  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [isBoqLoading, setIsBoqLoading] = useState(true);
   const [isBoqMultiSelectOpen, setIsBoqMultiSelectOpen] = useState(false);
 
-  const [allProjects, setAllProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-  
-  const [jmcEntries, setJmcEntries] = useState<MvacEntry[]>([]);
+  const canCreate = can('Create MVAC Entry', 'Billing Recon.MVAC', projectSlug);
 
-  const currentProject = useMemo(
-    () => allProjects.find((p) => p.id === selectedProjectId) || null,
-    [allProjects, selectedProjectId]
-  );
-  const reg = useMemo(() => billingReconRegister(currentProject), [currentProject]);
-
-  const boqItems = useMemo(() => {
-    if (!currentProject) return [];
-    return allBoqItems.filter((item) => item.projectId === currentProject.id);
-  }, [allBoqItems, currentProject]);
-
+  /* ---------- this project's BOQ and MVAC entries ---------- */
   useEffect(() => {
-    const loadInitialData = async () => {
+    if (!projectId) return;
+    let cancelled = false;
+    const loadProjectData = async () => {
       setIsBoqLoading(true);
       try {
-        const projectsSnapshot = await getDocs(collection(db, 'projects'));
-        const projectsData = projectsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
-        setAllProjects(projectsData);
-
-        const initialProject = projectsData.find((p) => projectMatchesSlug(p.projectName, projectSlug));
-        if (initialProject) {
-          setSelectedProjectId(initialProject.id);
-          setDetails((prev) => ({ ...prev, woNo: (initialProject as any).woNo || '' }));
-        }
-
-        const boqSnaps = await Promise.all(
-          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, billingReconRegister(p).boqItems)))
-        );
-        const mvacSnaps = await Promise.all(
-            projectsData.map((p) => getDocs(collection(db, 'projects', p.id, billingReconRegister(p).mvacEntries)))
-        );
-
-        const allBoq = boqSnaps.flatMap((snap, index) =>
-          snap.docs.map(
+        const [boqSnap, mvacSnap] = await Promise.all([
+          getDocs(collection(db, 'projects', projectId, reg.boqItems)),
+          getDocs(collection(db, 'projects', projectId, reg.mvacEntries)),
+        ]);
+        if (cancelled) return;
+        setBoqItems(
+          boqSnap.docs.map(
             (d) =>
               ({
                 ...(d.data() as object),
                 id: d.id,
-                projectId: projectsData[index].id,
+                projectId,
               } as BoqItem)
           )
         );
-        setAllBoqItems(allBoq);
-
-        const allMvac = mvacSnaps.flatMap((snap, index) =>
-          snap.docs.map((d) => ({
+        setMvacEntries(
+          mvacSnap.docs.map((d) => ({
             ...(d.data() as Omit<MvacEntry, 'id'>),
             id: d.id,
-            projectId: projectsData[index].id,
           }))
         );
-        setAllMvacEntries(allMvac as any);
       } catch (e) {
-        console.error('Failed to load initial data:', e);
-        toast({ title: 'Error', description: 'Could not load project data.', variant: 'destructive' });
+        console.error('Failed to load project data:', e);
+        if (!cancelled) toast({ title: 'Error', description: 'Could not load project data.', variant: 'destructive' });
       } finally {
-        setIsBoqLoading(false);
+        if (!cancelled) setIsBoqLoading(false);
       }
     };
-    loadInitialData();
-  }, [projectSlug, toast]);
+    loadProjectData();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, reg.boqItems, reg.mvacEntries, toast]);
 
-  /* ---------- auto-generate Mvac No when scope1/scope2 ready ---------- */
+  // The WO No is the project's; a different project (switched in the menu) starts a fresh entry.
   useEffect(() => {
+    setDetails((prev) => (prev.woNo === projectWoNo ? prev : { ...prev, woNo: projectWoNo }));
+  }, [projectWoNo]);
+  useEffect(() => {
+    setItems([{ ...initialItem }]);
+  }, [projectId]);
+
+  /* ---------- auto-generate MVAC No when scope1/scope2 ready ---------- */
+  const firstScope1 = items[0]?.scope1 ?? '';
+  const firstScope2 = items[0]?.scope2 ?? '';
+  useEffect(() => {
+    let cancelled = false;
     const generateMvacNo = async () => {
-      const firstItem = items[0];
-      if (!currentProject || !firstItem?.scope1 || !firstItem?.scope2) {
+      if (!projectId || !firstScope1 || !firstScope2) {
         setDetails((prev) => ({ ...prev, mvacNo: '' }));
         return;
       }
 
-      const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
+      const configSlug = `${projectId}_${slugify(firstScope2)}_${slugify(firstScope1)}`;
       try {
         const configRef = doc(db, reg.serialConfigs, configSlug);
         const configDoc = await getDoc(configRef);
+        if (cancelled) return;
         if (configDoc.exists()) {
           const configData = configDoc.data() as SerialNumberConfig;
           const index = configData.startingIndex;
@@ -245,25 +266,19 @@ export default function MvacEntryPage() {
           setDetails((prev) => ({ ...prev, mvacNo: 'Config not found' }));
         }
       } catch {
-        setDetails((prev) => ({ ...prev, mvacNo: 'Error generating ID' }));
+        if (!cancelled) setDetails((prev) => ({ ...prev, mvacNo: 'Error generating ID' }));
       }
     };
     generateMvacNo();
-  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id, reg.serialConfigs]);
+    return () => {
+      cancelled = true;
+    };
+  }, [firstScope1, firstScope2, projectId, reg.serialConfigs]);
 
-  const handleProjectChange = (projectId: string) => {
-    const project = allProjects.find((p) => p.id === projectId);
-    if (project) {
-      setSelectedProjectId(projectId);
-      setDetails((prev) => ({ ...prev, woNo: (project as any).woNo || '' }));
-      setItems([initialItem]); // reset on project change
-    }
-  };
-
+  /* ---------- certified qty map (robust to key casing) ---------- */
   const totalCertifiedQtyMap = useMemo(() => {
     const map: Record<string, number> = {};
-    const relevant = allMvacEntries.filter((e) => e.projectId === selectedProjectId);
-    relevant.forEach((entry) => {
+    mvacEntries.forEach((entry) => {
       const arr: any[] = Array.isArray((entry as any).items) ? (entry as any).items : [];
       arr.forEach((it) => {
         const s1 = it?.scope1 ?? it?.['Scope 1'] ?? '';
@@ -275,8 +290,7 @@ export default function MvacEntryPage() {
       });
     });
     return map;
-  }, [allMvacEntries, selectedProjectId]);
-
+  }, [mvacEntries]);
 
   const handleDetailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -422,12 +436,12 @@ export default function MvacEntryPage() {
         }`;
 
         if (details.mvacNo !== expectedMvacNo) {
-          throw new Error(`Mvac number mismatch. Expected ${expectedMvacNo}, but found ${details.mvacNo}. Please refresh.`);
+          throw new Error(`MVAC number mismatch. Expected ${expectedMvacNo}, but found ${details.mvacNo}. Please refresh.`);
         }
 
         const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.mvacWorkflowId);
         const workflowSnap = await getDoc(workflowRef);
-        if (!workflowSnap.exists()) throw new Error('Workflow not configured for Mvac.');
+        if (!workflowSnap.exists()) throw new Error('Workflow not configured for MVAC.');
 
         const steps = (workflowSnap.data()?.steps as WorkflowStep[]) ?? [];
         if (steps.length === 0) throw new Error('Workflow has no steps.');
@@ -483,8 +497,9 @@ export default function MvacEntryPage() {
         description: 'The new MVAC entry has been successfully saved and workflow started.',
       });
 
-      setDetails(initialMvacDetails);
-      setItems([initialItem]);
+      // Keep the project's WO No: resetting it to blank made the next save fail until a reload.
+      setDetails(freshDetails(projectWoNo));
+      setItems([{ ...initialItem }]);
     } catch (error: any) {
       console.error('Error creating MVAC entry: ', error);
       toast({
@@ -497,162 +512,239 @@ export default function MvacEntryPage() {
     }
   };
 
+  /* ---------- figures for the totals bar ---------- */
+  const pickedCount = items.filter((it) => it.boqSlNo).length;
+  const unpickedCount = items.length - pickedCount;
+  const totalAmount = items.reduce((sum, it) => sum + (Number.isFinite(it.totalAmount) ? it.totalAmount : 0), 0);
+  const numberProblem: 'missing' | 'error' | null =
+    details.mvacNo === 'Config not found' ? 'missing' : /error/i.test(details.mvacNo) ? 'error' : null;
+  const statusLine = !details.woNo
+    ? 'This project has no WO No — set it in Settings › Billing Status first.'
+    : numberProblem === 'missing'
+      ? 'No MVAC number series for this scope yet.'
+      : numberProblem === 'error'
+        ? 'The MVAC number could not be read — pick the item again.'
+        : pickedCount === 0
+          ? 'Pick at least one BOQ item to number the MVAC.'
+          : unpickedCount > 0
+            ? `${unpickedCount} row${unpickedCount === 1 ? ' has' : 's have'} no BOQ item — pick one or remove the row.`
+            : 'Saving numbers the MVAC and sends it to the first step of the MVAC workflow.';
+
+  /* ---------- states ---------- */
+  if (isAuthLoading || projectsLoading) return <BrPageSkeleton kpis={0} blocks={2} />;
+  if (!canCreate) return <BrAccessDenied message="You don't have permission to create MVAC entries." />;
+
+  if (!currentProject) {
+    return (
+      <BrPage tone={BR_TONE.mvac}>
+        <PageHeader title="New MVAC Entry" icon={Truck} backHref="/billing-recon" backLabel="Back to Billing Recon" />
+        <BrNotice tone="warning" icon={AlertTriangle} title="Project not found">
+          No project matches this address. Choose a project from the switcher at the top of the menu.
+        </BrNotice>
+      </BrPage>
+    );
+  }
+
   return (
-    <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <PageHeader
-          title="Create MVAC Entry"
-          backHref={`/billing-recon/${projectSlug}/mvac`}
-          backLabel="Back to MVAC"
-          actions={
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              Save Entry
-            </Button>
-          }
-        />
+    <BrPage tone={BR_TONE.mvac}>
+      <PageHeader
+        title="New MVAC Entry"
+        description="Record the quantities executed against the BOQ. Saving numbers the MVAC and starts its approval workflow."
+        icon={Truck}
+        backHref={`/billing-recon/${projectSlug}/mvac`}
+        backLabel="Back to MVAC"
+      />
 
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>MVAC Details</CardTitle>
-            <CardDescription>Provide the main details for this Material/Vehicle Administration Certificate.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="project">Project</Label>
-                <Select value={selectedProjectId} onValueChange={handleProjectChange}>
-                  <SelectTrigger id="project">
-                    <SelectValue placeholder="Select a project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allProjects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.projectName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mvacNo">MVAC No</Label>
-                <Input id="mvacNo" name="mvacNo" value={details.mvacNo} readOnly className="font-semibold bg-muted/50" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="woNo">WO No</Label>
-                <Input
-                  id="woNo"
-                  name="woNo"
-                  value={details.woNo || '— not set —'}
-                  readOnly
-                  className="bg-muted/50 cursor-not-allowed"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mvacDate">MVAC Date</Label>
-                <Input id="mvacDate" name="mvacDate" type="date" value={details.mvacDate} onChange={handleDetailChange} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <TableCard
-          title="MVAC Items"
-          description="Add one or more items executed under this MVAC."
-          actions={
-              <Button variant="outline" type="button" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={!currentProject}>
-                <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
-              </Button>
-          }
-          footer={
-            <Button variant="outline" onClick={addItem}>
-              <Plus className="mr-2 h-4 w-4" /> Add Item
+      {!projectWoNo && (
+        <BrNotice
+          tone="warning"
+          icon={AlertTriangle}
+          title="This project has no work order number"
+          action={
+            <Button asChild size="sm" variant="outline">
+              <Link href="/billing-recon/settings/billing-status">Billing Status</Link>
             </Button>
           }
         >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>ERP Sl. No.</TableHead>
-                    <TableHead>BOQ Sl. No.</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>BOQ Qty</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Scope 1</TableHead>
-                    <TableHead>Total Certified Qty</TableHead>
-                    <TableHead>Executed Qty</TableHead>
-                    <TableHead>Total Amount</TableHead>
-                    <TableHead>Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item, index) => (
-                    <TableRow key={index}>
-                        <TableCell>{item.erpSlNo || '-'}</TableCell>
-                        <TableCell>
-                            <BoqItemSelector
-                            boqItems={boqItems}
-                            selectedSlNo={item.boqSlNo}
-                            onSelect={(boq) => handleBoqSelect(index, boq)}
-                            isLoading={isBoqLoading}
-                            />
-                        </TableCell>
-                        <TableCell>
-                            <TooltipProvider>
-                            <Tooltip>
-                                <TooltipTrigger>
-                                <p className="truncate max-w-xs">{item.description}</p>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                <p className="max-w-md">{item.description}</p>
-                                </TooltipContent>
-                            </Tooltip>
-                            </TooltipProvider>
-                        </TableCell>
-                        <TableCell>{item.unit}</TableCell>
-                        <TableCell>{item.boqQty}</TableCell>
-                        <TableCell>{item.rate}</TableCell>
-                        <TableCell>{item.scope1 || '-'}</TableCell>
-                        <TableCell>{item.totalCertifiedQty}</TableCell>
-                        <TableCell>
-                            <Input
-                            name="executedQty"
-                            type="number"
-                            step="any"
-                            min={0}
-                            value={item.executedQty}
-                            onChange={(e) => handleItemChange(index, e)}
-                            />
-                        </TableCell>
-                        <TableCell>
-                            {new Intl.NumberFormat('en-IN', {
-                            style: 'currency',
-                            currency: 'INR',
-                            maximumFractionDigits: 2,
-                            }).format(Number.isFinite(item.totalAmount) ? item.totalAmount : 0)}
-                        </TableCell>
-                        <TableCell>
-                            <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                        </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-        </TableCard>
+          A MVAC carries the project&apos;s WO No. Add it in Settings › Billing Status, then come back to save.
+        </BrNotice>
+      )}
+      {numberProblem === 'missing' && (
+        <BrNotice
+          tone="warning"
+          icon={AlertTriangle}
+          title="No MVAC number series for this scope"
+          action={
+            <Button asChild size="sm" variant="outline">
+              <Link href="/billing-recon/settings/serial-no">Serial numbers</Link>
+            </Button>
+          }
+        >
+          The number comes from the first item&apos;s scope ({firstScope1} / {firstScope2}), which has no series in Settings › Serial No.
+          Configuration yet.
+        </BrNotice>
+      )}
+      {numberProblem === 'error' && (
+        <BrNotice tone="danger" icon={AlertTriangle} title="The MVAC number could not be read">
+          Check the connection and pick the first item again.
+        </BrNotice>
+      )}
+
+      <Card>
+        <CardHeader className="flex flex-row items-start gap-3 space-y-0">
+          <AppTile tone={BR_TONE.mvac} icon={FileText} size={36} />
+          <div className="min-w-0">
+            <CardTitle className="text-base">MVAC details</CardTitle>
+            <CardDescription>The MVAC&apos;s header. The number and WO No fill in by themselves.</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Project" htmlFor="project">
+              <Input id="project" value={currentProject.projectName ?? ''} title={currentProject.projectName ?? ''} readOnly className="truncate bg-muted/50" />
+            </Field>
+            <Field label="MVAC No" htmlFor="mvacNo" hint="From the first item's Scope 1 / Scope 2 series.">
+              <Input
+                id="mvacNo"
+                name="mvacNo"
+                value={details.mvacNo}
+                placeholder="Assigned when you pick an item"
+                readOnly
+                className="bg-muted/50 font-semibold"
+              />
+            </Field>
+            <Field label="WO No" htmlFor="woNo">
+              <Input id="woNo" name="woNo" value={details.woNo || '— not set —'} readOnly className="cursor-not-allowed bg-muted/50" />
+            </Field>
+            <Field label="MVAC Date" htmlFor="mvacDate">
+              <Input id="mvacDate" name="mvacDate" type="date" value={details.mvacDate} onChange={handleDetailChange} />
+            </Field>
+          </div>
+        </CardContent>
+      </Card>
+
+      <TableCard
+        title="Line items"
+        description="Pick the BOQ item on each row and enter the quantity executed under this MVAC."
+        icon={ClipboardList}
+        count={pickedCount}
+        noun="item"
+        actions={
+          <Button variant="outline" onClick={() => setIsBoqMultiSelectOpen(true)} disabled={isBoqLoading}>
+            {isBoqLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Library className="mr-2 h-4 w-4" />}
+            Add from BOQ
+          </Button>
+        }
+        footer={
+          <Button variant="outline" size="sm" onClick={addItem}>
+            <Plus className="mr-2 h-4 w-4" /> Add row
+          </Button>
+        }
+      >
+        <Table className="min-w-[1100px]">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="whitespace-nowrap">ERP Sl. No.</TableHead>
+              <TableHead className="whitespace-nowrap">BOQ Sl. No.</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Unit</TableHead>
+              <TableHead className="whitespace-nowrap text-right">BOQ Qty</TableHead>
+              <TableHead className="text-right">Rate</TableHead>
+              <TableHead className="whitespace-nowrap">Scope 1</TableHead>
+              <TableHead className="whitespace-nowrap text-right">Total Certified Qty</TableHead>
+              <TableHead className="whitespace-nowrap">Executed Qty</TableHead>
+              <TableHead className="whitespace-nowrap text-right">Total Amount</TableHead>
+              <TableHead className="text-right">
+                <span className="sr-only">Remove</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item, index) => (
+              <TableRow key={`${item.erpSlNo || 'erp'}_${item.boqSlNo || 'boq'}_${index}`}>
+                <TableCell className="whitespace-nowrap">{item.erpSlNo || '-'}</TableCell>
+                <TableCell className="min-w-[12rem]">
+                  <BoqItemSelector
+                    boqItems={boqItems}
+                    selectedSlNo={item.boqSlNo}
+                    onSelect={(boq) => handleBoqSelect(index, boq)}
+                    isLoading={isBoqLoading}
+                  />
+                </TableCell>
+                <TableCell className="max-w-xs">
+                  {item.description ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger className="block max-w-xs truncate text-left">{item.description}</TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-md">{item.description}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell>{item.unit}</TableCell>
+                <TableCell className="text-right tabular-nums">{item.boqQty}</TableCell>
+                <TableCell className="text-right tabular-nums">{item.rate}</TableCell>
+                <TableCell className="whitespace-nowrap">{item.scope1 || '-'}</TableCell>
+                <TableCell className="text-right tabular-nums">{item.totalCertifiedQty}</TableCell>
+                <TableCell>
+                  <Input
+                    name="executedQty"
+                    type="number"
+                    step="any"
+                    min={0}
+                    value={item.executedQty}
+                    onChange={(e) => handleItemChange(index, e)}
+                    className="w-28"
+                    aria-label={`Executed quantity, row ${index + 1}`}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(item.totalAmount)}</TableCell>
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="icon" onClick={() => removeItem(index)} aria-label="Remove row">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableCard>
+
+      {/* Totals and save, kept in reach while scrolling the lines (above the phone's tab bar). */}
+      <div className="sticky bottom-20 z-20 -mx-1 print:hidden lg:bottom-3">
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-lg sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Figure label="Items" value={pickedCount} />
+              <Figure label="Executed value" value={formatCurrency(totalAmount)} />
+              <Figure
+                label="MVAC No"
+                value={details.mvacNo && !numberProblem ? details.mvacNo : '—'}
+                title={details.mvacNo || undefined}
+                className="col-span-2 sm:col-span-1"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{statusLine}</p>
+          </div>
+          <Button onClick={handleSave} disabled={isSaving} className="shrink-0">
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save entry
+          </Button>
+        </div>
       </div>
 
       <BoqMultiSelectDialog
-        key={currentProject?.id || 'no-project'}
+        key={projectId || 'no-project'}
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
         boqItems={boqItems}
         onConfirm={handleMultiBoqSelect}
         alreadyAddedItems={[]}
       />
-    </>
+    </BrPage>
   );
 }
-

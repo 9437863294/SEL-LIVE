@@ -6,20 +6,33 @@
  * src/components/billing-recon/separation/separation-service.ts for exactly what is written.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { AlertTriangle, CheckCircle2, GitBranch, Info, Loader2, Search, Split } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ClipboardList,
+  GitBranch,
+  HardHat,
+  Hash,
+  Info,
+  Loader2,
+  Split,
+  Trash2,
+  Truck,
+  type LucideIcon,
+} from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { KpiCard } from '@/components/shared/kpi-card';
+import { TableCard } from '@/components/shared/table-card';
+import { SearchInput } from '@/components/shared/filter-bar';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { FormDialog } from '@/components/shared/form-dialog';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { PageAccessDenied } from '@/components/shared/module-shell';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -28,6 +41,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import type { Project } from '@/lib/types';
 import { useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
+import { AppTile, BrAccessDenied, BrNotice, BrPage, BrPageSkeleton, BR_TONE, TILE, type BrTone } from '@/components/billing-recon/page-kit';
 import { isBillingReconSeparated } from '@/lib/billing-recon/register';
 import {
   checkTaskFeed,
@@ -74,8 +88,15 @@ export default function DataSeparationPage() {
   const [rejoinTarget, setRejoinTarget] = useState<Row | null>(null);
   const [feed, setFeed] = useState<Record<'jmc' | 'mvac', TaskFeedState> | null>(null);
   const userId = user?.id;
+  /**
+   * Which review is current. A preview that finishes after its dialog was closed — or after
+   * another project's review was opened — is dropped, so one project's JMC choices can never be
+   * shown (and separated) under another project's name.
+   */
+  const reviewSeq = useRef(0);
 
   const openReview = useCallback(async (project: Row) => {
+    const seq = ++reviewSeq.current;
     setTarget(project);
     setPreview(null);
     setPreviewError(null);
@@ -83,34 +104,40 @@ export default function DataSeparationPage() {
     setRemoveFromShared(false);
     setProgress(null);
     setFeed(null);
-    if (userId) void checkTaskFeed(userId).then(setFeed).catch(() => setFeed(null));
+    if (userId)
+      void checkTaskFeed(userId)
+        .then((state) => {
+          if (seq === reviewSeq.current) setFeed(state);
+        })
+        .catch(() => {
+          if (seq === reviewSeq.current) setFeed(null);
+        });
     if (isBillingReconSeparated(project)) return;
     try {
       const data = await loadSeparationPreview(project);
+      if (seq !== reviewSeq.current) return;
       setPreview(data);
       setSelected(new Set(data.jmc.map((j) => j.id)));
     } catch (error) {
       console.error(error);
+      if (seq !== reviewSeq.current) return;
       setPreviewError(error instanceof Error ? error.message : 'Could not read this project.');
     }
   }, [userId]);
 
   const feedProblem = feed && (feed.jmc !== 'ready' || feed.mvac !== 'ready') ? feed : null;
   const feedNotice = feedProblem && (
-    <Alert>
-      <AlertTriangle className="h-4 w-4" />
-      <AlertTitle>Approvers won&apos;t see Billing Recon&apos;s own JMC / MVAC tasks yet</AlertTitle>
-      <AlertDescription>
-        The work board and the task bell can&apos;t read Billing Recon&apos;s registers
-        {feedProblem.jmc === 'index-missing' || feedProblem.mvac === 'index-missing' ? ' — the Firestore indexes for them have not been created' : ''}
-        {feedProblem.jmc === 'not-permitted' || feedProblem.mvac === 'not-permitted' ? ' — the published Firestore rules don’t allow it yet' : ''}
-        . Entries still appear on each project&apos;s JMC / MVAC stage pages. Ask an administrator to publish the Billing Recon indexes and rules (firestore.indexes.json, firestore.rules) before separating projects with approvals in progress.
-      </AlertDescription>
-    </Alert>
+    <BrNotice tone="warning" icon={AlertTriangle} title="Approvers won't see Billing Recon's own JMC / MVAC tasks yet">
+      The work board and the task bell can&apos;t read Billing Recon&apos;s registers
+      {feedProblem.jmc === 'index-missing' || feedProblem.mvac === 'index-missing' ? ' — the Firestore indexes for them have not been created' : ''}
+      {feedProblem.jmc === 'not-permitted' || feedProblem.mvac === 'not-permitted' ? ' — the published Firestore rules don’t allow it yet' : ''}
+      . Entries still appear on each project&apos;s JMC / MVAC stage pages. Ask an administrator to publish the Billing Recon indexes and rules (firestore.indexes.json, firestore.rules) before separating projects with approvals in progress.
+    </BrNotice>
   );
 
   const closeReview = () => {
     if (running) return;
+    reviewSeq.current += 1;
     setTarget(null);
     setPreview(null);
   };
@@ -172,7 +199,18 @@ export default function DataSeparationPage() {
 
   const rejoin = async () => {
     if (!rejoinTarget || !user) return;
-    await rejoinSharedRegister(rejoinTarget, { id: user.id, name: user.name, email: user.email });
+    try {
+      await rejoinSharedRegister(rejoinTarget, { id: user.id, name: user.name, email: user.email });
+    } catch (error) {
+      // The confirm dialog stays open for a retry; say why (it used to fail silently).
+      console.error(error);
+      toast({
+        title: 'Could not switch back',
+        description: error instanceof Error ? error.message : 'Something went wrong. Try again.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
     toast({ title: 'Back on the shared register', description: `${rejoinTarget.projectName} reads Project Management's register again. Billing Recon's copies were kept.` });
     await reload();
     setTarget(null);
@@ -221,53 +259,68 @@ export default function DataSeparationPage() {
     },
   ];
 
-  if (authLoading) return <Skeleton className="h-96 w-full rounded-xl" />;
-  if (!canView) return <PageAccessDenied message="You need Billing Recon › Data Separation › View to open this page." />;
+  if (authLoading) return <BrPageSkeleton kpis={3} />;
+  if (!canView) return <BrAccessDenied message="You need Billing Recon › Data Separation › View to open this page." />;
+
+  const sharedCount = rows.length - separatedCount;
 
   return (
-    <div className="space-y-5">
+    <BrPage tone={BR_TONE.settings}>
       <PageHeader
         title="Data Separation"
         description="Give each project's Billing Recon its own BOQ, JMC and MVAC records, apart from Project Management."
         backHref="/billing-recon/settings"
-        backLabel="Settings"
+        backLabel="Back to settings"
         icon={Split}
       />
 
-      <Card>
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Info className="h-4 w-4 text-muted-foreground" /> What separating a project does
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 p-4 pt-2 text-sm md:grid-cols-2">
-          <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
-            <li>Copies the project&apos;s <span className="text-foreground">BOQ</span> into Billing Recon. Project Management, Stores and Subcontractors keep theirs unchanged.</li>
-            <li>Copies the <span className="text-foreground">JMC entries you choose</span> — the register is mixed, so you decide which are Billing Recon&apos;s.</li>
-            <li>Copies every <span className="text-foreground">MVAC entry</span> (only Billing Recon ever recorded them).</li>
-            <li>Gives Billing Recon its own <span className="text-foreground">JMC workflow</span> (a copy of today&apos;s), and Project Management its own JMC number series continuing from today&apos;s numbers.</li>
-          </ul>
-          <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
-            <li>From then on, nothing entered in one module appears in the other.</li>
-            <li>Nothing is deleted unless you tick the option to remove the chosen JMCs from Project Management&apos;s register. JMCs a subcontractor bill uses are never removed.</li>
-            <li>If it stops part-way, nothing has switched over; run it again and copied records are skipped.</li>
-            <li>A separated project can be switched back; Billing Recon&apos;s copies are kept.</li>
-          </ul>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard label="Billing projects" value={loading ? '—' : rows.length} hint="Billing on, or already separated" icon={GitBranch} tone="cyan" accent />
+        <KpiCard label="Separated" value={loading ? '—' : separatedCount} hint="Own BOQ, JMC and MVAC records" icon={CheckCircle2} tone="emerald" accent />
+        <KpiCard
+          label="Still shared"
+          value={loading ? '—' : sharedCount}
+          hint={sharedCount ? 'Reading Project Management’s register' : 'Nothing left to separate'}
+          icon={Split}
+          tone={sharedCount ? 'amber' : 'emerald'}
+          accent
+        />
+      </div>
+
+      <Card className="min-w-0">
+        <CardContent className="space-y-3 p-4 sm:p-5">
+          <div className="flex items-center gap-2.5">
+            <AppTile tone="violet" icon={Info} size={30} />
+            <h2 className="text-base font-bold leading-tight text-foreground">What separating a project does</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+            <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
+              <li>Copies the project&apos;s <span className="text-foreground">BOQ</span> into Billing Recon. Project Management, Stores and Subcontractors keep theirs unchanged.</li>
+              <li>Copies the <span className="text-foreground">JMC entries you choose</span> — the register is mixed, so you decide which are Billing Recon&apos;s.</li>
+              <li>Copies every <span className="text-foreground">MVAC entry</span> (only Billing Recon ever recorded them).</li>
+              <li>Gives Billing Recon its own <span className="text-foreground">JMC workflow</span> (a copy of today&apos;s), and Project Management its own JMC number series continuing from today&apos;s numbers.</li>
+            </ul>
+            <ul className="list-disc space-y-1.5 pl-5 text-muted-foreground">
+              <li>From then on, nothing entered in one module appears in the other.</li>
+              <li>Nothing is deleted unless you tick the option to remove the chosen JMCs from Project Management&apos;s register. JMCs a subcontractor bill uses are never removed.</li>
+              <li>If it stops part-way, nothing has switched over; run it again and copied records are skipped.</li>
+              <li>A separated project can be switched back; Billing Recon&apos;s copies are kept.</li>
+            </ul>
+          </div>
         </CardContent>
       </Card>
 
-      <Card className="min-w-0">
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <GitBranch className="h-4 w-4 text-muted-foreground" /> Projects
-          </CardTitle>
-          <CardDescription className="text-xs">
-            {loading ? 'Loading…' : `${separatedCount} of ${rows.length} billing projects separated.`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0 sm:p-4 sm:pt-0">
+      <TableCard
+        title="Projects"
+        icon={GitBranch}
+        description={loading ? 'Loading…' : `${separatedCount} of ${rows.length} billing projects separated.`}
+        count={loading ? undefined : rows.length}
+        noun="project"
+        scroll="natural"
+      >
+        <div className="p-3 sm:p-4">
           {loading ? (
-            <div className="space-y-2 p-4">
+            <div className="space-y-2">
               {[0, 1, 2].map((i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
@@ -275,8 +328,8 @@ export default function DataSeparationPage() {
           ) : (
             <DataList rows={rows} columns={columns} empty="No project has billing switched on (Settings › Billing Status)." />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </TableCard>
 
       <FormDialog
         open={target !== null}
@@ -318,21 +371,19 @@ export default function DataSeparationPage() {
         {target && !isBillingReconSeparated(target) && (
           <div className="space-y-4">
             {previewError && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Could not read this project</AlertTitle>
-                <AlertDescription>{previewError}</AlertDescription>
-              </Alert>
+              <BrNotice tone="danger" icon={AlertTriangle} title="Could not read this project">
+                {previewError}
+              </BrNotice>
             )}
 
             {!preview && !previewError && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[0, 1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-16 rounded-lg" />
+                    <Skeleton key={i} className="h-24 rounded-2xl" />
                   ))}
                 </div>
-                <Skeleton className="h-48 rounded-lg" />
+                <Skeleton className="h-48 rounded-xl" />
               </div>
             )}
 
@@ -340,10 +391,10 @@ export default function DataSeparationPage() {
               <>
                 {feedNotice}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <Figure label="BOQ items" value={preview.sharedBoqCount} note={preview.copiedBoqCount ? `${preview.copiedBoqCount} already copied` : 'all copied'} />
-                  <Figure label="JMC entries chosen" value={chosen.length} note={`of ${preview.jmc.length} in the register`} />
-                  <Figure label="MVAC entries" value={preview.sharedMvacCount} note={preview.copiedMvacCount ? `${preview.copiedMvacCount} already copied` : 'all copied'} />
-                  <Figure label="JMC number series" value={preview.serialConfigIds.length} note="continue for Project Management" />
+                  <Figure icon={ClipboardList} tone="emerald" label="BOQ items" value={preview.sharedBoqCount} note={preview.copiedBoqCount ? `${preview.copiedBoqCount} already copied` : 'all copied'} />
+                  <Figure icon={HardHat} tone="orange" label="JMC entries chosen" value={chosen.length} note={`of ${preview.jmc.length} in the register`} />
+                  <Figure icon={Truck} tone="amber" label="MVAC entries" value={preview.sharedMvacCount} note={preview.copiedMvacCount ? `${preview.copiedMvacCount} already copied` : 'all copied'} />
+                  <Figure icon={Hash} tone="indigo" label="JMC number series" value={preview.serialConfigIds.length} note="continue for Project Management" />
                 </div>
 
                 <p className="text-xs text-muted-foreground">
@@ -354,22 +405,15 @@ export default function DataSeparationPage() {
                 </p>
 
                 {offWorkflow.length > 0 && (
-                  <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>{offWorkflow.length} chosen JMC entries sit at a step Billing Recon&apos;s workflow doesn&apos;t have</AlertTitle>
-                    <AlertDescription>
-                      {offWorkflow.slice(0, 5).map((j) => j.jmcNo).join(', ')}
-                      {offWorkflow.length > 5 ? '…' : ''} — they will be copied, but won&apos;t appear at any stage until their step exists in Billing Recon&apos;s JMC workflow.
-                    </AlertDescription>
-                  </Alert>
+                  <BrNotice tone="warning" icon={AlertTriangle} title={`${offWorkflow.length} chosen JMC entries sit at a step Billing Recon's workflow doesn't have`}>
+                    {offWorkflow.slice(0, 5).map((j) => j.jmcNo).join(', ')}
+                    {offWorkflow.length > 5 ? '…' : ''} — they will be copied, but won&apos;t appear at any stage until their step exists in Billing Recon&apos;s JMC workflow.
+                  </BrNotice>
                 )}
 
-                <div className="rounded-lg border border-border">
-                  <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
-                    <div className="relative min-w-0 flex-1 basis-52">
-                      <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search JMC no, WO, stage, raised by…" className="h-9 pl-8" />
-                    </div>
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 p-3">
+                    <SearchInput value={search} onChange={setSearch} placeholder="Search JMC no, WO, stage, raised by…" className="min-w-0 flex-1 basis-52" />
                     <Button size="sm" variant="outline" onClick={() => setSelected(new Set([...selected, ...visibleJmc.map((j) => j.id)]))}>
                       Select {search ? 'shown' : 'all'}
                     </Button>
@@ -413,7 +457,7 @@ export default function DataSeparationPage() {
                   )}
                 </div>
 
-                <div className="rounded-lg border border-border p-3">
+                <div className="rounded-xl border border-border bg-card p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">Remove the chosen JMC entries from Project Management&apos;s register</p>
@@ -424,7 +468,7 @@ export default function DataSeparationPage() {
                     <Switch checked={removeFromShared} onCheckedChange={setRemoveFromShared} aria-label="Remove the chosen JMC entries from the project register" />
                   </div>
                   {removeFromShared && (
-                    <p className="mt-2 text-xs text-foreground">
+                    <p className="mt-2 text-xs font-medium text-rose-700 dark:text-rose-300">
                       {toRemove} will be removed from Project Management&apos;s register
                       {keptBecauseReferenced ? `; ${keptBecauseReferenced} stay because a subcontractor bill uses them` : ''}.
                     </p>
@@ -489,16 +533,23 @@ export default function DataSeparationPage() {
         destructive
         onConfirm={rejoin}
       />
-    </div>
+    </BrPage>
   );
 }
 
-function Figure({ label, value, note }: { label: string; value: number; note?: string }) {
+/** A count tile in the action-card style: gradient icon tile, the figure, its label and a note. */
+function Figure({ label, value, note, icon, tone }: { label: string; value: number; note?: string; icon: LucideIcon; tone: BrTone }) {
   return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-lg font-semibold tabular-nums text-foreground">{value.toLocaleString('en-IN')}</div>
-      {note && <div className="text-[11px] text-muted-foreground">{note}</div>}
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-3 shadow-sm">
+      <span aria-hidden className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-[0.18] blur-2xl" style={{ background: TILE[tone].from }} />
+      <div className="relative flex items-start gap-2.5">
+        <AppTile tone={tone} icon={icon} size={32} />
+        <div className="min-w-0">
+          <div className="text-xl font-extrabold leading-tight tabular-nums text-foreground">{value.toLocaleString('en-IN')}</div>
+          <div className="text-xs font-medium text-muted-foreground">{label}</div>
+        </div>
+      </div>
+      {note && <div className="relative mt-2 border-t border-border/60 pt-1.5 text-[11px] text-muted-foreground">{note}</div>}
     </div>
   );
 }
@@ -508,17 +559,14 @@ function SeparatedDetails({ project }: { project: Project }) {
   if (!s) return null;
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-2 text-sm">
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-        <span>
-          Separated on {fmt(s.separatedAt)} by {s.separatedByName || '—'}.
-        </span>
-      </div>
+      <BrNotice tone="success" icon={CheckCircle2} title="Separated">
+        On {fmt(s.separatedAt)} by {s.separatedByName || '—'}.
+      </BrNotice>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Figure label="BOQ items copied" value={s.copied?.boqItems ?? 0} />
-        <Figure label="JMC entries copied" value={s.copied?.jmcEntries ?? 0} />
-        <Figure label="MVAC entries copied" value={s.copied?.mvacEntries ?? 0} />
-        <Figure label="Removed from PM register" value={s.removedFromProjectRegister ?? 0} />
+        <Figure icon={ClipboardList} tone="emerald" label="BOQ items copied" value={s.copied?.boqItems ?? 0} />
+        <Figure icon={HardHat} tone="orange" label="JMC entries copied" value={s.copied?.jmcEntries ?? 0} />
+        <Figure icon={Truck} tone="amber" label="MVAC entries copied" value={s.copied?.mvacEntries ?? 0} />
+        <Figure icon={Trash2} tone="rose" label="Removed from PM register" value={s.removedFromProjectRegister ?? 0} />
       </div>
       <p className="text-xs text-muted-foreground">
         {s.copied?.jmcWorkflow ? 'Billing Recon’s JMC workflow was created from the shared one at this separation.' : 'Billing Recon’s JMC workflow already existed.'}{' '}

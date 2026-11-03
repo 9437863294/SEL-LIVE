@@ -32,14 +32,13 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { logUserActivity } from '@/lib/activity-logger';
 import { PageHeader } from '@/components/shared/page-header';
-import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
+import { KpiCard } from '@/components/shared/kpi-card';
 import { TableCard } from '@/components/shared/table-card';
 import { FilterBar } from '@/components/shared/filter-bar';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { StatusBadge } from '@/components/shared/status-badge';
-import { PageAccessDenied } from '@/components/shared/module-shell';
+import { BrAccessDenied, BrNotice, BrPage, BrPageSkeleton, BR_TONE } from '@/components/billing-recon/page-kit';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -68,7 +67,7 @@ function Balance({ value }: { value: number }) {
     <span
       className={cn(
         'tabular-nums',
-        value < -QTY_TOLERANCE ? 'font-medium text-rose-700' : Math.abs(value) <= QTY_TOLERANCE ? 'text-muted-foreground' : 'text-foreground',
+        value < -QTY_TOLERANCE ? 'font-medium text-rose-700 dark:text-rose-300' : Math.abs(value) <= QTY_TOLERANCE ? 'text-muted-foreground' : 'text-foreground',
       )}
     >
       {formatQty(value)}
@@ -375,62 +374,47 @@ export default function ReconciliationPage() {
     />
   );
 
-  if (authLoading) {
-    return (
-      <div className="min-w-0 space-y-4">
-        <Skeleton className="h-12 w-72" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-72 w-full" />
-      </div>
-    );
-  }
+  if (authLoading) return <BrPageSkeleton kpis={6} />;
 
-  if (!canView) {
-    return (
-      <div className="min-w-0 space-y-4">
-        <PageHeader title="BOQ Reconciliation" icon={Scale} />
-        <PageAccessDenied message="You do not have permission to view the BOQ reconciliation." />
-      </div>
-    );
-  }
+  if (!canView) return <BrAccessDenied message="You do not have permission to view the BOQ reconciliation." />;
 
   if (error) {
     return (
-      <div className="min-w-0 space-y-4">
+      <BrPage tone={BR_TONE.reconciliation}>
         {header}
-        <Card>
-          <CardContent className="space-y-3 py-12 text-center">
-            <p className="font-semibold text-foreground">{error === 'not-found' ? 'Project not found' : 'Could not load the reconciliation'}</p>
-            <p className="text-sm text-muted-foreground">
-              {error === 'not-found'
-                ? 'This link does not match any project. It may have been renamed or removed.'
-                : 'Check your connection and try again.'}
-            </p>
-            {error === 'failed' && (
-              <Button type="button" variant="outline" onClick={() => void reload()}>
+        <BrNotice
+          tone="danger"
+          icon={AlertTriangle}
+          title={error === 'not-found' ? 'Project not found' : 'Could not load the reconciliation'}
+          action={
+            error === 'failed' ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => void reload()}>
                 Try again
               </Button>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            ) : undefined
+          }
+        >
+          {error === 'not-found' ? 'This link does not match any project. It may have been renamed or removed.' : 'Check your connection and try again.'}
+        </BrNotice>
+      </BrPage>
     );
   }
 
   const dash = loading ? '…' : undefined;
 
   return (
-    <div className="min-w-0 space-y-4">
+    <BrPage tone={BR_TONE.reconciliation}>
       {header}
 
-      <KpiGrid>
-        <KpiCard label="BOQ value" value={dash ?? formatAmountCompact(totals.boqValue)} hint={dash ? undefined : `${totals.items} items`} icon={ClipboardList} tone="slate" />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <KpiCard label="BOQ value" value={dash ?? formatAmountCompact(totals.boqValue)} hint={dash ? undefined : `${totals.items} items`} icon={ClipboardList} tone="slate" accent />
         <KpiCard
           label="Executed"
           value={dash ?? formatAmountCompact(totals.executedValue)}
           hint={dash ? undefined : `${percent(totals.executedValue, totals.boqValue)} of BOQ`}
           icon={Layers}
           tone="blue"
+          accent
           info="JMC and MVAC executed quantities × BOQ rate. Rejected and cancelled entries are left out."
         />
         <KpiCard
@@ -439,6 +423,7 @@ export default function ReconciliationPage() {
           hint={dash ? undefined : `${percent(totals.certifiedValue, totals.executedValue)} of executed`}
           icon={CheckCircle2}
           tone="teal"
+          accent
         />
         <KpiCard
           label="Billed"
@@ -446,6 +431,7 @@ export default function ReconciliationPage() {
           hint={dash ? undefined : `${percent(totals.billedValue, totals.certifiedValue)} of certified`}
           icon={IndianRupee}
           tone="emerald"
+          accent
           info="Quantities on RA bills that are not cancelled (drafts included) × BOQ rate."
         />
         <KpiCard
@@ -454,6 +440,7 @@ export default function ReconciliationPage() {
           hint={dash ? undefined : 'Executed, not certified'}
           icon={FileText}
           tone="amber"
+          accent
         />
         <KpiCard
           label="To bill"
@@ -461,33 +448,44 @@ export default function ReconciliationPage() {
           hint={dash ? undefined : 'Certified, not billed'}
           icon={Send}
           tone="violet"
+          accent
           info="Only items with a positive balance add up here, so an over-billed item does not hide another item's unbilled quantity."
         />
-      </KpiGrid>
+      </div>
 
       {!loading && (exceptionCount > 0 || recon.unmatched.length > 0) && (
-        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 sm:flex-row sm:items-center">
-          <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="flex-1">
-            {[
-              totals.overExecutedItems && `${totals.overExecutedItems} over-executed`,
-              totals.overBilledItems && `${totals.overBilledItems} over-billed (${formatAmount(totals.overBilledValue)})`,
-              totals.duplicateItems && `${totals.duplicateItems} duplicate BOQ SL No${totals.duplicateItems === 1 ? '' : 's'}`,
-              recon.unmatched.length && `${recon.unmatched.length} unmatched line${recon.unmatched.length === 1 ? '' : 's'} (${formatAmount(recon.unmatchedValue)})`,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </span>
-          {exceptionCount > 0 && !onlyExceptions && (
-            <Button type="button" size="sm" variant="outline" onClick={() => setOnlyExceptions(true)}>
-              Show exceptions
-            </Button>
-          )}
-        </div>
+        <BrNotice
+          tone="warning"
+          icon={AlertTriangle}
+          title="Items that need attention"
+          action={
+            exceptionCount > 0 && !onlyExceptions ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => setOnlyExceptions(true)}>
+                Show exceptions
+              </Button>
+            ) : undefined
+          }
+        >
+          {[
+            totals.overExecutedItems && `${totals.overExecutedItems} over-executed`,
+            totals.overBilledItems && `${totals.overBilledItems} over-billed (${formatAmount(totals.overBilledValue)})`,
+            totals.duplicateItems && `${totals.duplicateItems} duplicate BOQ SL No${totals.duplicateItems === 1 ? '' : 's'}`,
+            recon.unmatched.length && `${recon.unmatched.length} unmatched line${recon.unmatched.length === 1 ? '' : 's'} (${formatAmount(recon.unmatchedValue)})`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </BrNotice>
+      )}
+
+      {!loading && exceptionCount === 0 && recon.unmatched.length === 0 && recon.rows.length > 0 && (
+        <BrNotice tone="success" icon={CheckCircle2} title="Everything reconciles">
+          No item is over-executed or over-billed, no BOQ SL No is repeated, and every JMC, MVAC and RA bill line matches a BOQ item.
+        </BrNotice>
       )}
 
       <TableCard
         title="BOQ items"
+        icon={Scale}
         count={loading ? undefined : rows.length}
         total={loading ? undefined : recon.rows.length}
         noun="item"
@@ -584,11 +582,11 @@ export default function ReconciliationPage() {
               <TableEmpty colSpan={COLS}>No BOQ items match these filters.</TableEmpty>
             ) : (
               rows.map((row) => (
-                <TableRow key={row.id} className={cn(row.isException && 'bg-rose-50')}>
+                <TableRow key={row.id} className={cn(row.isException && 'bg-rose-50 dark:bg-rose-950/30')}>
                   <TableCell
                     className={cn(
                       'sticky left-0 z-10 whitespace-nowrap font-medium shadow-[1px_0_0_0_var(--border)]',
-                      row.isException ? 'bg-rose-50' : 'bg-card',
+                      row.isException ? 'bg-rose-50 dark:bg-rose-950/60' : 'bg-card',
                     )}
                   >
                     {row.boqSlNo || <span className="text-muted-foreground">—</span>}
@@ -683,7 +681,7 @@ export default function ReconciliationPage() {
           )}
         </div>
       </TableCard>
-    </div>
+    </BrPage>
   );
 }
 
