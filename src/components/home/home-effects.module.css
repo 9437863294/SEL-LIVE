@@ -1,0 +1,523 @@
+/*
+ * The Aurora Glass home page's moving backgrounds (Settings › Appearance › Branding › Home page),
+ * ported from the "SEL Home Backgrounds" mock-up: `.banner` behind the greeting card, `.modules`
+ * behind the "All modules" grid.
+ *
+ * Chrome 109 (the office's Windows 7 PCs): no color-mix() — the mock-up's tile glow used it, so it
+ * reads a tile's accent from `--accent-30` instead — 8-digit hex alpha, `-webkit-mask` beside `mask`.
+ *
+ * Cost: whatever moves is a transform on its own layer. Where the mock-up animated a background
+ * position (Mesh flow, Dot grid drift) or `left` (Shimmer sweep) — a repaint of the whole area on
+ * every frame — the same picture is drawn on a larger layer that is moved instead. The mock-up's
+ * backdrop-filter over the blobs is left out: they are already blurred, so it changed nothing you
+ * could see.
+ *
+ * Dark mode: each light surface has a counterpart on the theme's card colour, the colour kept to a
+ * tint so the greeting and the tiles stay legible.
+ *
+ * Motion runs only under `prefers-reduced-motion: no-preference`, and never when the user chose
+ * reduced motion in Settings › Accessibility (`html[data-motion='reduced']`).
+ */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  /* Inside a `space-y-*` parent it would otherwise take a margin and stop short of the edge. */
+  margin: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.layer > * {
+  position: absolute;
+}
+
+/* ── Banner ──────────────────────────────────────────────────────────────────────────────── */
+
+/* Aurora drift */
+.banner[data-effect='aurora'] {
+  background: #f9fafc;
+}
+.blob {
+  border-radius: 50%;
+  filter: blur(48px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.ba1 {
+  width: 520px;
+  height: 260px;
+  background: #5eead4;
+  left: -5%;
+  top: -130px;
+}
+.ba2 {
+  width: 560px;
+  height: 260px;
+  background: #c7d2fe;
+  left: 40%;
+  top: -150px;
+}
+.ba3 {
+  width: 480px;
+  height: 240px;
+  background: #f9a8d4;
+  right: -5%;
+  bottom: -150px;
+}
+.ba4 {
+  width: 380px;
+  height: 200px;
+  background: #fde68a;
+  left: 25%;
+  bottom: -160px;
+}
+.veil {
+  inset: 0;
+}
+.banner[data-effect='aurora'] .veil {
+  background: #ffffff70;
+}
+
+/* Mesh flow — a layer 1.8 times the banner, moved, as the mock-up's 180% background was. */
+.banner[data-effect='mesh'] {
+  background: #fafbfd;
+}
+.mesh {
+  left: 0;
+  top: 0;
+  width: 180%;
+  height: 180%;
+  background:
+    radial-gradient(at 10% 20%, #ccfbf1 0, transparent 45%),
+    radial-gradient(at 50% 0%, #e0e7ff 0, transparent 50%),
+    radial-gradient(at 90% 30%, #fce7f3 0, transparent 45%),
+    radial-gradient(at 70% 100%, #fef3c7 0, transparent 45%),
+    radial-gradient(at 20% 100%, #dbeafe 0, transparent 45%),
+    #fafbfd;
+  will-change: transform;
+}
+
+/* Power line */
+.banner[data-effect='power-line'] {
+  background: linear-gradient(180deg, #f0fdfa, #eff6ff 60%, #faf5ff);
+}
+.powerScene {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.tw {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 1.2;
+  opacity: 0.45;
+}
+.wr {
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 1;
+}
+.pl {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 60 2600;
+  filter: drop-shadow(0 0 5px currentColor);
+  /* A still pulse would read as a mark on the line; it shows only while it moves. */
+  visibility: hidden;
+}
+.banner[data-effect='power-line'] .veil {
+  background: linear-gradient(90deg, #ffffffe0 0%, #ffffffa0 35%, #ffffff30 60%, #ffffff70 100%);
+}
+
+/* Rising sparks */
+.banner[data-effect='sparks'] {
+  background: linear-gradient(120deg, #f0fdfa, #f5f3ff 50%, #fdf2f8);
+}
+.spark {
+  bottom: -12px;
+  border-radius: 50%;
+  opacity: 0;
+}
+
+/* Shimmer sweep — the band travels on a full-width track, as a transform. */
+.banner[data-effect='shimmer'] {
+  background: linear-gradient(115deg, #ecfeff 0%, #eef2ff 45%, #fdf2f8 100%);
+}
+.sweepTrack {
+  inset: 0;
+  transform: translateX(-300px);
+}
+.sweep {
+  position: absolute;
+  top: -50%;
+  bottom: -50%;
+  left: 0;
+  width: 260px;
+  background: linear-gradient(90deg, transparent, #ffffffcc, transparent);
+  transform: rotate(18deg);
+}
+.dots {
+  inset: 0;
+  background-image: radial-gradient(#6366f11a 1px, transparent 1px);
+  background-size: 16px 16px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 60%);
+  mask-image: linear-gradient(90deg, transparent, #000 60%);
+}
+
+/* Colour wheel */
+.banner[data-effect='colour-wheel'] {
+  background: #f9fafc;
+}
+.wheel {
+  width: 160%;
+  aspect-ratio: 1;
+  left: -30%;
+  top: -150%;
+  background: conic-gradient(from 0deg, #99f6e4, #c7d2fe, #fbcfe8, #fde68a, #99f6e4);
+  filter: blur(60px);
+  opacity: 0.6;
+  will-change: transform;
+}
+.banner[data-effect='colour-wheel'] .veil {
+  background: #ffffff8a;
+}
+
+/* Banner, dark mode: the card colour underneath, the colour kept to a tint. */
+:global(.dark) .banner {
+  background: hsl(var(--card));
+}
+:global(.dark) .banner .blob {
+  opacity: 0.22;
+}
+:global(.dark) .banner[data-effect='aurora'] .veil {
+  background: hsl(var(--card) / 0.35);
+}
+:global(.dark) .mesh {
+  background:
+    radial-gradient(at 10% 20%, #14b8a62e 0, transparent 45%),
+    radial-gradient(at 50% 0%, #6366f12e 0, transparent 50%),
+    radial-gradient(at 90% 30%, #ec48991f 0, transparent 45%),
+    radial-gradient(at 70% 100%, #f59e0b1a 0, transparent 45%),
+    radial-gradient(at 20% 100%, #3b82f62e 0, transparent 45%);
+}
+:global(.dark) .banner[data-effect='power-line'] {
+  background: linear-gradient(180deg, #05201e, #0b1428 60%, #160f26);
+}
+:global(.dark) .tw {
+  stroke: #64748b;
+}
+:global(.dark) .wr {
+  stroke: #334155;
+}
+:global(.dark) .banner[data-effect='power-line'] .veil {
+  background: linear-gradient(90deg, hsl(var(--card) / 0.88) 0%, hsl(var(--card) / 0.6) 35%, hsl(var(--card) / 0.15) 60%, hsl(var(--card) / 0.4) 100%);
+}
+:global(.dark) .banner[data-effect='sparks'] {
+  background: linear-gradient(120deg, #0d2a2a, hsl(var(--card)) 50%, #2a1424);
+}
+:global(.dark) .banner[data-effect='shimmer'] {
+  background: linear-gradient(115deg, #0b2530 0%, hsl(var(--card)) 45%, #2a1424 100%);
+}
+:global(.dark) .sweep {
+  background: linear-gradient(90deg, transparent, #ffffff14, transparent);
+}
+:global(.dark) .dots {
+  background-image: radial-gradient(#a5b4fc1f 1px, transparent 1px);
+}
+:global(.dark) .wheel {
+  opacity: 0.3;
+}
+:global(.dark) .banner[data-effect='colour-wheel'] .veil {
+  background: hsl(var(--card) / 0.45);
+}
+
+/* ── Modules area ────────────────────────────────────────────────────────────────────────── */
+
+/* Dot grid drift — the vignette stays put while the dots inside it move one cell and loop. */
+.dotMask {
+  inset: 0;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 40%, transparent 90%);
+  mask-image: radial-gradient(ellipse at center, #000 40%, transparent 90%);
+}
+.dotGrid {
+  position: absolute;
+  top: -22px;
+  left: -22px;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(#94a3b833 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+  will-change: transform;
+}
+:global(.dark) .dotGrid {
+  background-image: radial-gradient(#94a3b826 1.2px, transparent 1.2px);
+}
+
+/* Pastel blobs */
+.mblob {
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.35;
+  will-change: transform;
+}
+.mb1 {
+  width: 500px;
+  height: 400px;
+  background: #99f6e4;
+  left: -5%;
+  top: -10%;
+}
+.mb2 {
+  width: 520px;
+  height: 420px;
+  background: #c7d2fe;
+  left: 40%;
+  top: 20%;
+}
+.mb3 {
+  width: 460px;
+  height: 380px;
+  background: #fbcfe8;
+  right: -5%;
+  bottom: -20%;
+}
+:global(.dark) .mblob {
+  opacity: 0.12;
+}
+
+/* Cursor spotlight — follows --mx / --my, set on the area as the mouse moves. */
+.spot {
+  inset: 0;
+  background:
+    radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), #a5b4fc40, transparent 60%),
+    radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), #5eead440, transparent 60%);
+}
+:global(.dark) .spot {
+  background:
+    radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), #6366f126, transparent 60%),
+    radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), #14b8a626, transparent 60%);
+}
+
+/* Wave bands */
+.mwave {
+  left: 0;
+  width: 200%;
+  height: 160px;
+  will-change: transform;
+}
+.mw1 {
+  bottom: 0;
+  opacity: 0.18;
+}
+.mw2 {
+  bottom: 0;
+  opacity: 0.12;
+}
+.mw3 {
+  top: 0;
+  opacity: 0.1;
+  transform: scaleY(-1);
+}
+
+/* Card glow on hover — on each tile marked data-fx-tile, inside an area with this class. */
+.cardGlow [data-fx-tile] {
+  isolation: isolate;
+}
+.cardGlow [data-fx-tile]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(180px circle at var(--x, 50%) var(--y, 50%), var(--accent-30, #6366f14d), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+.cardGlow [data-fx-tile]:hover::before {
+  opacity: 1;
+}
+.cardGlow [data-fx-tile]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--hm-angle, 0deg), transparent 0 60%, var(--accent-solid, #6366f1), var(--accent-70, #4f46e5b3), transparent 90%);
+  /* The mock-up's form: Chrome 109 reads the prefixed pair, newer browsers `mask-composite`. */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+.cardGlow [data-fx-tile]:hover::after {
+  opacity: 1;
+}
+
+@property --hm-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  .ba1 {
+    animation: hm-float-a 18s ease-in-out infinite alternate;
+  }
+  .ba2 {
+    animation: hm-float-b 22s ease-in-out infinite alternate;
+  }
+  .ba3 {
+    animation: hm-float-a 20s ease-in-out infinite alternate-reverse;
+  }
+  .ba4 {
+    animation: hm-float-b 24s ease-in-out infinite alternate-reverse;
+  }
+  .mesh {
+    animation: hm-mesh 16s ease-in-out infinite alternate;
+  }
+  .pl {
+    visibility: visible;
+    animation: hm-run 7s linear infinite;
+  }
+  .spark {
+    animation: hm-rise linear infinite;
+  }
+  .sweepTrack {
+    animation: hm-sweep 6s ease-in-out infinite;
+  }
+  .wheel {
+    animation: hm-turn 30s linear infinite;
+  }
+
+  .dotGrid {
+    animation: hm-dots 4s linear infinite;
+  }
+  .mb1 {
+    animation: hm-float-a 26s ease-in-out infinite alternate;
+  }
+  .mb2 {
+    animation: hm-float-b 30s ease-in-out infinite alternate;
+  }
+  .mb3 {
+    animation: hm-float-a 28s ease-in-out infinite alternate-reverse;
+  }
+  .mw1 {
+    animation: hm-wave 26s linear infinite;
+  }
+  .mw2 {
+    animation: hm-wave 34s linear infinite reverse;
+  }
+  .mw3 {
+    animation: hm-wave-flipped 30s linear infinite;
+  }
+  .cardGlow [data-fx-tile]:hover::after {
+    animation: hm-angle 2.4s linear infinite;
+  }
+}
+
+/* Reduced motion chosen in the app, whatever the device says. */
+:global(html[data-motion='reduced']) .layer *,
+:global(html[data-motion='reduced']) .cardGlow [data-fx-tile]::after {
+  animation: none !important;
+}
+:global(html[data-motion='reduced']) .pl {
+  visibility: hidden;
+}
+
+@keyframes hm-float-a {
+  50% {
+    transform: translate(160px, 40px) scale(1.15);
+  }
+  100% {
+    transform: translate(-60px, 10px);
+  }
+}
+@keyframes hm-float-b {
+  50% {
+    transform: translate(-180px, 50px) scale(1.1);
+  }
+  100% {
+    transform: translate(90px, -10px);
+  }
+}
+/* The mock-up's background positions 0% 0% → 100% 50% → 30% 100% on a 180% image, as offsets of
+   a 180% layer: 100% is -(80/180) = -44.4% of its own size. */
+@keyframes hm-mesh {
+  0% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-44.4%, -22.2%);
+  }
+  100% {
+    transform: translate(-13.3%, -44.4%);
+  }
+}
+@keyframes hm-run {
+  from {
+    stroke-dashoffset: 2660;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes hm-rise {
+  0% {
+    transform: translate(0, 0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(var(--dx, 0px), -260px);
+    opacity: 0;
+  }
+}
+@keyframes hm-sweep {
+  0% {
+    transform: translateX(-300px);
+  }
+  60%,
+  100% {
+    transform: translateX(110%);
+  }
+}
+@keyframes hm-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hm-dots {
+  to {
+    transform: translate(22px, 22px);
+  }
+}
+@keyframes hm-wave {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes hm-wave-flipped {
+  from {
+    transform: scaleY(-1) translateX(0);
+  }
+  to {
+    transform: scaleY(-1) translateX(-50%);
+  }
+}
+@keyframes hm-angle {
+  to {
+    --hm-angle: 360deg;
+  }
+}

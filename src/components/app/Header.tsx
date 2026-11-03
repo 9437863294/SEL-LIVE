@@ -3,7 +3,6 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Inbox, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,6 +40,7 @@ import { moduleBadgeClass } from '@/lib/activity-modules';
 import { moduleDisplayName } from '@/lib/module-display-names';
 import { useAppearance } from '@/components/theme/ThemeProvider';
 import { BREADCRUMBS_BAR_ID } from '@/components/app/Breadcrumbs';
+import { HeaderAvatarRing, HeaderBrand, HeaderSurface, headerDesignOf, headerLogoSrc } from '@/components/app/header-surface';
 
 // The header renders on every authenticated page, but these dialogs are only
 // reachable behind a click. Loading them eagerly put ~60KB of dialog code (and
@@ -110,10 +110,6 @@ const byNewestTask = (a: PendingTask, b: PendingTask) => pendingTaskMillis(b) - 
  * the true unread total whenever there is more than this.
  */
 const BELL_ALERT_LIMIT = 50;
-
-/** The SEL logo, shown until the company publishes one of its own. */
-const DEFAULT_LOGO_URL =
-  'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788';
 
 /**
  * The user's photo for a 36px avatar. An uploaded photo (Firebase Storage) is often a full-size
@@ -222,9 +218,8 @@ export default function Header() {
   const { company, effective, resolvedMode } = useAppearance();
   const { branding } = company;
   const stickyHeader = effective.layout.stickyHeader;
-  // The dark-background logo in dark mode (else the light one); the SEL logo until one is published.
-  const brandLogo = resolvedMode === 'dark' ? branding.logoDark ?? branding.logoLight : branding.logoLight;
-  const logoSrc = brandLogo?.url ?? DEFAULT_LOGO_URL;
+  const headerDesign = headerDesignOf(branding.headerDesign);
+  const logoSrc = headerLogoSrc(headerDesign, resolvedMode, branding);
   const headerRef = useRef<HTMLElement>(null);
   useHeaderOffset(headerRef, stickyHeader, `${pathname}|${effective.layout.breadcrumbs}`);
 
@@ -557,33 +552,20 @@ export default function Header() {
       <header
         ref={headerRef}
         className={cn(
-          'z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60',
+          'z-50 w-full',
+          // A design paints its own opaque bar (and Aurora / Midnight their own underline).
+          headerDesign === 'classic'
+            ? 'border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60'
+            : headerDesign === 'power-line' && 'border-b',
           stickyHeader ? 'sticky top-0' : 'relative',
         )}
       >
         <ImpersonationBanner />
-        <div className="flex h-14 items-center px-3 md:h-16 md:px-6">
-          <div className="flex items-center gap-2 md:gap-4">
-              <Link href="/">
-                <div className="relative h-8 w-24 md:h-10 md:w-28">
-                  <Image
-                    src={logoSrc}
-                    alt={`${branding.companyName} logo`}
-                    fill
-                    sizes="112px"
-                    style={{ objectFit: 'contain' }}
-                    preload
-                  />
-                </div>
-              </Link>
-              <div className="border-l pl-3 md:pl-4">
-                 {/* Not a heading: each page's own title is its one <h1>. */}
-                 <p className="text-sm font-semibold text-foreground hidden sm:block md:text-lg">{branding.companyName}</p>
-              </div>
-          </div>
+        {/* The design chosen in Settings › Appearance › Branding › Top bar (Classic by default). */}
+        <HeaderSurface design={headerDesign} mode={resolvedMode} className="flex h-14 items-center px-3 md:h-16 md:px-6">
+          <HeaderBrand design={headerDesign} logoSrc={logoSrc} companyName={branding.companyName} tagline={branding.headerTagline} href="/" preload />
 
-
-          <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4">
+          <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4" data-header-actions="">
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
               {/* The signed-in user's own light / dark / system choice — saved to their profile. */}
@@ -629,10 +611,12 @@ export default function Header() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                    <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={avatarSrc(user?.photoURL)} alt={user?.name || 'User avatar'} />
-                      <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
-                    </Avatar>
+                    <HeaderAvatarRing design={headerDesign}>
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={avatarSrc(user?.photoURL)} alt={user?.name || 'User avatar'} />
+                        <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
+                      </Avatar>
+                    </HeaderAvatarRing>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -678,7 +662,7 @@ export default function Header() {
                <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
-                    <Bell className="h-5 w-5" />
+                    <Bell className="h-5 w-5" data-header-bell="" />
                     {(pendingTasks.length + visibleAlerts.length) > 0 && (
                       <span className="absolute top-1 right-1 flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -796,7 +780,7 @@ export default function Header() {
 
             </TooltipProvider>
           </div>
-        </div>
+        </HeaderSurface>
         {/* Mounted only while open so the lazy chunk is fetched on demand. */}
         {isChangePasswordOpen && (
           <ChangePasswordDialog isOpen onOpenChange={setIsChangePasswordOpen} />

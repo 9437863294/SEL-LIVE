@@ -7,6 +7,13 @@ import {
   BUILT_IN_ACCENTS,
   DEFAULT_BRANDING,
   DEFAULT_CONFIG,
+  HEADER_DESIGNS,
+  HEADER_DESIGN_META,
+  HEADER_TAGLINE_MAX,
+  HOME_BANNER_EFFECTS,
+  HOME_BANNER_EFFECT_META,
+  HOME_MODULES_EFFECTS,
+  HOME_MODULES_EFFECT_META,
   LOGIN_DESIGNS,
   LOGIN_DESIGN_META,
   cleanText,
@@ -186,6 +193,63 @@ test('sign-in design choices are validated; a document saved before them gets th
   assert.equal(sanitizeBranding({ loginDesign: 'neon' }, chosen).loginDesign, 'blueprint');
 
   for (const id of LOGIN_DESIGNS) assert.ok(LOGIN_DESIGN_META[id]?.label, id);
+});
+
+test('top-bar designs are validated; a document saved before them stays Classic', () => {
+  const old = sanitizeBranding({ companyName: 'SEL' });
+  assert.equal(old.headerDesign, 'classic', 'nothing changes until a design is chosen');
+  assert.equal(old.headerTagline, '');
+
+  const chosen = sanitizeBranding({ headerDesign: 'power-line', headerTagline: '  Substations   ·  EPC <b>' });
+  assert.equal(chosen.headerDesign, 'power-line');
+  assert.equal(chosen.headerTagline, 'Substations · EPC b', 'plain text, whitespace collapsed');
+  // An unknown design never replaces a valid published one.
+  assert.equal(sanitizeBranding({ headerDesign: 'neon' }, chosen).headerDesign, 'power-line');
+
+  // Clearing the tagline is a choice, not a missing value; leaving it out keeps what was there.
+  assert.equal(sanitizeBranding({ headerTagline: '' }, chosen).headerTagline, '');
+  assert.equal(sanitizeBranding({ headerTagline: '   ' }, chosen).headerTagline, '');
+  assert.equal(sanitizeBranding({}, chosen).headerTagline, chosen.headerTagline);
+  assert.equal(sanitizeBranding({ headerTagline: 'x'.repeat(200) }).headerTagline.length, HEADER_TAGLINE_MAX);
+
+  // A fallback published before the fields existed still yields valid values.
+  const legacy = { ...DEFAULT_BRANDING };
+  delete legacy.headerDesign;
+  delete legacy.headerTagline;
+  assert.equal(sanitizeBranding({}, legacy).headerDesign, 'classic');
+  assert.equal(sanitizeBranding({}, legacy).headerTagline, '');
+
+  assert.equal(HEADER_DESIGNS[0], 'classic');
+  for (const id of HEADER_DESIGNS) assert.ok(HEADER_DESIGN_META[id]?.label, id);
+  assert.deepEqual(
+    HEADER_DESIGNS.filter((id) => HEADER_DESIGN_META[id].alwaysDark),
+    ['midnight-current'],
+    'only Midnight Current ignores light mode',
+  );
+});
+
+test('home backgrounds are validated; a document saved before them has none', () => {
+  const old = sanitizeBranding({ companyName: 'SEL' });
+  assert.equal(old.homeBanner, 'none');
+  assert.equal(old.homeModules, 'none');
+
+  const chosen = sanitizeBranding({ homeBanner: 'power-line', homeModules: 'card-glow' });
+  assert.equal(chosen.homeBanner, 'power-line');
+  assert.equal(chosen.homeModules, 'card-glow');
+  // Unknown values never replace valid published ones, and the two lists are not interchangeable.
+  assert.equal(sanitizeBranding({ homeBanner: 'card-glow', homeModules: 'mesh' }, chosen).homeBanner, 'power-line');
+  assert.equal(sanitizeBranding({ homeBanner: 'card-glow', homeModules: 'mesh' }, chosen).homeModules, 'card-glow');
+
+  const legacy = { ...DEFAULT_BRANDING };
+  delete legacy.homeBanner;
+  delete legacy.homeModules;
+  assert.equal(sanitizeBranding({}, legacy).homeBanner, 'none');
+  assert.equal(sanitizeBranding({}, legacy).homeModules, 'none');
+
+  assert.equal(HOME_BANNER_EFFECTS[0], 'none');
+  assert.equal(HOME_MODULES_EFFECTS[0], 'none');
+  for (const id of HOME_BANNER_EFFECTS) assert.ok(HOME_BANNER_EFFECT_META[id]?.label, id);
+  for (const id of HOME_MODULES_EFFECTS) assert.ok(HOME_MODULES_EFFECT_META[id]?.label, id);
 });
 
 test('sign-in highlights are plain text, need a title, and stop at three', () => {

@@ -1,0 +1,536 @@
+/*
+ * The top bar's designs (Settings › Appearance › Branding › Top bar), ported from the
+ * "SEL Header – Motion Styles" mock-up. Each is a backdrop behind the header's usual contents.
+ *
+ * Chrome 109 (the office's Windows 7 PCs): no color-mix(), alpha as 8-digit hex or `hsl(… / a)`,
+ * and `-webkit-mask-image` beside `mask-image`.
+ *
+ * Cost: this bar is on every page, so everything that moves is a transform on its own layer —
+ * nothing animates `left` or a background position except the 2px underline. The mock-up's
+ * backdrop-filter over the blobs is left out: the blobs are already blurred, so it changed nothing
+ * you could see while re-blurring the whole bar on every frame.
+ *
+ * Motion runs only under `prefers-reduced-motion: no-preference`, and never when the user chose
+ * reduced motion in Settings › Accessibility (`html[data-motion='reduced']`).
+ */
+
+.surface {
+  position: relative;
+  isolation: isolate;
+  color: hsl(var(--foreground));
+}
+
+/*
+ * A bar whose surface is not the app's mode — Midnight Current in light mode, or a preview of the
+ * other mode: its contents read the surface's tokens, so text, borders and hover states stay
+ * legible on it. Only then — otherwise the company's own theme tokens apply untouched.
+ */
+.surface[data-retone][data-tone='dark'] {
+  --background: 226 49% 8%;
+  --foreground: 214 32% 91%;
+  --card: 226 40% 11%;
+  --card-foreground: 214 32% 91%;
+  --muted: 226 25% 17%;
+  --muted-foreground: 215 20% 65%;
+  --accent: 226 25% 17%;
+  --accent-foreground: 0 0% 100%;
+  --border: 226 22% 24%;
+  --input: 226 22% 24%;
+}
+
+.surface[data-retone][data-tone='light'] {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+}
+
+/* Classic only reaches here as a preview of the other mode; the real bar renders it plainly. */
+.surface[data-design='classic'] {
+  background: hsl(var(--background));
+}
+
+.layers {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.content {
+  position: relative;
+  z-index: 2;
+}
+
+/* ── 1 · Aurora Glass ─────────────────────────────────────────────────────────────────────── */
+
+.surface[data-design='aurora'] {
+  background: #fbfcfe;
+}
+.surface[data-design='aurora'][data-tone='dark'] {
+  background: hsl(var(--background));
+}
+
+.blob {
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(38px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.surface[data-tone='dark'] .blob {
+  opacity: 0.3;
+}
+.b1 {
+  width: 340px;
+  height: 160px;
+  background: #5eead4;
+  left: 2%;
+  top: -60px;
+}
+.b2 {
+  width: 380px;
+  height: 170px;
+  background: #a5b4fc;
+  left: 30%;
+  top: -30px;
+}
+.b3 {
+  width: 320px;
+  height: 150px;
+  background: #f9a8d4;
+  left: 58%;
+  top: -70px;
+}
+.b4 {
+  width: 260px;
+  height: 140px;
+  background: #fde68a;
+  left: 80%;
+  top: -40px;
+}
+
+.frost {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #ffffff8c;
+}
+.surface[data-tone='dark'] .frost {
+  background: hsl(var(--background) / 0.5);
+}
+
+/* The flowing underline: Aurora Glass and Midnight Current. */
+.underline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  z-index: 3;
+  background-size: 200% 100%;
+}
+.surface[data-design='aurora'] .underline {
+  background-image: linear-gradient(90deg, #14b8a6, #2563eb, #7c3aed, #db2777, #f59e0b, #14b8a6);
+}
+.surface[data-design='midnight-current'] .underline {
+  background-image: linear-gradient(90deg, transparent, #2dd4bf, #a78bfa, #f472b6, transparent);
+}
+
+/* ── 2 · Power Line ───────────────────────────────────────────────────────────────────────── */
+
+.surface[data-design='power-line'] {
+  background: linear-gradient(180deg, #f0fdfa 0%, #eff6ff 60%, #faf5ff 100%);
+}
+.surface[data-design='power-line'][data-tone='dark'] {
+  background: linear-gradient(180deg, #05201e 0%, #0b1428 60%, #160f26 100%);
+}
+
+/* Drawn at its own proportions and cropped, so the towers never stretch on a narrow screen. */
+.scene {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 3240 / 68;
+}
+.tower {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 1.3;
+  opacity: 0.8;
+}
+.wire {
+  fill: none;
+  stroke: #b6c2d2;
+  stroke-width: 1.2;
+}
+.surface[data-tone='dark'] .tower {
+  stroke: #64748b;
+  opacity: 0.75;
+}
+.surface[data-tone='dark'] .wire {
+  stroke: #334155;
+}
+.pulse {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 46 1400;
+  filter: drop-shadow(0 0 4px currentColor);
+  /* A still pulse would read as a glitch on the wire; it shows only while it moves. */
+  visibility: hidden;
+}
+.p1 {
+  stroke: #14b8a6;
+  color: #14b8a6;
+}
+.p2 {
+  stroke: #6366f1;
+  color: #6366f1;
+}
+.p3 {
+  stroke: #f59e0b;
+  color: #f59e0b;
+}
+.spark {
+  fill: #fbbf24;
+  opacity: 0;
+}
+
+.fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.surface[data-design='power-line'] .fade {
+  background: linear-gradient(90deg, #ffffffd9 0%, #ffffff66 28%, #ffffff1a 55%, #ffffff55 80%, #ffffffcc 100%);
+}
+.surface[data-design='power-line'][data-tone='dark'] .fade {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--background) / 0.85) 0%,
+    hsl(var(--background) / 0.4) 28%,
+    hsl(var(--background) / 0.1) 55%,
+    hsl(var(--background) / 0.33) 80%,
+    hsl(var(--background) / 0.8) 100%
+  );
+}
+
+/* ── 3 · Midnight Current ─────────────────────────────────────────────────────────────────── */
+
+.surface[data-design='midnight-current'] {
+  background: #0b1020;
+}
+
+.glow {
+  position: absolute;
+  z-index: 0;
+  inset: -120% -10%;
+  background:
+    radial-gradient(closest-side, #14b8a655, transparent) 10% 50% / 40% 60% no-repeat,
+    radial-gradient(closest-side, #7c3aed66, transparent) 45% 40% / 45% 70% no-repeat,
+    radial-gradient(closest-side, #db277755, transparent) 80% 60% / 40% 60% no-repeat;
+  filter: blur(10px);
+  will-change: transform;
+}
+
+/* One cell larger than the bar, so moving it a cell loops without a seam. */
+.grid {
+  position: absolute;
+  z-index: 0;
+  top: -28px;
+  left: -28px;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(#ffffff0d 1px, transparent 1px), linear-gradient(90deg, #ffffff0d 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+  will-change: transform;
+}
+
+/* The light sweep: a full-width track, so the band can travel the bar's width as a transform. */
+.scanTrack {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform: translateX(-200px);
+}
+.scan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 180px;
+  background: linear-gradient(90deg, transparent, #ffffff14, transparent);
+}
+
+/* ── 4 · Brand Waves ──────────────────────────────────────────────────────────────────────── */
+
+.surface[data-design='brand-waves'] {
+  background: #ffffff;
+}
+.surface[data-design='brand-waves'][data-tone='dark'] {
+  background: hsl(var(--background));
+}
+
+.wave {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  will-change: transform;
+}
+.w1 {
+  opacity: 0.38;
+}
+.w2 {
+  opacity: 0.26;
+}
+.w3 {
+  opacity: 0.18;
+}
+.surface[data-tone='dark'] .w1 {
+  opacity: 0.5;
+}
+.surface[data-tone='dark'] .w2 {
+  opacity: 0.36;
+}
+.surface[data-tone='dark'] .w3 {
+  opacity: 0.26;
+}
+.surface[data-design='brand-waves'] .fade {
+  background: linear-gradient(90deg, #ffffffee 0%, #ffffff99 22%, #ffffff22 50%, #ffffff99 78%, #ffffffee 100%);
+}
+.surface[data-design='brand-waves'][data-tone='dark'] .fade {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--background) / 0.93) 0%,
+    hsl(var(--background) / 0.6) 22%,
+    hsl(var(--background) / 0.13) 50%,
+    hsl(var(--background) / 0.6) 78%,
+    hsl(var(--background) / 0.93) 100%
+  );
+}
+
+/* ── The bar's contents, in every design but Classic ──────────────────────────────────────── */
+
+/* The logo on a white chip, as in the mock-up — so the light logo reads on every surface. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 3px 7px;
+  box-shadow: 0 4px 12px -6px #c8102e66, 0 0 0 1px #c8102e22;
+}
+.surface[data-tone='dark'] .mark {
+  box-shadow: 0 0 0 1px #ffffff22, 0 0 18px -4px #e11d48aa;
+}
+
+/* The spinning colour ring around the avatar. */
+.avatarRing {
+  position: relative;
+  display: inline-flex;
+  border-radius: 9999px;
+  padding: 2px;
+}
+.avatarRing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: conic-gradient(#14b8a6, #2563eb, #7c3aed, #db2777, #f59e0b, #14b8a6);
+}
+.avatarRing > * {
+  position: relative;
+  border: 2px solid hsl(var(--background));
+}
+
+.surface[data-animated] [data-header-actions] :is(a, button) {
+  transition-property: color, background-color, border-color, transform;
+  transition-duration: 150ms;
+}
+
+/* ── Motion ───────────────────────────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  .b1 {
+    animation: hdr-float-a 16s ease-in-out infinite alternate;
+  }
+  .b2 {
+    animation: hdr-float-b 19s ease-in-out infinite alternate;
+  }
+  .b3 {
+    animation: hdr-float-a 22s ease-in-out infinite alternate-reverse;
+  }
+  .b4 {
+    animation: hdr-float-b 18s ease-in-out infinite alternate-reverse;
+  }
+  .surface[data-design='aurora'] .underline {
+    animation: hdr-slide 6s linear infinite;
+  }
+  .surface[data-design='midnight-current'] .underline {
+    animation: hdr-slide 4s linear infinite;
+  }
+
+  .pulse {
+    visibility: visible;
+    animation: hdr-run 5.5s linear infinite;
+  }
+  .p2 {
+    animation-duration: 7s;
+    animation-delay: -2s;
+  }
+  .p3 {
+    animation-duration: 6.2s;
+    animation-delay: -4s;
+  }
+  .spark {
+    animation: hdr-blink 3s infinite;
+  }
+
+  .glow {
+    animation: hdr-sway 14s ease-in-out infinite alternate;
+  }
+  .grid {
+    animation: hdr-grid 20s linear infinite;
+  }
+  .scanTrack {
+    animation: hdr-scan 7s ease-in-out infinite;
+  }
+
+  .w1 {
+    animation: hdr-wave 14s linear infinite;
+  }
+  .w2 {
+    animation: hdr-wave 20s linear infinite reverse;
+  }
+  .w3 {
+    animation: hdr-wave 26s linear infinite;
+  }
+
+  .avatarRing::before {
+    animation: hdr-spin 6s linear infinite;
+  }
+
+  .surface[data-animated] [data-header-actions] :is(a, button):hover {
+    transform: translateY(-1px);
+  }
+  .surface[data-animated] [data-header-actions] button:hover [data-header-bell] {
+    transform-origin: 50% 3px;
+    animation: hdr-ring 0.6s;
+  }
+}
+
+/* Reduced motion chosen in the app, whatever the device says. */
+:global(html[data-motion='reduced']) .surface *,
+:global(html[data-motion='reduced']) .surface *::before {
+  animation: none !important;
+}
+:global(html[data-motion='reduced']) .pulse {
+  visibility: hidden;
+}
+
+@keyframes hdr-float-a {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(120px, 30px) scale(1.15);
+  }
+  100% {
+    transform: translate(-60px, 10px) scale(0.95);
+  }
+}
+@keyframes hdr-float-b {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-140px, 25px) scale(1.1);
+  }
+  100% {
+    transform: translate(80px, -10px) scale(1.05);
+  }
+}
+@keyframes hdr-slide {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes hdr-run {
+  from {
+    stroke-dashoffset: 1446;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes hdr-blink {
+  0%,
+  90%,
+  100% {
+    opacity: 0;
+  }
+  93% {
+    opacity: 1;
+  }
+}
+@keyframes hdr-sway {
+  0% {
+    transform: translateX(-6%) rotate(0deg);
+  }
+  100% {
+    transform: translateX(6%) rotate(4deg);
+  }
+}
+@keyframes hdr-grid {
+  to {
+    transform: translate(28px, 28px);
+  }
+}
+@keyframes hdr-scan {
+  from {
+    transform: translateX(-200px);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+@keyframes hdr-wave {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes hdr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hdr-ring {
+  20% {
+    transform: rotate(14deg);
+  }
+  40% {
+    transform: rotate(-12deg);
+  }
+  60% {
+    transform: rotate(8deg);
+  }
+  80% {
+    transform: rotate(-4deg);
+  }
+}

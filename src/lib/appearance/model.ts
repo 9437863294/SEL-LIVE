@@ -95,6 +95,58 @@ export interface LoginHighlight {
   description: string;
 }
 
+/**
+ * Top-bar designs: a moving backdrop behind the same header contents. `classic` is the plain bar
+ * the app always had, and stays the default so nothing changes until someone picks a design.
+ * Kept in step with `HEADER_DESIGN_META` and src/components/app/header-surface.tsx.
+ */
+export const HEADER_DESIGNS = ['classic', 'aurora', 'power-line', 'midnight-current', 'brand-waves'] as const;
+export type HeaderDesignId = (typeof HEADER_DESIGNS)[number];
+
+/**
+ * `alwaysDark` designs keep their dark bar in light mode; every other design follows the user's
+ * light or dark mode with a matching variant.
+ */
+export const HEADER_DESIGN_META: Record<HeaderDesignId, { label: string; description: string; animated: boolean; alwaysDark: boolean }> = {
+  classic: { label: 'Classic', description: 'The plain bar, without motion.', animated: false, alwaysDark: false },
+  aurora: { label: 'Aurora Glass', description: 'Soft colour drifting behind frosted glass, with a flowing gradient underline.', animated: true, alwaysDark: false },
+  'power-line': { label: 'Power Line', description: 'Transmission towers with current pulses running along the conductors.', animated: true, alwaysDark: false },
+  'midnight-current': { label: 'Midnight Current', description: 'A dark bar with a moving glow, a drifting grid and a light sweep.', animated: true, alwaysDark: true },
+  'brand-waves': { label: 'Brand Waves', description: 'Layered teal, violet and pink waves flowing slowly along the bottom.', animated: true, alwaysDark: false },
+};
+
+export const HEADER_TAGLINE_MAX = 60;
+
+/**
+ * Moving backgrounds for the Aurora Glass home design, ported from the "SEL Home Backgrounds"
+ * mock-up: one behind the greeting banner, one behind the "All modules" grid. `none` is the design
+ * as it was, and stays the default. Kept in step with src/components/home/home-effects.tsx.
+ */
+export const HOME_BANNER_EFFECTS = ['none', 'aurora', 'mesh', 'power-line', 'sparks', 'shimmer', 'colour-wheel'] as const;
+export type HomeBannerEffect = (typeof HOME_BANNER_EFFECTS)[number];
+
+export const HOME_BANNER_EFFECT_META: Record<HomeBannerEffect, { label: string; description: string }> = {
+  none: { label: 'None', description: 'The frosted card, without motion.' },
+  aurora: { label: 'Aurora drift', description: 'Soft colour drifting slowly behind the greeting.' },
+  mesh: { label: 'Mesh flow', description: 'Pastel gradients that slowly shift into each other.' },
+  'power-line': { label: 'Power line', description: 'Transmission towers with current running along the lines.' },
+  sparks: { label: 'Rising sparks', description: 'Small coloured sparks floating upwards.' },
+  shimmer: { label: 'Shimmer sweep', description: 'A band of light sweeping across a dotted surface.' },
+  'colour-wheel': { label: 'Colour wheel', description: 'A blurred wheel of colour turning very slowly.' },
+};
+
+export const HOME_MODULES_EFFECTS = ['none', 'dot-grid', 'blobs', 'spotlight', 'card-glow', 'waves'] as const;
+export type HomeModulesEffect = (typeof HOME_MODULES_EFFECTS)[number];
+
+export const HOME_MODULES_EFFECT_META: Record<HomeModulesEffect, { label: string; description: string }> = {
+  none: { label: 'None', description: 'The page’s own background.' },
+  'dot-grid': { label: 'Dot grid drift', description: 'A faint dot grid drifting behind the tiles.' },
+  blobs: { label: 'Pastel blobs', description: 'Large soft blobs of colour moving slowly.' },
+  spotlight: { label: 'Cursor spotlight', description: 'A soft light that follows the mouse.' },
+  'card-glow': { label: 'Card glow on hover', description: 'A tile glows in its own colour under the mouse, with a running border.' },
+  waves: { label: 'Wave bands', description: 'Wide colour bands flowing along the top and bottom.' },
+};
+
 export const MAX_LOGIN_HIGHLIGHTS = 3;
 export const LOGIN_HIGHLIGHT_LABEL_MAX = 40;
 export const LOGIN_HIGHLIGHT_DESCRIPTION_MAX = 80;
@@ -297,6 +349,14 @@ export interface CompanyBranding {
   loginShowHighlights: boolean;
   /** Short points beside the form, in the designs that have room for them. */
   loginHighlights: LoginHighlight[];
+  /** The top bar's design, the same for everyone. */
+  headerDesign: HeaderDesignId;
+  /** A short line under the company name in the top bar, on wider screens; empty shows none. */
+  headerTagline: string;
+  /** Behind the Aurora Glass home page's greeting banner. */
+  homeBanner: HomeBannerEffect;
+  /** Behind the Aurora Glass home page's "All modules" grid. */
+  homeModules: HomeModulesEffect;
 }
 
 export interface CompanyTheme {
@@ -364,6 +424,10 @@ export const DEFAULT_BRANDING: CompanyBranding = {
     { label: 'Field operations', description: 'Monitor execution across all sites' },
     { label: 'Smart finance', description: 'Requisitions, billing and loan management' },
   ],
+  headerDesign: 'classic',
+  headerTagline: '',
+  homeBanner: 'none',
+  homeModules: 'none',
 };
 
 export const DEFAULT_THEME: CompanyTheme = {
@@ -528,6 +592,12 @@ export function sanitizeBranding(input: unknown, fallback: CompanyBranding = DEF
     loginShowClock: bool(raw.loginShowClock) ?? fallback.loginShowClock,
     loginShowHighlights: bool(raw.loginShowHighlights) ?? fallback.loginShowHighlights,
     loginHighlights: Array.isArray(raw.loginHighlights) ? sanitizeLoginHighlights(raw.loginHighlights) : fallback.loginHighlights,
+    headerDesign: pick(HEADER_DESIGNS, raw.headerDesign) ?? fallback.headerDesign ?? DEFAULT_BRANDING.headerDesign,
+    // Empty is a valid choice — no tagline — so any string wins over the fallback.
+    headerTagline:
+      typeof raw.headerTagline === 'string' ? cleanText(raw.headerTagline, HEADER_TAGLINE_MAX) ?? '' : fallback.headerTagline ?? DEFAULT_BRANDING.headerTagline,
+    homeBanner: pick(HOME_BANNER_EFFECTS, raw.homeBanner) ?? fallback.homeBanner ?? DEFAULT_BRANDING.homeBanner,
+    homeModules: pick(HOME_MODULES_EFFECTS, raw.homeModules) ?? fallback.homeModules ?? DEFAULT_BRANDING.homeModules,
   };
 }
 

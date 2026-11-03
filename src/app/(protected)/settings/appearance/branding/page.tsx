@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Building2, History, ImageIcon, Loader2, LogIn, Monitor, Plus, Save, ShieldAlert, Smartphone, Trash2 } from 'lucide-react';
+import { Bell, Building2, History, ImageIcon, Inbox, LayoutDashboard, Loader2, LogIn, MessageCircle, Monitor, Moon, PanelTop, Plus, Save, ShieldAlert, Smartphone, Sun, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,18 @@ import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsSection, SwitchRo
 import { LOGIN_PREVIEW_DEVICES, LoginPreviewFrame, type LoginPreviewDevice } from '@/components/appearance/LoginPreviewFrame';
 import { VersionHistory } from '@/components/appearance/VersionHistory';
 import { useAppearanceAdmin } from '@/components/appearance/use-appearance-admin';
+import { HeaderAvatarRing, HeaderBrand, HeaderSurface, headerLogoSrc, headerToneOf, type HeaderTone } from '@/components/app/header-surface';
+import { BannerEffectThumb, HomeEffectsPreview, ModulesEffectThumb } from '@/components/appearance/home-effects-preview';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useAppearance } from '@/components/theme/ThemeProvider';
 import {
+  HEADER_DESIGNS,
+  HEADER_DESIGN_META,
+  HEADER_TAGLINE_MAX,
+  HOME_BANNER_EFFECTS,
+  HOME_BANNER_EFFECT_META,
+  HOME_MODULES_EFFECTS,
+  HOME_MODULES_EFFECT_META,
   LOGIN_DESIGNS,
   LOGIN_DESIGN_META,
   LOGIN_HIGHLIGHT_DESCRIPTION_MAX,
@@ -21,9 +32,13 @@ import {
   cleanText,
   sanitizeBranding,
   type CompanyBranding,
+  type HeaderDesignId,
+  type HomeBannerEffect,
+  type HomeModulesEffect,
   type LoginDesignId,
   type LoginHighlight,
 } from '@/lib/appearance/model';
+import { getInitials } from '@/lib/chat';
 import { cn } from '@/lib/utils';
 
 function TextField({
@@ -53,6 +68,62 @@ function TextField({
         </span>
       </div>
       <Control id={id} value={value} maxLength={max} disabled={disabled} onChange={(event) => onChange(event.target.value)} rows={multiline ? 3 : undefined} />
+    </div>
+  );
+}
+
+/**
+ * A slice of each top-bar design, for its option card — the real design, moving, at a phone's bar
+ * height, with the bar's contents sketched.
+ */
+function HeaderThumb({ design, mode, tone }: { design: HeaderDesignId; mode: HeaderTone; tone: HeaderTone }) {
+  return (
+    <span className="relative block overflow-hidden rounded-lg border border-black/5 bg-background">
+      <HeaderSurface design={design} mode={mode} previewTone={tone} className="flex h-14 items-center gap-2 px-2.5">
+        <span className={cn('h-5 w-9 shrink-0 rounded-md', design === 'classic' ? 'bg-primary/60' : 'keep-light bg-white shadow-sm ring-1 ring-black/5')} />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="h-1.5 w-3/5 rounded-full bg-current opacity-60" />
+          <span className="h-1 w-2/5 rounded-full bg-current opacity-30" />
+        </span>
+        <span className="flex shrink-0 gap-1">
+          {[0, 1, 2].map((dot) => (
+            <span key={dot} className="h-3.5 w-3.5 rounded-full bg-current opacity-25" />
+          ))}
+        </span>
+      </HeaderSurface>
+    </span>
+  );
+}
+
+/**
+ * The top bar as everyone will see it, with the unpublished draft: the same design component and
+ * brand block as the real header, with its buttons drawn rather than live.
+ */
+function HeaderPreview({ branding, mode, tone, userName }: { branding: CompanyBranding; mode: HeaderTone; tone: HeaderTone; userName: string }) {
+  const design = branding.headerDesign;
+  const surfaceTone = headerToneOf(design, mode, tone);
+  const ThemeIcon = surfaceTone === 'dark' ? Moon : Sun;
+  return (
+    <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+      <HeaderSurface design={design} mode={mode} previewTone={tone} className="flex h-14 items-center px-3 md:h-16 md:px-6">
+        <HeaderBrand design={design} logoSrc={headerLogoSrc(design, surfaceTone, branding)} companyName={branding.companyName} tagline={branding.headerTagline} />
+        <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4" data-header-actions="" aria-hidden="true">
+          <span className="hidden text-sm font-medium text-foreground sm:inline">{userName}</span>
+          {[ThemeIcon, Inbox, MessageCircle].map((Icon, index) => (
+            <span key={index} className="flex h-10 w-10 items-center justify-center rounded-full text-foreground">
+              <Icon className="h-5 w-5" />
+            </span>
+          ))}
+          <span className="flex h-10 w-10 items-center justify-center">
+            <HeaderAvatarRing design={design}>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">{getInitials(userName)}</span>
+            </HeaderAvatarRing>
+          </span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-full text-foreground">
+            <Bell className="h-5 w-5" />
+          </span>
+        </div>
+      </HeaderSurface>
     </div>
   );
 }
@@ -182,6 +253,10 @@ export default function CompanyBrandingPage() {
   const [message, setMessage] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
   const [device, setDevice] = useState<LoginPreviewDevice>('desktop');
   const [showPreview, setShowPreview] = usePreviewVisible('branding');
+  const { resolvedMode } = useAppearance();
+  const { user } = useAuth();
+  // Which mode the top-bar preview shows; it starts as the administrator's own.
+  const [headerTone, setHeaderTone] = useState<HeaderTone>(resolvedMode);
 
   useEffect(() => {
     if (data) setDraft(data.published.branding);
@@ -234,8 +309,8 @@ export default function CompanyBrandingPage() {
 
       <SettingsSection title="Logos and icons" icon={ImageIcon} description="Images are checked for type, size and dimensions, then stored in the company's own storage.">
         <div className="grid gap-3 md:grid-cols-2">
-          <BrandAssetField kind="logoLight" value={draft.logoLight} onChange={(logoLight) => update({ logoLight })} upload={uploadAsset} background="light" disabled={!canEdit} description="Top bar in light mode, and the light sign-in design (Minimal)." />
-          <BrandAssetField kind="logoDark" value={draft.logoDark} onChange={(logoDark) => update({ logoDark })} upload={uploadAsset} background="dark" disabled={!canEdit} description="Top bar in dark mode, and the dark sign-in designs (Horizon, Midnight, Glass, Blueprint)." />
+          <BrandAssetField kind="logoLight" value={draft.logoLight} onChange={(logoLight) => update({ logoLight })} upload={uploadAsset} background="light" disabled={!canEdit} description="Top bar in light mode, and on the white logo chip of the moving top-bar designs; the light sign-in design (Minimal)." />
+          <BrandAssetField kind="logoDark" value={draft.logoDark} onChange={(logoDark) => update({ logoDark })} upload={uploadAsset} background="dark" disabled={!canEdit} description="Top bar in dark mode with the Classic design, and the dark sign-in designs (Horizon, Midnight, Glass, Blueprint)." />
           <BrandAssetField kind="favicon" value={draft.favicon} onChange={(favicon) => update({ favicon })} upload={uploadAsset} background="light" disabled={!canEdit} description="The browser tab icon." />
           <BrandAssetField
             kind="appIcon"
@@ -246,6 +321,104 @@ export default function CompanyBrandingPage() {
             disabled={!canEdit}
             description="Stored for installable web contexts; the Android app's launcher icon is built into the app and is unaffected."
           />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Top bar"
+        icon={PanelTop}
+        description="The bar at the top of every page. The moving designs stay still for anyone who has reduced motion turned on."
+      >
+        <ChoiceGroup<HeaderDesignId>
+          label="Design"
+          value={draft.headerDesign}
+          columns={3}
+          disabled={!canEdit}
+          onChange={(headerDesign) => update({ headerDesign })}
+          options={HEADER_DESIGNS.map((id) => ({
+            value: id,
+            label: HEADER_DESIGN_META[id].label,
+            description: HEADER_DESIGN_META[id].description,
+            preview: <HeaderThumb design={id} mode={resolvedMode} tone={headerTone} />,
+          }))}
+        />
+
+        <div className="space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Preview</p>
+              <p className="text-xs text-muted-foreground">
+                {HEADER_DESIGN_META[draft.headerDesign].alwaysDark ? 'This design is dark in both light and dark mode.' : 'With your unpublished changes.'}
+              </p>
+            </div>
+            <div className="inline-flex rounded-lg border p-0.5" role="group" aria-label="Preview mode">
+              {(['light', 'dark'] as const).map((tone) => {
+                const Icon = tone === 'light' ? Sun : Moon;
+                return (
+                  <Button
+                    key={tone}
+                    type="button"
+                    size="sm"
+                    variant={headerTone === tone ? 'secondary' : 'ghost'}
+                    className="h-8 gap-1.5 px-2.5 text-xs"
+                    aria-pressed={headerTone === tone}
+                    disabled={HEADER_DESIGN_META[draft.headerDesign].alwaysDark}
+                    onClick={() => setHeaderTone(tone)}
+                  >
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" /> {tone === 'light' ? 'Light' : 'Dark'}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+          <HeaderPreview branding={draft} mode={resolvedMode} tone={headerTone} userName={user?.name || 'Your name'} />
+        </div>
+
+        <div className="space-y-1.5 sm:max-w-md">
+          <TextField id="b-header-tagline" label="Tagline" value={draft.headerTagline} max={HEADER_TAGLINE_MAX} disabled={!canEdit} onChange={(headerTagline) => update({ headerTagline })} />
+          <p className="text-xs text-muted-foreground">Under the company name on wider screens, e.g. “Substations · Transmission lines · EPC”. Leave empty for none.</p>
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Home page"
+        icon={LayoutDashboard}
+        description="Moving backgrounds for the Aurora Glass home page design — each person picks their home design in Settings › Appearance."
+      >
+        <ChoiceGroup<HomeBannerEffect>
+          label="Greeting banner"
+          value={draft.homeBanner}
+          columns={4}
+          disabled={!canEdit}
+          onChange={(homeBanner) => update({ homeBanner })}
+          options={HOME_BANNER_EFFECTS.map((id) => ({
+            value: id,
+            label: HOME_BANNER_EFFECT_META[id].label,
+            description: HOME_BANNER_EFFECT_META[id].description,
+            preview: <BannerEffectThumb effect={id} />,
+          }))}
+        />
+
+        <ChoiceGroup<HomeModulesEffect>
+          label="All modules"
+          value={draft.homeModules}
+          columns={4}
+          disabled={!canEdit}
+          onChange={(homeModules) => update({ homeModules })}
+          options={HOME_MODULES_EFFECTS.map((id) => ({
+            value: id,
+            label: HOME_MODULES_EFFECT_META[id].label,
+            description: HOME_MODULES_EFFECT_META[id].description,
+            preview: <ModulesEffectThumb effect={id} />,
+          }))}
+        />
+
+        <div className="space-y-2.5">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Preview</p>
+            <p className="text-xs text-muted-foreground">With your unpublished changes. Move the mouse over the tiles for Cursor spotlight and Card glow.</p>
+          </div>
+          <HomeEffectsPreview banner={draft.homeBanner} modules={draft.homeModules} firstName={(user?.name || 'there').split(' ')[0]} />
         </div>
       </SettingsSection>
 

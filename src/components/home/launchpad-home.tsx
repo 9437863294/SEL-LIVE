@@ -20,9 +20,12 @@ import Link from 'next/link';
 import { useDeferredValue, useId, useMemo, useState, type CSSProperties } from 'react';
 import { ArrowRight, Search } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAppearance } from '@/components/theme/ThemeProvider';
 import type { WorkDashboardState } from '@/components/work-dashboard/hooks';
+import type { HomeBannerEffect, HomeModulesEffect } from '@/lib/appearance/model';
 import { cn } from '@/lib/utils';
 import { greeting, longDate, useHomeData, type HomeData, type HomeModule } from './home-data';
+import { BannerFx, ModulesFx, bannerEffectOf, modulesAreaClass, modulesEffectOf, useFxPointer } from './home-effects';
 import { FavouriteButton, StretchedLink } from './home-parts';
 
 export type LaunchpadSkin = 'launchpad' | 'aurora';
@@ -35,21 +38,52 @@ export type LaunchpadSkin = 'launchpad' | 'aurora';
 const glass =
   'border border-white/80 bg-white/55 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.25)] dark:border-white/10 dark:bg-card/60';
 
-/** A module's accent as CSS variables: 60% for the icon's shadow, 70% for a tile's hover shadow. */
+/**
+ * A module's accent as CSS variables: 60% for the icon's shadow, 70% for a tile's hover shadow; the
+ * solid colour and 30% for Card glow (see home-effects).
+ */
 const accentVars = (module: HomeModule) =>
-  ({ '--accent-60': `${module.accent}99`, '--accent-70': `${module.accent}b3` }) as CSSProperties;
+  ({
+    '--accent-60': `${module.accent}99`,
+    '--accent-70': `${module.accent}b3`,
+    '--accent-30': `${module.accent}4d`,
+    '--accent-solid': module.accent,
+  }) as CSSProperties;
 
 export default function LaunchpadHome({ work }: { work: WorkDashboardState }) {
   return <LaunchpadView data={useHomeData(work)} skin="launchpad" />;
 }
 
 export function AuroraHome({ work }: { work: WorkDashboardState }) {
-  return <LaunchpadView data={useHomeData(work)} skin="aurora" />;
+  // The company's backgrounds, from Settings › Appearance › Branding › Home page.
+  const { branding } = useAppearance().company;
+  return (
+    <LaunchpadView
+      data={useHomeData(work)}
+      skin="aurora"
+      bannerEffect={bannerEffectOf(branding.homeBanner)}
+      modulesEffect={modulesEffectOf(branding.homeModules)}
+    />
+  );
 }
 
 /** The design drawn from data alone, so it renders without the work fan-out behind it. */
-export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; skin?: LaunchpadSkin }) {
+export function LaunchpadView({
+  data,
+  skin = 'launchpad',
+  bannerEffect = 'none',
+  modulesEffect = 'none',
+}: {
+  data: HomeData;
+  skin?: LaunchpadSkin;
+  /** Aurora Glass only: the moving backgrounds behind the greeting and behind every module. */
+  bannerEffect?: HomeBannerEffect;
+  modulesEffect?: HomeModulesEffect;
+}) {
   const aurora = skin === 'aurora';
+  const banner = aurora ? bannerEffect : 'none';
+  const modules = aurora ? modulesEffect : 'none';
+  const modulesRef = useFxPointer<HTMLElement>(modules);
   const [query, setQuery] = useState('');
   // A group id, or 'all'. A chip whose group has since emptied falls back to everything.
   const [picked, setCategory] = useState<string>('all');
@@ -69,7 +103,7 @@ export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; sk
     // A <div>, not <main>: it is the Modules tab of the home page, which owns the one <main>.
     <div className={cn('relative isolate w-full px-3 pb-10 sm:px-4 md:px-6', aurora ? 'space-y-5 pt-3' : 'space-y-6 pt-1')}>
       {aurora ? <AuroraGlow /> : null}
-      <Hero data={data} query={query} onQuery={setQuery} aurora={aurora} />
+      <Hero data={data} query={query} onQuery={setQuery} aurora={aurora} effect={banner} />
 
       <div
         role="group"
@@ -106,7 +140,8 @@ export function LaunchpadView({ data, skin = 'launchpad' }: { data: HomeData; sk
 
       <Favourites data={data} aurora={aurora} />
 
-      <section aria-labelledby="launchpad-all" className="space-y-3">
+      <section ref={modulesRef} aria-labelledby="launchpad-all" className={cn('space-y-3', modulesAreaClass(modules))}>
+        <ModulesFx effect={modules} />
         <h2 id="launchpad-all" className={cn(aurora ? 'text-[15px] font-bold' : 'text-sm font-semibold')}>
           All modules <span className="text-[12.5px] font-semibold text-muted-foreground">· {shown.length}</span>
         </h2>
@@ -168,7 +203,19 @@ function AuroraGlow() {
 /** The 4px gradient top edge of each Aurora figure, in order (blue, orange, pink — as the reference). */
 const AURORA_EDGES = ['from-blue-400 to-blue-700', 'from-orange-300 to-orange-600', 'from-pink-400 to-rose-600'];
 
-function Hero({ data, query, onQuery, aurora }: { data: HomeData; query: string; onQuery: (value: string) => void; aurora: boolean }) {
+function Hero({
+  data,
+  query,
+  onQuery,
+  aurora,
+  effect,
+}: {
+  data: HomeData;
+  query: string;
+  onQuery: (value: string) => void;
+  aurora: boolean;
+  effect: HomeBannerEffect;
+}) {
   const searchId = useId();
   const figures = [
     { label: 'Needs you', value: data.summary.action, note: data.summary.modules === 1 ? 'in 1 module' : `across ${data.summary.modules} modules` },
@@ -181,10 +228,16 @@ function Hero({ data, query, onQuery, aurora }: { data: HomeData; query: string;
       className={cn(
         'flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between',
         aurora
-          ? cn(glass, 'rounded-3xl p-5 backdrop-blur-[16px] sm:px-8 sm:py-[30px]')
+          ? cn(
+              glass,
+              'rounded-3xl p-5 sm:px-8 sm:py-[30px]',
+              // A background is its own opaque surface, so blurring the page behind it would be wasted.
+              effect === 'none' ? 'backdrop-blur-[16px]' : 'relative isolate overflow-hidden',
+            )
           : 'rounded-2xl bg-gradient-to-br from-teal-800 via-teal-700 to-emerald-600 p-5 text-white shadow-sm sm:p-7',
       )}
     >
+      <BannerFx effect={effect} />
       <div className="min-w-0 flex-1">
         <p
           className={cn(
@@ -338,6 +391,7 @@ function ModuleTileCard({ module, onToggle, aurora }: { module: HomeModule; onTo
   return (
     <div
       style={accentVars(module)}
+      data-fx-tile=""
       className={cn(
         'group relative flex flex-col items-center text-center transition',
         aurora
