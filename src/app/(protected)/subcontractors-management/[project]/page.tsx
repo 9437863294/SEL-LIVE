@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import {
@@ -11,6 +12,7 @@ import {
   ShieldAlert,
   BarChart3,
   ArrowRight,
+  History,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
@@ -25,6 +27,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import AllSubcontractorsDashboard from '@/components/subcontractors-management/AllSubcontractorsDashboard';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { PmContent, PmNavCard, PmNavCardGrid } from '@/components/project-management/pm-shell';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { canViewSubcontractorAudit } from '@/lib/subcontractors-audit-scope';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -41,6 +46,7 @@ const slugify = (text: string) => {
 
 export default function SubcontractorsProjectDashboard() {
   const { project: projectSlugParam } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlugParam);
   const router = useRouter();
 
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -113,7 +119,7 @@ export default function SubcontractorsProjectDashboard() {
     }
   };
 
-  const basePath = projectSlugParam ? `/subcontractors-management/${projectSlugParam}` : undefined;
+  const basePath = projectSlugParam ? scPaths.base : undefined;
 
   const items = useMemo(
     () => [
@@ -151,6 +157,14 @@ export default function SubcontractorsProjectDashboard() {
         gradient: 'from-indigo-500 to-blue-600',
         disabled: !basePath || !safeCan('View', 'Subcontractors Management.Reports', currentProject?.id),
     },
+      {
+        icon: History,
+        text: 'Audit Log',
+        href: basePath ? `${basePath}/audit-log` : '#',
+        description: 'Who did what in this project, when, and what changed.',
+        gradient: 'from-slate-500 to-slate-700',
+        disabled: !basePath || !canViewSubcontractorAudit(safeCan, currentProject?.id),
+      },
     ],
     [basePath, safeCan, currentProject?.id]
   );
@@ -171,11 +185,16 @@ export default function SubcontractorsProjectDashboard() {
   if (!safeCan('View Module', 'Subcontractors Management', isAllProjectsView ? undefined : currentProject?.id)) {
     return (
       <div>
-        <PageHeader title={projectName} backHref="/subcontractors-management" backLabel="Back to Projects" />
+        <PageHeader title={projectName} backHref={scPaths.root} backLabel={scPaths.rootLabel} />
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this project dashboard.</CardDescription>
+            <CardDescription>
+              You do not have permission to view this project dashboard. It needs <strong>View Module</strong> on{' '}
+              <strong>Subcontractors Management</strong> — an administrator can grant it in Settings › Access
+              Management, with View on Manage Subcontractors, Work Order, Billing and Reports for the screens
+              {scPaths.host === 'billing-recon' ? ' (the same rights as in Subcontractors Management itself)' : ''}.
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center p-8">
             <ShieldAlert className="h-16 w-16 text-destructive" />
@@ -194,6 +213,13 @@ export default function SubcontractorsProjectDashboard() {
               backLabel="Back to home"
               actions={
                 <div className="flex items-center gap-2">
+                  {canViewSubcontractorAudit(safeCan) && (
+                    <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
+                      <Link href="/subcontractors-management/all/audit-log">
+                        <History className="h-4 w-4" /> Audit Log
+                      </Link>
+                    </Button>
+                  )}
                   <FolderOpen className="h-5 w-5 text-muted-foreground" />
                   <Select value={selectedValue} onValueChange={handleProjectChange}>
                     <SelectTrigger className="w-full sm:w-[260px]"><SelectValue placeholder="Select Project" /></SelectTrigger>
@@ -217,9 +243,9 @@ export default function SubcontractorsProjectDashboard() {
     <>
       <PageHeader sticky
         title={projectName}
-        breadcrumbs={[{ label: 'Subcontractors', href: '/subcontractors-management' }]}
-        backHref="/subcontractors-management"
-        backLabel="Back to Projects"
+        breadcrumbs={[{ label: scPaths.host === 'billing-recon' ? 'Billing Recon' : 'Subcontractors', href: scPaths.root }]}
+        backHref={scPaths.root}
+        backLabel={scPaths.rootLabel}
         /* No project picker here: the project is already the page title, it is in the URL, and the
            sidebar's Projects link is the way to switch. A second selector on a page that is about
            one project only invites changing it by accident. */

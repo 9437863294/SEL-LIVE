@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library } from 'lucide-react';
@@ -25,7 +26,7 @@ import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -145,6 +146,7 @@ export default function JmcEntryPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
 
   const [details, setDetails] = useState(initialJmcDetails);
   const [items, setItems] = useState<JmcItem[]>([initialItem]);
@@ -407,6 +409,8 @@ export default function JmcEntryPage() {
       const firstItem = items[0];
       const configSlug = `${currentProject!.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
       const configRef = doc(db, projectJmcSerialCollection(currentProject), configSlug);
+      // Set inside the transaction, for the log once it has committed.
+      let createdJmcId = '';
 
       await runTransaction(db, async (transaction) => {
         const configDoc = await transaction.get(configRef);
@@ -465,14 +469,16 @@ export default function JmcEntryPage() {
         const newJmcRef = doc(collection(db, 'projects', currentProject!.id, 'jmcEntries'));
         transaction.set(newJmcRef, jmcData);
         transaction.update(configRef, { startingIndex: currentIndex + 1 });
+        createdJmcId = newJmcRef.id;
       });
 
-      await logUserActivity({
-        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
-        module: 'Subcontractors Management',
-        action: 'Create JMC Entry',
-        details: { project: projectSlug, jmcNo: details.jmcNo, workOrderNo: details.woNo, itemCount: items.length },
-      });
+      logSubcontractorActivity(
+        user,
+        { id: currentProject!.id, name: currentProject!.projectName },
+        'Create JMC Entry',
+        { workOrderNo: details.woNo, itemCount: items.length },
+        { recordId: createdJmcId, recordRef: details.jmcNo },
+      );
 
       toast({
         title: 'JMC Entry Created',
@@ -501,9 +507,9 @@ export default function JmcEntryPage() {
       <PageHeader sticky
         title="Create JMC Entry"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}`}
+        backHref={`${scPaths.base}`}
         backLabel="Back to Subcontractors"
         actions={
           <Button size="sm" onClick={handleSave} disabled={isSaving}>

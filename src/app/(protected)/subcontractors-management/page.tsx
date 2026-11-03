@@ -3,11 +3,15 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   FolderOpen,
   HardHat,
+  History,
   ShieldAlert,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { canViewSubcontractorAudit } from '@/lib/subcontractors-audit-scope';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -141,6 +145,14 @@ export default function SubcontractorsDashboardPage() {
         backLabel="Back to home"
         actions={
           <div className="flex items-center gap-2">
+            {/* Every project's trail; each project's own is on its sidebar. */}
+            {canViewSubcontractorAudit(can) && (
+              <Button asChild variant="outline" size="sm" className="h-9 shrink-0 gap-1.5">
+                <Link href="/subcontractors-management/all/audit-log">
+                  <History className="h-4 w-4" /> Audit Log
+                </Link>
+              </Button>
+            )}
             <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
             <Select onValueChange={handleProjectChange} defaultValue="all">
               <SelectTrigger className="h-9 w-full sm:w-[260px]">

@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2 } from 'lucide-react';
@@ -16,7 +17,8 @@ import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import type { Subcontractor, ContactPerson, Project } from '@/lib/types';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
+import { subcontractorAuditSnapshot } from '@/lib/subcontractors-audit-scope';
 import { PmContent } from '@/components/project-management/pm-shell';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -42,6 +44,7 @@ export default function AddSubcontractorPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { project: projectSlug } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const [formData, setFormData] = useState<Omit<Subcontractor, 'id' | 'attachments' | 'projectId'>>(initialFormState);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -84,9 +87,14 @@ export default function AddSubcontractorPage() {
     
     setIsSaving(true);
     try {
-      await addDoc(collection(db, 'subcontractors'), dataToSave);
+      const created = await addDoc(collection(db, 'subcontractors'), dataToSave);
+      // The register is shared by every project, so this is a module-wide entry.
+      logSubcontractorActivity(user, null, 'Add Subcontractor', subcontractorAuditSnapshot(dataToSave), {
+        recordId: created.id,
+        recordRef: dataToSave.legalName.trim(),
+      });
       toast({ title: 'Success', description: 'New subcontractor added.' });
-      router.push(`/subcontractors-management/${projectSlug}/manage`);
+      router.push(`${scPaths.base}/manage`);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to save subcontractor.', variant: 'destructive' });
     } finally {
@@ -99,10 +107,10 @@ export default function AddSubcontractorPage() {
       <PageHeader sticky
         title={'Add Subcontractor'}
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Manage', href: `/subcontractors-management/${projectSlug}/manage` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Manage', href: `${scPaths.base}/manage` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/manage`}
+        backHref={`${scPaths.base}/manage`}
         backLabel="Back to Manage"
         actions={
           <Button size="sm" onClick={handleSubmit} disabled={isSaving}>

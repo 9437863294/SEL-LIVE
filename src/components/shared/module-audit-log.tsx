@@ -106,19 +106,46 @@ const loadErrorMessage = (err: unknown): string => {
   return 'Could not load the audit log. Check your connection and try again.';
 };
 
+/**
+ * A narrower slice of the module's trail — one project's, say — for a module whose records belong to
+ * something smaller than the module. Applied to each fetched page; a load keeps paging (up to
+ * MAX_SCOPED_PAGES) until it has a page's worth of matching rows, so a quiet project is not an
+ * empty first page in front of a busy one.
+ */
+export interface AuditLogScope {
+  /** Stable identity of the slice; a change re-queries. */
+  key: string;
+  /** Said above the table, e.g. "Showing Project X's trail and changes shared by every project". */
+  label?: string;
+  match: (log: AuditLogEntry) => boolean;
+}
+
+/** Pages a scoped load scans at most per click, before handing back what it has. */
+const MAX_SCOPED_PAGES = 5;
+
 export interface ModuleAuditLogProps {
   /** Canonical module name (ACTIVITY_MODULES.*). Historical alias spellings are included. */
   module: string;
   /** Where a row's record opens, if anywhere. */
   recordHref?: (log: AuditLogEntry) => string | null | undefined;
   canExport: boolean;
+  /** Optional slice of the module's trail; omitted, every row of the module shows. */
+  scope?: AuditLogScope;
 }
 
-export function ModuleAuditLog({ module, recordHref, canExport }: ModuleAuditLogProps) {
+export function ModuleAuditLog({ module, recordHref, canExport, scope }: ModuleAuditLogProps) {
   const moduleNames = useMemo(
     () => [module, ...Object.entries(MODULE_NAME_ALIASES).filter(([, to]) => to === module).map(([from]) => from)].slice(0, IN_LIMIT),
     [module],
   );
+  // The matcher is read through a ref so a caller's inline function does not re-query every render;
+  // `scope.key` is what re-queries.
+  // Declared before the loading effect, so it has run by the time a load reads it.
+  const scopeMatch = useRef(scope?.match);
+  useEffect(() => {
+    scopeMatch.current = scope?.match;
+  });
+  const scopeKey = scope?.key ?? '';
 
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -169,17 +196,29 @@ export function ModuleAuditLog({ module, recordHref, canExport }: ModuleAuditLog
     const gen = generation.current;
     setLoadError(null);
     try {
-      const snap = await getDocs(buildQuery(cursor));
-      if (gen !== generation.current) return;
-      const rows = snap.docs.map(toAuditLog);
+      const match = scopeMatch.current;
+      let rows: AuditLogEntry[] = [];
+      let last: QueryDocumentSnapshot | null = cursor;
+      let full = false;
+      let pages = 0;
+      // Unscoped this runs once; scoped, it keeps going while pages are full and matches are few.
+      do {
+        const snap = await getDocs(buildQuery(last));
+        if (gen !== generation.current) return;
+        const page = snap.docs.map(toAuditLog);
+        rows = rows.concat(match ? page.filter(match) : page);
+        last = snap.docs[snap.docs.length - 1] ?? last;
+        full = snap.docs.length === PAGE_SIZE;
+        pages += 1;
+      } while (match && full && rows.length < PAGE_SIZE && pages < MAX_SCOPED_PAGES);
       if (fresh) {
         setLogs(rows);
         setExpandedIds(new Set());
       } else {
         setLogs((prev) => [...prev, ...rows]);
       }
-      setLastDoc(snap.docs[snap.docs.length - 1] ?? null);
-      setHasMore(snap.docs.length === PAGE_SIZE);
+      setLastDoc(last);
+      setHasMore(full);
     } catch (err) {
       if (gen === generation.current) setLoadError(loadErrorMessage(err));
     } finally {
@@ -188,7 +227,9 @@ export function ModuleAuditLog({ module, recordHref, canExport }: ModuleAuditLog
         setIsLoadingMore(false);
       }
     }
-  }, [buildQuery]);
+    // `scopeKey` re-queries when the slice changes; the matcher itself is read from its ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildQuery, scopeKey]);
 
   // Re-query (and reset paging) whenever the date bounds change.
   useEffect(() => {
@@ -287,7 +328,8 @@ export function ModuleAuditLog({ module, recordHref, canExport }: ModuleAuditLog
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${module.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-audit-log-${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+      const fileStem = [module, scopeKey].filter(Boolean).join(' ').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      a.download = `${fileStem}-audit-log-${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -459,6 +501,7 @@ export function ModuleAuditLog({ module, recordHref, canExport }: ModuleAuditLog
               </Select>
             </FilterBar>
             <p className="text-[11px] text-muted-foreground">
+              {scope?.label && <>{scope.label}. </>}
               Dates filter the whole history. User, action, changes and search narrow the events already loaded —
               use <strong>Load more</strong> to reach further back. Click a row for the full before → after.
             </p>
@@ -471,7 +514,7 @@ export function ModuleAuditLog({ module, recordHref, canExport }: ModuleAuditLog
               {hasMore && (
                 <Button variant="outline" size="sm" onClick={() => loadLogs(lastDoc)} disabled={busy || !lastDoc} className="gap-1.5">
                   {isLoadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  {isLoadingMore ? 'Loading…' : `Load ${PAGE_SIZE} more`}
+                  {isLoadingMore ? 'Loading…' : scope ? 'Load more' : `Load ${PAGE_SIZE} more`}
                 </Button>
               )}
             </div>

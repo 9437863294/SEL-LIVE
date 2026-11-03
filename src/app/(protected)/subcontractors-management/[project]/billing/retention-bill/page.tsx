@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Plus } from 'lucide-react';
@@ -28,7 +29,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableEmp
 import type { WorkOrder, Project, Bill, Subcontractor, WorkflowStep, ActionLog } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -48,6 +49,7 @@ export default function CreateRetentionBillPage() {
   const { user } = useAuth();
   const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
 
   const [details, setDetails] = useState(initialDetails);
   const [selectedBillIds, setSelectedBillIds] = useState<Set<string>>(new Set());
@@ -202,9 +204,23 @@ export default function CreateRetentionBillPage() {
         });
         
         await batch.commit();
-        
+        logSubcontractorActivity(
+            user,
+            { id: currentProject.id, name: currentProject.projectName },
+            'Create Retention Bill',
+            {
+                billType: 'Retention',
+                subcontractor: newBillData.subcontractorName,
+                billDate: details.date,
+                retentionAmount: totalRetentionAmount,
+                claimedBills: selectedBills.map((b) => b.billNo).filter(Boolean),
+                stage: firstStep.name,
+            },
+            { recordId: newBillRef.id, recordRef: details.retentionBillNo },
+        );
+
         toast({ title: 'Retention Bill Created', description: 'The bill has been saved and retention statuses updated.' });
-        router.push(`/subcontractors-management/${projectSlug}/billing`);
+        router.push(`${scPaths.base}/billing`);
 
     } catch (error: any) {
         console.error("Error creating retention bill: ", error);
@@ -223,10 +239,10 @@ export default function CreateRetentionBillPage() {
       <PageHeader sticky
         title="Retention Bill"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backHref={`${scPaths.base}/billing`}
         backLabel="Back to Billing"
         actions={
           <Button size="sm" onClick={handleSave} disabled={isSaving}>

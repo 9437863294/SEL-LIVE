@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Plus, Trash2, ShieldAlert } from 'lucide-react';
@@ -39,7 +40,7 @@ import type {
 } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { Separator } from '@/components/ui/separator';
@@ -71,6 +72,7 @@ export default function CreateProformaPage() {
   const { user } = useAuth();
   const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
 
   const [details, setDetails] = useState(initialBillDetails);
   const [items, setItems] = useState<EnrichedBillItem[]>([]);
@@ -315,7 +317,12 @@ export default function CreateProformaPage() {
 
       let approvalCopyUrl: string | undefined = undefined;
       if (approvalCopy && exceedsLimit) {
-        // TODO: upload approvalCopy to storage and set approvalCopyUrl
+        // TODO: upload approvalCopy to storage and set approvalCopyUrl.
+        // Until then an over-limit bill is refused here, rather than saved without the approval it
+        // needs (it used to fail later, on the undefined approvalCopyUrl, with a Firestore error).
+        throw new Error(
+          'The payable amount exceeds the remaining work order value, and saving the approval copy is not set up yet. Reduce the payable amount, or ask an administrator.',
+        );
       }
 
       const itemsToSave: (Omit<BillItem, 'billedQty'> & { billedQty: number })[] = items.map(
@@ -347,7 +354,9 @@ export default function CreateProformaPage() {
         currentStepId: firstStep.id,
         assignees: [],
         history: [],
-        approvalCopyUrl,
+        // Only when there is one: Firestore rejects an `undefined` field, and the upload above is
+        // not wired yet, so writing it unconditionally failed every proforma bill's save.
+        ...(approvalCopyUrl ? { approvalCopyUrl } : {}),
       };
 
       const tempForAssignment = { ...proformaData, amount: proformaData.payableAmount };
@@ -371,13 +380,30 @@ export default function CreateProformaPage() {
 
       if (!currentProject) throw new Error('Project ID is missing');
 
-      await addDoc(collection(db, 'projects', currentProject.id, 'proformaBills'), proformaData);
+      const createdProforma = await addDoc(collection(db, 'projects', currentProject.id, 'proformaBills'), proformaData);
+      logSubcontractorActivity(
+        user,
+        { id: currentProject.id, name: currentProject.projectName },
+        'Create Proforma Bill',
+        {
+          billType: 'Proforma',
+          subcontractor: selectedWorkOrder.subcontractorName,
+          workOrderNo: selectedWorkOrder.workOrderNo,
+          date: details.date,
+          itemCount: itemsToSave.length,
+          subtotal: financials.subtotal,
+          payablePercentage,
+          payableAmount: financials.payableAmount,
+          stage: firstStep.name,
+        },
+        { recordId: createdProforma.id, recordRef: details.proformaNo },
+      );
 
       toast({
         title: 'Proforma Bill Created',
         description: 'The new proforma/advance bill has been successfully saved.',
       });
-      router.push(`/subcontractors-management/${projectSlug}/billing`);
+      router.push(`${scPaths.base}/billing`);
     } catch (error: any) {
       console.error('Error creating proforma bill: ', error);
       toast({
@@ -401,10 +427,10 @@ export default function CreateProformaPage() {
       <PageHeader sticky
         title="Proforma / Advance Bill"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backHref={`${scPaths.base}/billing`}
         backLabel="Back to Billing"
         actions={
           <Button size="sm" onClick={handleSave} disabled={isSaving}>

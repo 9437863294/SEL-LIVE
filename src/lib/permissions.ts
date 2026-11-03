@@ -247,6 +247,9 @@ export const permissionModules = {
       "Work Order Progress": ["View"],
       "Billing Summary": ["View"],
     },
+    // Each project's Audit Log page: that project's trail plus changes shared by every project
+    // (src/lib/subcontractors-audit-scope.ts).
+    "Audit Log": ["View", "Export"],
   },
   "Bank Balance": {
     "View Module": [],

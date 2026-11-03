@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Check, Clock, Loader2, MoreHorizontal, Eye, Edit } from 'lucide-react';
@@ -32,6 +33,7 @@ import type {
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { logBillWorkflowAction, type WorkflowMove } from '@/lib/subcontractors-activity';
 import ViewBillDialog from '@/components/subcontractors-management/ViewBillDialog';
 import { StatusBadge } from '@/components/shared/status-badge';
 import {
@@ -90,6 +92,7 @@ export default function BillStagePage() {
     project: string;
     stageId: string;
   };
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { user } = useAuth();
   const userId = user?.id || '';
   const userName = user?.name || 'System';
@@ -190,6 +193,8 @@ export default function BillStagePage() {
     }
 
     setIsActionLoading(taskId);
+    // Filled inside the transaction from the record it moved, for the log once it has committed.
+    let moved: WorkflowMove | null = null;
     try {
       const docRef = doc(db, 'projects', projectId, collectionName, taskId);
 
@@ -237,7 +242,9 @@ export default function BillStagePage() {
         };
 
         tx.update(docRef, updateData);
+        moved = { step: stage.name, movedTo: newStage, status: newStatus };
       });
+      logBillWorkflowAction(user, currentBill, typeof action === 'string' ? action : action.name, comment, moved);
       toast({ title: 'Success', description: `Task has been ${pastTense(typeof action === 'string' ? action : action.name)}.` });
       await fetchTasks();
       setIsViewOpen(false);
@@ -324,10 +331,10 @@ export default function BillStagePage() {
       <PageHeader sticky
         title={stage?.name || 'Billing Stage'}
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backHref={`${scPaths.base}/billing`}
         backLabel="Back to Billing"
       />
       <PmContent>

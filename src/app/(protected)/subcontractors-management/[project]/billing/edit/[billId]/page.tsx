@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Library, Trash2 } from 'lucide-react';
@@ -15,19 +16,19 @@ import {
   addDoc,
   getDocs,
   doc,
-  query,
-  where,
   serverTimestamp,
   getDoc,
   updateDoc,
-  collectionGroup,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { BillItem, WorkOrder, WorkOrderItem, JmcEntry, Project, Bill, ProformaBill } from '@/lib/types';
-import { useParams, useRouter, notFound } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields } from '@/lib/activity-logger';
+import { resolveProjectBySlug } from '@/lib/project-slug';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
+import { billAuditSnapshot } from '@/lib/subcontractors-audit-scope';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
@@ -53,9 +54,13 @@ export default function EditBillPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { project: projectSlug, billId } = useParams() as { project: string; billId: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const advanceDeductionId = useId();
+  const { user } = useAuth();
 
   const [bill, setBill] = useState<Bill | null>(null);
+  /** The bill as loaded — what a save is compared against, so its log names what changed. */
+  const [originalBill, setOriginalBill] = useState<Bill | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -73,34 +78,29 @@ export default function EditBillPage() {
 
   useEffect(() => {
     const fetchBill = async () => {
-        if (!billId) return;
+        if (!billId || !projectSlug) return;
         setIsLoading(true);
         try {
-            const billsQuery = query(collectionGroup(db, 'bills'), where('__name__', '==', `projects/${projectSlug}/bills/${billId}`));
-            const billSnapshot = await getDocs(billsQuery);
-
-            let resolvedSnapshot = billSnapshot;
-            if (billSnapshot.empty) {
-                 const billsQueryFallback = query(collectionGroup(db, 'bills'), where('__name__', '==', `projects/${currentProject?.id}/bills/${billId}`));
-                 const billSnapshotFallback = await getDocs(billsQueryFallback);
-                 if (billSnapshotFallback.empty) {
-                    toast({ title: 'Bill not found', variant: 'destructive' });
-                    notFound();
-                    return;
-                 }
-                 resolvedSnapshot = billSnapshotFallback;
+            // A bill lives at projects/{projectId}/bills/{billId}, and the URL carries the project's
+            // name slug, not its id. This used to look the bill up under `projects/{slug}/…` and then
+            // under `projects/{currentProject.id}/…` before any project was known, so no bill was
+            // ever found. Resolve the project first, then read the bill by its path.
+            const projectsSnap = await getDocs(collection(db, 'projects'));
+            const project = resolveProjectBySlug(
+              projectsSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Project),
+              projectSlug,
+            );
+            const billDocSnap = project ? await getDoc(doc(db, 'projects', project.id, 'bills', billId)) : null;
+            if (!project || !billDocSnap?.exists()) {
+              toast({ title: 'Bill not found', variant: 'destructive' });
+              setIsLoading(false);
+              return;
             }
 
-            const billDocSnap = resolvedSnapshot.docs[0];
             const billData = { id: billDocSnap.id, ...billDocSnap.data() } as Bill;
             setBill(billData);
-
-            // Fetch related project
-            const projectRef = doc(db, 'projects', billData.projectId);
-            const projectSnap = await getDoc(projectRef);
-            if (projectSnap.exists()) {
-              setCurrentProject({id: projectSnap.id, ...projectSnap.data()} as Project);
-            }
+            setOriginalBill(billData);
+            setCurrentProject(project);
 
             setGstType(billData.gstType || 'percentage');
             setGstPercentage(billData.gstPercentage ?? 18);
@@ -109,7 +109,8 @@ export default function EditBillPage() {
             setRetentionPercentage(billData.retentionPercentage ?? 5);
             setManualRetentionAmount(billData.retentionAmount || 0);
             setOtherDeduction(billData.otherDeduction || 0);
-            setAdvanceDeductions((billData.advanceDeductions || []).map(ad => ({...ad, id: `adv-${advanceDeductionId}-${Math.random()}`})));
+            // Keep the id the bill was saved with (Create Bill stores one); invent one only for rows without.
+            setAdvanceDeductions((billData.advanceDeductions || []).map(ad => ({...ad, id: ad.id || `adv-${advanceDeductionId}-${Math.random()}`})));
 
             const woDocRef = doc(db, 'projects', billData.projectId, 'workOrders', billData.workOrderId);
             const woDocSnap = await getDoc(woDocRef);
@@ -124,7 +125,10 @@ export default function EditBillPage() {
         setIsLoading(false);
     };
     fetchBill();
-  }, [projectSlug, billId, toast, notFound, currentProject]);
+    // Not `currentProject`: this effect sets it, so depending on it re-fetched the bill (and threw
+    // away the edits) every time it landed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectSlug, billId, toast]);
 
   const handleItemChange = (index: number, field: 'billedQty', value: string) => {
     if (!bill) return;
@@ -185,16 +189,31 @@ export default function EditBillPage() {
         retentionPercentage: retentionType === 'percentage' ? retentionPercentage : null,
         retentionAmount: financials.finalRetentionAmount,
         otherDeduction: otherDeduction,
-        advanceDeductions: advanceDeductions.map(ad => ({...ad, id: undefined })), // remove client-side id
+        // Firestore rejects `undefined`, so blanking the id this way (as it used to) failed the save of
+        // every bill with an advance deduction. Rows keep their id, as Create Bill writes them.
+        advanceDeductions: advanceDeductions.map(ad =>
+          Object.fromEntries(Object.entries(ad).filter(([, v]) => v !== undefined)) as AdvanceDeductionItem,
+        ),
         totalDeductions: financials.totalDeductions,
         netPayable: financials.netPayable,
         totalAmount: financials.netPayable,
       };
 
       await updateDoc(billRef, dataToUpdate);
+      logSubcontractorActivity(
+        user,
+        { id: currentProject.id, name: currentProject.projectName },
+        'Update Bill',
+        {
+          billType: bill.isRetentionBill ? 'Retention' : 'Regular',
+          subcontractor: bill.subcontractorName,
+          changes: diffFields(billAuditSnapshot(originalBill), billAuditSnapshot(dataToUpdate)),
+        },
+        { recordId: billId, recordRef: bill.billNo },
+      );
 
       toast({ title: 'Bill Updated', description: 'The bill has been successfully updated.' });
-      router.push(`/subcontractors-management/${projectSlug}/billing/log`);
+      router.push(`${scPaths.base}/billing/log`);
     } catch (error) {
       console.error("Error updating bill: ", error);
       toast({ title: 'Update Failed', description: 'An error occurred while saving the bill.', variant: 'destructive' });
@@ -222,10 +241,10 @@ export default function EditBillPage() {
       <PageHeader sticky
         title={`Edit Bill ${bill.billNo}`}
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing Log', href: `${scPaths.base}/billing/log` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing/log`}
+        backHref={`${scPaths.base}/billing/log`}
         backLabel="Back to Billing Log"
         actions={
           <Button size="sm" onClick={handleSave} disabled={isSaving}>

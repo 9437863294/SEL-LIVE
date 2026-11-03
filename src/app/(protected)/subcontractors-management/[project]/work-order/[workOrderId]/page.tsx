@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter, notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -44,6 +45,7 @@ export default function WorkOrderDetailsPage() {
     project: string;
     workOrderId: string;
   };
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { toast } = useToast();
 
   const [workOrder, setWorkOrder] = useState<WorkOrder | null>(null);
@@ -195,7 +197,7 @@ export default function WorkOrderDetailsPage() {
           The requested work order could not be located.
         </p>
         <Button asChild className="mt-4">
-          <Link href={`/subcontractors-management/${projectSlug}/work-order`}>
+          <Link href={`${scPaths.base}/work-order`}>
             Back to Work Orders
           </Link>
         </Button>
@@ -215,10 +217,10 @@ export default function WorkOrderDetailsPage() {
       <PageHeader sticky
         title={`Work Order ${workOrder.workOrderNo}`}
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Work Orders', href: `/subcontractors-management/${projectSlug}/work-order` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Work Orders', href: `${scPaths.base}/work-order` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/work-order`}
+        backHref={`${scPaths.base}/work-order`}
         backLabel="Back to Work Orders"
       />
       <PmContent>

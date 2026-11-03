@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Plus, Eye, ShieldAlert } from 'lucide-react';
@@ -40,6 +41,7 @@ export default function WorkOrderLogPage() {
   const params = useParams();
   const router = useRouter();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { can, isLoading: authLoading } = useAuthorization();
   
   const [workOrders, setWorkOrders] = useState<WorkOrderListItem[]>([]);
@@ -120,7 +122,7 @@ export default function WorkOrderLogPage() {
   
   const handleRowClick = (workOrder: WorkOrderListItem) => {
     const slug = workOrder.projectSlug || projectSlug;
-    router.push(`/subcontractors-management/${slug}/work-order/${workOrder.id}`);
+    router.push(`${scPaths.baseFor(slug)}/work-order/${workOrder.id}`);
   };
 
   if (authLoading || (isLoading && canViewPage)) {
@@ -137,7 +139,7 @@ export default function WorkOrderLogPage() {
         <PmContent>
             <PageHeader
                 title="Work Order Log"
-                backHref={`/subcontractors-management/${projectSlug}`}
+                backHref={`${scPaths.base}`}
                 backLabel="Back to Subcontractors"
             />
             <Card>
@@ -158,12 +160,12 @@ export default function WorkOrderLogPage() {
         breadcrumbs={[
           { label: projectSlug === 'all' ? 'All projects' : currentProject?.projectName || 'Project' },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}`}
+        backHref={`${scPaths.base}`}
         backLabel="Back to Subcontractors"
         actions={
           projectSlug !== 'all' ? (
             <Button size="sm" asChild>
-              <Link href={`/subcontractors-management/${projectSlug}/work-order/create`}>
+              <Link href={`${scPaths.base}/work-order/create`}>
                 <Plus className="mr-1.5 h-4 w-4" /> Create Work Order
               </Link>
             </Button>
