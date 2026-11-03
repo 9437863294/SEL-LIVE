@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
@@ -80,6 +81,7 @@ import {
 } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { logBillWorkflowAction, logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -176,6 +178,7 @@ export default function BillLogPage() {
   const params = useParams();
   const { user } = useAuth();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { can } = useAuthorization();
   const router = useRouter();
 
@@ -427,6 +430,25 @@ export default function BillLogPage() {
     }
     try {
       await deleteDoc(doc(db, 'projects', projectId, collectionName, billToDelete.id));
+      logSubcontractorActivity(
+        user,
+        { id: projectId, name: billToDelete.projectName || projects.find((p) => p.id === projectId)?.projectName },
+        billToDelete.type === 'Proforma'
+          ? 'Delete Proforma Bill'
+          : billToDelete.type === 'Retention'
+            ? 'Delete Retention Bill'
+            : 'Delete Bill',
+        {
+          billType: billToDelete.type,
+          subcontractor: billToDelete.subcontractorName,
+          workOrderNo: billToDelete.workOrderNo || undefined,
+          date: billToDelete.date,
+          netPayable: billToDelete.netPayable,
+          status: billToDelete.status,
+          stage: billToDelete.stage,
+        },
+        { recordId: billToDelete.id, recordRef: billToDelete.billNo },
+      );
       toast({ title: 'Success', description: `Bill has been deleted.` });
       fetchBills();
     } catch (error) {
@@ -462,6 +484,8 @@ export default function BillLogPage() {
     }
 
     setIsActionLoading(taskId);
+    // Filled inside the transaction from the record it moved, for the log once it has committed.
+    let moved: { step: string; movedTo: string; status: string } | null = null;
     try {
       const docRef = doc(db, 'projects', projectId, collectionName, taskId);
 
@@ -469,7 +493,7 @@ export default function BillLogPage() {
         const taskDoc = await tx.get(docRef);
         if (!taskDoc.exists()) throw new Error('Task document not found!');
         const currentTaskData = taskDoc.data() as Bill | ProformaBill;
-        
+
         const newActionLog: ActionLog = { action, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentTaskData.stage || '' };
         
         const nextStep =
@@ -510,7 +534,16 @@ export default function BillLogPage() {
         };
 
         tx.update(docRef, updateData);
+        moved = { step: currentTaskData.stage || '', movedTo: newStage, status: newStatus };
       });
+      logBillWorkflowAction(
+        user,
+        currentBill,
+        action,
+        comment,
+        moved,
+        projects.find((p) => p.id === projectId)?.projectName,
+      );
       toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
       await fetchBills();
       setIsViewOpen(false);
@@ -616,7 +649,7 @@ export default function BillLogPage() {
                                 onSelect={(e) => {
                                   e.stopPropagation();
                                   router.push(
-                                    `/subcontractors-management/${slugify(bill.projectName || '')}/billing/edit/${bill.id}`,
+                                    `${scPaths.baseFor(slugify(bill.projectName || ''))}/billing/edit/${bill.id}`,
                                   );
                                 }}
                               >
@@ -677,10 +710,10 @@ export default function BillLogPage() {
       <PageHeader sticky
         title="Billing Log"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backHref={`${scPaths.base}/billing`}
         backLabel="Back to Billing"
       />
       <PmContent>

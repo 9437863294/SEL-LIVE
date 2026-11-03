@@ -398,6 +398,7 @@ export const permissionModules = {
       "Work Order Progress": ["View"],
       "Billing Summary": ["View"],
     },
+    "Audit Log": ["View", "Export"],
   },
   "Bank Balance": {
     "View Module": [],

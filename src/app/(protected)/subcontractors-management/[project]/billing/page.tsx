@@ -2,6 +2,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -31,6 +32,7 @@ import { PageHeader } from '@/components/shared/page-header';
 export default function BillingDashboardPage() {
   const params = useParams();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { can, isLoading } = useAuthorization();
   const { toast } = useToast();
   
@@ -72,18 +74,18 @@ export default function BillingDashboardPage() {
   
   const billingItems = useMemo(() => {
       const staticItems = [
-        { icon: FilePlus, gradient: 'from-emerald-500 to-teal-600', text: 'Bill Entry', href: `/subcontractors-management/${projectSlug}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
-        { icon: FileText, gradient: 'from-amber-500 to-orange-600', text: 'Retention Bill', href: `/subcontractors-management/${projectSlug}/billing/retention-bill`, description: 'Create a bill to claim withheld retention amount.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
-        { icon: FileClock, gradient: 'from-violet-500 to-purple-600', text: 'Proforma/Advance Bill', href: `/subcontractors-management/${projectSlug}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !safeCan('Proforma/Advance Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
-        { icon: History, gradient: 'from-sky-500 to-blue-600', text: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log`, description: 'View and manage all past regular and proforma bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
-        { icon: Settings, gradient: 'from-slate-500 to-slate-700', text: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings`, description: 'Configure billing settings.', disabled: !safeCan('View Settings', 'Subcontractors Management.Billing') || isAllProjectsView },
+        { icon: FilePlus, gradient: 'from-emerald-500 to-teal-600', text: 'Bill Entry', href: `${scPaths.base}/billing/create`, description: 'Generate a new bill from JMC items.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
+        { icon: FileText, gradient: 'from-amber-500 to-orange-600', text: 'Retention Bill', href: `${scPaths.base}/billing/retention-bill`, description: 'Create a bill to claim withheld retention amount.', disabled: !safeCan('Create Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
+        { icon: FileClock, gradient: 'from-violet-500 to-purple-600', text: 'Proforma/Advance Bill', href: `${scPaths.base}/billing/proforma`, description: 'Create proforma or advance bills.', disabled: !safeCan('Proforma/Advance Bill', 'Subcontractors Management.Billing', projectSlug) || isAllProjectsView },
+        { icon: History, gradient: 'from-sky-500 to-blue-600', text: 'Billing Log', href: `${scPaths.base}/billing/log`, description: 'View and manage all past regular and proforma bills.', disabled: !safeCan('View Log', 'Subcontractors Management.Billing') },
+        { icon: Settings, gradient: 'from-slate-500 to-slate-700', text: 'Settings', href: `${scPaths.base}/billing/settings`, description: 'Configure billing settings.', disabled: !safeCan('View Settings', 'Subcontractors Management.Billing') || isAllProjectsView },
       ];
 
       const workflowItems = workflowSteps.map(step => ({
           icon: GitMerge,
           gradient: 'from-rose-500 to-pink-600',
           text: step.name,
-          href: `/subcontractors-management/${projectSlug}/billing/stage/${step.id}`,
+          href: `${scPaths.base}/billing/stage/${step.id}`,
           description: `Tasks for the ${step.name} stage.`,
           disabled: !safeCan('View', 'Subcontractors Management.Billing') || isAllProjectsView,
       }));
@@ -123,9 +125,9 @@ export default function BillingDashboardPage() {
       <PageHeader sticky
         title="Billing"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}`}
+        backHref={`${scPaths.base}`}
         backLabel="Back to Subcontractors"
       />
       <PmContent>

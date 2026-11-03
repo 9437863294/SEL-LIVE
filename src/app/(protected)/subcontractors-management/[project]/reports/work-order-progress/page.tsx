@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -27,6 +28,7 @@ export default function WorkOrderProgressReport() {
     const params = useParams();
     const router = useRouter();
     const { project: projectSlug } = params as { project: string };
+    const scPaths = useSubcontractorsPaths(projectSlug);
     const { toast } = useToast();
 
     const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
@@ -106,10 +108,10 @@ export default function WorkOrderProgressReport() {
             <PageHeader sticky
                 title="Work Order Progress"
                 breadcrumbs={[
-                    { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-                    { label: 'Reports', href: `/subcontractors-management/${projectSlug}/reports` },
+                    { label: 'Subcontractors', href: `${scPaths.base}` },
+                    { label: 'Reports', href: `${scPaths.base}/reports` },
                 ]}
-                backHref={`/subcontractors-management/${projectSlug}/reports`}
+                backHref={`${scPaths.base}/reports`}
                 backLabel="Back to Reports"
             />
             <PmContent>
@@ -140,7 +142,7 @@ export default function WorkOrderProgressReport() {
                                 <TableLoading colSpan={6} rows={5} />
                             ) : enrichedWorkOrders.length > 0 ? (
                                 enrichedWorkOrders.map(wo => (
-                                    <TableRow key={wo.id} onClick={() => router.push(`/subcontractors-management/${projectSlug}/work-order/${wo.id}`)} className="cursor-pointer">
+                                    <TableRow key={wo.id} onClick={() => router.push(`${scPaths.base}/work-order/${wo.id}`)} className="cursor-pointer">
                                         <TableCell className="font-medium text-primary hover:underline">{wo.workOrderNo}</TableCell>
                                         <TableCell>{wo.subcontractorName}</TableCell>
                                         <TableCell>{formatCurrency(wo.totalAmount)}</TableCell>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import {
@@ -41,6 +42,7 @@ import type {
 import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
@@ -83,6 +85,7 @@ export default function CreateWorkOrderPage() {
   const { user } = useAuth();
   const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
 
   const [details, setDetails] = useState(initialWorkOrderDetails);
   const [items, setItems] = useState<WorkOrderItem[]>([]);
@@ -416,6 +419,8 @@ export default function CreateWorkOrderPage() {
 
     try {
       const configDocRef = doc(db, 'serialNumberConfigs', 'work-order');
+      // Filled inside the transaction (its last attempt wins), for the log once it has committed.
+      let created: { id: string; workOrderNo: string; subcontractorName: string; totalAmount: number } | null = null;
 
       await runTransaction(db, async transaction => {
         const configDoc = await transaction.get(configDocRef);
@@ -481,13 +486,29 @@ export default function CreateWorkOrderPage() {
         };
 
         transaction.set(newWoRef, workOrderData);
+        created = { id: newWoRef.id, workOrderNo, subcontractorName, totalAmount };
       });
+
+      const wo = created as { id: string; workOrderNo: string; subcontractorName: string; totalAmount: number } | null;
+      if (wo) {
+        logSubcontractorActivity(
+          user,
+          { id: currentProject.id, name: currentProject.projectName },
+          'Create Work Order',
+          {
+            subcontractor: wo.subcontractorName,
+            totalAmount: wo.totalAmount,
+            itemCount: items.length,
+          },
+          { recordId: wo.id, recordRef: wo.workOrderNo },
+        );
+      }
 
       toast({
         title: 'Work Order Created',
         description: `Successfully created the work order.`,
       });
-      router.push(`/subcontractors-management/${projectSlug}/work-order`);
+      router.push(`${scPaths.base}/work-order`);
     } catch (error: any) {
       console.error('Error creating work order:', error);
       toast({
@@ -511,10 +532,10 @@ export default function CreateWorkOrderPage() {
       <PageHeader sticky
         title="Create Work Order"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Work Orders', href: `/subcontractors-management/${projectSlug}/work-order` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Work Orders', href: `${scPaths.base}/work-order` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/work-order`}
+        backHref={`${scPaths.base}/work-order`}
         backLabel="Back to Work Orders"
         actions={
           <Button size="sm" onClick={handleSave} disabled={isSaving}>

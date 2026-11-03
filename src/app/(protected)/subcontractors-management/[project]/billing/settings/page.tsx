@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -77,12 +78,13 @@ function SettingsCard({ item }: SettingsCardProps) {
 export default function BillingSettingsPage() {
   const params = useParams();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { can, isLoading } = useAuthorization();
   
   const canViewPage = can('View Settings', 'Subcontractors Management.Billing');
 
   const settingsItems = settingsItemsBase.map((item) => {
-    const base = `/subcontractors-management/${projectSlug}/billing/`;
+    const base = `${scPaths.base}/billing/`;
     const resolvedHref = item.href === '#' ? '#' : `${base}${item.href}`;
     const disabled = isLoading ? true : !can(item.permission, 'Subcontractors Management.Billing');
 
@@ -125,10 +127,10 @@ export default function BillingSettingsPage() {
       <PageHeader sticky
         title="Billing Settings"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backHref={`${scPaths.base}/billing`}
         backLabel="Back to Billing"
       />
       <PmContent>

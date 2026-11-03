@@ -1,6 +1,7 @@
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, Fragment, useId } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ChevronDown, ChevronRight } from 'lucide-react';
@@ -37,6 +38,7 @@ import type {
 } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -128,6 +130,7 @@ export default function CreateBillPage() {
   const { user } = useAuth();
   const router = useRouter();
   const { project: projectSlug } = useParams() as { project: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
 
   const [details, setDetails] = useState(initialBillDetails);
   const [items, setItems] = useState<EnrichedBillItem[]>([]);
@@ -650,10 +653,25 @@ export default function CreateBillPage() {
 
       if (!currentProject) throw new Error('Project ID is missing');
 
-      await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
+      const createdBill = await addDoc(collection(db, 'projects', currentProject.id, 'bills'), billData);
+      logSubcontractorActivity(
+        user,
+        { id: currentProject.id, name: currentProject.projectName },
+        'Create Bill',
+        {
+          subcontractor: selectedWorkOrder.subcontractorName,
+          workOrderNo: selectedWorkOrder.workOrderNo,
+          billDate: details.billDate,
+          itemCount: itemsToSave.length,
+          grossAmount: financials.grossAmount,
+          netPayable: financials.netPayable,
+          stage: firstStep.name,
+        },
+        { recordId: createdBill.id, recordRef: details.billNo },
+      );
 
       toast({ title: 'Bill Created', description: 'The new bill has been successfully saved.' });
-      router.push(`/subcontractors-management/${projectSlug}/billing`);
+      router.push(`${scPaths.base}/billing`);
     } catch (error: any) {
       console.error('Error creating bill:', error);
       toast({
@@ -711,10 +729,10 @@ export default function CreateBillPage() {
       <PageHeader sticky
         title="Bill Entry"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backHref={`${scPaths.base}/billing`}
         backLabel="Back to Billing"
         actions={
           <Button size="sm" onClick={handleSave} disabled={isSaving}>

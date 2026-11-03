@@ -2,6 +2,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -45,6 +46,7 @@ export default function SubcontractorsReportsPage() {
     const { can, isLoading } = useAuthorization();
     const params = useParams();
     const projectSlug = params.project as string;
+    const scPaths = useSubcontractorsPaths(projectSlug);
     const canViewPage = can('View', 'Subcontractors Management.Reports'); 
 
     const reportItems = reportItemsBase.map(item => ({
@@ -86,9 +88,9 @@ export default function SubcontractorsReportsPage() {
       <PageHeader sticky
         title="Reports"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}`}
+        backHref={`${scPaths.base}`}
         backLabel="Back to Subcontractors"
       />
       <PmContent>

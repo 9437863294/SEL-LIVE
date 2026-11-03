@@ -121,7 +121,7 @@ export function ChartPanel({
   );
 }
 
-function TooltipBox({ title, rows }: { title: ReactNode; rows: Array<{ label: string; value: string; color?: string; strong?: boolean }> }) {
+export function TooltipBox({ title, rows }:{ title: ReactNode; rows: Array<{ label: string; value: string; color?: string; strong?: boolean }> }) {
   return (
     <div style={chartChrome.tooltip.contentStyle} className="min-w-[180px] px-3 py-2 shadow-md">
       <p className="mb-1 text-xs font-semibold">{title}</p>

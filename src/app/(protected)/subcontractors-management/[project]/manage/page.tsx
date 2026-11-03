@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
@@ -21,6 +22,8 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { PmContent } from '@/components/project-management/pm-shell';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 
 
 export default function ManageSubcontractorsPage() {
@@ -28,6 +31,8 @@ export default function ManageSubcontractorsPage() {
   const params = useParams();
   const router = useRouter();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
+  const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
 
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -111,6 +116,15 @@ export default function ManageSubcontractorsPage() {
   const handleDelete = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'subcontractors', id));
+      const deleted = subcontractors.find((s) => s.id === id);
+      // The register is shared by every project, so this is a module-wide entry.
+      logSubcontractorActivity(
+        user,
+        null,
+        'Delete Subcontractor',
+        { legalName: deleted?.legalName, gstNumber: deleted?.gstNumber || undefined, status: deleted?.status },
+        { recordId: id, recordRef: deleted?.legalName || id },
+      );
       toast({ title: 'Success', description: 'Subcontractor deleted.'});
       fetchData();
     } catch (error) {
@@ -218,7 +232,7 @@ export default function ManageSubcontractorsPage() {
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <PageHeader
             title="Manage Subcontractors"
-            backHref={`/subcontractors-management/${projectSlug}`}
+            backHref={`${scPaths.base}`}
             backLabel="Back to Subcontractors"
         />
         <Card>
@@ -234,14 +248,14 @@ export default function ManageSubcontractorsPage() {
       <PageHeader sticky
         title="Subcontractors"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}`}
+        backHref={`${scPaths.base}`}
         backLabel="Back to Subcontractors"
         actions={
           <Button size="sm" disabled={!canAdd} asChild={canAdd}>
             {canAdd ? (
-              <Link href={`/subcontractors-management/${projectSlug}/manage/add`}>
+              <Link href={`${scPaths.base}/manage/add`}>
                 <Plus className="mr-1.5 h-4 w-4" /> Add Subcontractor
               </Link>
             ) : (
@@ -292,7 +306,7 @@ export default function ManageSubcontractorsPage() {
                                     <TableCell>{sub.panNumber || 'N/A'}</TableCell>
                                     <TableCell><StatusBadge status={sub.status} /></TableCell>
                                     <TableCell className="text-right space-x-2">
-                                        <Link href={`/subcontractors-management/${projectSlug}/manage/edit/${sub.id}`}>
+                                        <Link href={`${scPaths.base}/manage/edit/${sub.id}`}>
                                             <Button variant="outline" size="sm" disabled={!canEdit}>
                                                 <Edit className="mr-2 h-4 w-4" />Edit
                                             </Button>

@@ -15,17 +15,23 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, u
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3,
+  Briefcase,
   Calculator,
   ClipboardList,
   FileSpreadsheet,
+  FileText,
   HardHat,
   History,
   LayoutDashboard,
+  PieChart,
   Plus,
   Receipt,
   Scale,
+  ScrollText,
   Settings2,
   Truck,
+  Users,
+  Wallet,
 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -36,6 +42,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { projectMatchesSlug, projectSlugCanonical } from '@/lib/project-slug';
 import { billingReconRegister, type BillingReconRegister } from '@/lib/billing-recon/register';
 import { BR_TONE } from './page-kit';
+import { canViewSubcontractorAudit } from '@/lib/subcontractors-audit-scope';
+
+/** Subcontractors Management's rights, which its screens check wherever they are shown. */
+const SUBCONTRACTORS = 'Subcontractors Management';
 
 const MODULE = 'Billing Recon';
 const BASE = '/billing-recon';
@@ -181,6 +191,8 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
     // Grouped like Bank Balance's menu; each entry's colour is its page family's (BR_TONE), so the
     // menu tile, the page backdrop and the page's section tiles agree.
     const has = Boolean(p);
+    // Subcontractors' rights are granted per project (by id), as on that module's own sidebar.
+    const scProject = menuProject?.id;
     return [
       {
         id: 'overview',
@@ -211,6 +223,25 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
         ],
       },
       {
+        // Subcontractors Management's screens for this project, shown in Billing Recon's frame
+        // (/billing-recon/[project]/subcontractors). Same screens and records as that module — its
+        // registers, not Billing Recon's — and gated by its rights, scoped to the project as its
+        // own sidebar does.
+        id: 'subcontractors',
+        label: 'Subcontractors',
+        items: [
+          // Always there once a project is chosen, so the section is never silently missing: without
+          // Subcontractors Management's rights its page says which one is needed (the screens check
+          // their own rights wherever they are shown), and the entries below stay hidden.
+          { id: 'sc-home', label: 'Subcontractors', href: `${p}/subcontractors`, icon: Briefcase, tone: 'rose', match: 'exact', visible: has },
+          { id: 'sc-manage', label: 'Manage', href: `${p}/subcontractors/manage`, icon: Users, tone: 'sky', visible: has && can('View', `${SUBCONTRACTORS}.Manage Subcontractors`, scProject) },
+          { id: 'sc-work-orders', label: 'Work Orders', href: `${p}/subcontractors/work-order`, icon: FileText, tone: 'violet', visible: has && can('View', `${SUBCONTRACTORS}.Work Order`, scProject) },
+          { id: 'sc-billing', label: 'Subcontractor Bills', href: `${p}/subcontractors/billing`, icon: Wallet, tone: 'amber', visible: has && can('View', `${SUBCONTRACTORS}.Billing`, scProject) },
+          { id: 'sc-reports', label: 'Reports', href: `${p}/subcontractors/reports`, icon: PieChart, tone: 'indigo', visible: has && can('View', `${SUBCONTRACTORS}.Reports`, scProject) },
+          { id: 'sc-audit-log', label: 'Audit Log', href: `${p}/subcontractors/audit-log`, icon: ScrollText, tone: 'slate', visible: has && canViewSubcontractorAudit(can, scProject) },
+        ],
+      },
+      {
         id: 'setup',
         label: 'Setup',
         items: [
@@ -218,7 +249,7 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
         ],
       },
     ];
-  }, [menuSlug, menuProject, canViewModule, canSettings, sees]);
+  }, [menuSlug, menuProject, canViewModule, canSettings, sees, can]);
 
   const mobileTabs = useMemo<ModuleNavTab[]>(() => {
     const p = menuSlug ? `${BASE}/${menuSlug}` : '';

@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Save,
@@ -43,7 +44,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -96,6 +97,7 @@ export default function BillingWorkflowConfigurationPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const params = useParams();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -341,11 +343,10 @@ export default function BillingWorkflowConfigurationPage() {
       const workflowRef = doc(db, 'workflows', 'billing-workflow');
       await setDoc(workflowRef, payload, { merge: true });
 
-      await logUserActivity({
-        userId: user.id,
-        module: 'Subcontractors Management',
-        action: 'Update Billing Workflow',
-        details: { stepCount: validation.steps.length },
+      // `workflows/billing-workflow` drives every project's bills, so this is a module-wide entry.
+      logSubcontractorActivity(user, null, 'Update Billing Workflow', {
+        stepCount: validation.steps.length,
+        steps: validation.steps.map((s) => s.name).filter(Boolean),
       });
 
       toast({ title: 'Success', description: 'Workflow configuration saved.' });
@@ -376,7 +377,7 @@ export default function BillingWorkflowConfigurationPage() {
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <PageHeader
           title="Billing Workflow Configuration"
-          backHref={`/subcontractors-management/${projectSlug}/billing/settings`}
+          backHref={`${scPaths.base}/billing/settings`}
           backLabel="Back to Billing Settings"
         />
         <Card>
@@ -397,11 +398,11 @@ export default function BillingWorkflowConfigurationPage() {
       <PageHeader sticky
         title="Billing Workflow"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
-          { label: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Billing', href: `${scPaths.base}/billing` },
+          { label: 'Settings', href: `${scPaths.base}/billing/settings` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/billing/settings`}
+        backHref={`${scPaths.base}/billing/settings`}
         backLabel="Back to Billing Settings"
         actions={
           <>

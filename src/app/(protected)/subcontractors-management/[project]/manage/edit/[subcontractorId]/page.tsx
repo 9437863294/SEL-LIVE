@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, Plus, Trash2 } from 'lucide-react';
@@ -16,7 +17,9 @@ import { collection, doc, getDoc, updateDoc } from 'firebase/firestore';
 import type { Subcontractor, ContactPerson } from '@/lib/types';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
+import { diffFields } from '@/lib/activity-logger';
+import { logSubcontractorActivity } from '@/lib/subcontractors-activity';
+import { subcontractorAuditSnapshot } from '@/lib/subcontractors-audit-scope';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PmContent } from '@/components/project-management/pm-shell';
 import { PageHeader } from '@/components/shared/page-header';
@@ -28,7 +31,10 @@ export default function EditSubcontractorPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { project: projectSlug, subcontractorId } = useParams() as { project: string, subcontractorId: string };
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const [formData, setFormData] = useState<Subcontractor | null>(null);
+  /** The record as loaded — what a save is compared against, so its log names what changed. */
+  const [original, setOriginal] = useState<Subcontractor | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -43,9 +49,10 @@ export default function EditSubcontractorPage() {
           const data = { id: subDocSnap.id, ...subDocSnap.data() } as Subcontractor;
           const contactsWithIds = (data.contacts || []).map(c => ({...c, id: c.id || crypto.randomUUID()}));
           setFormData({...data, contacts: contactsWithIds});
+          setOriginal(data);
         } else {
           toast({ title: 'Error', description: 'Subcontractor not found.', variant: 'destructive' });
-          router.push(`/subcontractors-management/${projectSlug}/manage`);
+          router.push(`${scPaths.base}/manage`);
         }
       } catch (e) {
         console.error("Error fetching subcontractor:", e);
@@ -94,9 +101,18 @@ export default function EditSubcontractorPage() {
         contacts: formData.contacts.map(({ id: contactId, ...rest }) => rest), // Remove client-side ID
       };
       await updateDoc(subRef, dataToUpdate);
+      // The register is shared by every project, so this is a module-wide entry. The account
+      // number is compared masked, so the log shows that it changed without holding it.
+      logSubcontractorActivity(
+        user,
+        null,
+        'Update Subcontractor',
+        { changes: diffFields(subcontractorAuditSnapshot(original), subcontractorAuditSnapshot(dataToUpdate)) },
+        { recordId: formData.id, recordRef: dataToUpdate.legalName.trim() },
+      );
 
       toast({ title: 'Success', description: 'Subcontractor updated.' });
-      router.push(`/subcontractors-management/${projectSlug}/manage`);
+      router.push(`${scPaths.base}/manage`);
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to update subcontractor.', variant: 'destructive' });
     } finally {
@@ -118,10 +134,10 @@ export default function EditSubcontractorPage() {
       <PageHeader sticky
         title="Edit Subcontractor"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Manage', href: `/subcontractors-management/${projectSlug}/manage` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Manage', href: `${scPaths.base}/manage` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/manage`}
+        backHref={`${scPaths.base}/manage`}
         backLabel="Back to Manage"
         actions={
           <Button size="sm" onClick={handleUpdate} disabled={isSaving}>

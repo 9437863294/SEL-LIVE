@@ -24,6 +24,7 @@ import {
   FileText,
   FolderOpen,
   HardHat,
+  History,
   LayoutDashboard,
   Plus,
   Users,
@@ -34,6 +35,7 @@ import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { projectMatchesSlug } from '@/lib/project-slug';
 import { PmInModuleShell } from '@/components/project-management/pm-shell';
+import { canViewSubcontractorAudit } from '@/lib/subcontractors-audit-scope';
 import {
   ModuleShell,
   type ModuleNavGroup,
@@ -106,6 +108,13 @@ export default function ProjectLayout({
       icon: BarChart3,
       label: 'Reports',
       permission: can('View', 'Subcontractors Management.Reports', projectId),
+    },
+    {
+      // This project's trail only (plus changes shared by every project) — see audit-log-page.tsx.
+      href: `/subcontractors-management/${projectSlug}/audit-log`,
+      icon: History,
+      label: 'Audit Log',
+      permission: canViewSubcontractorAudit(can, projectId),
     },
   ];
 

@@ -1,6 +1,7 @@
 
 'use client';
 
+import { useSubcontractorsPaths } from '@/components/subcontractors-management/paths';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ShieldAlert,
@@ -126,6 +127,7 @@ export default function BillingSummaryReport() {
   const params = useParams();
   const { user } = useAuth();
   const projectSlug = params.project as string;
+  const scPaths = useSubcontractorsPaths(projectSlug);
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [allBills, setAllBills] = useState<Bill[]>([]);
@@ -320,7 +322,7 @@ export default function BillingSummaryReport() {
         <PmContent>
             <PageHeader
                 title="Billing Summary"
-                backHref={`/subcontractors-management/${projectSlug}/reports`}
+                backHref={`${scPaths.base}/reports`}
                 backLabel="Back to Reports"
             />
             <Card>
@@ -341,10 +343,10 @@ export default function BillingSummaryReport() {
       <PageHeader sticky
         title="Billing Summary"
         breadcrumbs={[
-          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
-          { label: 'Reports', href: `/subcontractors-management/${projectSlug}/reports` },
+          { label: 'Subcontractors', href: `${scPaths.base}` },
+          { label: 'Reports', href: `${scPaths.base}/reports` },
         ]}
-        backHref={`/subcontractors-management/${projectSlug}/reports`}
+        backHref={`${scPaths.base}/reports`}
         backLabel="Back to Reports"
       />
       <PmContent>
