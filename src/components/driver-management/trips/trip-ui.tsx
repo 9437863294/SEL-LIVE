@@ -300,13 +300,24 @@ export function StageTrail({ claim }: { claim: TripClaim }) {
  * claim holds one or more trips — and the screens that record and claim them say so up front.
  */
 export function ClaimSteps({ approvalName = 'Approval', paymentName = 'Payment' }: { approvalName?: string; paymentName?: string }) {
-  const steps = ['Record your trips', 'Create a claim with one or more trips', approvalName, paymentName];
   return (
-    <ol className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600" aria-label="How trips are paid">
+    <StepLine
+      label="How trips are paid"
+      steps={['Record your trips', 'Create a claim with one or more trips', approvalName, paymentName]}
+      highlight={1}
+      className="rounded-xl border border-slate-200 bg-white px-3 py-2"
+    />
+  );
+}
+
+/** Numbered steps in one line (wrapping on a phone): how a thing gets done, read left to right. */
+export function StepLine({ steps, label, highlight, className }: { steps: readonly string[]; label: string; highlight?: number; className?: string }) {
+  return (
+    <ol className={cn('flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-slate-600', className)} aria-label={label}>
       {steps.map((step, index) => (
         <li key={step} className="flex items-center gap-2">
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">{index + 1}</span>
-          <span className={cn(index === 1 && 'font-semibold text-slate-800')}>{step}</span>
+          <span className={cn(index === highlight && 'font-semibold text-slate-800')}>{step}</span>
           {index < steps.length - 1 && <span className="text-slate-300" aria-hidden>→</span>}
         </li>
       ))}
@@ -340,10 +351,17 @@ export function ErrorBlock({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-export function EmptyBlock({ icon: Icon, title, children }: { icon: React.ComponentType<{ className?: string }>; title: string; children?: ReactNode }) {
+/** `tone="success"` is for an inbox that is empty because everything in it was dealt with. */
+export function EmptyBlock({ icon: Icon, title, children, tone = 'neutral' }: { icon: React.ComponentType<{ className?: string }>; title: string; children?: ReactNode; tone?: 'neutral' | 'success' }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white/60 px-4 py-12 text-center">
-      <Icon className="h-8 w-8 text-slate-300" />
+      {tone === 'success' ? (
+        <span className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600" aria-hidden>
+          <Icon className="h-6 w-6" />
+        </span>
+      ) : (
+        <Icon className="h-8 w-8 text-slate-300" />
+      )}
       <p className="text-sm font-medium text-slate-700">{title}</p>
       {children && <div className="max-w-md text-xs text-muted-foreground">{children}</div>}
     </div>

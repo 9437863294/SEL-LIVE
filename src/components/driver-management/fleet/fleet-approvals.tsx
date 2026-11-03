@@ -20,7 +20,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Inbox, Scale } from 'lucide-react';
+import { CircleCheck, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -139,6 +139,7 @@ export function FleetRequestsSection() {
     <div className="space-y-4">
       <SegmentTabs<RequestFilter>
         label="Requests"
+        fill={false}
         value={filter}
         onChange={setFilter}
         options={[
@@ -159,9 +160,15 @@ export function FleetRequestsSection() {
           onRowClick={(approval) => setOpenId(approval.id)}
           rowClassName={(approval) => (canDecideApproval(approval, userId, canOverride) ? 'bg-amber-50/40' : undefined)}
           empty={
-            <EmptyBlock icon={Inbox} title={filter === 'waiting' ? 'Nothing is waiting for you' : 'No decided requests yet'}>
-              {filter === 'waiting' ? 'You are told by notification and email when a driver asks to run past a limit.' : 'Requests you were asked about appear here once decided, withdrawn or expired.'}
-            </EmptyBlock>
+            filter === 'waiting' ? (
+              <EmptyBlock icon={CircleCheck} tone="success" title="You’re all caught up">
+                No drivers are asking for extra km right now. You get a notification and an email when one does.
+              </EmptyBlock>
+            ) : (
+              <EmptyBlock icon={Inbox} title="No decided requests yet">
+                Requests you were asked about appear here once decided, withdrawn or expired.
+              </EmptyBlock>
+            )
           }
         />
       )}
@@ -251,8 +258,8 @@ export function FleetReviewsSection() {
           dense
           rowClassName={() => 'bg-amber-50/30'}
           empty={
-            <EmptyBlock icon={Scale} title="No trips to review">
-              Trips whose GPS and odometer distances disagree, or that were closed without a reading, wait here for a manager to pick the figure to bill.
+            <EmptyBlock icon={CircleCheck} tone="success" title="You’re all caught up">
+              No trips need a distance check. A trip lands here when its GPS and odometer km disagree, or it closes without an odometer reading.
             </EmptyBlock>
           }
         />

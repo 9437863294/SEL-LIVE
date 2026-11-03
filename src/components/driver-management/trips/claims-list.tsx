@@ -16,7 +16,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Banknote, Download, Inbox, ReceiptText } from 'lucide-react';
+import { Banknote, CircleCheck, Download, Inbox, ReceiptText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -55,7 +55,7 @@ function tabsFor(mode: ClaimsListMode, wide: boolean): Tab[] {
       return [
         { value: 'waiting', label: 'Waiting for me', scope: 'inbox', filter: (claim) => claim.status === 'pending' },
         { value: 'processed', label: 'Processed by me', scope: 'processed', filter: (claim, userId) => claim.history.some((entry) => entry.byId === userId && entry.action !== 'paid') },
-        ...(wide ? [{ value: 'everyone', label: 'All in approval', scope: 'active' as const, filter: (claim: TripClaim) => claim.status === 'pending' }] : []),
+        ...(wide ? [{ value: 'everyone', label: 'All pending', scope: 'active' as const, filter: (claim: TripClaim) => claim.status === 'pending' }] : []),
       ];
     case 'payments':
       return [
@@ -79,6 +79,13 @@ const HEADINGS: Record<ClaimsListMode, { title: string; description: string; ico
   approvals: { title: 'Approvals', description: 'Trip claims waiting for your verification and approval.', icon: Inbox },
   payments: { title: 'Payments', description: 'Approved trip claims waiting to be paid. Tick several to record one payment for all.', icon: Banknote },
   all: { title: 'All Claims', description: 'Every trip claim in the financial year, across employees.', icon: ReceiptText },
+};
+
+/** The approvals tabs' empty states: an empty "Waiting for me" is good news, so it says so. */
+const APPROVAL_EMPTIES: Record<string, { title: string; body: string; done?: boolean }> = {
+  waiting: { title: 'You’re all caught up', body: 'No trip claims need your approval right now. You will be notified when one reaches you.', done: true },
+  processed: { title: 'Nothing decided yet', body: 'Claims you approve, send back or reject appear here.' },
+  everyone: { title: 'No claims in approval', body: 'Every submitted claim has been decided.' },
 };
 
 const previousYears = (financialYear: string, count = 3) => {
@@ -204,6 +211,7 @@ export default function ClaimsList({ mode, embedded = false }: { mode: ClaimsLis
   if (mode === 'all' && !data.access.viewAll) return <ErrorBlock message="The claims register needs Driver Management · Trip Claims · View All." />;
 
   const heading = HEADINGS[mode];
+  const approvalEmpty = mode === 'approvals' ? APPROVAL_EMPTIES[current.value] : undefined;
   const counts = Object.fromEntries(tabs.map((entry) => [entry.value, entry.scope === current.scope ? (claims ?? []).filter((claim) => entry.filter(claim, userId)).length : undefined]));
 
   function exportCsv() {
@@ -266,25 +274,29 @@ export default function ClaimsList({ mode, embedded = false }: { mode: ClaimsLis
 
       {mode === 'mine' && <ClaimSteps approvalName={data.settings.stages.find((stage) => stage.kind === 'approval')?.name} paymentName={data.settings.stages.find((stage) => stage.kind === 'payment')?.name} />}
 
-      <FilterBar search={{ value: search, onChange: setSearch, placeholder: 'Search claim, employee, project…', label: 'Search claims' }} onClear={() => setSearch('')}>
-        {mode === 'all' && (
-          <Select value={fy} onValueChange={setFinancialYear}>
-            <SelectTrigger className="w-full bg-white text-left sm:w-36" aria-label="Financial year">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {previousYears(data.financialYear).map((year) => (
-                <SelectItem key={year} value={year}>
-                  FY {year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </FilterBar>
+      {/* No search on the Approvals › Trip claims tab. */}
+      {mode !== 'approvals' && (
+        <FilterBar search={{ value: search, onChange: setSearch, placeholder: 'Search claim, employee, project…', label: 'Search claims' }} onClear={() => setSearch('')}>
+          {mode === 'all' && (
+            <Select value={fy} onValueChange={setFinancialYear}>
+              <SelectTrigger className="w-full bg-white text-left sm:w-36" aria-label="Financial year">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {previousYears(data.financialYear).map((year) => (
+                  <SelectItem key={year} value={year}>
+                    FY {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </FilterBar>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <SegmentTabs className="sm:w-auto sm:flex-1" label="Claims" value={current.value} onChange={(value) => { setTab(value); setSelected(new Set()); }} options={tabs.map((entry) => ({ value: entry.value, label: entry.label, count: counts[entry.value] }))} />
+        {/* Embedded under the Approvals cards, the filter is a small switch, not a second tab bar. */}
+        <SegmentTabs className={embedded ? undefined : 'sm:w-auto sm:flex-1'} fill={!embedded} label="Claims" value={current.value} onChange={(value) => { setTab(value); setSelected(new Set()); }} options={tabs.map((entry) => ({ value: entry.value, label: entry.label, count: counts[entry.value] }))} />
         {selectable && visible.some(payable) && (
           <Button type="button" variant="ghost" size="sm" onClick={() => setSelected((existing) => (visible.filter(payable).every((claim) => existing.has(claim.id)) ? new Set() : new Set(visible.filter(payable).map((claim) => claim.id))))}>
             {visible.filter(payable).every((claim) => selected.has(claim.id)) ? 'Clear selection' : `Select all ${visible.filter(payable).length}`}
@@ -305,9 +317,15 @@ export default function ClaimsList({ mode, embedded = false }: { mode: ClaimsLis
           cardHref={(claim) => `/driver-management/claims/${claim.id}`}
           rowClassName={(claim) => (stageAge(claim).overdue ? 'bg-rose-50/40' : selected.has(claim.id) ? 'bg-primary/5' : undefined)}
           empty={
-            <EmptyBlock icon={heading.icon} title={current.value === 'waiting' || current.value === 'ready' ? 'Nothing is waiting for you' : 'No claims here'}>
-              {mode === 'mine' ? 'Use “Create claim” to put one or more of your recorded trips on a claim.' : current.value === 'waiting' || current.value === 'ready' ? 'You will be notified when a claim reaches you.' : 'Try another tab.'}
-            </EmptyBlock>
+            approvalEmpty ? (
+              <EmptyBlock icon={approvalEmpty.done ? CircleCheck : heading.icon} tone={approvalEmpty.done ? 'success' : 'neutral'} title={approvalEmpty.title}>
+                {approvalEmpty.body}
+              </EmptyBlock>
+            ) : (
+              <EmptyBlock icon={heading.icon} title={current.value === 'waiting' || current.value === 'ready' ? 'Nothing is waiting for you' : 'No claims here'}>
+                {mode === 'mine' ? 'Use “Create claim” to put one or more of your recorded trips on a claim.' : current.value === 'waiting' || current.value === 'ready' ? 'You will be notified when a claim reaches you.' : 'Try another tab.'}
+              </EmptyBlock>
+            )
           }
         />
       )}
