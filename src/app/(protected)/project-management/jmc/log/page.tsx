@@ -560,6 +560,7 @@ export default function JmcLogPage() {
         isOpen={isViewOpen}
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedEntry}
+        printRegister="project"
         boqItems={boqItems}
         bills={bills}
         isEditMode={false}

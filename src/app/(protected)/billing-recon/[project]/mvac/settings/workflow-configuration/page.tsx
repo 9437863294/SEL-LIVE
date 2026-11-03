@@ -46,6 +46,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+// The MVAC workflow is Billing Recon's alone and the same for every project, separated or not.
+import { BILLING_RECON_FIXED, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------------- type guards ---------------- */
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
@@ -134,7 +136,7 @@ export default function MvacWorkflowConfigurationPage() {
       setDepartments(deptsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Department)));
       setRoles(rolesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Role)));
 
-      const workflowRef = doc(db, 'workflows', 'mvac-workflow');
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, BILLING_RECON_FIXED.mvacWorkflowId);
       const workflowSnap = await getDoc(workflowRef);
 
       if (workflowSnap.exists()) {
@@ -335,7 +337,7 @@ export default function MvacWorkflowConfigurationPage() {
     setIsSaving(true);
     try {
       const payload = { steps: validation.steps };
-      const workflowRef = doc(db, 'workflows', 'mvac-workflow');
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, BILLING_RECON_FIXED.mvacWorkflowId);
       await setDoc(workflowRef, payload, { merge: true });
 
       await logUserActivity({

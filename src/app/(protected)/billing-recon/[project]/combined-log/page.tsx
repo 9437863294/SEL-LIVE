@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister } from '@/lib/billing-recon/register';
 
 /* ---------- helpers ---------- */
 
@@ -110,14 +111,15 @@ export default function CombinedLogPage() {
       }
 
       const projectId = project.id;
+      const reg = billingReconRegister(project);
 
       // 2) Load JMC + MVAC entries
       const jmcQuery = query(
-        collection(db, 'projects', projectId, 'jmcEntries'),
+        collection(db, 'projects', projectId, reg.jmcEntries),
         orderBy('createdAt', 'desc')
       );
       const mvacQuery = query(
-        collection(db, 'projects', projectId, 'mvacEntries'),
+        collection(db, 'projects', projectId, reg.mvacEntries),
         orderBy('createdAt', 'desc')
       );
 
@@ -461,7 +463,6 @@ export default function CombinedLogPage() {
         onOpenChange={setIsJmcViewOpen}
         jmcEntry={selectedJmc}
         boqItems={[]}
-        bills={[]}
       />
 
       <ViewMvacEntryDialog
@@ -469,7 +470,6 @@ export default function CombinedLogPage() {
         onOpenChange={setIsMvacViewOpen}
         MvacEntry={selectedMvac}
         boqItems={[]}
-        bills={[]}
       />
     </>
   );

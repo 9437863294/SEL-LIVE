@@ -149,6 +149,11 @@ export interface Project {
   retentionPct?: number;
   /** The sites the project is split into on the ground — see `src/lib/project-subdivisions.ts`. */
   subdivisions?: ProjectSubdivision[];
+  /**
+   * Set once the project's Billing Recon data has been moved out of the register it shared with
+   * Project Management — see `src/lib/billing-recon/register.ts`. Absent = still shared.
+   */
+  billingReconSeparation?: import("@/lib/billing-recon/register").BillingReconSeparation;
 }
 
 /**

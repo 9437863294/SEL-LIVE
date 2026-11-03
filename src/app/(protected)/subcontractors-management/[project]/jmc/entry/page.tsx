@@ -30,6 +30,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { projectJmcSerialCollection } from '@/lib/billing-recon/register';
 import { PmContent } from '@/components/project-management/pm-shell';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -229,7 +230,8 @@ export default function JmcEntryPage() {
 
       const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
       try {
-        const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
+        // Shared with Billing Recon until the project is separated, then the project's own series.
+        const configRef = doc(db, projectJmcSerialCollection(currentProject), configSlug);
         const configDoc = await getDoc(configRef);
         if (configDoc.exists()) {
           const configData = configDoc.data() as SerialNumberConfig;
@@ -245,7 +247,7 @@ export default function JmcEntryPage() {
       }
     };
     generateJmcNo();
-  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id]);
+  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id, currentProject?.billingReconSeparation?.separatedAt]);
 
   const handleProjectChange = (projectId: string) => {
     const project = allProjects.find((p) => p.id === projectId);
@@ -404,7 +406,7 @@ export default function JmcEntryPage() {
     try {
       const firstItem = items[0];
       const configSlug = `${currentProject!.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
-      const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
+      const configRef = doc(db, projectJmcSerialCollection(currentProject), configSlug);
 
       await runTransaction(db, async (transaction) => {
         const configDoc = await transaction.get(configRef);

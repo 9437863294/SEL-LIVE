@@ -51,7 +51,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, Bill, Project, MvacEntry } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, Bill, Project } from '@/lib/types';
 import {
   BOQ_COLUMN_SETTINGS_COLLECTION,
   BOQ_COLUMN_SETTINGS_DOC,
@@ -272,15 +272,14 @@ export default function ViewBoqPage() {
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
-  const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderLike[]>([]);
   const [indents, setIndents] = useState<IndentRecord[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [mdlDrawings, setMdlDrawings] = useState<MdlDrawing[]>([]);
   // The supply gate chain — loaded read-only here just to surface each stage's status/qty
-  // alongside Indent Qty/PO Qty. mvacGateRecords is deliberately distinct from mvacEntries above
-  // (the unrelated Billing Recon MVAC quantity-certification records).
+  // alongside Indent Qty/PO Qty. mvacGateRecords is Project Management's own Material Acceptance
+  // gate — not Billing Recon's MVAC quantity-certification entries, which this page does not read.
   const [mcRecords, setMcRecords] = useState<ManufacturingClearance[]>([]);
   const [inspectionRecords, setInspectionRecords] = useState<InspectionRecord[]>([]);
   const [mdccGateRecords, setMdccGateRecords] = useState<MdccRecord[]>([]);
@@ -423,7 +422,7 @@ export default function ViewBoqPage() {
 
   /** FETCH DATA **
    * Resolves the project mapping, then fires every other read (project doc, BOQ items, JMC,
-   * MVAC, bills, indents, POs, MDL drawings) in a single parallel batch — this used to be
+   * bills, indents, POs, MDL drawings, supply gates) in a single parallel batch — this used to be
    * 3-4 sequential round-trips (including fetching the project doc twice), which is the
    * biggest single contributor to this page feeling slow to load.
    */
@@ -459,7 +458,6 @@ export default function ViewBoqPage() {
         projectSnapshot,
         boqSnapshot,
         jmcSnapshot,
-        mvacSnapshot,
         billsSnapshot,
         indentSnapshot,
         poSnapshot,
@@ -475,8 +473,9 @@ export default function ViewBoqPage() {
       ] = await Promise.all([
           getDoc(doc(db, 'projects', projectId)),
           getDocs(collection(db, 'projects', projectId, 'boqItems')),
+          // The project's JMC register only. Billing Recon's MVAC entries are its client-billing
+          // register and are no longer joined into Project Management's quantities.
           getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
-          getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
           getDocs(collection(db, 'projects', projectId, 'bills')),
           getDocs(collection(db, 'projects', projectId, 'indents')),
           getDocs(collection(db, 'projects', projectId, PO_COLLECTION)),
@@ -545,7 +544,6 @@ export default function ViewBoqPage() {
       setBoqItems(items);
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
-      setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
       setWorkOrders(
         workOrderSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as WorkOrderLike)),
@@ -599,23 +597,6 @@ export default function ViewBoqPage() {
     }
     return map;
   }, [jmcEntries]);
-
-  const mvacAggBySlNo = useMemo(() => {
-    const map = new Map<string, QtyAgg>();
-    for (const entry of mvacEntries) {
-      if (['Rejected', 'Cancelled'].includes(String(entry.status ?? ''))) continue;
-      const items = Array.isArray(entry.items) ? entry.items : [];
-      for (const it of items) {
-        const key = compositeKey(getScope1(it), getScope2(it), getBoqSlNo(it));
-        if (!key) continue;
-        const prev = map.get(key) ?? { executed: 0, certified: 0 };
-        prev.executed += Number(it.executedQty || 0);
-        prev.certified += Number(it.certifiedQty || 0);
-        map.set(key, prev);
-      }
-    }
-    return map;
-  }, [mvacEntries]);
   
   /** PRE-AGGREGATE INDENT/PO QUANTITIES BY BOQ ITEM ID **/
   const indentQtyByBoqItemId = useMemo(() => {
@@ -715,7 +696,7 @@ export default function ViewBoqPage() {
 
   /** Cross-stage reconciliation per BOQ item, built from the per-stage Maps above so nothing is
    * aggregated twice. Section-header rows carry no quantities and are skipped. Civil/erection
-   * items run the civil ladder, fed from the work order / JMC-MVAC / subcontractor-bill joins. */
+   * items run the civil ladder, fed from the work order / JMC / subcontractor-bill joins. */
   const workOrderAggByBoqItemId = useMemo(() => aggregateWorkOrdersByBoqItem(workOrders), [workOrders]);
   const subBillAggByBoqItemId = useMemo(() => aggregateSubcontractorBillsByBoqItem(bills), [bills]);
   const reconciliationByBoqItemId = useMemo(() => {
@@ -725,11 +706,8 @@ export default function ViewBoqPage() {
       const isCivil = ['civil', 'erection'].includes(getScope2(item).toLowerCase());
       const measurementKey = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
       const jmcAgg = isCivil ? jmcAggBySlNo.get(measurementKey) : undefined;
-      const mvacAgg = isCivil ? mvacAggBySlNo.get(measurementKey) : undefined;
-      const measurementExecuted =
-        jmcAgg || mvacAgg ? (jmcAgg?.executed ?? 0) + (mvacAgg?.executed ?? 0) : undefined;
-      const measurementCertified =
-        jmcAgg || mvacAgg ? (jmcAgg?.certified ?? 0) + (mvacAgg?.certified ?? 0) : undefined;
+      const measurementExecuted = jmcAgg?.executed;
+      const measurementCertified = jmcAgg?.certified;
       const workOrderAgg = isCivil ? workOrderAggByBoqItemId.get(item.id) : undefined;
       const subBillAgg = isCivil ? subBillAggByBoqItemId.get(item.id) : undefined;
       map.set(
@@ -764,7 +742,6 @@ export default function ViewBoqPage() {
     grnQtyByBoqItemId,
     mvacGateQtyByBoqItemId,
     jmcAggBySlNo,
-    mvacAggBySlNo,
     workOrderAggByBoqItemId,
     subBillAggByBoqItemId,
     tolerancePct,
@@ -776,11 +753,10 @@ export default function ViewBoqPage() {
       if (!boqSlNo.trim()) return { executed: 0, certified: 0 };
 
       const jmc = jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      const mvac = mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
 
-      return { executed: jmc.executed + mvac.executed, certified: jmc.certified + mvac.certified };
+      return { executed: jmc.executed, certified: jmc.certified };
     },
-    [jmcAggBySlNo, mvacAggBySlNo]
+    [jmcAggBySlNo]
   );
 
   /** FILTERS **/

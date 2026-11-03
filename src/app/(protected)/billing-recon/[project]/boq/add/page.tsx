@@ -28,6 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister } from '@/lib/billing-recon/register';
 
 const initialBoqItem = {
   'Project Name': '',
@@ -158,6 +159,7 @@ export default function AddBoqItemPage() {
   const [projectName, setProjectName] = useState('');
   const [existingBoqItems, setExistingBoqItems] = useState<BoqItemType[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const reg = useMemo(() => billingReconRegister(currentProject), [currentProject]);
 
   useEffect(() => {
     let alive = true;
@@ -180,7 +182,7 @@ export default function AddBoqItemPage() {
         setCurrentProject(pData);
         setBoqItem(prev => ({ ...prev, 'Project Name': pData.projectName }));
 
-        const bSnap = await getDocs(collection(db, 'projects', pData.id, 'boqItems'));
+        const bSnap = await getDocs(collection(db, 'projects', pData.id, billingReconRegister(pData).boqItems));
         if (!alive) return;
         setExistingBoqItems(bSnap.docs.map(d => ({id: d.id, ...d.data()} as BoqItemType)));
       } catch (e) {
@@ -242,7 +244,7 @@ export default function AddBoqItemPage() {
     try {
       // Unique BOQ SL No within project (indexed)
       const dupQ = query(
-        collection(db, 'projects', currentProject.id, 'boqItems'),
+        collection(db, 'projects', currentProject.id, reg.boqItems),
         where('BOQ SL No', '==', cleaned['BOQ SL No']),
         limit(1)
       );
@@ -274,7 +276,7 @@ export default function AddBoqItemPage() {
         createdBy: user.id,
       };
 
-      const docRef = await addDoc(collection(db, 'projects', currentProject.id, 'boqItems'), payload);
+      const docRef = await addDoc(collection(db, 'projects', currentProject.id, reg.boqItems), payload);
 
       setExistingBoqItems(prev => [...prev, { ...payload, id: docRef.id, createdAt: new Date() } as unknown as BoqItemType]);
 

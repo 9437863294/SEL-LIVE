@@ -32,6 +32,11 @@ interface UpdateCertifiedQtyDialogProps {
   projectSlug: string;
   onSaveSuccess: () => void;
   onAction?: (taskId: string, action: string | ActionConfig, comment: string, updatedItems: JmcItem[]) => Promise<void>;
+  /**
+   * The `projects/{id}/…` subcollection the JMC entry lives in. Project Management uses the shared
+   * `jmcEntries`; Billing Recon passes its register's (`billingReconRegister(project).jmcEntries`).
+   */
+  jmcCollection?: string;
 }
 
 type EditableItem = JmcItem & { __certStr?: string; __error?: string | null };
@@ -53,6 +58,7 @@ export function UpdateCertifiedQtyDialog({
   projectSlug,
   onSaveSuccess,
   onAction,
+  jmcCollection = 'jmcEntries',
 }: UpdateCertifiedQtyDialogProps) {
   const { toast } = useToast();
 
@@ -270,7 +276,7 @@ export function UpdateCertifiedQtyDialog({
     }));
 
     try {
-      const jmcRef = doc(db, 'projects', currentProject.id, 'jmcEntries', jmcEntry.id);
+      const jmcRef = doc(db, 'projects', currentProject.id, jmcCollection, jmcEntry.id);
       const mergedAttachments = [...uploaded, ...newAttachments];
 
       if (onAction) {

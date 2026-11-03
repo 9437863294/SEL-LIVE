@@ -1,13 +1,18 @@
 /**
- * Civil execution join — brings the civil/erection side of Billing Recon and Subcontractors
- * Management into Project Management's civil lane.
+ * Civil execution join — brings the project's civil/erection registers into Project Management's
+ * civil lane.
  *
- * Those two modules already run the civil commercial chain end-to-end: subcontractor work orders
- * (`workOrders`), joint measurement entries (`jmcEntries` / `mvacEntries`), and subcontractor
- * bills (`bills`) — all project-scoped collections under `projects/{globalProjectId}/...`, written
- * by their own entry screens and workflow engines. Project Management READS these registers and
- * never writes them: the civil lane here is a control view over data those modules own, exactly
- * as the BOQ costing page already does for its "JMC/MVAC" columns.
+ * The civil commercial chain runs on the project register: subcontractor work orders
+ * (`workOrders`) and bills (`bills`) written by Subcontractors Management, and joint measurement
+ * entries (`jmcEntries`) written by the JMC screens Project Management and Subcontractors host —
+ * all project-scoped collections under `projects/{globalProjectId}/...`. The civil lane here is a
+ * control view over those registers, exactly as the BOQ costing page does for its JMC columns.
+ *
+ * Billing Recon's MVAC entries (`mvacEntries`) are NOT read: they are Billing Recon's own
+ * client-billing register, separated from the project register (see
+ * src/lib/billing-recon/register.ts). Project Management's own material acceptance is the MVAC
+ * supply gate (`mvacRecords`, src/lib/supply-gates.ts), a different record entirely. The
+ * measurement helpers below still tolerate `mvacNo`/`mvacDate` so they stay shape-agnostic.
  *
  * Two keying conventions coexist and must never be mixed (see the costing page):
  *   - Work order items and bill items carry a real `boqItemId` → join by document id.
@@ -25,7 +30,6 @@
 
 export const WORK_ORDER_COLLECTION = "workOrders";
 export const JMC_ENTRY_COLLECTION = "jmcEntries";
-export const MVAC_ENTRY_COLLECTION = "mvacEntries";
 export const SUBCONTRACTOR_BILL_COLLECTION = "bills";
 
 /** Statuses under which a record does not represent real quantity. */
@@ -205,9 +209,9 @@ export interface CivilMeasurementAggregate {
 }
 
 /**
- * Sums JMC/MVAC measurement quantities per BOQ composite key. Pass both registers' entries
- * together when the combined "JMC/MVAC" view is wanted (matching the costing page columns), or
- * one register alone. Rejected/Cancelled entries are excluded.
+ * Sums measurement quantities per BOQ composite key. Project Management passes the project JMC
+ * register only; the function accepts any entries of the shared measurement shape (JMC or MVAC
+ * field names). Rejected/Cancelled entries are excluded.
  */
 export function aggregateMeasurementsByBoqKey(
   entries: MeasurementEntryLike[],

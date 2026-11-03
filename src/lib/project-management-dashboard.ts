@@ -65,10 +65,15 @@ export interface ProjectControlTowerInput {
   dispatchInstructions: UnknownRecord[];
   grns: UnknownRecord[];
   mvacRecords: UnknownRecord[];
-  /* --- civil registers owned by Billing Recon / Subcontractors Management (read-only join —
-   * see src/lib/civil-execution.ts). Optional so existing callers keep working unchanged. --- */
+  /* --- the project's civil registers: Subcontractors Management's work orders and bills, and
+   * the project JMC register (read-only join — see src/lib/civil-execution.ts). Optional so
+   * existing callers keep working unchanged. --- */
   workOrders?: UnknownRecord[];
   jmcEntries?: UnknownRecord[];
+  /**
+   * @deprecated Ignored. Billing Recon's MVAC entries are its own client-billing register and no
+   * longer feed Project Management's figures (see src/lib/billing-recon/register.ts).
+   */
   mvacEntries?: UnknownRecord[];
   subcontractorBills?: UnknownRecord[];
   leadTimeDays?: number;
@@ -112,11 +117,11 @@ export interface ProjectControlTowerSummary {
     committedPct: number;
     overBudget: boolean;
   };
-  /** Civil execution, joined from Billing Recon / Subcontractors Management registers. */
+  /** Civil execution, joined from the project's JMC and Subcontractors Management registers. */
   civil: {
     workOrderCount: number;
     workOrderValue: number;
-    /** Σ rate × executedQty across non-void JMC/MVAC measurement entries, at recorded rates. */
+    /** Σ rate × executedQty across non-void JMC measurement entries, at recorded rates. */
     executedValue: number;
     /** Σ rate × certifiedQty across the same entries. */
     certifiedValue: number;
@@ -258,7 +263,6 @@ const STALL_RULES: Array<{
     | "dispatchInstructions"
     | "mvacRecords"
     | "jmcEntries"
-    | "mvacEntries"
     | "subcontractorBills"
   >;
   target: ProjectAttentionTarget;
@@ -324,21 +328,12 @@ const STALL_RULES: Array<{
     label: "JMC entries awaiting certification",
     waitingOn: "Certification workflow",
     source: "jmcEntries",
-    // Project Management hosts the JMC screens, so this one can land on the log itself. MVAC
-    // entries and subcontractor bills still live only in Billing Recon / Subcontractors, so their
-    // rules point at the Civil workspace instead.
+    // Project Management hosts the JMC screens, so this one can land on the log itself.
+    // Subcontractor bills still live only in Subcontractors Management, so their rule points at
+    // the Civil workspace instead.
     target: "jmc",
     matches: (record) => WORKFLOW_WAITING_STATUSES.has(String(record.status ?? "")),
     ageFrom: (record) => record.jmcDate,
-  },
-  {
-    key: "mvac-entry-certification",
-    label: "MVAC entries awaiting certification",
-    waitingOn: "Certification workflow",
-    source: "mvacEntries",
-    target: "civil",
-    matches: (record) => WORKFLOW_WAITING_STATUSES.has(String(record.status ?? "")),
-    ageFrom: (record) => record.mvacDate,
   },
   {
     key: "subcontractor-bill-approval",
@@ -461,9 +456,9 @@ export function calculateProjectControlTower(
   }
   stalledGates.sort((a, b) => b.oldestDays - a.oldestDays);
 
-  /* ---- civil execution: the registers Billing Recon / Subcontractors Management own ---- */
+  /* ---- civil execution: the project JMC register and Subcontractors Management's registers ---- */
   const workOrders = input.workOrders ?? [];
-  const measurementEntries = [...(input.jmcEntries ?? []), ...(input.mvacEntries ?? [])];
+  const measurementEntries = input.jmcEntries ?? [];
   const subcontractorBills = input.subcontractorBills ?? [];
   const workOrderAggByBoqItem = aggregateWorkOrdersByBoqItem(workOrders);
   const measurementAggByBoqKey = aggregateMeasurementsByBoqKey(measurementEntries);

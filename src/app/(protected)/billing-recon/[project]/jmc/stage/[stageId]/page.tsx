@@ -38,7 +38,6 @@ import type {
   WorkflowStep,
   ActionLog,
   BoqItem,
-  Bill,
   ActionConfig,
   Project,
   JmcItem,
@@ -69,6 +68,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -155,8 +155,9 @@ export default function StagePage() {
   const [isUpdateQtyOpen, setIsUpdateQtyOpen] = useState(false);
   const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
+  const reg = useMemo(() => billingReconRegister(project), [project]);
 
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
   const [completionDate, setCompletionDate] = useState<Date | undefined>(new Date());
@@ -166,8 +167,19 @@ export default function StagePage() {
 
     setIsLoading(true);
     try {
-      // 1) workflow + stage
-      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      // 1) project by slug (cache id) — first, because its register says which workflow to read
+      const projectsQueryRef = query(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQueryRef);
+      const projectData = projectsSnapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() } as Project))
+        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
+
+      if (!projectData) throw new Error('Project not found');
+      const pid = projectData.id;
+      const projectReg = billingReconRegister(projectData);
+
+      // 2) workflow + stage
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, projectReg.jmcWorkflowId);
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
         toast({
@@ -191,28 +203,19 @@ export default function StagePage() {
         return;
       }
       setStage(currentStage);
-
-      // 2) project by slug (cache id)
-      const projectsQueryRef = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQueryRef);
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
-
-      if (!projectData) throw new Error('Project not found');
-      const pid = projectData.id;
       setProjectId(pid);
+      setProject(projectData);
 
-      // 3) stage tasks + BOQ + bills (for cached project id)
-      const [stageTasksSnap, boqSnap, billsSnap] = await Promise.all([
+      // 3) stage tasks + BOQ (for cached project id). Subcontractors' `bills` are no longer read:
+      // nothing here showed them, and they are what the company pays, not client billing.
+      const [stageTasksSnap, boqSnap] = await Promise.all([
         getDocs(
           query(
-            collection(db, 'projects', pid, 'jmcEntries'),
+            collection(db, 'projects', pid, projectReg.jmcEntries),
             where('currentStepId', '==', stageId)
           )
         ),
-        getDocs(query(collection(db, 'projects', pid, 'boqItems'))),
-        getDocs(query(collection(db, 'projects', pid, 'bills'))),
+        getDocs(query(collection(db, 'projects', pid, projectReg.boqItems))),
       ]);
 
       setTasks(
@@ -223,11 +226,6 @@ export default function StagePage() {
       setBoqItems(
         boqSnap.docs.map(
           (d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)
-        )
-      );
-      setBills(
-        billsSnap.docs.map(
-          (d) => ({ id: d.id, ...(d.data() as any) } as Bill)
         )
       );
     } catch (error: any) {
@@ -335,7 +333,7 @@ export default function StagePage() {
       extra instanceof Date ? (extra as Date) : undefined;
 
     try {
-      const taskRef = doc(db, 'projects', projectId, 'jmcEntries', taskId);
+      const taskRef = doc(db, 'projects', projectId, reg.jmcEntries, taskId);
 
       await runTransaction(db, async (transaction) => {
         const preSnap = await transaction.get(taskRef);
@@ -670,7 +668,6 @@ export default function StagePage() {
         onOpenChange={handleDialogOpenChange}
         jmcEntry={selectedJmc}
         boqItems={boqItems}
-        bills={bills}
         isEditMode={isVerifyOpen}
         onVerify={handleAction}
         isLoading={selectedJmc ? isActionLoading === selectedJmc.id : false}
@@ -683,6 +680,7 @@ export default function StagePage() {
           jmcEntry={selectedJmc}
           projectSlug={projectSlug}
           onSaveSuccess={fetchTasks}
+          jmcCollection={reg.jmcEntries}
         />
       )}
     </>

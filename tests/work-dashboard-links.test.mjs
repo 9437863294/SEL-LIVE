@@ -133,3 +133,17 @@ test('the two requisition workflows resolve at their module root and their stage
     assert.ok(resolves(`${basePath}/stage/x`), `${basePath}/stage/[stageId] does not resolve`);
   }
 });
+
+test("Billing Recon's separated JMC and MVAC registers link into its slug-routed stage screens", () => {
+  // `billingReconStageHref` in work-dashboard-project-sources.ts builds
+  // /billing-recon/{projectSlug}/{jmc|mvac}/stage/{stepId}, falling back to the register and then
+  // the module root.
+  assert.ok(resolves('/billing-recon'), '/billing-recon does not resolve');
+  for (const register of ['jmc', 'mvac']) {
+    assert.ok(resolves(`/billing-recon/x/${register}`), `/billing-recon/[project]/${register} does not resolve`);
+    assert.ok(
+      resolves(`/billing-recon/x/${register}/stage/x`),
+      `/billing-recon/[project]/${register}/stage/[stageId] does not resolve`,
+    );
+  }
+});

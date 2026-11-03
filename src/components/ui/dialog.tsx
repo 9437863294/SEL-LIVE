@@ -150,7 +150,14 @@ function WindowLifecycle({ onOpen, onClose }: { onOpen: () => void; onClose: () 
   return null
 }
 
-const DialogContent = React.forwardRef<
+/**
+ * The overlay and the content, rendered as DialogPortal's single child. DialogPortal portals each
+ * of its children separately, so with the overlay as a child of its own, the overlay re-mounted on
+ * Restore was appended to the end of <body>: after the content, at the same z-50, covering it (the
+ * dialog showed faded and the overlay took its clicks). Sharing one portal, React re-inserts it
+ * before the content. The ref DialogPortal passes (its Presence) still lands on the content.
+ */
+const DialogWindow = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
 >(({ className, children, size, windowControls, minimisable = true, windowTitle, onEscapeKeyDown, onInteractOutside, onFocusCapture, ...props }, ref) => {
@@ -202,7 +209,7 @@ const DialogContent = React.forwardRef<
   }, [minimised])
 
   return (
-    <DialogPortal>
+    <>
       {!minimised && <DialogOverlay />}
       <DialogPrimitive.Content
         ref={setRefs}
@@ -284,9 +291,19 @@ const DialogContent = React.forwardRef<
 
         {minimised && <MinimisedBar title={barTitle} onRestore={restore} closeLabel={closeLabel} />}
       </DialogPrimitive.Content>
-    </DialogPortal>
+    </>
   )
 })
+DialogWindow.displayName = 'DialogWindow'
+
+const DialogContent = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Content>,
+  DialogContentProps
+>((props, ref) => (
+  <DialogPortal>
+    <DialogWindow {...props} ref={ref} />
+  </DialogPortal>
+))
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({

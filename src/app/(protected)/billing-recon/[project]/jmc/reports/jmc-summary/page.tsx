@@ -39,6 +39,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 interface SummaryStats {
     totalJMCs: number;
@@ -104,11 +105,12 @@ export default function JmcSummaryPage() {
         }
 
         const currentProjectId = currentProject.id;
-        
+        const reg = billingReconRegister(currentProject);
+
         const [tasksSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-          getDocs(query(collection(db, 'projects', currentProjectId, 'jmcEntries'))),
+          getDocs(query(collection(db, 'projects', currentProjectId, reg.jmcEntries))),
           getDocs(collection(db, 'users')),
-          getDoc(doc(db, 'workflows', 'jmc-workflow')),
+          getDoc(doc(db, WORKFLOWS_COLLECTION, reg.jmcWorkflowId)),
         ]);
         
         const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JmcEntry));

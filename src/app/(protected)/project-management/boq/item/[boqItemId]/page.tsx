@@ -46,7 +46,6 @@ import {
 } from "@/lib/project-management-work-packages";
 import {
   JMC_ENTRY_COLLECTION,
-  MVAC_ENTRY_COLLECTION,
   SUBCONTRACTOR_BILL_COLLECTION,
   WORK_ORDER_COLLECTION,
   aggregateMeasurementsByBoqKey,
@@ -232,7 +231,6 @@ export default function BoqItem360Page() {
         workPackageSnapshot,
         workOrderSnapshot,
         jmcEntrySnapshot,
-        mvacEntrySnapshot,
         subBillSnapshot,
         settingsSnapshot,
         documentSnapshot,
@@ -250,12 +248,13 @@ export default function BoqItem360Page() {
         getDocs(collection(db, "projects", projectId, RFQ_COLLECTION)),
         getDocs(collection(db, "projects", projectId, PO_COLLECTION)),
         getDocs(collection(db, "projects", projectId, WORK_PACKAGE_COLLECTION)),
-        // Civil registers owned by Billing Recon / Subcontractors Management. Work orders and
-        // bills key items by boqItemId; JMC/MVAC measurements only by (scope1, scope2, BOQ SL No)
-        // — both scans are unavoidable for the same items[]-array reason as indents/RFQs/POs.
+        // Civil registers of the project (Subcontractors Management / Project Management's JMC
+        // screens). Work orders and bills key items by boqItemId; JMC measurements only by
+        // (scope1, scope2, BOQ SL No) — both scans are unavoidable for the same items[]-array
+        // reason as indents/RFQs/POs. Billing Recon's MVAC entries are not read: they are Billing
+        // Recon's client-billing register, not this project's execution record.
         getDocs(collection(db, "projects", projectId, WORK_ORDER_COLLECTION)),
         getDocs(collection(db, "projects", projectId, JMC_ENTRY_COLLECTION)),
-        getDocs(collection(db, "projects", projectId, MVAC_ENTRY_COLLECTION)),
         getDocs(collection(db, "projects", projectId, SUBCONTRACTOR_BILL_COLLECTION)),
         getDoc(doc(db, "projectManagementSettings", "general")),
         getDocs(query(collection(db, DOCUMENT_COLLECTION), where("linkedId", "==", boqItemId))),
@@ -281,10 +280,9 @@ export default function BoqItem360Page() {
         workPackageSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as ProjectWorkPackage),
       );
       setWorkOrders(workOrderSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkOrderLike));
-      setMeasurementEntries([
-        ...jmcEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
-        ...mvacEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
-      ]);
+      setMeasurementEntries(
+        jmcEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
+      );
       setSubcontractorBills(
         subBillSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as SubcontractorBillLike),
       );
@@ -440,13 +438,13 @@ export default function BoqItem360Page() {
               itemKey,
           );
           return {
-            reference: text(entry.jmcNo ?? entry.mvacNo),
-            date: text(entry.jmcDate ?? entry.mvacDate),
+            reference: text(entry.jmcNo),
+            date: text(entry.jmcDate),
             party: "",
             qty: lines.reduce((total, line) => total + toNumber(line.executedQty), 0),
             certifiedQty: lines.reduce((total, line) => total + toNumber(line.certifiedQty), 0),
             status: text(entry.status),
-            kind: text(entry.jmcNo) ? "JMC" : "MVAC",
+            kind: "JMC",
           };
         }),
       bills: subcontractorBills
@@ -873,7 +871,7 @@ export default function BoqItem360Page() {
           civilRecords.bills.length > 0) && (
           <TableCard
             title="Subcontract & measurement records"
-            description="Work orders, JMC/MVAC measurement entries, and subcontractor bills that reference this BOQ line — owned by Subcontractors Management and Billing Recon, joined here."
+            description="Work orders, JMC measurement entries, and subcontractor bills that reference this BOQ line — the project's own registers (Subcontractors Management and Project Management's JMC), joined here."
           >
             <div className="p-3 sm:p-0">
               <PmDataList

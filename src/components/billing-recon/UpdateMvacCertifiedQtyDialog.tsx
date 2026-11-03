@@ -24,6 +24,7 @@ import { Loader2, Upload, File as FileIcon, X, Maximize, Minimize } from 'lucide
 import { cn } from '@/lib/utils';
 import { Progress } from '../ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister } from '@/lib/billing-recon/register';
 
 interface UpdateMvacCertifiedQtyDialogProps {
   isOpen: boolean;
@@ -270,7 +271,7 @@ export function UpdateMvacCertifiedQtyDialog({
     }));
 
     try {
-      const mvacRef = doc(db, 'projects', currentProject.id, 'mvacEntries', mvacEntry.id);
+      const mvacRef = doc(db, 'projects', currentProject.id, billingReconRegister(currentProject).mvacEntries, mvacEntry.id);
       const mergedAttachments = [...uploaded, ...newAttachments];
 
       if (onAction) {

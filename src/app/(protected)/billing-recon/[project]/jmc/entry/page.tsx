@@ -31,6 +31,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -160,6 +161,7 @@ export default function JmcEntryPage() {
     () => allProjects.find((p) => p.id === selectedProjectId) || null,
     [allProjects, selectedProjectId]
   );
+  const reg = useMemo(() => billingReconRegister(currentProject), [currentProject]);
 
   const boqItems = useMemo(() => {
     if (!currentProject) return [];
@@ -181,10 +183,10 @@ export default function JmcEntryPage() {
         }
 
         const boqSnaps = await Promise.all(
-          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'boqItems')))
+          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, billingReconRegister(p).boqItems)))
         );
         const jmcSnaps = await Promise.all(
-          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, 'jmcEntries')))
+          projectsData.map((p) => getDocs(collection(db, 'projects', p.id, billingReconRegister(p).jmcEntries)))
         );
 
         const allBoq = boqSnaps.flatMap((snap, index) =>
@@ -228,7 +230,7 @@ export default function JmcEntryPage() {
 
       const configSlug = `${currentProject.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
       try {
-        const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
+        const configRef = doc(db, reg.serialConfigs, configSlug);
         const configDoc = await getDoc(configRef);
         if (configDoc.exists()) {
           const configData = configDoc.data() as SerialNumberConfig;
@@ -244,7 +246,7 @@ export default function JmcEntryPage() {
       }
     };
     generateJmcNo();
-  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id]);
+  }, [items[0]?.scope1, items[0]?.scope2, currentProject?.id, reg.serialConfigs]);
 
   const handleProjectChange = (projectId: string) => {
     const project = allProjects.find((p) => p.id === projectId);
@@ -403,7 +405,7 @@ export default function JmcEntryPage() {
     try {
       const firstItem = items[0];
       const configSlug = `${currentProject!.id}_${slugify(firstItem.scope2)}_${slugify(firstItem.scope1)}`;
-      const configRef = doc(db, 'billingReconSerialConfigs', configSlug);
+      const configRef = doc(db, reg.serialConfigs, configSlug);
 
       await runTransaction(db, async (transaction) => {
         const configDoc = await transaction.get(configRef);
@@ -420,7 +422,7 @@ export default function JmcEntryPage() {
           throw new Error(`JMC number mismatch. Expected ${expectedJmcNo}, but found ${details.jmcNo}. Please refresh.`);
         }
 
-        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+        const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.jmcWorkflowId);
         const workflowSnap = await getDoc(workflowRef);
         if (!workflowSnap.exists()) throw new Error('Workflow not configured for JMC.');
 
@@ -459,7 +461,7 @@ export default function JmcEntryPage() {
           history: [initialLog],
         };
 
-        const newJmcRef = doc(collection(db, 'projects', currentProject!.id, 'jmcEntries'));
+        const newJmcRef = doc(collection(db, 'projects', currentProject!.id, reg.jmcEntries));
         transaction.set(newJmcRef, jmcData);
         transaction.update(configRef, { startingIndex: currentIndex + 1 });
       });

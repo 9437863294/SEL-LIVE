@@ -23,6 +23,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { useBillingReconProjects } from '@/components/billing-recon/billing-recon-shell';
 
 /** Extra fields present in Firestore but not declared on core Project type */
 type ProjectWithExtras = Project & {
@@ -44,6 +45,8 @@ type UISignature = Signature;
 
 export default function BillingStatusPage() {
   const { toast } = useToast();
+  // The module shell's project switcher and dashboard list billing-required projects; refresh them after a change.
+  const { reload: reloadShellProjects } = useBillingReconProjects();
 
   const [projects, setProjects] = useState<ProjectWithExtras[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -133,6 +136,7 @@ export default function BillingStatusPage() {
         setProjects((prev) =>
           prev.map((p) => (p.id === project.id ? { ...p, billingRequired: false } : p))
         );
+        void reloadShellProjects();
         toast({ title: 'Updated', description: `${project.projectName ?? 'Project'} billing disabled.` });
       } catch (error) {
         toast({ title: 'Error', description: 'Failed to update billing status.', variant: 'destructive' });
@@ -197,6 +201,7 @@ export default function BillingStatusPage() {
       }
 
       await updateDoc(projectRef, updateData);
+      void reloadShellProjects();
 
       // Optimistic local update
       setProjects((prev) =>

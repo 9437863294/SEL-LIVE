@@ -24,7 +24,7 @@ import { useMemo, useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Loader2, Save, Printer, Maximize, Minimize } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -96,7 +96,8 @@ interface ViewMvacEntryDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   MvacEntry: MvacEntry | null;
   boqItems: BoqItem[];
-  bills: Bill[];
+  /** Unused — kept optional so existing callers still compile. Billing Recon no longer passes it. */
+  bills?: Bill[];
   isEditMode?: boolean;
   onVerify?: (
     taskId: string,
@@ -118,7 +119,6 @@ export default function ViewMvacEntryDialog({
   isLoading = false,
 }: ViewMvacEntryDialogProps) {
   const [editableItems, setEditableItems] = useState<MvacItem[]>([]);
-  const [projectMvacEntries, setProjectMvacEntries] = useState<MvacEntry[]>([]);
   const [dialogSize, setDialogSize] = useState<'xl' | '2xl' | 'full'>('xl');
   const [currentProject, setCurrentProject] =
     useState<(Project & { signatures?: any[] }) | null>(null);
@@ -139,20 +139,18 @@ export default function ViewMvacEntryDialog({
     }
   }, [MvacEntry, isOpen]);
 
-  /* ---------- load project + all MVACs of project ---------- */
+  /* ---------- load project (for the print link's slug) ---------- */
+  // This used to read every MVAC of the project as well, into state nothing displayed. It read the
+  // shared `mvacEntries` regardless of the project's Billing Recon register, so it was dropped.
   useEffect(() => {
     const fetchProjectData = async () => {
       const projectId = (MvacEntry as any)?.projectId || undefined;
       if (!projectId) {
-        setProjectMvacEntries([]);
         setCurrentProject(null);
         return;
       }
       try {
-        const [projectSnap, mvacSnap] = await Promise.all([
-          getDoc(doc(db, 'projects', projectId)),
-          getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
-        ]);
+        const projectSnap = await getDoc(doc(db, 'projects', projectId));
 
         if (projectSnap.exists()) {
           setCurrentProject(
@@ -164,18 +162,8 @@ export default function ViewMvacEntryDialog({
         } else {
           setCurrentProject(null);
         }
-
-        const all = mvacSnap.docs.map(
-          (d) =>
-            ({
-              id: d.id,
-              ...(d.data() as any),
-            } as MvacEntry)
-        );
-        setProjectMvacEntries(all);
       } catch (e) {
-        console.error('Failed to load project MVACs:', e);
-        setProjectMvacEntries([]);
+        console.error('Failed to load project data:', e);
         setCurrentProject(null);
       }
     };

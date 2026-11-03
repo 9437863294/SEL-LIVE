@@ -25,10 +25,12 @@ import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import type { WorkflowStep } from '@/lib/types';
+import type { Project, WorkflowStep } from '@/lib/types';
 import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------------- types ---------------- */
 type JmcItem = {
@@ -173,7 +175,15 @@ export default function JmcPage() {
       setWorkflowError(null);
 
       try {
-        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+        // The workflow document depends on the project's Billing Recon register, so find the
+        // project first. An unknown slug falls back to the shared workflow, as before.
+        const projectsSnap = await getDocs(collection(db, 'projects'));
+        const project = projectsSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Project))
+          .find((p) => projectMatchesSlug(p.projectName, projectSlug));
+        const reg = billingReconRegister(project);
+
+        const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.jmcWorkflowId);
         const snap = await getDoc(workflowRef);
 
         const rawSteps = (snap.exists() ? (snap.data()?.steps as WorkflowStep[] | undefined) : []) ?? [];
@@ -202,7 +212,7 @@ export default function JmcPage() {
     };
 
     fetchWorkflow();
-  }, [authIsLoading, toast]);
+  }, [authIsLoading, toast, projectSlug]);
 
   /* ---------- cards ---------- */
   const jmcItems: JmcItem[] = useMemo(() => {

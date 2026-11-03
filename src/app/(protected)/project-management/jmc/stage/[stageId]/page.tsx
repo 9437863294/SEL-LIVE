@@ -745,6 +745,7 @@ export default function StagePage() {
         isOpen={isViewOpen || isVerifyOpen}
         onOpenChange={handleDialogOpenChange}
         jmcEntry={selectedJmc}
+        printRegister="project"
         boqItems={boqItems}
         bills={bills}
         isEditMode={isVerifyOpen}

@@ -3579,6 +3579,34 @@
       ]
     },
     {
+      "collectionGroup": "billingReconJmcEntries",
+      "fieldPath": "assignees",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "billingReconMvacEntries",
+      "fieldPath": "assignees",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "arrayConfig": "CONTAINS"
+        }
+      ]
+    },
+    {
       "collectionGroup": "indents",
       "fieldPath": "assignees",
       "indexes": [

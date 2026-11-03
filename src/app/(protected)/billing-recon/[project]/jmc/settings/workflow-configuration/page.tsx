@@ -10,6 +10,7 @@ import {
   Loader2,
   ArrowUp,
   ArrowDown,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,6 +47,9 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------------- type guards ---------------- */
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
@@ -101,6 +105,8 @@ export default function JmcWorkflowConfigurationPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [project, setProject] = useState<Project | null>(null);
+  const reg = useMemo(() => billingReconRegister(project), [project]);
 
   /* -------- permissions via safe 3-arg can() wrapper -------- */
   const canViewPage = useMemo(
@@ -130,18 +136,26 @@ export default function JmcWorkflowConfigurationPage() {
       ]);
 
       setUsers(await withDesignations(usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as User))));
-      setProjects(projectsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Project)));
+      const allProjects = projectsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Project));
+      setProjects(allProjects);
       setDepartments(deptsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Department)));
       setRoles(rolesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Role)));
 
-      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      // Which JMC workflow this page edits depends on the project's Billing Recon register.
+      const thisProject = allProjects.find((p) => projectMatchesSlug(p.projectName, projectSlug)) ?? null;
+      setProject(thisProject);
+      const projectReg = billingReconRegister(thisProject);
+
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, projectReg.jmcWorkflowId);
       const workflowSnap = await getDoc(workflowRef);
 
       if (workflowSnap.exists()) {
         const s = (workflowSnap.data().steps || []) as WorkflowStep[];
         setSteps(Array.isArray(s) && s.length > 0 ? normalizeIds(s) : initialSteps);
       } else {
-        setSteps(initialSteps);
+        // A separated project's own workflow is created by Data Separation (which copies the shared
+        // one); until then there is nothing to show rather than a template to save by mistake.
+        setSteps(projectReg.separated ? [] : initialSteps);
       }
     } catch (error) {
       console.error('Error fetching data: ', error);
@@ -149,7 +163,7 @@ export default function JmcWorkflowConfigurationPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, projectSlug]);
 
   /* ---------------- actions: add / delete / move ---------------- */
   function handleAddStep() {
@@ -283,6 +297,10 @@ export default function JmcWorkflowConfigurationPage() {
     | { ok: false; msg: string } {
     const normalized = normalizeIds(steps);
 
+    if (normalized.length === 0) {
+      return { ok: false, msg: 'Add at least one step.' };
+    }
+
     for (const s of normalized) {
       if (!s.name || !s.name.trim()) {
         return { ok: false, msg: `Step ${s.id}: name is required.` };
@@ -335,7 +353,7 @@ export default function JmcWorkflowConfigurationPage() {
     setIsSaving(true);
     try {
       const payload = { steps: validation.steps };
-      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.jmcWorkflowId);
       await setDoc(workflowRef, payload, { merge: true });
 
       await logUserActivity({
@@ -344,7 +362,7 @@ export default function JmcWorkflowConfigurationPage() {
         userEmail: (user as any).email,
         module: 'Billing Recon',
         action: 'Update JMC Workflow',
-        details: { stepCount: validation.steps.length },
+        details: { stepCount: validation.steps.length, workflowId: reg.jmcWorkflowId },
       });
 
       toast({ title: 'Success', description: 'Workflow configuration saved.' });
@@ -413,6 +431,27 @@ export default function JmcWorkflowConfigurationPage() {
         }
       />
 
+      <Alert className="mb-4">
+        <Info className="h-4 w-4" />
+        {reg.separated ? (
+          <>
+            <AlertTitle>Billing Recon&apos;s own JMC workflow</AlertTitle>
+            <AlertDescription>
+              This project has been separated, so this workflow is used only by Billing Recon. Project
+              Management keeps its own JMC workflow.
+            </AlertDescription>
+          </>
+        ) : (
+          <>
+            <AlertTitle>Shared with Project Management</AlertTitle>
+            <AlertDescription>
+              Until this project is separated in Billing Recon › Settings › Data Separation, this JMC
+              workflow is shared with Project Management — changes here apply there too.
+            </AlertDescription>
+          </>
+        )}
+      </Alert>
+
       <Card>
         <CardHeader>
           <CardTitle>Workflow Steps</CardTitle>
@@ -426,6 +465,8 @@ export default function JmcWorkflowConfigurationPage() {
               <Skeleton className="h-24 w-full" />
               <Skeleton className="h-24 w-full" />
             </div>
+          ) : steps.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No workflow steps configured yet.</p>
           ) : (
             <Accordion type="multiple" className="w-full" defaultValue={steps.map((s) => s.id)}>
               {steps.map((step, index) => (

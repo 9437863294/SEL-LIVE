@@ -16,7 +16,7 @@ import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp 
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
-import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project, Attachment } from '@/lib/types';
+import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Project, Attachment } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -95,7 +96,6 @@ export default function JmcLogPage() {
   const [jmcEntries, setJmcEntries] = useState<EnrichedJmcEntry[]>([]);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedEntry, setSelectedEntry] = useState<EnrichedJmcEntry | null>(null);
@@ -173,15 +173,17 @@ export default function JmcLogPage() {
         throw new Error('Project not found');
       }
       const projectId = projectData.id;
+      const reg = billingReconRegister(projectData);
 
-      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-      const [workflowSnap, boqSnap, billsSnap, jmcSnap] = await Promise.all([
+      // Subcontractors' `bills` are no longer read here: the log never showed them, and they are
+      // what the company pays, not client billing.
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.jmcWorkflowId);
+      const [workflowSnap, boqSnap, jmcSnap] = await Promise.all([
         getDoc(workflowRef),
-        getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
-        getDocs(query(collection(db, 'projects', projectId, 'bills'))),
+        getDocs(query(collection(db, 'projects', projectId, reg.boqItems))),
         getDocs(
           query(
-            collection(db, 'projects', projectId, 'jmcEntries'),
+            collection(db, 'projects', projectId, reg.jmcEntries),
             orderBy('createdAt', 'desc')
           )
         ),
@@ -196,11 +198,6 @@ export default function JmcLogPage() {
       setBoqItems(
         boqSnap.docs.map(
           (d) => ({ id: d.id, ...(stripId(d.data() as any)) } as BoqItem)
-        )
-      );
-      setBills(
-        billsSnap.docs.map(
-          (d) => ({ id: d.id, ...(stripId(d.data() as any)) } as Bill)
         )
       );
 
@@ -311,7 +308,7 @@ export default function JmcLogPage() {
       }
 
       await deleteDoc(
-        doc(db, 'projects', projectData.id, 'jmcEntries', entry.id!)
+        doc(db, 'projects', projectData.id, billingReconRegister(projectData).jmcEntries, entry.id!)
       );
       await logUserActivity({
         userId,
@@ -518,7 +515,6 @@ export default function JmcLogPage() {
         onOpenChange={setIsViewOpen}
         jmcEntry={selectedEntry}
         boqItems={boqItems}
-        bills={bills}
         isEditMode={false}
         isLoading={false}
       />

@@ -29,6 +29,7 @@ import type { WorkflowStep } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { BILLING_RECON_FIXED, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------------- types ---------------- */
 type MvacItem = {
@@ -142,7 +143,9 @@ export default function MvacPage() {
       setWorkflowError(null);
 
       try {
-        const workflowRef = doc(db, 'workflows', 'mvac-workflow');
+        // The MVAC workflow is Billing Recon's alone and the same for every project, so the hub
+        // needs no project lookup to find it.
+        const workflowRef = doc(db, WORKFLOWS_COLLECTION, BILLING_RECON_FIXED.mvacWorkflowId);
         const snap = await getDoc(workflowRef);
 
         const rawSteps = (snap.exists() ? (snap.data()?.steps as WorkflowStep[] | undefined) : []) ?? [];

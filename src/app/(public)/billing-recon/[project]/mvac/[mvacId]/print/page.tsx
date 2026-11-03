@@ -11,6 +11,7 @@ import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister } from '@/lib/billing-recon/register';
 import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 
 /* ---------- Helpers ---------- */
@@ -185,9 +186,10 @@ export default function PrintMvacPage() {
           throw new Error('Project not found.');
         }
         setProject(projectData);
+        const reg = billingReconRegister(projectData);
 
         // Load MVAC entry
-        const mvacDocRef = doc(db, 'projects', projectData.id, 'mvacEntries', mvacId);
+        const mvacDocRef = doc(db, 'projects', projectData.id, reg.mvacEntries, mvacId);
         const mvacDocSnap = await getDoc(mvacDocRef);
         if (!mvacDocSnap.exists()) {
           throw new Error('MVAC not found.');
@@ -200,7 +202,7 @@ export default function PrintMvacPage() {
 
         // Load BOQ items and map by composite key
         const boqSnap = await getDocs(
-          query(collection(db, 'projects', projectData.id, 'boqItems'))
+          query(collection(db, 'projects', projectData.id, reg.boqItems))
         );
         const boqItemsMap = new Map<string, BoqItem>();
 

@@ -26,7 +26,6 @@ import type {
   WorkflowStep,
   ActionLog,
   BoqItem,
-  Bill,
   Project,
   Attachment,
 } from '@/lib/types';
@@ -47,6 +46,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -105,7 +105,6 @@ export default function MvacLogPage() {
   const [mvacEntries, setMvacEntries] = useState<EnrichedMvacEntry[]>([]);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [selectedEntry, setSelectedEntry] = useState<EnrichedMvacEntry | null>(null);
@@ -179,13 +178,15 @@ export default function MvacLogPage() {
         throw new Error('Project not found');
       }
       const projectId = projectData.id;
+      const reg = billingReconRegister(projectData);
 
-      const workflowRef = doc(db, 'workflows', 'mvac-workflow');
-      const [workflowSnap, boqSnap, billsSnap, mvacSnap] = await Promise.all([
+      // Subcontractors' `bills` are no longer read here: the log never showed them, and they are
+      // what the company pays, not client billing.
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, reg.mvacWorkflowId);
+      const [workflowSnap, boqSnap, mvacSnap] = await Promise.all([
         getDoc(workflowRef),
-        getDocs(query(collection(db, 'projects', projectId, 'boqItems'))),
-        getDocs(query(collection(db, 'projects', projectId, 'bills'))),
-        getDocs(query(collection(db, 'projects', projectId, 'mvacEntries'), orderBy('createdAt', 'desc'))),
+        getDocs(query(collection(db, 'projects', projectId, reg.boqItems))),
+        getDocs(query(collection(db, 'projects', projectId, reg.mvacEntries), orderBy('createdAt', 'desc'))),
       ]);
 
       const steps =
@@ -195,11 +196,6 @@ export default function MvacLogPage() {
       setBoqItems(
         boqSnap.docs.map(
           (d) => ({ id: d.id, ...(stripId(d.data() as any)) } as BoqItem)
-        )
-      );
-      setBills(
-        billsSnap.docs.map(
-          (d) => ({ id: d.id, ...(stripId(d.data() as any)) } as Bill)
         )
       );
 
@@ -308,7 +304,7 @@ export default function MvacLogPage() {
         throw new Error('Project not found');
       }
 
-      await deleteDoc(doc(db, 'projects', projectData.id, 'mvacEntries', entry.id!));
+      await deleteDoc(doc(db, 'projects', projectData.id, billingReconRegister(projectData).mvacEntries, entry.id!));
       await logUserActivity({
         userId,
         userName: (user as any)?.name ?? (user as any)?.displayName,
@@ -462,7 +458,6 @@ export default function MvacLogPage() {
         onOpenChange={setIsViewOpen}
         MvacEntry={selectedEntry as any}
         boqItems={boqItems}
-        bills={bills}
         isEditMode={false}
         isLoading={false}
       />

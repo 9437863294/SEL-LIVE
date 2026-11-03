@@ -1,7 +1,7 @@
 
 'use client';
 
-import { GitMerge, Settings2 } from 'lucide-react';
+import { GitMerge, Hash, Settings2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -40,6 +40,13 @@ const settingsItemsBase: SettingsBaseItem[] = [
     text: 'Workflow Configuration',
     description: 'Set up approval workflows for JMC entries.',
     href: 'settings/workflow-configuration',
+    permission: 'View Settings',
+  },
+  {
+    icon: Hash,
+    text: 'Serial Numbers',
+    description: 'Prefix, format and next number of each scope’s JMC series on this project.',
+    href: 'settings/serial-numbers',
     permission: 'View Settings',
   },
 ];

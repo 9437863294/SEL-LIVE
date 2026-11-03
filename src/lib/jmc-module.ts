@@ -1,14 +1,19 @@
 /**
  * Project Management's host contract for the JMC screens.
  *
- * The Joint Measurement Certificate screens now exist in two places and both stay live: their
- * original home in Billing Recon (routed by a `[project]` slug) and here under Project Management
- * (routed by `?project={mappingId}`, this module's convention everywhere else). Both read and
- * write the SAME `projects/{projectId}/jmcEntries` documents through the SAME global
- * `workflows/jmc-workflow` state machine — they are one register with two doors, not two systems.
+ * The Joint Measurement Certificate screens exist in two places: their original home in Billing
+ * Recon (routed by a `[project]` slug) and here under Project Management (routed by
+ * `?project={mappingId}`, this module's convention everywhere else).
  *
- * The Billing Recon pages are deliberately left untouched. This module holds only what the Project
- * Management copies need in order to differ correctly:
+ * Project Management's JMC screens (and Subcontractors') run on the PROJECT register:
+ * `projects/{projectId}/jmcEntries`, the global `workflows/jmc-workflow`, and JMC numbers from
+ * `projectJmcSerialCollection(project)`. Billing Recon shares that register only for projects that
+ * have not yet been separated; once an admin runs Billing Recon › Settings › Data Separation for a
+ * project, Billing Recon reads and writes its own `billingRecon*` collections and the two never
+ * touch again. The per-project switch, and every collection name on both sides, live in
+ * src/lib/billing-recon/register.ts — read it before assuming a JMC is visible in both modules.
+ *
+ * This module holds only what the Project Management copies need in order to differ correctly:
  *   - the permission resource that gates them here,
  *   - the module name their activity-log rows carry,
  *   - how a route identifies its project, and
@@ -65,9 +70,12 @@ export const jmcSlugify = (value: string): string =>
   value.toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]+/g, "");
 
 /**
- * The `billingReconSerialConfigs` document a JMC number is drawn from. Unchanged from Billing
- * Recon — including scope2 preceding scope1 — so a certificate raised from Project Management
- * continues the same numbering sequence as one raised from Billing Recon.
+ * The serial-config document id a JMC number is drawn from. The id is unchanged from Billing
+ * Recon — including scope2 preceding scope1 — so every series keeps its numbering. The collection
+ * it lives in is NOT fixed: Project Management and Subcontractors use
+ * `projectJmcSerialCollection(project)` (src/lib/billing-recon/register.ts) — the counter shared
+ * with Billing Recon's `billingReconSerialConfigs` until the project is separated, the project's
+ * own `projectJmcSerialConfigs` after (same ids, copied across on separation).
  */
 export const jmcSerialConfigId = (
   projectId: string,

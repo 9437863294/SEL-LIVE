@@ -88,7 +88,9 @@ const RECORDS: Record<MailLinkRecordType, RecordSource> = {
   vendor: { collection: 'vendors', module: 'Vendor Management', labelFields: ['name', 'vendorName', 'companyName'], secondaryFields: ['vendorCode', 'gstin', 'email'], href: () => '/vendor-management' },
   customer: { collection: 'clients', module: 'Project Management', labelFields: ['name', 'clientName', 'companyName'], secondaryFields: ['code', 'email'], href: () => '/project-management/settings/clients' },
   purchaseOrder: { collection: 'purchaseOrders', group: true, module: 'Project Management', labelFields: ['poNumber', 'poNo', 'reference', 'title'], secondaryFields: ['vendorName', 'status'], href: (id) => `/project-management/purchase-orders/${id}` },
-  invoice: { collection: 'bills', group: true, module: 'Billing Recon', labelFields: ['billNo', 'billNumber', 'invoiceNo', 'reference'], secondaryFields: ['vendorName', 'status', 'amount'], href: () => '/billing-recon' },
+  // `projects/{id}/bills` are Subcontractors Management's bills (what the company pays), not Billing
+  // Recon's client bills — those are `billingReconBills` (src/lib/billing-recon/register.ts).
+  invoice: { collection: 'bills', group: true, module: 'Subcontractors Management', labelFields: ['billNo', 'billNumber', 'invoiceNo', 'reference'], secondaryFields: ['vendorName', 'status', 'amount'], href: () => '/subcontractors-management' },
   approval: { collection: 'eApprovalRequests', module: 'E-Approval', labelFields: ['referenceNo', 'reference', 'subject', 'title'], secondaryFields: ['subject', 'status'], href: (id) => `/e-approval/${id}` },
   siteAccountStatement: { collection: 'siteAccountProjects', module: 'Site Account Statement', labelFields: ['projectName', 'name', 'title'], secondaryFields: ['projectCode', 'code'], href: () => '/site-account-statement' },
   task: { collection: 'officeHubTasks', module: 'Office Hub', labelFields: ['title'], secondaryFields: ['reference', 'status'], href: (id) => `/office-hub/tasks/${id}` },

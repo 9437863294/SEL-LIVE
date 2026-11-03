@@ -43,7 +43,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry, MvacItem } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -94,9 +94,9 @@ const baseTableHeaders = [
     'QTY',
     'Unit Rate',
     'Total Amount',
-    'JMC/MVAC Executed Qty',
-    'JMC/MVAC Certified Qty',
-    'JMC/MVAC Amount',
+    'JMC Executed Qty',
+    'JMC Certified Qty',
+    'JMC Amount',
 ] as const;
 
 
@@ -114,7 +114,6 @@ export default function ViewBoqPage() {
 
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
-  const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -139,9 +138,9 @@ export default function ViewBoqPage() {
           'Unit',
           'QTY',
           'Unit Rate',
-          'JMC/MVAC Executed Qty',
-          'JMC/MVAC Certified Qty',
-          'JMC/MVAC Amount',
+          'JMC Executed Qty',
+          'JMC Certified Qty',
+          'JMC Amount',
           'Total Amount',
         ].includes(h as string),
       }),
@@ -238,15 +237,14 @@ export default function ViewBoqPage() {
         .filter(Boolean) as BoqItem[];
       setBoqItems(items);
 
-      // JMC / MVAC / Bills
-      const [jmcSnapshot, mvacSnapshot, billsSnapshot] = await Promise.all([
+      // JMC / Bills — the project register. Billing Recon's MVAC entries are its own
+      // client-billing register and are not read here.
+      const [jmcSnapshot, billsSnapshot] = await Promise.all([
         getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
-        getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
         getDocs(collection(db, 'projects', projectId, 'bills')),
       ]);
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
-      setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
     } catch (error) {
       console.error(error);
@@ -278,33 +276,16 @@ export default function ViewBoqPage() {
     return map;
   }, [jmcEntries]);
 
-  const mvacAggBySlNo = useMemo(() => {
-    const map = new Map<string, QtyAgg>();
-    for (const entry of mvacEntries) {
-      const items = Array.isArray(entry.items) ? entry.items : [];
-      for (const it of items) {
-        const key = compositeKey(getScope1(it), getScope2(it), getBoqSlNo(it));
-        if (!key) continue;
-        const prev = map.get(key) ?? { executed: 0, certified: 0 };
-        prev.executed += Number(it.executedQty || 0);
-        prev.certified += Number(it.certifiedQty || 0);
-        map.set(key, prev);
-      }
-    }
-    return map;
-  }, [mvacEntries]);
-  
   const getQuantities = useCallback(
     (scope1: string, scope2: string, boqSlNo: string) => {
       const key = compositeKey(scope1, scope2, boqSlNo);
       if (!boqSlNo.trim()) return { executed: 0, certified: 0 };
 
       const jmc = jmcAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
-      const mvac = mvacAggBySlNo.get(key) ?? { executed: 0, certified: 0 };
 
-      return { executed: jmc.executed + mvac.executed, certified: jmc.certified + mvac.certified };
+      return { executed: jmc.executed, certified: jmc.certified };
     },
-    [jmcAggBySlNo, mvacAggBySlNo]
+    [jmcAggBySlNo]
   );
 
   /** FILTERS **/
@@ -399,9 +380,9 @@ export default function ViewBoqPage() {
       const boqSlNo = getBoqSlNo(item);
       const { executed, certified } = getQuantities(scope1, scope2, boqSlNo);
 
-      if (key === 'JMC/MVAC Executed Qty') return executed;
-      if (key === 'JMC/MVAC Certified Qty') return certified;
-      if (key === 'JMC/MVAC Amount') {
+      if (key === 'JMC Executed Qty') return executed;
+      if (key === 'JMC Certified Qty') return certified;
+      if (key === 'JMC Amount') {
         const rate = parsedNumber(item['Unit Rate']);
         const val = Number.isFinite(rate) ? certified * (rate as number) : NaN;
         return Number.isFinite(val) ? val : 0;
@@ -539,8 +520,6 @@ export default function ViewBoqPage() {
       setIsDeleting(false);
     }
   };
-
-  const allMvacItems = useMemo(() => mvacEntries.flatMap((entry) => entry.items ?? []), [mvacEntries]);
 
   const dialogFields: (keyof BoqItem)[] = [
     'Project Name',
@@ -788,14 +767,14 @@ export default function ViewBoqPage() {
                                 let display: React.ReactNode;
 
                                 if (
-                                  header === 'JMC/MVAC Executed Qty' ||
-                                  header === 'JMC/MVAC Certified Qty' ||
-                                  header === 'JMC/MVAC Amount'
+                                  header === 'JMC Executed Qty' ||
+                                  header === 'JMC Certified Qty' ||
+                                  header === 'JMC Amount'
                                 ) {
                                   const { executed, certified } = getQuantities(scope1, scope2, boqSlNo);
-                                  if (header === 'JMC/MVAC Executed Qty') {
+                                  if (header === 'JMC Executed Qty') {
                                     display = fmtNum(executed);
-                                  } else if (header === 'JMC/MVAC Certified Qty') {
+                                  } else if (header === 'JMC Certified Qty') {
                                     display = fmtNum(certified);
                                   } else {
                                     const rate = parsedNumber(item['Unit Rate']);

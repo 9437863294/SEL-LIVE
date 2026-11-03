@@ -26,6 +26,7 @@ import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
+import { jmcSlugify } from '@/lib/jmc-module';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { isConversationArchived } from '@/lib/chat';
 import {
@@ -86,7 +87,22 @@ function ImpersonationBanner() {
     );
 }
 
-type PendingTask = (Requisition & { taskType: 'requisition' }) | (JmcEntry & { taskType: 'jmc' });
+/**
+ * JMC tasks come from two registers: the project register (`jmcEntries`, Project Management and
+ * Subcontractors — and Billing Recon for projects not yet separated) and Billing Recon's own
+ * `billingReconJmcEntries` (separated projects — see src/lib/billing-recon/register.ts).
+ */
+type JmcTaskRegister = 'project' | 'billingRecon';
+type PendingTask =
+  | (Requisition & { taskType: 'requisition' })
+  | (JmcEntry & { taskType: 'jmc'; jmcRegister?: JmcTaskRegister; docPath?: string });
+
+/** Newest first; a record without a Timestamp `createdAt` sorts last instead of throwing. */
+const pendingTaskMillis = (task: PendingTask): number => {
+  const createdAt = task.createdAt as { toMillis?: () => number } | undefined;
+  return typeof createdAt?.toMillis === 'function' ? createdAt.toMillis() : 0;
+};
+const byNewestTask = (a: PendingTask, b: PendingTask) => pendingTaskMillis(b) - pendingTaskMillis(a);
 
 /**
  * How many unread notifications the bell streams. The list scrolls, so this is a
@@ -255,51 +271,69 @@ export default function Header() {
        const reqTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'requisition' } as PendingTask));
        setPendingTasks(prev => {
            const otherTasks = prev.filter(t => t.taskType !== 'requisition');
-           return [...otherTasks, ...reqTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+           return [...otherTasks, ...reqTasks].sort(byNewestTask);
        });
     }, (error) => {
       console.error("Error fetching pending requisitions:", error);
     });
     unsubscribes.push(unsubscribeReqs);
 
-    // One collection-group listener across every project's jmcEntries, instead of
+    // One collection-group listener per JMC register across every project, instead of
     // opening a separate listener per project (which scaled with the project count
-    // and had to wait on the projects fetch before it could start).
-    const jmcQuery = query(
-        collectionGroup(db, 'jmcEntries'),
-        where('assignees', 'array-contains', user.id)
-    );
-    const unsubscribeJmc = onSnapshot(jmcQuery, (snapshot) => {
-        const jmcTasks = snapshot.docs
-            .map(doc => ({
-                ...doc.data(),
-                id: doc.id,
-                // Derive from the ref so this holds even if the field is absent.
-                projectId: doc.ref.parent.parent?.id,
-                taskType: 'jmc',
-            } as PendingTask))
-            .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status));
+    // and had to wait on the projects fetch before it could start). Both feed the same
+    // 'jmc' task list; each listener replaces only its own register's rows, and rows
+    // are de-duplicated by document path.
+    const listenToJmcRegister = (subcollection: string, register: JmcTaskRegister) => {
+        const jmcQuery = query(
+            collectionGroup(db, subcollection),
+            where('assignees', 'array-contains', user.id)
+        );
+        return onSnapshot(jmcQuery, (snapshot) => {
+            const jmcTasks = snapshot.docs
+                .map(doc => ({
+                    ...doc.data(),
+                    id: doc.id,
+                    // Derive from the ref so this holds even if the field is absent.
+                    projectId: doc.ref.parent.parent?.id,
+                    taskType: 'jmc',
+                    jmcRegister: register,
+                    docPath: doc.ref.path,
+                } as PendingTask))
+                .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status));
 
-        setPendingTasks(prev => {
-            const otherTasks = prev.filter(t => t.taskType !== 'jmc');
-            return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+            setPendingTasks(prev => {
+                const otherTasks = prev.filter(t => !(t.taskType === 'jmc' && (t.jmcRegister ?? 'project') === register));
+                const seen = new Set(otherTasks.map(t => (t.taskType === 'jmc' ? t.docPath : undefined)).filter(Boolean));
+                const freshTasks = jmcTasks.filter(t => !(t.taskType === 'jmc' && t.docPath && seen.has(t.docPath)));
+                return [...otherTasks, ...freshTasks].sort(byNewestTask);
+            });
+        }, (error) => {
+            // A collection-group query on `assignees array-contains` needs a COLLECTION_GROUP-scoped
+            // index. It's declared in firestore.indexes.json, but until that is deployed this listener
+            // fails and retries — which shows up as repeated Firestore 'Listen' transport errors and an
+            // empty JMC section in the bell, with nothing explaining why. Say so explicitly.
+            if ((error as { code?: string }).code === 'failed-precondition') {
+                // Billing Recon's register is new; until its index is created this is expected, so it
+                // warns rather than raising an error on every page load.
+                (register === 'billingRecon' ? console.warn : console.error)(
+                    `JMC tasks (${subcollection}) need a Firestore collection-group index that has not been deployed yet. ` +
+                    'Run: firebase deploy --only firestore:indexes\nOriginal error:',
+                    error,
+                );
+                return;
+            }
+            if (register === 'billingRecon' && (error as { code?: string }).code === 'permission-denied') {
+                // Its collection-group read rule (firestore.rules) is published by hand; until then
+                // the register is unreadable as a group, and empty anyway until a project is separated.
+                console.warn(`JMC tasks (${subcollection}): the collection-group read rule is not published yet.`);
+                return;
+            }
+            console.error(`Error fetching JMC tasks (${subcollection}):`, error);
         });
-    }, (error) => {
-        // A collection-group query on `assignees array-contains` needs a COLLECTION_GROUP-scoped
-        // index. It's declared in firestore.indexes.json, but until that is deployed this listener
-        // fails and retries — which shows up as repeated Firestore 'Listen' transport errors and an
-        // empty JMC section in the bell, with nothing explaining why. Say so explicitly.
-        if ((error as { code?: string }).code === 'failed-precondition') {
-            console.error(
-                'JMC tasks need a Firestore collection-group index that has not been deployed yet. ' +
-                'Run: firebase deploy --only firestore:indexes\nOriginal error:',
-                error,
-            );
-            return;
-        }
-        console.error("Error fetching JMC tasks:", error);
-    });
-    unsubscribes.push(unsubscribeJmc);
+    };
+    unsubscribes.push(listenToJmcRegister('jmcEntries', 'project'));
+    // Billing Recon's own JMC register, populated once a project is separated.
+    unsubscribes.push(listenToJmcRegister('billingReconJmcEntries', 'billingRecon'));
 
     // Every unread notification addressed to this user, whatever module raised it.
     //
@@ -407,10 +441,21 @@ export default function Header() {
     } else if (task.taskType === 'jmc') {
         const jmcTask = task as JmcEntry;
         const project = projects.find(p => p.id === jmcTask.projectId);
+        // Billing Recon's own register: open the entry's stage screen, routed by the slug the
+        // entry was raised under.
+        if (task.jmcRegister === 'billingRecon') {
+            const slug = jmcTask.projectSlug || (project ? jmcSlugify(project.projectName ?? '') : '');
+            if (slug) {
+                const base = `/billing-recon/${encodeURIComponent(slug)}/jmc`;
+                router.push(jmcTask.currentStepId ? `${base}/stage/${encodeURIComponent(jmcTask.currentStepId)}` : base);
+            } else {
+                router.push('/billing-recon');
+            }
+            return;
+        }
+        // Project register: its Project Management screens need a `?project=` mapping id the
+        // entry does not carry, so this still only reports where the task stands.
         if(project) {
-             const slug = project.projectName.toLowerCase().replace(/\s+/g, '-');
-             // For now, let's just log it, as opening JMC dialog from here is complex
-             console.log(`Navigate to JMC Task: /billing-recon/${slug}/jmc/stage/${jmcTask.currentStepId}`);
              toast({title: "JMC Task", description: `Task ${jmcTask.jmcNo} is pending at stage: ${jmcTask.stage}`})
         }
     }
@@ -658,7 +703,7 @@ export default function Header() {
                   <div className="max-h-40 shrink-0 overflow-y-auto">
                     {pendingTasks.length > 0 ? (
                       pendingTasks.map(task => (
-                          <DropdownMenuItem key={task.id} onSelect={() => handleViewTask(task)}>
+                          <DropdownMenuItem key={(task.taskType === 'jmc' && task.docPath) || `${task.taskType}:${task.id}`} onSelect={() => handleViewTask(task)}>
                             <div className="flex flex-col">
                               <span className="font-semibold">
                                   {task.taskType === 'requisition' ? (task as Requisition).requisitionId : (task as JmcEntry).jmcNo}

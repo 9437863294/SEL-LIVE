@@ -15,10 +15,11 @@
  *   supply → Survey → Indent → RFQ → PO → Drawing → MC → Inspection → MDCC → DI → GRN → MVAC → Billing
  *   civil  → Survey → Work Order → Work Package → JMC → Billing
  *
- * The civil lane's Work Order and JMC stages are joined from the registers Billing Recon and
- * Subcontractors Management own (`workOrders`, `jmcEntries`/`mvacEntries` — see
+ * The civil lane's Work Order and JMC stages are joined from the project register (`workOrders`
+ * from Subcontractors Management, `jmcEntries` from the project JMC screens — see
  * src/lib/civil-execution.ts): the subcontract work order is civil's analog of the supply PO, and
- * the joint measurement is what turns executed work into a certifiable quantity.
+ * the joint measurement is what turns executed work into a certifiable quantity. Billing Recon's
+ * MVAC entries are its own client-billing register and are not joined.
  */
 
 import {
@@ -482,8 +483,8 @@ function draftWorkOrder(input: BoqTraceInput): StageDraft {
   };
 }
 
-/** Joined from Billing Recon / Subcontractors Management's `jmcEntries`/`mvacEntries` (they share
- * one measurement shape). Done once every executed quantity has been certified; merely-executed
+/** Joined from the project JMC register (`jmcEntries`, see src/lib/civil-execution.ts). Done once
+ * every executed quantity has been certified; merely-executed
  * work shows as in progress with the uncertified balance named. */
 function draftJmc(input: BoqTraceInput): StageDraft {
   const jmc = input.jmc;

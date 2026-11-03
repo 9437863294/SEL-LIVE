@@ -192,6 +192,10 @@ service cloud.firestore {
     match /{path=**}/proformaBills/{id} { allow read: if signedIn(); }
     match /{path=**}/subcontractors/{id} { allow read: if signedIn(); }
     match /{path=**}/jmcEntries/{id} { allow read: if signedIn(); }
+    // Billing Recon's own registers once a project is separated (src/lib/billing-recon/register.ts):
+    // the work board and the header's task bell search them for the signed-in user's stage.
+    match /{path=**}/billingReconJmcEntries/{id} { allow read: if signedIn(); }
+    match /{path=**}/billingReconMvacEntries/{id} { allow read: if signedIn(); }
     match /{path=**}/indents/{id} { allow read: if signedIn(); }
     match /{path=**}/poIssueApprovals/{id} { allow read: if signedIn(); }
     match /{path=**}/mcClearanceApprovals/{id} { allow read: if signedIn(); }

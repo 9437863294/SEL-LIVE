@@ -35,7 +35,6 @@ import { logUserActivity } from "@/lib/activity-logger";
 import { projectBoqValue } from "@/lib/project-management-dashboard";
 import {
   JMC_ENTRY_COLLECTION,
-  MVAC_ENTRY_COLLECTION,
   SUBCONTRACTOR_BILL_COLLECTION,
   WORK_ORDER_COLLECTION,
   aggregateMeasurementsByBoqKey,
@@ -253,17 +252,16 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
         packageSnapshot,
         workOrderSnapshot,
         jmcEntrySnapshot,
-        mvacEntrySnapshot,
         subBillSnapshot,
         settingsSnapshot,
       ] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, WORK_PACKAGE_COLLECTION)),
-        // Civil registers owned by Billing Recon / Subcontractors Management — read-only join
-        // (see src/lib/civil-execution.ts).
+        // The project's civil registers (Subcontractors Management work orders and bills, the
+        // project JMC register) — read-only join (see src/lib/civil-execution.ts). Billing
+        // Recon's MVAC entries are not read.
         getDocs(collection(db, "projects", mappingData.globalProjectId, WORK_ORDER_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, JMC_ENTRY_COLLECTION)),
-        getDocs(collection(db, "projects", mappingData.globalProjectId, MVAC_ENTRY_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, SUBCONTRACTOR_BILL_COLLECTION)),
         getDoc(doc(db, "projectManagementSettings", "general")),
       ]);
@@ -284,10 +282,9 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
       setWorkOrders(
         workOrderSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkOrderLike),
       );
-      setMeasurementEntries([
-        ...jmcEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
-        ...mvacEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
-      ]);
+      setMeasurementEntries(
+        jmcEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
+      );
       setSubcontractorBills(
         subBillSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as SubcontractorBillLike),
       );
@@ -845,8 +842,8 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
               </Link>
             </Button>
           )}
-          {/* JMC is the civil lane's measurement register — the same screens Billing Recon hosts,
-              rendered here against this project (see src/lib/jmc-module.ts). */}
+          {/* JMC is the civil lane's measurement register — the project register, rendered here
+              against this project (see src/lib/jmc-module.ts). */}
           {canViewJmc && (
             <Button variant="outline" className="flex-1 px-3 sm:flex-none sm:px-4" asChild>
               <Link href={`${PM_JMC_BASE_PATH}?project=${encodeURIComponent(mappingId)}`}>
@@ -947,13 +944,13 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
         </div>
       </TableCard>
 
-      {/* ── Subcontract & measurement coverage — the civil registers Billing Recon and
-             Subcontractors Management own, joined per BOQ line ─────────────────────────── */}
+      {/* ── Subcontract & measurement coverage — the project's JMC register and the registers
+             Subcontractors Management owns, joined per BOQ line ───────────────────────────── */}
       <TableCard
         title="Subcontract & measurement coverage"
         description={
           <>
-            Work orders, JMC/MVAC measurement, and subcontractor billing joined onto each {scope.toLowerCase()} BOQ
+            Work orders, JMC measurement, and subcontractor billing joined onto each {scope.toLowerCase()} BOQ
             line, with every quantity checked down the ladder.
           </>
         }
@@ -970,7 +967,7 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
         ) : (
           <p className="p-6 text-center text-sm text-muted-foreground">
             No work orders, measurement entries, or subcontractor bills reference this scope&apos;s BOQ lines yet.
-            They are created in Subcontractors Management and Billing Recon and appear here automatically.
+            They are created in Subcontractors Management and Project Management&apos;s JMC and appear here automatically.
           </p>
         )}
       </TableCard>

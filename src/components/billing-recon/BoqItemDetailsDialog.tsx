@@ -28,9 +28,30 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import ViewMvacEntryDialog from './ViewMvacEntryDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { countsAsBilled } from '@/lib/billing-recon/types';
 
 
 /* ---------- Props ---------- */
+
+/** Which `projects/{id}/…` subcollections the breakdown reads. `null` skips that read and hides its section. */
+export interface BoqItemDetailsRegister {
+  jmcEntries: string;
+  mvacEntries: string | null;
+  bills: string | null;
+  /** The bills are Billing Recon RA bill abstracts: cancelled ones are left out of the billed quantity. */
+  billsAreRaBills?: boolean;
+}
+
+/**
+ * The project register: JMC entries and Subcontractors' bills. MVAC is Billing Recon's alone, so the
+ * other modules that open this dialog no longer read it. Module-level so the default stays stable.
+ */
+const PROJECT_REGISTER: BoqItemDetailsRegister = {
+  jmcEntries: 'jmcEntries',
+  mvacEntries: null,
+  bills: 'bills',
+};
+
 interface BoqItemDetailsDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
@@ -41,6 +62,11 @@ interface BoqItemDetailsDialogProps {
    * by name — a lookup that fails outright when the parent project document is missing or unnamed.
    */
   projectId?: string;
+  /**
+   * Where the related entries live. Defaults to the project register (JMC + Subcontractors' bills,
+   * no MVAC); Billing Recon passes its own register with its RA bills.
+   */
+  register?: BoqItemDetailsRegister;
 }
 
 type MvacItemWithParent = MvacItem & {
@@ -137,8 +163,18 @@ export default function BoqItemDetailsDialog({
   onOpenChange,
   item,
   projectId,
+  register = PROJECT_REGISTER,
 }: BoqItemDetailsDialogProps) {
   const { toast } = useToast();
+  // Primitives, so a caller passing a fresh object each render does not re-run the fetch.
+  const {
+    jmcEntries: jmcCollection,
+    mvacEntries: mvacCollection,
+    bills: billsCollection,
+    billsAreRaBills = false,
+  } = register;
+  const showMvac = mvacCollection !== null;
+  const showBills = billsCollection !== null;
 
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
   const [isJmcViewOpen, setIsJmcViewOpen] = useState(false);
@@ -172,22 +208,31 @@ export default function BoqItemDetailsDialog({
       }
 
       const [jmcSnapshot, billsSnapshot, mvacSnapshot] = await Promise.all([
-        getDocs(collection(db, 'projects', resolvedProjectId, 'jmcEntries')),
-        getDocs(collection(db, 'projects', resolvedProjectId, 'bills')),
-        getDocs(collection(db, 'projects', resolvedProjectId, 'mvacEntries')),
+        getDocs(collection(db, 'projects', resolvedProjectId, jmcCollection)),
+        billsCollection
+          ? getDocs(collection(db, 'projects', resolvedProjectId, billsCollection)).catch((error) => {
+              if (!billsAreRaBills) throw error;
+              // RA bill abstracts are new with the split; a failed read of them (e.g. rules not yet
+              // published) must not hide the JMC/MVAC breakdown, so it just shows no bills.
+              console.warn('Could not read RA bills for the BOQ item breakdown:', error);
+              return null;
+            })
+          : Promise.resolve(null),
+        mvacCollection ? getDocs(collection(db, 'projects', resolvedProjectId, mvacCollection)) : Promise.resolve(null),
       ]);
 
+      const billDocs = (billsSnapshot?.docs ?? []).map((d) => ({ id: d.id, ...(d.data() as any) } as Bill));
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
-      setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
-      setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
-      
+      setBills(billsAreRaBills ? billDocs.filter((b) => countsAsBilled(b as any)) : billDocs);
+      setMvacEntries((mvacSnapshot?.docs ?? []).map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
+
     } catch (error) {
       console.error('Error fetching related project data:', error);
       toast({ title: 'Error', description: 'Failed to fetch related project data.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [item?.projectSlug, projectId, toast]);
+  }, [item?.projectSlug, projectId, toast, jmcCollection, billsCollection, mvacCollection, billsAreRaBills]);
 
   useEffect(() => {
     if (isOpen && (projectId || item?.projectSlug)) {
@@ -277,7 +322,13 @@ export default function BoqItemDetailsDialog({
       bills.flatMap((bill) =>
         (bill.items || [])
           .filter((b) => compositeKey(getScope2(b), getBoqSlNo(b)) === currentItemKey)
-          .map((b) => ({ ...(b as any), billNo: bill.billNo, billDate: bill.billDate }))
+          .map((b) => ({
+            ...(b as any),
+            billNo: bill.billNo,
+            billDate: bill.billDate,
+            // An RA bill line carries its value as `amount`.
+            ...(billsAreRaBills ? { totalAmount: (b as any).amount } : {}),
+          }))
       ) ?? [];
 
     const totalBilledQty = relevantBillItems.reduce((s, r) => s + Number(r.billedQty || 0), 0);
@@ -294,7 +345,7 @@ export default function BoqItemDetailsDialog({
       relevantBillItems,
       totalBilledQty,
     };
-  }, [item, jmcEntries, mvacEntries, bills]);
+  }, [item, jmcEntries, mvacEntries, bills, billsAreRaBills]);
 
   const handleViewJmc = (jmcNo: string) => {
     const jmc = jmcEntries.find((e) => e.jmcNo === jmcNo);
@@ -340,11 +391,12 @@ export default function BoqItemDetailsDialog({
 
   const scope2Lower = scope2?.toLowerCase();
 
+  const entryLabel = showMvac ? 'JMC/MVAC' : 'JMC';
   const quantitySummary = [
     { label: 'BOQ Quantity', value: boqQty ?? 0 },
-    { label: 'JMC/MVAC Executed', value: totalExecutedQty ?? 0 },
-    { label: 'JMC/MVAC Certified', value: totalCertifiedQty ?? 0 },
-    { label: 'Billed Qty', value: totalBilledQty ?? 0 },
+    { label: `${entryLabel} Executed`, value: totalExecutedQty ?? 0 },
+    { label: `${entryLabel} Certified`, value: totalCertifiedQty ?? 0 },
+    ...(showBills ? [{ label: 'Billed Qty', value: totalBilledQty ?? 0 }] : []),
     { label: 'Balance Qty', value: (boqQty || 0) - (totalExecutedQty || 0) },
   ];
 
@@ -416,7 +468,10 @@ export default function BoqItemDetailsDialog({
                         {quantitySummary.map((fact, index) => (
                           <div
                             key={fact.label}
-                            className={cn('rounded-md border p-3 text-center', index === quantitySummary.length - 1 && 'col-span-2')}
+                            className={cn(
+                              'rounded-md border p-3 text-center',
+                              index === quantitySummary.length - 1 && quantitySummary.length % 2 === 1 && 'col-span-2'
+                            )}
                           >
                             <dt className="text-xs text-muted-foreground">{fact.label}</dt>
                             <dd className="mt-0.5 break-words text-base font-semibold">{fact.value}</dd>
@@ -463,7 +518,7 @@ export default function BoqItemDetailsDialog({
                       </section>
                     )}
 
-                    { (scope2Lower === 'supply' || !scope2Lower) && (
+                    { showMvac && (scope2Lower === 'supply' || !scope2Lower) && (
                       <section>
                         <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">MVAC Breakdown</h3>
                         <div className="sm:border sm:rounded-md">
@@ -481,23 +536,27 @@ export default function BoqItemDetailsDialog({
                       </section>
                     )}
 
-                    <Separator />
+                    {showBills && (
+                      <>
+                        <Separator />
 
-                    <section>
-                      <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">Billing Breakdown</h3>
-                      <div className="sm:border sm:rounded-md">
-                        <DataList
-                          rows={(relevantBillItems ?? []).map((b: BillRow, idx: number) => ({
-                            ...b,
-                            id: `bill-${b.billNo ?? '—'}-${idx}`,
-                          }))}
-                          columns={billColumns}
-                          frameless
-                          rowClassName={breakdownCard}
-                          empty={<BreakdownEmpty>No bills found for this item.</BreakdownEmpty>}
-                        />
-                      </div>
-                    </section>
+                        <section>
+                          <h3 className="text-base sm:text-lg font-semibold mb-2 text-center">Billing Breakdown</h3>
+                          <div className="sm:border sm:rounded-md">
+                            <DataList
+                              rows={(relevantBillItems ?? []).map((b: BillRow, idx: number) => ({
+                                ...b,
+                                id: `bill-${b.billNo ?? '—'}-${idx}`,
+                              }))}
+                              columns={billColumns}
+                              frameless
+                              rowClassName={breakdownCard}
+                              empty={<BreakdownEmpty>No bills found for this item.</BreakdownEmpty>}
+                            />
+                          </div>
+                        </section>
+                      </>
+                    )}
                 </div>
               )}
             </ScrollArea>
@@ -517,16 +576,19 @@ export default function BoqItemDetailsDialog({
         isOpen={isJmcViewOpen}
         onOpenChange={setIsJmcViewOpen}
         jmcEntry={selectedJmc}
+        // Print the register this dialog read the JMC from (the shared one for Project Management
+        // and Store callers, and for Billing Recon projects not yet separated).
+        printRegister={register.jmcEntries === 'jmcEntries' ? 'project' : 'billing-recon'}
         boqItems={[]}
-        bills={[]}
       />
-      <ViewMvacEntryDialog
-        isOpen={isMvacViewOpen}
-        onOpenChange={setIsMvacViewOpen}
-        MvacEntry={selectedMvac}
-        boqItems={[]}
-        bills={[]}
-      />
+      {showMvac && (
+        <ViewMvacEntryDialog
+          isOpen={isMvacViewOpen}
+          onOpenChange={setIsMvacViewOpen}
+          MvacEntry={selectedMvac}
+          boqItems={[]}
+        />
+      )}
     </>
   );
 }

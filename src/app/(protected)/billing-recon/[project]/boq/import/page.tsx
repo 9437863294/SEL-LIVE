@@ -28,6 +28,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import type { Project } from '@/lib/types';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister } from '@/lib/billing-recon/register';
 
 type BoqItem = Record<string, any>;
 const MAX_BATCH_WRITES = 500;
@@ -119,6 +120,7 @@ export default function ImportBoqPage() {
   const projectSlug = (params?.project as string) || '';
 
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const reg = useMemo(() => billingReconRegister(currentProject), [currentProject]);
 
   const [file, setFile] = useState<File | null>(null);
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -337,7 +339,7 @@ export default function ImportBoqPage() {
       });
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
-      const boqCollectionRef = collection(db, 'projects', (currentProject as any).id, 'boqItems');
+      const boqCollectionRef = collection(db, 'projects', (currentProject as any).id, reg.boqItems);
 
       for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);

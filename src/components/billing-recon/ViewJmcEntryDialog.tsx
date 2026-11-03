@@ -82,7 +82,14 @@ interface ViewJmcEntryDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   jmcEntry: JmcEntry | null;
   boqItems: BoqItem[];
-  bills: Bill[];
+  /** Unused — kept optional so existing callers still compile. Billing Recon no longer passes it. */
+  bills?: Bill[];
+  /**
+   * Which register the entry is from, so Print opens the same record: Billing Recon's own
+   * (default) or the project register Project Management and Subcontractors use. After a project
+   * is separated a copied JMC has the same id in both, so the print page must be told.
+   */
+  printRegister?: 'billing-recon' | 'project';
   isEditMode?: boolean;
   onVerify?: (
     taskId: string,
@@ -99,6 +106,7 @@ export default function ViewJmcEntryDialog({
   jmcEntry,
   boqItems,
   bills, // eslint-disable-line @typescript-eslint/no-unused-vars
+  printRegister = 'billing-recon',
   isEditMode = false,
   onVerify,
   isLoading = false,
@@ -388,7 +396,7 @@ export default function ViewJmcEntryDialog({
   /* ---------- PRINT URL + HANDLER ---------- */
   const printUrl =
     hasJmc && resolvedProjectSlug && jmcEntry?.id
-      ? `/billing-recon/${resolvedProjectSlug}/jmc/${jmcEntry.id}/print`
+      ? `/billing-recon/${resolvedProjectSlug}/jmc/${jmcEntry.id}/print${printRegister === 'project' ? '?register=project' : ''}`
       : '';
 
   const handlePrintClick = () => {

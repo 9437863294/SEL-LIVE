@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/env.d.ts",
+    "src/lib/billing-recon/**/*.ts",
+    "src/lib/jmc-module.ts",
+    "src/app/(protected)/billing-recon/**/*.ts",
+    "src/app/(protected)/billing-recon/**/*.tsx",
+    "src/app/(public)/billing-recon/**/*.tsx",
+    "src/components/billing-recon/**/*.ts",
+    "src/components/billing-recon/**/*.tsx",
+    "src/app/(protected)/project-management/jmc/**/*.tsx",
+    "src/app/(protected)/subcontractors-management/[project]/jmc/**/*.tsx",
+    "src/app/(public)/subcontractors-management/**/*.tsx"
+  ],
+  "exclude": ["node_modules"]
+}

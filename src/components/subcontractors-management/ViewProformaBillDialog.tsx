@@ -72,7 +72,7 @@ export default function ViewProformaBillDialog({
   const handlePrint = () => {
     if (!bill) return;
     const projectSlug = slugify(bill.projectName);
-    window.open(`/billing-recon/${projectSlug}/proforma-bill/${bill.id}/print`, '_blank');
+    window.open(`/subcontractors-management/${projectSlug}/proforma-bill/${bill.id}/print`, '_blank');
   };
 
   const currentStep = workflow.find(s => s.id === bill.currentStepId);

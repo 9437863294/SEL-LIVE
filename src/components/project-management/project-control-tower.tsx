@@ -25,7 +25,6 @@ import {
 } from "@/lib/project-management-dashboard";
 import {
   JMC_ENTRY_COLLECTION,
-  MVAC_ENTRY_COLLECTION,
   SUBCONTRACTOR_BILL_COLLECTION,
   WORK_ORDER_COLLECTION,
 } from "@/lib/civil-execution";
@@ -117,7 +116,6 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         mvacSnapshot,
         workOrderSnapshot,
         jmcEntrySnapshot,
-        mvacEntrySnapshot,
         subBillSnapshot,
         settingsSnapshot,
       ] = await Promise.all([
@@ -132,10 +130,10 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         getDocs(collection(db, ...projectPath, DI_COLLECTION)),
         getDocs(collection(db, ...projectPath, GRN_COLLECTION)),
         getDocs(collection(db, ...projectPath, MVAC_COLLECTION)),
-        // Civil registers owned by Billing Recon / Subcontractors Management — read-only join.
+        // The project's civil registers (Subcontractors Management work orders and bills, the
+        // project JMC register) — read-only join. Billing Recon's MVAC entries are not read.
         getDocs(collection(db, ...projectPath, WORK_ORDER_COLLECTION)),
         getDocs(collection(db, ...projectPath, JMC_ENTRY_COLLECTION)),
-        getDocs(collection(db, ...projectPath, MVAC_ENTRY_COLLECTION)),
         getDocs(collection(db, ...projectPath, SUBCONTRACTOR_BILL_COLLECTION)),
         getDoc(doc(db, "projectManagementSettings", "general")),
       ]);
@@ -158,7 +156,6 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
           mvacRecords: records(mvacSnapshot),
           workOrders: records(workOrderSnapshot),
           jmcEntries: records(jmcEntrySnapshot),
-          mvacEntries: records(mvacEntrySnapshot),
           subcontractorBills: records(subBillSnapshot),
           leadTimeDays:
             typeof settingsSnapshot.data()?.leadTimeDays === "number"
@@ -360,7 +357,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
             </CardTitle>
             <CardDescription>
               Subcontract commitment, joint measurement, and subcontractor billing — joined from the
-              Billing Recon and Subcontractors registers.
+              project&apos;s JMC and Subcontractors registers.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -374,7 +371,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
               </div>
               <div className="rounded-lg border bg-muted/20 px-3 py-3">
                 <p className="text-lg font-bold sm:text-xl">{formatCurrency(summary.civil.executedValue)}</p>
-                <p className="text-xs text-muted-foreground">Executed (JMC/MVAC)</p>
+                <p className="text-xs text-muted-foreground">Executed (JMC)</p>
               </div>
               <div className="rounded-lg border bg-muted/20 px-3 py-3">
                 <p className="text-lg font-bold sm:text-xl">{formatCurrency(summary.civil.certifiedValue)}</p>

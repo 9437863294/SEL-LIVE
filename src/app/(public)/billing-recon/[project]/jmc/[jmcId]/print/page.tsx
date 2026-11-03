@@ -24,6 +24,7 @@ import {
 } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, SHARED_PROJECT_REGISTER } from '@/lib/billing-recon/register';
 import { CompanyLetterhead } from '@/components/shared/company-letterhead';
 
 /* ---------- Helpers ---------- */
@@ -204,13 +205,23 @@ export default function PrintJmcPage() {
           throw new Error('Project not found.');
         }
         setProject(projectData);
+        // Project Management's JMC screens print through this page too and say so with
+        // `?register=project` (see ViewJmcEntryDialog's `printRegister`). The register is named,
+        // never guessed: a copied JMC keeps its id in both registers, and the two copies diverge
+        // once the project is separated.
+        const fromProjectRegister =
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('register') === 'project';
+        const reg = billingReconRegister(projectData);
+        const jmcCollection = fromProjectRegister ? SHARED_PROJECT_REGISTER.jmcEntries : reg.jmcEntries;
+        const boqCollection = fromProjectRegister ? SHARED_PROJECT_REGISTER.boqItems : reg.boqItems;
 
         // 2. Load JMC entry
         const jmcDocRef = doc(
           db,
           'projects',
           projectData.id,
-          'jmcEntries',
+          jmcCollection,
           jmcId
         );
         const jmcDocSnap = await getDoc(jmcDocRef);
@@ -225,7 +236,7 @@ export default function PrintJmcPage() {
 
         // 3. Load BOQ items map by composite key
         const boqSnap = await getDocs(
-          query(collection(db, 'projects', projectData.id, 'boqItems'))
+          query(collection(db, 'projects', projectData.id, boqCollection))
         );
         const boqItemsMap = new Map<string, BoqItem>();
 

@@ -73,7 +73,7 @@ export default function ViewBillDialog({
   const handlePrint = () => {
     if (!bill || !projectSlug) return;
     window.open(
-      `/billing-recon/${projectSlug}/bill/${bill.id}/print`,
+      `/subcontractors-management/${projectSlug}/bill/${bill.id}/print`,
       '_blank'
     );
   };

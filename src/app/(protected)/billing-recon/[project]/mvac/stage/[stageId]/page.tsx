@@ -26,7 +26,6 @@ import type {
   WorkflowStep,
   ActionLog,
   BoqItem,
-  Bill,
   ActionConfig,
   Project,
 } from '@/lib/types';
@@ -56,6 +55,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, BILLING_RECON_FIXED, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 /* -------- helpers -------- */
 function formatINR(n?: number) {
@@ -145,8 +145,9 @@ export default function StagePage() {
   const [isUpdateQtyOpen, setIsUpdateQtyOpen] = useState(false);
   const [isVerifyOpen, setIsVerifyOpen] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
+  const [project, setProject] = useState<Project | null>(null);
+  const reg = useMemo(() => billingReconRegister(project), [project]);
 
   // Completion dialog state
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
@@ -157,8 +158,8 @@ export default function StagePage() {
 
     setIsLoading(true);
     try {
-      // 1) workflow + stage
-      const workflowRef = doc(db, 'workflows', 'mvac-workflow');
+      // 1) workflow + stage (the MVAC workflow is Billing Recon's alone, the same for every project)
+      const workflowRef = doc(db, WORKFLOWS_COLLECTION, BILLING_RECON_FIXED.mvacWorkflowId);
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
         toast({ title: 'Error', description: 'Workflow not found.', variant: 'destructive' });
@@ -184,18 +185,19 @@ export default function StagePage() {
 
       if (!projectData) throw new Error('Project not found');
       const pid = projectData.id;
+      const projectReg = billingReconRegister(projectData);
       setProjectId(pid);
+      setProject(projectData);
 
-      // 3) stage tasks + BOQ + bills (for cached project id)
-      const [stageTasksSnap, boqSnap, billsSnap] = await Promise.all([
-        getDocs(query(collection(db, 'projects', pid, 'mvacEntries'), where('currentStepId', '==', stageId))),
-        getDocs(query(collection(db, 'projects', pid, 'boqItems'))),
-        getDocs(query(collection(db, 'projects', pid, 'bills'))),
+      // 3) stage tasks + BOQ (for cached project id). Subcontractors' `bills` are no longer read:
+      // nothing here showed them, and they are what the company pays, not client billing.
+      const [stageTasksSnap, boqSnap] = await Promise.all([
+        getDocs(query(collection(db, 'projects', pid, projectReg.mvacEntries), where('currentStepId', '==', stageId))),
+        getDocs(query(collection(db, 'projects', pid, projectReg.boqItems))),
       ]);
 
       setTasks(stageTasksSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
       setBoqItems(boqSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as BoqItem)));
-      setBills(billsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
     } catch (error) {
       console.error('Error fetching tasks for stage:', error);
       toast({ title: 'Error', description: 'Failed to fetch tasks.', variant: 'destructive' });
@@ -271,7 +273,7 @@ export default function StagePage() {
     const completionDateOverride = extra instanceof Date ? extra : undefined;
 
     try {
-      const taskRef = doc(db, 'projects', projectId, 'mvacEntries', taskId);
+      const taskRef = doc(db, 'projects', projectId, reg.mvacEntries, taskId);
 
       await runTransaction(db, async (tx) => {
         const preSnap = await tx.get(taskRef);
@@ -553,7 +555,6 @@ export default function StagePage() {
         onOpenChange={handleDialogOpenChange}
         MvacEntry={selectedMvac}
         boqItems={boqItems}
-        bills={bills}
         isEditMode={isVerifyOpen}
         onVerify={handleAction}
         isLoading={selectedMvac ? isActionLoading === selectedMvac.id : false}

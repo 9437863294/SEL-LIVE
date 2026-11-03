@@ -1,6 +1,13 @@
 
 'use client';
 
+/**
+ * UNUSED since 2026-11-03. It served Billing Recon's old "Create Bill" screen, a copy of the
+ * Subcontractors bill form that read the shared `jmcEntries` and Subcontractors' `bills`. Billing
+ * Recon now makes RA bills from its own register (`[project]/billing/create`). Kept only because
+ * deleting files under src/ can break the running dev server; don't wire it back in.
+ */
+
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Dialog,

@@ -49,8 +49,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry, MvacItem } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, UserSettings, Project, MvacEntry, MvacItem } from '@/lib/types';
 import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
+import { billingReconRegister } from '@/lib/billing-recon/register';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -121,8 +122,13 @@ export default function ViewBoqPage() {
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
-  const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const reg = useMemo(() => billingReconRegister(currentProject), [currentProject]);
+  // Memoised so the details dialog's fetch does not re-run on every render.
+  const detailsRegister = useMemo(
+    () => ({ jmcEntries: reg.jmcEntries, mvacEntries: reg.mvacEntries, bills: reg.raBills, billsAreRaBills: true }),
+    [reg],
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -224,9 +230,10 @@ export default function ViewBoqPage() {
       setCurrentProject(projectData);
 
       const projectId = (projectData as any).id;
+      const projectReg = billingReconRegister(projectData);
 
       // BOQ items
-      const boqSnapshot = await getDocs(query(collection(db, 'projects', projectId, 'boqItems')));
+      const boqSnapshot = await getDocs(query(collection(db, 'projects', projectId, projectReg.boqItems)));
       const items: BoqItem[] = boqSnapshot.docs
         .map((d) => {
           const data = d.data() as Record<string, unknown> | undefined;
@@ -251,16 +258,15 @@ export default function ViewBoqPage() {
         .filter(Boolean) as BoqItem[];
       setBoqItems(items);
 
-      // JMC / MVAC / Bills
-      const [jmcSnapshot, mvacSnapshot, billsSnapshot] = await Promise.all([
-        getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
-        getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
-        getDocs(collection(db, 'projects', projectId, 'bills')),
+      // JMC / MVAC. (Subcontractors' `bills` used to be read here too, into state nothing showed;
+      // they are what the company pays, not client billing, so Billing Recon no longer reads them.)
+      const [jmcSnapshot, mvacSnapshot] = await Promise.all([
+        getDocs(collection(db, 'projects', projectId, projectReg.jmcEntries)),
+        getDocs(collection(db, 'projects', projectId, projectReg.mvacEntries)),
       ]);
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
       setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
-      setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -479,7 +485,7 @@ export default function ViewBoqPage() {
     if (!editingItem || !currentProject) return;
     setIsSaving(true);
     try {
-      const itemRef = doc(db, 'projects', (currentProject as any).id, 'boqItems', editingItem.id);
+      const itemRef = doc(db, 'projects', (currentProject as any).id, reg.boqItems, editingItem.id);
       const { id, ...payload } = editingItem;
       await updateDoc(itemRef, payload as any);
       toast({ title: 'Success', description: 'BOQ item updated.' });
@@ -538,7 +544,7 @@ export default function ViewBoqPage() {
     try {
       const batch = writeBatch(db);
       selectedItemIds.forEach((id) => {
-        batch.delete(doc(db, 'projects', (currentProject as any).id, 'boqItems', id));
+        batch.delete(doc(db, 'projects', (currentProject as any).id, reg.boqItems, id));
       });
       await batch.commit();
       toast({ title: 'Deleted', description: `${selectedItemIds.length} item(s) removed.` });
@@ -979,6 +985,7 @@ export default function ViewBoqPage() {
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
         projectId={currentProject?.id}
+        register={detailsRegister}
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { BillingReconShell } from '@/components/billing-recon/billing-recon-shell';
 
 export const metadata: Metadata = {
   title: 'Billing Reconciliation | SEL Live',
-  description: 'Reconcile project billing — manage BOQ, JMC, MVAC entries, proforma bills, and billing logs across all projects.',
+  description: 'Reconcile client billing per project — BOQ, JMC, MVAC, certified quantities and RA bills, kept separate from Project Management.',
 };
 
 export default function BillingReconLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return <BillingReconShell>{children}</BillingReconShell>;
 }

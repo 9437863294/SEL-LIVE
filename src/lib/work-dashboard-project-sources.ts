@@ -28,6 +28,15 @@
  * A row whose mapping id or step id cannot be resolved still links somewhere useful: the module's
  * own front page. A dashboard row that goes nowhere would be worse than one that goes one click
  * short of the work.
+ *
+ * **Billing Recon's own registers ride the same builder.** Once a project's Billing Recon data is
+ * separated (src/lib/billing-recon/register.ts), its JMC and MVAC entries live in
+ * `billingReconJmcEntries` / `billingReconMvacEntries` — subcollections like the seven above, so
+ * the same collection-group query, cap and per-source failure handling apply, with their own
+ * `fieldOverrides` entries. They differ in one respect: Billing Recon routes by the `[project]`
+ * slug the entries store as `projectSlug`, so they build their own link and skip the mapping
+ * lookup. Unseparated projects' Billing Recon JMCs are still in `jmcEntries` and appear under the
+ * Project Management JMC source, as before.
  */
 
 import {
@@ -97,6 +106,7 @@ import {
   SURVEY_WORKFLOW_DOC_ID,
 } from './project-management-survey-workflow';
 import { PM_JMC_BASE_PATH } from './jmc-module';
+import { BILLING_RECON_COLLECTIONS, BILLING_RECON_FIXED } from './billing-recon/register';
 
 /** Rows per workflow. Seven of these run together, so the cap is tighter than the general one. */
 const CAP = 50;
@@ -200,18 +210,27 @@ interface ProjectWorkflowConfig {
    * list to turn it into the id the stage route matches on.
    */
   stepId: (row: Row, steps: WorkflowStep[]) => string;
+  /** The module rows are filed under, and whose 'View Module' also admits the viewer.
+   * Project Management unless set. */
+  module?: string;
+  /**
+   * Builds the row's link for a host that is not routed by `?project={mappingId}`. When set, the
+   * mapping lookup is skipped and `basePath` is not used for links.
+   */
+  href?: (row: Row, stepId: string) => string;
 }
 
 function projectWorkflowSource(config: ProjectWorkflowConfig): WorkSource {
+  const moduleName = config.module ?? ACTIVITY_MODULES.PROJECT_MANAGEMENT;
   return {
     id: config.id,
-    module: ACTIVITY_MODULES.PROJECT_MANAGEMENT,
+    module: moduleName,
     label: config.label,
     lane: 'action',
     // The nested resource, not just the module: somebody who can see Project Management but not its
     // RFQ screens should not be handed RFQ rows they cannot open.
     visible: (context: WorkContext) =>
-      context.can('View', config.permissionResource) || context.can('View Module', 'Project Management'),
+      context.can('View', config.permissionResource) || context.can('View Module', moduleName),
     load: async (context: WorkContext): Promise<WorkItem[]> => {
       const built = query(
         collectionGroup(db, config.subcollection),
@@ -222,7 +241,7 @@ function projectWorkflowSource(config: ProjectWorkflowConfig): WorkSource {
       if (snapshot.empty) return [];
 
       const [projectMap, steps] = await Promise.all([
-        loadProjectMap(),
+        config.href ? Promise.resolve(new Map<string, string>()) : loadProjectMap(),
         loadSteps(config.workflowDocId, config.defaultSteps),
       ]);
 
@@ -238,8 +257,9 @@ function projectWorkflowSource(config: ProjectWorkflowConfig): WorkSource {
           const described = config.describe(row);
           const mappingId = text(row.mappingId) || projectMap.get(projectId) || '';
           const stepId = config.stepId(row, steps);
-          const href =
-            mappingId && stepId
+          const href = config.href
+            ? config.href(row, stepId)
+            : mappingId && stepId
               ? `${config.basePath}/stage/${encodeURIComponent(stepId)}?project=${encodeURIComponent(mappingId)}`
               : mappingId
                 ? `${config.basePath}?project=${encodeURIComponent(mappingId)}`
@@ -249,7 +269,7 @@ function projectWorkflowSource(config: ProjectWorkflowConfig): WorkSource {
             id: `${config.id}:${docId}`,
             sourceId: config.id,
             kind: 'approval' as WorkKind,
-            module: ACTIVITY_MODULES.PROJECT_MANAGEMENT,
+            module: moduleName,
             lane: 'action' as WorkLane,
             title: described.title,
             reference: described.reference,
@@ -270,6 +290,52 @@ const stepIdFromIndex = (row: Row, steps: WorkflowStep[]): string => {
   if (index < 0 || index >= steps.length) return '';
   return String(steps[index]?.id ?? '');
 };
+
+/** Billing Recon's base path. Its project screens sit under `/billing-recon/{projectSlug}/…`. */
+const BILLING_RECON_BASE_PATH = '/billing-recon';
+
+/**
+ * Billing Recon's stage link: `/billing-recon/{projectSlug}/{register}/stage/{stepId}`. Entries
+ * store the slug they were raised under; without one the row lands on the module's front page.
+ */
+const billingReconStageHref =
+  (register: 'jmc' | 'mvac') =>
+  (row: Row, stepId: string): string => {
+    const slug = text(row.projectSlug);
+    if (!slug) return BILLING_RECON_BASE_PATH;
+    const base = `${BILLING_RECON_BASE_PATH}/${encodeURIComponent(slug)}/${register}`;
+    return stepId ? `${base}/stage/${encodeURIComponent(stepId)}` : base;
+  };
+
+/** JMC and MVAC entries share one status vocabulary. */
+const isOpenMeasurement = (row: Row) => ['Pending', 'In Progress', 'Needs Review'].includes(text(row.status));
+
+/**
+ * Billing Recon's own registers need a collection-group index and a collection-group read rule in
+ * production (`firestore.indexes.json` fieldOverrides, `firestore.rules`) that are deployed by hand.
+ * Until they are, the query fails with failed-precondition / permission-denied. Those registers are
+ * empty until a project is separated, so "nothing waiting" is the truth then, and a "queue could not
+ * be read" banner on everyone's board would be noise. Only those two codes are swallowed (and
+ * logged); any other failure still surfaces. Settings › Data Separation checks the feed before a
+ * project is separated, so nobody separates into a feed that cannot be read.
+ */
+function quietUntilProvisioned(source: WorkSource): WorkSource {
+  return {
+    ...source,
+    load: async (context) => {
+      try {
+        return await source.load(context);
+      } catch (error) {
+        const code = (error as { code?: unknown } | null)?.code;
+        if (code === 'failed-precondition' || code === 'permission-denied') {
+          console.warn(`[work-dashboard] ${source.id}: not provisioned yet (${String(code)}).`);
+          return [];
+        }
+        throw error;
+      }
+    },
+  };
+}
 
 /* ── the seven ─────────────────────────────────────────────────────────────────────────────────── */
 
@@ -377,11 +443,47 @@ export const PROJECT_WORK_SOURCES: WorkSource[] = [
     // below are never read — the builder takes them unconditionally and `stepId` ignores them.
     workflowDocId: 'jmc-workflow',
     defaultSteps: [],
-    isOpen: (row) => ['Pending', 'In Progress', 'Needs Review'].includes(text(row.status)),
+    isOpen: isOpenMeasurement,
     describe: (row) => ({
       title: `JMC — ${text(row.woNo, 'work order')}`,
       reference: text(row.jmcNo) || null,
     }),
     stepId: (row) => text(row.currentStepId),
   }),
+  // Billing Recon's own registers, populated only for projects that have been separated.
+  quietUntilProvisioned(projectWorkflowSource({
+    id: 'br-jmc-entries',
+    module: ACTIVITY_MODULES.BILLING_RECON,
+    label: 'Billing Recon JMC at your stage',
+    subcollection: BILLING_RECON_COLLECTIONS.jmcEntries,
+    basePath: BILLING_RECON_BASE_PATH,
+    permissionResource: 'Billing Recon.JMC',
+    // Like Project Management's JMC, these track `currentStepId`; the workflow id is never read.
+    workflowDocId: BILLING_RECON_COLLECTIONS.jmcWorkflowId,
+    defaultSteps: [],
+    isOpen: isOpenMeasurement,
+    describe: (row) => ({
+      title: `Billing Recon JMC — ${text(row.woNo, 'work order')}`,
+      reference: text(row.jmcNo) || null,
+    }),
+    stepId: (row) => text(row.currentStepId),
+    href: billingReconStageHref('jmc'),
+  })),
+  quietUntilProvisioned(projectWorkflowSource({
+    id: 'br-mvac-entries',
+    module: ACTIVITY_MODULES.BILLING_RECON,
+    label: 'Billing Recon MVAC at your stage',
+    subcollection: BILLING_RECON_COLLECTIONS.mvacEntries,
+    basePath: BILLING_RECON_BASE_PATH,
+    permissionResource: 'Billing Recon.MVAC',
+    workflowDocId: BILLING_RECON_FIXED.mvacWorkflowId,
+    defaultSteps: [],
+    isOpen: isOpenMeasurement,
+    describe: (row) => ({
+      title: `Billing Recon MVAC — ${text(row.woNo, 'work order')}`,
+      reference: text(row.mvacNo) || null,
+    }),
+    stepId: (row) => text(row.currentStepId),
+    href: billingReconStageHref('mvac'),
+  })),
 ];

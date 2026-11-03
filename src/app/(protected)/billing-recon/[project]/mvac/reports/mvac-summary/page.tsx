@@ -39,6 +39,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { billingReconRegister, WORKFLOWS_COLLECTION } from '@/lib/billing-recon/register';
 
 interface SummaryStats {
     totalMVACs: number;
@@ -103,11 +104,12 @@ export default function MvacSummaryPage() {
         }
 
         const currentProjectId = currentProject.id;
-        
+        const reg = billingReconRegister(currentProject);
+
         const [tasksSnapshot, usersSnapshot, workflowDoc] = await Promise.all([
-          getDocs(query(collection(db, 'projects', currentProjectId, 'mvacEntries'))),
+          getDocs(query(collection(db, 'projects', currentProjectId, reg.mvacEntries))),
           getDocs(collection(db, 'users')),
-          getDoc(doc(db, 'workflows', 'mvac-workflow')),
+          getDoc(doc(db, WORKFLOWS_COLLECTION, reg.mvacWorkflowId)),
         ]);
         
         const tasksData = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MvacEntry));

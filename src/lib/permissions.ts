@@ -222,6 +222,11 @@ export const permissionModules = {
       "Edit Settings",
     ],
     "Combined Log": ["View"],
+    // BOQ vs executed vs certified vs billed, per BOQ item (src/lib/billing-recon/reconciliation.ts).
+    Reconciliation: ["View", "Export"],
+    // Settings › Data Separation: copying a project's records out of the register Billing Recon
+    // shared with Project Management (src/lib/billing-recon/register.ts). "Run" writes to production.
+    "Data Separation": ["View", "Run"],
   },
   "Subcontractors Management": {
     "View Module": [],
@@ -810,9 +815,9 @@ export const permissionModules = {
     "Dispatch Instructions": ["View", "Issue", "Acknowledge", "Dispatch"],
     GRN: ["View", "Record"],
     MVAC: ["View", "Request", "Verify", "Sign", "Release Billing"],
-    // JMC screens are hosted here as well as in Billing Recon (same registers, same workflow —
-    // see src/lib/jmc-module.ts). Actions mirror Billing Recon.JMC so a role can be granted the
-    // same capabilities in whichever module its users actually work from.
+    // Project Management's JMC register (the project register Subcontractors also uses). Billing
+    // Recon shares it only for projects not yet separated — see src/lib/billing-recon/register.ts.
+    // Actions mirror Billing Recon.JMC so roles read the same in both modules.
     JMC: [
       "View",
       "Create JMC Entry",
