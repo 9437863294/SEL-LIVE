@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { initialsOf, logDate, userLabel, type AuditLogEntry } from '@/components/shared/record-history';
-import { nextDocumentNumber, type DocumentSeries } from '@/lib/document-numbers';
+import type { DocumentSeries } from '@/lib/document-numbers';
 import { fromIsoDay, inDaysLabel, relativeTime, type CheckSummary, type CheckTone, type SettingsCheck, type UpcomingHoliday } from '@/lib/settings-overview';
 import type { SerialNumberConfig, WorkingHours } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -360,40 +360,9 @@ export function UpcomingHolidays({ figure }: { figure: Figure<UpcomingHoliday[]>
 
 // ── Document numbers ─────────────────────────────────────────────────────────────────────────────
 
+/** A document number series and its saved settings, for the overview's set-up checks. */
 export interface DocumentNumberRow {
   series: DocumentSeries;
   /** `null` while the series has never been saved. */
   config: SerialNumberConfig | null;
-}
-
-/** Each series and the number it hands out next, named as a link to where its module sets it. */
-export function DocumentNumberList({ figure }: { figure: Figure<DocumentNumberRow[]> }) {
-  if (figure.status === 'loading') return <Skeleton className="h-[72px] w-full rounded-lg" />;
-  if (figure.status === 'failed') return <Note>The series could not be loaded.</Note>;
-  return (
-    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-      {figure.value.map(({ series, config }) => {
-        const next = config ? nextDocumentNumber(series, config) : null;
-        return (
-          <li key={series.id} className="min-w-0 rounded-lg border px-3 py-2.5">
-            <Link href={series.settingsHref} className="block truncate text-sm font-medium underline-offset-2 hover:text-primary hover:underline">
-              {series.name}
-            </Link>
-            <p className="truncate text-[11px] text-muted-foreground">{series.moduleName}</p>
-            <div className="mt-2">
-              {config ? (
-                next ? (
-                  <code className="block break-all rounded bg-muted px-2 py-1 font-mono text-xs">{next}</code>
-                ) : (
-                  <Badge variant="danger">Invalid date format</Badge>
-                )
-              ) : (
-                <Badge variant="warning">Not set up</Badge>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
-  );
 }

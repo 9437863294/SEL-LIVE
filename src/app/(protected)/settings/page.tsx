@@ -8,8 +8,8 @@
  * - Figures: people, sessions, departments, projects, GST registrations, holidays.
  * - Needs attention: each failed check with the page that fixes it. These are the only links on
  *   the page — the sidebar (and the phone's bar) is the menu, so there are no link cards.
- * - Recent changes and the last 14 days of audit-log activity, the working week with the next
- *   holidays, and the next document numbers.
+ * - Recent changes and the last 14 days of audit-log activity, and the working week with the next
+ *   holidays. Document number series are read only for the checks; each module's Settings shows its own.
  *
  * Each figure loads on its own and shows a dash or a short line when its source fails, so one slow
  * or refused read never holds up the rest. The logic is in `@/lib/settings-overview`; the drawing
@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, Timestamp, where } from 'firebase/firestore';
 import {
-  Activity, Briefcase, CalendarDays, Clock, Construction, Hash, History, ListChecks, MonitorSmartphone, Palette, Radio, Receipt,
+  Activity, Briefcase, CalendarDays, Clock, Construction, History, ListChecks, MonitorSmartphone, Palette, Radio, Receipt,
   Settings2, Users,
 } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -32,7 +32,6 @@ import { OverviewHero, type HeroFact } from '@/components/settings/overview-hero
 import {
   ActivityChart,
   AttentionList,
-  DocumentNumberList,
   RecentChanges,
   UpcomingHolidays,
   WEEK_DAYS,
@@ -407,12 +406,6 @@ export default function SettingsOverviewPage() {
             </SettingsSection>
           )}
         </div>
-      )}
-
-      {numbers && (
-        <SettingsSection title="Next document numbers" icon={Hash} description="What each series hands out next. Each is set in its own module's Settings.">
-          <DocumentNumberList figure={numbers} />
-        </SettingsSection>
       )}
     </SettingsPage>
   );
