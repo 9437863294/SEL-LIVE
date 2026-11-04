@@ -43,7 +43,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { LOCATION_OTP_EXPIRY_KEY, LOCATION_OTP_TOKEN_KEY } from '@/lib/location-tracking-client';
+import {
+  LOCATION_OTP_EXPIRY_KEY,
+  LOCATION_OTP_TOKEN_KEY,
+  readLocationUnlockToken,
+} from '@/lib/location-tracking-client';
 
 // Shared with Session Management, which reuses this unlock to show GPS.
 const ACCESS_TOKEN_KEY = LOCATION_OTP_TOKEN_KEY;
@@ -136,7 +140,10 @@ export default function LocationTrackingSettingsPage() {
   const canView = can('View', 'Settings.Location Tracking');
   const canEdit = can('Edit', 'Settings.Location Tracking');
 
-  const [accessToken, setAccessToken] = useState('');
+  // A code verified earlier in this tab stays good until it expires, so start from it. Safe to read
+  // during render: the server and the first client render both show the skeleton while permissions
+  // load, whatever this holds.
+  const [accessToken, setAccessToken] = useState(readLocationUnlockToken);
   const [challengeId, setChallengeId] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -145,7 +152,8 @@ export default function LocationTrackingSettingsPage() {
   const [otpBusy, setOtpBusy] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
   const [rows, setRows] = useState<LocationRow[]>([]);
-  const [loadingRows, setLoadingRows] = useState(false);
+  // A restored code is loaded straight away (effect below), so it starts in the loading state.
+  const [loadingRows, setLoadingRows] = useState(accessToken !== '');
   const [search, setSearch] = useState('');
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
@@ -163,8 +171,8 @@ export default function LocationTrackingSettingsPage() {
     setHistoryRows([]);
   }, []);
 
-  const loadRows = useCallback(async (token: string) => {
-    setLoadingRows(true);
+  /** Fetch the register. Touches state only once the request answers, so an effect may call it. */
+  const fetchRows = useCallback(async (token: string) => {
     try {
       const response = await authorizedRequest('/api/location-tracking/settings', {}, token);
       if (response.status === 401) {
@@ -180,19 +188,21 @@ export default function LocationTrackingSettingsPage() {
     }
   }, [clearAccess]);
 
+  const loadRows = useCallback((token: string) => {
+    setLoadingRows(true);
+    return fetchRows(token);
+  }, [fetchRows]);
+
+  // Load the register for a code restored from this tab. Storage is read again rather than the state,
+  // so a page locked since mount is not quietly reloaded; an expired code simply leaves it locked.
   useEffect(() => {
     if (!canView || permissionLoading) return;
-    const storedToken = sessionStorage.getItem(ACCESS_TOKEN_KEY) || '';
-    const expiry = Number(sessionStorage.getItem(ACCESS_EXPIRY_KEY) || 0);
-    if (!storedToken || expiry <= Date.now()) {
-      clearAccess();
-      return;
-    }
-    setAccessToken(storedToken);
-    void loadRows(storedToken).catch((error) => {
+    const storedToken = readLocationUnlockToken();
+    if (!storedToken) return;
+    void fetchRows(storedToken).catch((error) => {
       toast({ title: 'Unable to open settings', description: error.message, variant: 'destructive' });
     });
-  }, [canView, clearAccess, loadRows, permissionLoading, toast]);
+  }, [canView, fetchRows, permissionLoading, toast]);
 
   useEffect(() => {
     if (resendSeconds <= 0) return;
