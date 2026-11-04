@@ -7,11 +7,11 @@
  * no personal choice (it was removed from My Appearance), and Appearance › Motion "Reduced" turns
  * them off for one person.
  *
- * Laid out as a list and an editor: the action kinds down the left, grouped (a scrolling strip on a
- * phone), with each one's current effects and a mark when it differs from its default; the chosen
- * kind on the right, with a live sample button, every effect as a row of chips — picking one plays it
- * on the sample — intensity and speed. It replaced seventeen accordion rows stretched across the
- * page, which showed nothing until opened and one at a time when they were.
+ * Laid out as a grid and an editor: every action kind as a compact tile, one row per group, with its
+ * current effects and a mark when it differs from its default; under it the chosen kind's editor —
+ * the sample buttons on the left ("Try it"), and on the right each effect as a row of chips (picking
+ * one plays it on the sample), intensity and speed. The master switch sits in the section's header
+ * and Save in its footer bar.
  */
 
 import { useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from 'react';
@@ -45,7 +45,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { SettingsSection, SwitchRow } from '@/components/appearance/controls';
+import { SettingsSection } from '@/components/appearance/controls';
 import { useReducedMotion } from '@/components/theme/ThemeProvider';
 import { playActionAnimation } from '@/components/shared/action-animations';
 import { useToast } from '@/hooks/use-toast';
@@ -170,13 +170,45 @@ function CompanyAnimationSettings() {
     setSaving(false);
   };
 
+  const ready = !loading && !authzLoading;
+
   return (
     <SettingsSection
       title="Button animations"
       icon={Sparkles}
       description="How action buttons respond when pressed, and when their action finishes or fails, for everyone. Anyone with Reduced motion sees none."
+      action={
+        ready ? (
+          <div className="flex items-center gap-2 rounded-full border bg-background py-1 pl-3 pr-1.5">
+            <Label htmlFor="action-animations-enabled" className="text-sm">
+              Animate buttons
+            </Label>
+            <Switch id="action-animations-enabled" checked={draft.enabled} disabled={readOnly} onCheckedChange={(enabled) => setDraft({ ...draft, enabled })} />
+          </div>
+        ) : null
+      }
+      footer={
+        ready && canEdit ? (
+          <>
+            <span role="status" className={cn('mr-auto text-xs', dirty ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>
+              {dirty ? 'Unsaved changes' : 'No unsaved changes'}
+            </span>
+            <Button variant="ghost" disabled={saving} action={false} onClick={() => setDraft(DEFAULT_ACTION_ANIMATIONS)}>
+              <RotateCcw className="mr-2 h-4 w-4" /> Restore built-in defaults
+            </Button>
+            <Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(null)}>
+              Discard changes
+            </Button>
+            <Button disabled={!dirty || saving} onClick={() => void save()} action="save">
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </>
+        ) : undefined
+      }
+      contentClassName="space-y-4"
     >
-      {loading || authzLoading ? (
+      {!ready ? (
         <LoadingRows />
       ) : (
         <>
@@ -184,13 +216,7 @@ function CompanyAnimationSettings() {
             <Notice>Only people with Settings › Company Profile › Edit can change the button animations. You can still try each animation.</Notice>
           )}
           <ReducedMotionNotice />
-          <SwitchRow
-            label="Animate action buttons"
-            description="Off turns every button animation off, for everyone."
-            checked={draft.enabled}
-            disabled={readOnly}
-            onCheckedChange={(enabled) => setDraft({ ...draft, enabled })}
-          />
+          {!draft.enabled && <Notice>Button animations are off for everyone. Switch on “Animate buttons” above to choose them again.</Notice>}
           <KindEditor
             kinds={draft.kinds}
             disabled={readOnly || !draft.enabled}
@@ -199,28 +225,19 @@ function CompanyAnimationSettings() {
             resetLabel="Built-in default"
           />
           {error && <Notice tone="error">{error}</Notice>}
-          {canEdit && (
-            <Footer dirty={dirty}>
-              <Button variant="ghost" disabled={saving} action={false} onClick={() => setDraft(DEFAULT_ACTION_ANIMATIONS)}>
-                <RotateCcw className="mr-2 h-4 w-4" /> Restore built-in defaults
-              </Button>
-              <Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(null)}>
-                Discard changes
-              </Button>
-              <Button disabled={!dirty || saving} onClick={() => void save()} action="save">
-                {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Save
-              </Button>
-            </Footer>
-          )}
         </>
       )}
     </SettingsSection>
   );
 }
 
-// ── The list and the editor ──────────────────────────────────────────────────────────────────────
+// ── The kinds and the editor ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Every kind of button as a compact grid, one row per group, with the chosen kind's editor
+ * underneath at full width. It replaced a list of seventeen rows down the left, which made the page
+ * three times the height of the editor beside it.
+ */
 function KindEditor({
   kinds,
   disabled,
@@ -236,53 +253,60 @@ function KindEditor({
 }) {
   const [selected, setSelected] = useState<ActionKind>('save');
   const panelId = useId();
+  const changedCount = ACTION_KINDS.filter((kind) => !same(kinds[kind], resetTo(kind))).length;
 
   return (
     // The editor's own controls are not actions; only the sample buttons play, and explicitly.
-    // `items-start` and a sticky editor: the list is the taller of the two, and the editor stays in
-    // view while it is scrolled instead of stretching to match it.
-    <div data-action-animations="off" className="grid gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] lg:items-start lg:gap-4">
-      <nav aria-label="Kinds of button" className="min-w-0 rounded-xl border bg-muted/40 p-1.5">
-        {/* A scrolling strip on a phone (the groups' wrappers are `contents` there, so every kind is a
-            direct item of the strip); a grouped list beside the editor from `lg`. */}
-        <div className="flex gap-1 overflow-x-auto lg:block lg:overflow-visible">
-          {KIND_GROUPS.map((group, index) => (
-            <div key={group.label} className={cn('contents lg:block lg:space-y-0.5', index > 0 && 'lg:mt-2')}>
-              <p className="hidden px-2 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground lg:block">{group.label}</p>
-              {group.kinds.map((kind) => {
-                const config = kinds[kind];
-                const changed = !same(config, resetTo(kind));
-                const active = kind === selected;
-                const Icon = KIND_ICONS[kind];
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    aria-current={active ? 'true' : undefined}
-                    aria-controls={panelId}
-                    onClick={() => setSelected(kind)}
-                    className={cn(
-                      'flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:w-full',
-                      active ? 'bg-background font-medium text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:bg-background/70 hover:text-foreground',
-                    )}
-                  >
-                    <Icon className={cn('h-4 w-4 shrink-0', active && 'text-primary')} aria-hidden="true" />
-                    <span className="min-w-0 lg:flex-1">
-                      <span className="block whitespace-nowrap lg:truncate">{ACTION_KIND_META[kind].label}</span>
-                      <span className="hidden truncate text-[11px] font-normal text-muted-foreground lg:block">{summaryOf(config)}</span>
-                    </span>
-                    {!config.enabled ? (
-                      <span className="rounded bg-muted px-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Off</span>
-                    ) : changed ? (
-                      <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title={`Changed from the ${resetLabel.toLowerCase()}`} aria-hidden="true" />
-                    ) : null}
-                    {changed ? <span className="sr-only">, changed from the {resetLabel.toLowerCase()}</span> : null}
-                  </button>
-                );
-              })}
+    <div data-action-animations="off" className="space-y-4">
+      <nav aria-label="Kinds of button" className="rounded-xl border bg-muted/30 p-3">
+        <div className="space-y-3 md:space-y-2">
+          {KIND_GROUPS.map((group) => (
+            <div key={group.label} className="md:grid md:grid-cols-[9rem_minmax(0,1fr)] md:items-start md:gap-3">
+              <p className="pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:pb-0 md:pt-3">{group.label}</p>
+              <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                {group.kinds.map((kind) => {
+                  const config = kinds[kind];
+                  const changed = !same(config, resetTo(kind));
+                  const active = kind === selected;
+                  const Icon = KIND_ICONS[kind];
+                  return (
+                    <li key={kind} className="min-w-0">
+                      <button
+                        type="button"
+                        aria-current={active ? 'true' : undefined}
+                        aria-controls={panelId}
+                        onClick={() => setSelected(kind)}
+                        className={cn(
+                          'flex w-full min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          active ? 'border-primary bg-background shadow-sm ring-1 ring-primary' : 'border-transparent bg-background/60 hover:border-border hover:bg-background',
+                        )}
+                      >
+                        <span
+                          className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md', active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}
+                          aria-hidden="true"
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block truncate text-sm', active ? 'font-semibold' : 'font-medium')}>{ACTION_KIND_META[kind].label}</span>
+                          <span className="block truncate text-[11px] text-muted-foreground">{summaryOf(config)}</span>
+                        </span>
+                        {changed ? <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" title={`Changed from the ${resetLabel.toLowerCase()}`} aria-hidden="true" /> : null}
+                        {changed ? <span className="sr-only">, changed from the {resetLabel.toLowerCase()}</span> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           ))}
         </div>
+        {changedCount > 0 && (
+          <p className="mt-3 flex items-center gap-1.5 border-t pt-2.5 text-[11px] text-muted-foreground">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+            {changedCount === 1 ? '1 kind differs' : `${changedCount} kinds differ`} from the {resetLabel.toLowerCase()}
+          </p>
+        )}
       </nav>
 
       <KindPanel
@@ -352,14 +376,10 @@ function KindPanel({
   };
 
   return (
-    <section
-      id={id}
-      aria-label={`${meta.label} buttons`}
-      className="min-w-0 space-y-4 rounded-xl border bg-card p-3 sm:p-4 lg:sticky lg:top-[calc(var(--app-header-offset,4rem)+1rem)]"
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" aria-hidden="true" />
+    <section id={id} aria-label={`${meta.label} buttons`} className="min-w-0 overflow-hidden rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary" aria-hidden="true">
+          <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-semibold leading-tight">{meta.label}</p>
@@ -378,64 +398,81 @@ function KindPanel({
         </div>
       </div>
 
-      {/* The stage: the real button, playing exactly what is on screen (saved or not). */}
-      <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed bg-muted/30 px-4 py-5">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button ref={tryRef} type="button" action={false} onClick={() => tryIt()}>
-            <Play className="mr-2 h-4 w-4" /> {meta.example}
-          </Button>
-          <Button ref={failRef} type="button" variant="outline" action={false} onClick={() => tryFailure()}>
-            <TriangleAlert className="mr-2 h-4 w-4" /> Try failure
-          </Button>
+      <div className="grid lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+        {/* The stage: the real buttons, playing exactly what is on screen (saved or not). */}
+        <div className="flex flex-col items-center justify-center gap-3 border-b bg-muted/30 px-4 py-6 lg:border-b-0 lg:border-r">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Try it</p>
+          <div className="flex flex-wrap justify-center gap-2 lg:w-full lg:flex-col lg:items-stretch">
+            <Button ref={tryRef} type="button" action={false} onClick={() => tryIt()}>
+              <Play className="mr-2 h-4 w-4" /> {meta.example}
+            </Button>
+            <Button ref={failRef} type="button" variant="outline" action={false} onClick={() => tryFailure()}>
+              <TriangleAlert className="mr-2 h-4 w-4" /> Try failure
+            </Button>
+          </div>
+          <p className="max-w-[16rem] text-center text-xs text-muted-foreground">
+            {config.enabled
+              ? 'The press, then what happens when the action finishes. Picking an effect plays it here too.'
+              : `${meta.label} buttons do not animate. Switch on “Animated” to choose their effects.`}
+          </p>
         </div>
-        <p className="text-center text-xs text-muted-foreground">
-          {config.enabled
-            ? 'Press to see it: the press, then what happens when the action finishes. Picking an effect below plays it here too.'
-            : `${meta.label} buttons do not animate. Switch on “Animated” to choose their effects.`}
-        </p>
-      </div>
 
-      <div className={cn('space-y-4', locked && 'opacity-60')}>
-        <EffectChips label="When pressed" options={ACTION_ANIMATION_PRESETS.press} value={config.press} disabled={locked} onPick={(press) => pick({ press })} />
-        <EffectChips label="When it finishes" options={ACTION_ANIMATION_PRESETS.complete} value={config.complete} disabled={locked} onPick={(complete) => pick({ complete })} />
-        <EffectChips label="When it fails" options={ACTION_ANIMATION_PRESETS.failure} value={config.failure} disabled={locked} onPick={(failure) => pick({ failure }, 'failure')} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <EffectChips label="Intensity" options={ACTION_ANIMATION_PRESETS.intensity} value={config.intensity} disabled={locked} onPick={(intensity) => pick({ intensity })} />
-          <div className="min-w-0 space-y-2">
-            <div className="flex items-baseline justify-between gap-2">
+        <div className={cn('min-w-0 divide-y', locked && 'opacity-60')}>
+          <EffectRow label="When pressed" options={ACTION_ANIMATION_PRESETS.press} value={config.press} disabled={locked} onPick={(press) => pick({ press })} />
+          <EffectRow label="When it finishes" options={ACTION_ANIMATION_PRESETS.complete} value={config.complete} disabled={locked} onPick={(complete) => pick({ complete })} />
+          <EffectRow label="When it fails" options={ACTION_ANIMATION_PRESETS.failure} value={config.failure} disabled={locked} onPick={(failure) => pick({ failure }, 'failure')} />
+          <EffectRow label="Intensity" options={ACTION_ANIMATION_PRESETS.intensity} value={config.intensity} disabled={locked} onPick={(intensity) => pick({ intensity })} />
+          <SettingRow
+            label={
               <Label htmlFor={`${id}-speed`} className="text-sm font-medium">
                 Speed
               </Label>
-              <span className="text-xs tabular-nums text-muted-foreground">{config.durationMs} ms</span>
+            }
+            note={`${config.durationMs} ms`}
+          >
+            <div className="max-w-md space-y-1.5 pt-1">
+              <Slider
+                id={`${id}-speed`}
+                min={MIN_DURATION_MS}
+                max={MAX_DURATION_MS}
+                step={50}
+                value={[config.durationMs]}
+                disabled={locked}
+                onValueChange={([durationMs]) => pick({ durationMs }, null)}
+                // Played once the thumb is let go, not on every step of the drag.
+                onValueCommit={([durationMs]) => tryIt(sanitizeKindConfig({ ...config, durationMs }, config))}
+                aria-label={`${meta.label} animation length in milliseconds`}
+              />
+              <div className="flex justify-between text-[11px] text-muted-foreground">
+                <span>Faster</span>
+                <span>Slower</span>
+              </div>
             </div>
-            <Slider
-              id={`${id}-speed`}
-              min={MIN_DURATION_MS}
-              max={MAX_DURATION_MS}
-              step={50}
-              value={[config.durationMs]}
-              disabled={locked}
-              onValueChange={([durationMs]) => pick({ durationMs }, null)}
-              // Played once the thumb is let go, not on every step of the drag.
-              onValueCommit={([durationMs]) => tryIt(sanitizeKindConfig({ ...config, durationMs }, config))}
-              aria-label={`${meta.label} animation length in milliseconds`}
-            />
-            <div className="flex justify-between text-[11px] text-muted-foreground">
-              <span>Faster</span>
-              <span>Slower</span>
-            </div>
-          </div>
+          </SettingRow>
         </div>
       </div>
     </section>
   );
 }
 
+/** One setting of the editor: its name and a note on the left, the control on the right (stacked on a phone). */
+function SettingRow({ label, note, children }: { label: ReactNode; note?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="grid gap-2 px-4 py-3 md:grid-cols-[10rem_minmax(0,1fr)] md:gap-4">
+      <div className="min-w-0">
+        {label}
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
 /**
  * One effect as a row of chips — a real radio group, so arrow keys move through it and each move
- * plays the effect on the sample button. The chosen effect's description sits beside the label.
+ * plays the effect on the sample button. The chosen effect's description sits under its name.
  */
-function EffectChips<T extends string>({
+function EffectRow<T extends string>({
   label,
   options,
   value,
@@ -451,13 +488,14 @@ function EffectChips<T extends string>({
   const labelId = useId();
   const current = options.find((option) => option.id === value);
   return (
-    <div className="min-w-0 space-y-1.5">
-      <div className="flex flex-wrap items-baseline gap-x-2">
+    <SettingRow
+      label={
         <p id={labelId} className="text-sm font-medium">
           {label}
         </p>
-        {current ? <p className="text-xs text-muted-foreground">{current.description}</p> : null}
-      </div>
+      }
+      note={current?.description}
+    >
       <RadioGroupPrimitive.Root
         value={value}
         onValueChange={(next) => onPick(next as T)}
@@ -482,19 +520,7 @@ function EffectChips<T extends string>({
           );
         })}
       </RadioGroupPrimitive.Root>
-    </div>
-  );
-}
-
-/** Save and discard, with whether anything is waiting to be saved. */
-function Footer({ dirty, children }: { dirty: boolean; children: ReactNode }) {
-  return (
-    <div className="flex flex-col-reverse gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-      <span role="status" className={cn('text-xs', dirty ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-muted-foreground')}>
-        {dirty ? 'Unsaved changes' : 'No unsaved changes'}
-      </span>
-      <div className="flex flex-wrap gap-2 sm:justify-end">{children}</div>
-    </div>
+    </SettingRow>
   );
 }
 
@@ -521,9 +547,9 @@ function Notice({ children, tone = 'info' }: { children: ReactNode; tone?: 'info
 
 function LoadingRows() {
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]" aria-busy="true" aria-label="Loading button animations">
-      <Skeleton className="h-64 w-full rounded-xl" />
-      <Skeleton className="h-64 w-full rounded-xl" />
+    <div className="space-y-4" aria-busy="true" aria-label="Loading button animations">
+      <Skeleton className="h-40 w-full rounded-xl" />
+      <Skeleton className="h-72 w-full rounded-xl" />
     </div>
   );
 }

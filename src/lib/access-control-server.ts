@@ -126,12 +126,24 @@ export function forgetAccessConfig(): void {
  * small; roles and scope grants are shared by every caller, so they are read in parallel with the
  * user and kept briefly (`loadAccessConfig`).
  */
-export async function authenticateAccess(request: Request): Promise<AccessRequestContext> {
+export async function authenticateAccess(
+  request: Request,
+  options: {
+    /**
+     * Called once the token is verified, before the user and their access are read — to start a
+     * read the route will need anyway, so the two run side by side instead of one after the other.
+     * Only a genuine signed-in user gets this far; the route must still check permissions before
+     * returning anything it read.
+     */
+    onTokenVerified?: () => void;
+  } = {},
+): Promise<AccessRequestContext> {
   const header = request.headers.get('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) throw new AccessDeniedError('Authentication required.', 401);
 
   const decoded = await getFirebaseAdminAuth().verifyIdToken(token);
+  options.onTokenVerified?.();
   const firestore = getFirebaseAdminFirestore();
   // Roles and scope grants do not depend on who is calling: start them alongside the user lookup.
   const accessConfig = loadAccessConfig();

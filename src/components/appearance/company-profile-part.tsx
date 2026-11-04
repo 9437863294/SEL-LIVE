@@ -45,9 +45,26 @@ export async function companyProfileFetch<T>(input: string, init?: RequestInit):
   return data as T;
 }
 
-/** The stored document, sanitised — what the settings screens edit. */
-export async function readStoredProfile(): Promise<CompanyProfile> {
-  return sanitizeCompanyProfile(await companyProfileFetch<CompanyProfile>('/api/company-profile?stored=1'));
+let storedRead: Promise<CompanyProfile> | null = null;
+
+/**
+ * The stored document, sanitised — what the settings screens edit. A caller that asks while a read
+ * is still on its way shares it (React mounts every screen twice in development; two parts can open
+ * together), since each read is a round trip to the server and on to Firestore — about two seconds
+ * from the office. Nothing is kept once it arrives. `fresh` always reads anew: Save uses it, so
+ * nothing changed since is overwritten.
+ */
+export function readStoredProfile({ fresh = false }: { fresh?: boolean } = {}): Promise<CompanyProfile> {
+  if (!fresh && storedRead) return storedRead;
+  const read = companyProfileFetch<CompanyProfile>('/api/company-profile?stored=1').then((profile) => sanitizeCompanyProfile(profile));
+  if (!fresh) {
+    storedRead = read;
+    const done = () => {
+      if (storedRead === read) storedRead = null;
+    };
+    read.then(done, done);
+  }
+  return read;
 }
 
 export interface CompanyProfilePartEditor {
@@ -116,7 +133,7 @@ export function useCompanyProfilePart({
     setSaving(true);
     try {
       // Read again, so whatever else changed since this screen opened is kept.
-      const fresh = await readStoredProfile();
+      const fresh = await readStoredProfile({ fresh: true });
       const body = apply(fresh, draft);
       const result = await companyProfileFetch<{ profile: CompanyProfile; stored: CompanyProfile }>('/api/company-profile', { method: 'PUT', body: JSON.stringify(body) });
       const stored = sanitizeCompanyProfile(result.stored);

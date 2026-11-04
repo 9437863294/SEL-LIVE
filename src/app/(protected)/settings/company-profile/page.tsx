@@ -68,7 +68,7 @@ export default function CompanyProfileSettingsPage() {
     try {
       // Layout, text labels and animations are edited on Settings › Appearance: write them back as
       // stored now, not as they were when this page opened.
-      const fresh = await readStoredProfile();
+      const fresh = await readStoredProfile({ fresh: true });
       const body: CompanyProfile = {
         ...draft,
         labels: fresh.labels,

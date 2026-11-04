@@ -16,14 +16,27 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: Request) {
   try {
-    const context = await authenticateAccess(request);
     // `?stored=1`: the document itself (no logo fallback, no cache), for the settings screen.
-    if (new URL(request.url).searchParams.get('stored') === '1') {
+    const stored = new URL(request.url).searchParams.get('stored') === '1';
+    // Read beside the caller's user and access, not after them: each is a Firestore round trip, and
+    // from the office one takes 0.4–1.7 s. It starts only for a verified token, and nothing read is
+    // returned before the permission check below.
+    const early: { read?: ReturnType<typeof readStoredCompanyProfile> } = {};
+    const context = await authenticateAccess(request, {
+      onTokenVerified: stored
+        ? () => {
+            early.read = readStoredCompanyProfile();
+            // Not awaited if the caller turns out to be refused.
+            early.read.catch(() => undefined);
+          }
+        : undefined,
+    });
+    if (stored) {
       const can = checkerFor(context.access);
       if (!can('View', COMPANY_PROFILE_RESOURCE) && !can('Edit', COMPANY_PROFILE_RESOURCE)) {
         throw new AccessDeniedError('You do not have permission to open the company profile settings.', 403);
       }
-      return NextResponse.json(await readStoredCompanyProfile());
+      return NextResponse.json(await (early.read ?? readStoredCompanyProfile()));
     }
     return NextResponse.json(await getCompanyProfile());
   } catch (error) {
