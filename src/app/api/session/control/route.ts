@@ -26,9 +26,11 @@ import { logServerActivity, requestProvenance } from '@/lib/activity-logger-serv
 import {
   SESSION_POLICY_DOC,
   SWEEP_INTERVAL_MS,
+  classifySession,
   normalizeSessionPolicy,
   sessionsToEnforce,
   sessionsToSweep,
+  type SessionClient,
   type SessionLike,
   type SessionPolicy,
 } from '@/lib/session-policy';
@@ -56,6 +58,7 @@ function asSessionLike(d: QueryDocumentSnapshot): SessionLike {
     userId: String(data.userId || ''),
     startedMs: toMs(data.startedAt),
     lastActiveMs: toMs(data.lastActiveAt),
+    ...classifySession(data),
   };
 }
 
@@ -179,7 +182,26 @@ export async function POST(request: Request) {
       /* Run at every sign-in: apply the policy to the caller's own sessions. */
       case 'enforce': {
         const own = await activeSessions(db, ctx.userId);
-        const targets = sessionsToEnforce(own.map(asSessionLike), currentSessionId, Date.now(), policy);
+        const ownSessions = own.map(asSessionLike);
+
+        /*
+         * Record whether the caller's session is the installed app. Written here, on the Admin SDK,
+         * rather than by the browser at sign-in: the live `userSessions` rules are not in this repo,
+         * and a field they do not expect would fail the whole session write.
+         */
+        const reported = str(body?.client);
+        const client: SessionClient | null = reported === 'app' || reported === 'browser' ? reported : null;
+        const current = currentSessionId ? own.find((d) => d.id === currentSessionId) : undefined;
+        if (client && current && current.data().client !== client) {
+          await current.ref.update({ client });
+          const index = ownSessions.findIndex((s) => s.id === current.id);
+          ownSessions[index] = {
+            ...ownSessions[index],
+            ...classifySession({ ...current.data(), client }),
+          };
+        }
+
+        const targets = sessionsToEnforce(ownSessions, currentSessionId, Date.now(), policy);
         const ended = await endSessions(db, targets, { userId: null, userName: 'Session policy' });
         if (ended.length) {
           audit(request, ctx, 'Session Policy Enforced', { sessionIds: ended, currentSessionId });
@@ -302,7 +324,14 @@ export async function POST(request: Request) {
           .collection(SESSION_POLICY_DOC.collection)
           .doc(SESSION_POLICY_DOC.id)
           .set(
-            { ...fields, updatedAt: FieldValue.serverTimestamp(), updatedByUserId: ctx.userId, updatedByName: ctx.userName },
+            {
+              ...fields,
+              // Superseded by the separate desktop and phone limits, which are always written here.
+              maxConcurrentSessions: FieldValue.delete(),
+              updatedAt: FieldValue.serverTimestamp(),
+              updatedByUserId: ctx.userId,
+              updatedByName: ctx.userName,
+            },
             { merge: true },
           );
         audit(request, ctx, 'Update Session Policy', { before: policy, after: fields });

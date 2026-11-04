@@ -49,7 +49,9 @@ import {
 } from '@/lib/session-manager';
 import {
   DEFAULT_SESSION_POLICY,
+  classifySession,
   exceedsMaxLifetime,
+  isKeptSignedIn,
   sessionPresence,
   type SessionPolicy,
   type SessionPresence,
@@ -412,6 +414,11 @@ function sessionColumns({
         <span className="inline-flex items-center gap-1.5 font-medium">
           <DeviceIcon type={s.deviceType} size="sm" />
           {s.deviceLabel}
+          {classifySession(s).client === 'app' && (
+            <Badge variant="neutral" className="shrink-0">
+              App
+            </Badge>
+          )}
           {s.id === currentSessionId && (
             <Badge variant="neutral" className="shrink-0">
               This device
@@ -802,7 +809,7 @@ function PolicyPanel({
     <SettingsSection
       title="Session policy"
       icon={Settings2}
-      description={`Applied at every sign-in and page load. 0 means no limit. The defaults match how sessions behaved before this policy existed.${canEdit ? '' : ' You can view the policy; changing it needs Edit permission on Session Management.'}`}
+      description={`Applied at every sign-in and page load. 0 means no limit. Desktop and phone sessions are limited separately.${canEdit ? '' : ' You can view the policy; changing it needs Edit permission on Session Management.'}`}
       contentClassName="space-y-6"
       footer={
         <>
@@ -834,11 +841,20 @@ function PolicyPanel({
     >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <NumberField
-            id="maxConcurrent"
-            label="Max sessions per user"
-            hint="Signing in beyond this ends that user’s least recently active sessions."
-            value={draft.maxConcurrentSessions}
-            onChange={(n) => set('maxConcurrentSessions', n)}
+            id="maxDesktop"
+            label="Max desktop sessions per user"
+            hint="Counted on their own: a desktop sign-in beyond this ends that user’s least recently active desktop session, never a phone."
+            value={draft.maxDesktopSessions}
+            onChange={(n) => set('maxDesktopSessions', n)}
+            disabled={disabled}
+            suffix="sessions (0 = unlimited)"
+          />
+          <NumberField
+            id="maxMobile"
+            label="Max phone & tablet sessions per user"
+            hint="The mobile app and phone or tablet browsers. A sign-in beyond this ends the least recently active one, never a desktop."
+            value={draft.maxMobileSessions}
+            onChange={(n) => set('maxMobileSessions', n)}
             disabled={disabled}
             suffix="sessions (0 = unlimited)"
           />
@@ -874,8 +890,15 @@ function PolicyPanel({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <SwitchRow
+            label="Keep the mobile app signed in"
+            description="The installed SEL app is never signed out for inactivity, on reopening, as stale or for its age. Signing out, an administrator ending the session, or the phone limit above still end it."
+            checked={draft.keepAppSignedIn}
+            onCheckedChange={(b) => set('keepAppSignedIn', b)}
+            disabled={disabled}
+          />
+          <SwitchRow
             label="Enforce idle timeout after reopening"
-            description="Reopening the app after the idle timeout has passed requires signing in again — including on phones."
+            description={`Reopening a browser after the idle timeout has passed requires signing in again — including on phones.${draft.keepAppSignedIn ? ' The mobile app is exempt while it is kept signed in.' : ''}`}
             checked={draft.expireOnResumeAfterIdle}
             onCheckedChange={(b) => set('expireOnResumeAfterIdle', b)}
             disabled={disabled}
@@ -1078,9 +1101,20 @@ export default function SessionManagementPage() {
 
   // ─── derived data ──────────────────────────────────────────────────────────
 
+  // The installed app, when the policy keeps it signed in: never stale, never over age, never swept.
+  const keptOf = useCallback(
+    (s: UserSession) => isKeptSignedIn(classifySession(s), policy),
+    [policy]
+  );
+
   const presenceOf = useCallback(
-    (s: UserSession) => sessionPresence(tsMs(s.lastActiveAt), nowMs, policy),
-    [nowMs, policy]
+    (s: UserSession) => sessionPresence(tsMs(s.lastActiveAt), nowMs, policy, keptOf(s)),
+    [nowMs, policy, keptOf]
+  );
+
+  const isOverAge = useCallback(
+    (s: UserSession) => s.isActive && !keptOf(s) && exceedsMaxLifetime(tsMs(s.startedAt), nowMs, policy),
+    [keptOf, nowMs, policy]
   );
 
   const matchesSearch = useCallback((s: UserSession) => {
@@ -1121,15 +1155,15 @@ export default function SessionManagementPage() {
 
   const summary = useMemo(() => {
     const uniqueUsers = new Set(activeSessions.map((s) => s.userId)).size;
-    const desktopCount = activeSessions.filter((s) => s.deviceType === 'Desktop').length;
-    const mobileCount = activeSessions.filter((s) => s.deviceType !== 'Desktop').length;
+    const desktopCount = activeSessions.filter((s) => classifySession(s).deviceClass === 'desktop').length;
+    const mobileCount = activeSessions.length - desktopCount;
     const online = activeSessions.filter((s) => presenceOf(s) === 'online').length;
+    // Mirrors `sessionsToSweep` on the server, so the count is what "Clean up" will actually end.
     const sweepable = activeSessions.filter(
-      (s) => s.id !== currentSessionId &&
-        (presenceOf(s) === 'stale' || exceedsMaxLifetime(tsMs(s.startedAt), nowMs, policy))
+      (s) => s.id !== currentSessionId && (presenceOf(s) === 'stale' || isOverAge(s))
     );
     return { active: activeSessions.length, uniqueUsers, desktopCount, mobileCount, online, sweepable };
-  }, [activeSessions, presenceOf, currentSessionId, nowMs, policy]);
+  }, [activeSessions, presenceOf, isOverAge, currentSessionId]);
 
   const myOtherSessions = useMemo(
     () => (user ? activeSessions.filter((s) => s.userId === user.id && s.id !== currentSessionId) : []),
@@ -1173,11 +1207,11 @@ export default function SessionManagementPage() {
         currentSessionId,
         canTerminate,
         presenceOf,
-        isOverAge: (s) => s.isActive && exceedsMaxLifetime(tsMs(s.startedAt), nowMs, policy),
+        isOverAge,
         selection: tab === 'active' && selectableRows.length > 0 ? { selected, toggle: toggleSelect } : null,
         onTerminate: (s) => setPending({ kind: 'terminate', sessions: [s] }),
       }),
-    [tab, isAdmin, user?.id, currentSessionId, canTerminate, presenceOf, nowMs, policy, selectableRows.length, selected, toggleSelect]
+    [tab, isAdmin, user?.id, currentSessionId, canTerminate, presenceOf, isOverAge, selectableRows.length, selected, toggleSelect]
   );
 
   const toggleExpand = useCallback((g: UserGroup) => {
@@ -1332,7 +1366,7 @@ export default function SessionManagementPage() {
       case 'sweep':
         return {
           title: 'Clean Up Stale Sessions',
-          body: `Ends sessions with no activity for ${policy.staleAfterHours}h${policy.maxSessionHours ? ` and sessions older than ${policy.maxSessionHours}h` : ''}. If one of those devices is reopened, it will be asked to sign in.`,
+          body: `Ends sessions with no activity for ${policy.staleAfterHours}h${policy.maxSessionHours ? ` and sessions older than ${policy.maxSessionHours}h` : ''}. If one of those devices is reopened, it will be asked to sign in.${policy.keepAppSignedIn ? ' The mobile app is left signed in.' : ''}`,
           sessions: pending.sessions,
           confirm: 'Clean Up',
         };

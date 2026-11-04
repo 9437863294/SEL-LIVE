@@ -61,13 +61,19 @@ import { PinSetupDialog } from '@/components/auth/PinSetupDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import {
+  currentSessionClient,
   fetchSessionPolicy,
   parseUserAgent,
   sessionControl,
   USER_SESSIONS_COLLECTION,
   type UserSession,
 } from '@/lib/session-manager';
-import { DEFAULT_IDLE_MINUTES, effectiveIdleMinutes, type SessionPolicy } from '@/lib/session-policy';
+import {
+  DEFAULT_IDLE_MINUTES,
+  effectiveIdleMinutes,
+  idleTimeoutApplies,
+  type SessionPolicy,
+} from '@/lib/session-policy';
 import type { SavedUser } from '@/lib/types';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -722,6 +728,8 @@ export function SecurityCard({ className }: { className?: string }) {
     user.theme?.sessionDuration && user.theme.sessionDuration > 0 ? user.theme.sessionDuration : DEFAULT_IDLE_MINUTES;
   const appliedMinutes = policy ? effectiveIdleMinutes(preferenceMinutes, policy) : preferenceMinutes;
   const cappedByPolicy = appliedMinutes < preferenceMinutes;
+  // Only known once the policy arrives (after mount), so the first render matches the server's.
+  const keptSignedInHere = !!policy && !idleTimeoutApplies(currentSessionClient(), policy);
   const canOpenLoginExpiry = can('View', 'Settings.Login Expiry');
 
   const sessionsForUser = sessions && sessions.userId === userId ? sessions : null;
@@ -1132,10 +1140,17 @@ export function SecurityCard({ className }: { className?: string }) {
         </SectionHeading>
         <div className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="min-w-0 space-y-1">
-            <p className="text-sm text-foreground">
-              You’re signed out after <span className="font-medium">{formatMinutes(appliedMinutes)}</span> without
-              activity.
-            </p>
+            {keptSignedInHere ? (
+              <p className="text-sm text-foreground">
+                This app keeps you signed in until you sign out. In a browser you’re signed out after{' '}
+                <span className="font-medium">{formatMinutes(appliedMinutes)}</span> without activity.
+              </p>
+            ) : (
+              <p className="text-sm text-foreground">
+                You’re signed out after <span className="font-medium">{formatMinutes(appliedMinutes)}</span> without
+                activity.
+              </p>
+            )}
             {cappedByPolicy && (
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <Info className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -47,12 +47,15 @@ export default function LoginExpiryPage() {
   const [value, setValue] = useState(String(stored));
   const [saving, setSaving] = useState(false);
   const [cap, setCap] = useState<number | null>(null);
+  const [appKeptSignedIn, setAppKeptSignedIn] = useState(false);
 
   useEffect(() => {
     let live = true;
     fetchSessionPolicy()
       .then((result) => {
-        if (live) setCap(result.policy.idleTimeoutCapMinutes > 0 ? result.policy.idleTimeoutCapMinutes : null);
+        if (!live) return;
+        setCap(result.policy.idleTimeoutCapMinutes > 0 ? result.policy.idleTimeoutCapMinutes : null);
+        setAppKeptSignedIn(result.policy.keepAppSignedIn);
       })
       .catch((error) => console.warn('[login-expiry] session policy not loaded', error));
     return () => {
@@ -95,7 +98,7 @@ export default function LoginExpiryPage() {
         <SettingsSection
           title="Idle sign-out"
           icon={Clock}
-          description="Counted from your last click or key press, on every device you are signed in on."
+          description={`Counted from your last click or key press, on every ${appKeptSignedIn ? 'browser' : 'device'} you are signed in on.`}
           footer={
             canEdit ? (
               <>
@@ -166,6 +169,11 @@ export default function LoginExpiryPage() {
           <SettingsNotice title="Applies from your next sign-in">
             Your current session keeps the timeout it started with. Signing out and back in picks up a change straight away.
           </SettingsNotice>
+          {appKeptSignedIn && (
+            <SettingsNotice title="The mobile app stays signed in">
+              In the installed SEL app you are not signed out for being idle — only when you sign out yourself.
+            </SettingsNotice>
+          )}
           {cap !== null && (
             <SettingsNotice tone="warning" title={`The company caps idle time at ${asText(cap)}`}>
               {applied !== null && applied < minutes

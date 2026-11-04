@@ -12,7 +12,13 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import { onAuthStateChanged, User as FirebaseUser, signOut } from 'firebase/auth';
+import {
+  indexedDBLocalPersistence,
+  onAuthStateChanged,
+  setPersistence,
+  User as FirebaseUser,
+  signOut,
+} from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import {
   doc,
@@ -45,6 +51,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
 import {
   createOrResumeSession,
+  currentSessionClient,
   getOrCreateSessionId,
   listenToSession,
   sessionControl,
@@ -54,6 +61,7 @@ import {
 import {
   DEFAULT_SESSION_POLICY,
   effectiveIdleMinutes,
+  idleTimeoutApplies,
   resumeHasExpired,
   terminationMessage,
   type SessionPolicy,
@@ -247,6 +255,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resetTimeouts = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
+
+    /*
+     * The installed app keeps its session (policy `keepAppSignedIn`, on by default). Not arming the
+     * timers is the whole of it: Android pauses a backgrounded app's timers and fires them all on
+     * return, so an app left in the background past the timeout was signed out the moment it was
+     * reopened. The policy ref holds the default until the controller answers, which keeps the app
+     * signed in through a failed policy read as well.
+     */
+    if (!idleTimeoutApplies(currentSessionClient(), sessionPolicyRef.current)) {
+      setIsSessionExpired(false);
+      return;
+    }
 
     const SESSION_TIMEOUT = sessionDurationMinutesRef.current * 60 * 1000;
     const WARNING_TIME = 1 * 60 * 1000;
@@ -483,7 +503,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // Apply the organisation's session policy. Best-effort: if the controller is
               // unreachable the session carries on under the defaults, exactly as before it existed.
               try {
-                const result = await sessionControl({ action: 'enforce', currentSessionId: sessionId });
+                const client = currentSessionClient();
+                const result = await sessionControl({ action: 'enforce', currentSessionId: sessionId, client });
                 sessionPolicyRef.current = result.policy;
                 sessionPreferenceMinutesRef.current = userData.theme?.sessionDuration || 60;
                 sessionDurationMinutesRef.current = effectiveIdleMinutes(
@@ -502,6 +523,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     Date.now(),
                     sessionDurationMinutesRef.current,
                     result.policy,
+                    client,
                   )
                 ) {
                   if (sessionUnsubscribeRef.current) {
@@ -622,6 +644,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // In the installed app, keep the sign-in in durable storage. One made without "Remember me"
+      // sat in session storage, which Android discards whenever it kills the app in the background —
+      // a sign-out with no sign-out in it. This moves such a sign-in across. IndexedDB because it is
+      // where Firebase settles every durable sign-in at start-up anyway, so this is a no-op otherwise.
+      if (firebaseUser && currentSessionClient() === 'app') {
+        void setPersistence(auth, indexedDBLocalPersistence).catch((err) =>
+          console.warn('Could not keep the app sign-in', err),
+        );
+      }
       await fetchUserData(firebaseUser);
       setLoading(false);
     });

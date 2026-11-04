@@ -8,8 +8,9 @@ import {
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
 import { auth, db } from '@/lib/firebase';
-import type { SessionPolicy } from '@/lib/session-policy';
+import type { SessionClient, SessionPolicy } from '@/lib/session-policy';
 
 export const USER_SESSIONS_COLLECTION = 'userSessions';
 
@@ -39,6 +40,8 @@ export interface UserSession extends SessionGeo {
   deviceType: 'Desktop' | 'Mobile' | 'Tablet';
   deviceLabel: string;
   userAgent: string;
+  /** Written by the session controller; older records have none (see `classifySession`). */
+  client?: SessionClient | null;
   startedAt: { seconds: number; nanoseconds: number } | null;
   lastActiveAt: { seconds: number; nanoseconds: number } | null;
   isActive: boolean;
@@ -79,6 +82,16 @@ export function parseUserAgent(ua: string): {
     'Desktop';
 
   return { browser, os, deviceType, deviceLabel: `${browser} on ${os}` };
+}
+
+/** Whether this page is running inside the installed SEL mobile app rather than a browser. */
+export function currentSessionClient(): SessionClient {
+  if (typeof window === 'undefined') return 'browser';
+  try {
+    return Capacitor.isNativePlatform() ? 'app' : 'browser';
+  } catch {
+    return 'browser';
+  }
 }
 
 export function getOrCreateSessionId(): string {
@@ -264,7 +277,7 @@ export function listenToSession(
 // ─── session controller API ──────────────────────────────────────────────────
 
 export type SessionControlAction =
-  | { action: 'enforce'; currentSessionId: string }
+  | { action: 'enforce'; currentSessionId: string; client?: SessionClient }
   | { action: 'terminate'; sessionIds: string[] }
   | { action: 'terminate-user'; userId: string; currentSessionId?: string }
   | { action: 'terminate-others'; currentSessionId: string }

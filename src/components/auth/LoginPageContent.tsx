@@ -14,6 +14,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  indexedDBLocalPersistence,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
@@ -208,6 +209,8 @@ export function LoginPageContent() {
         const result = await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false } as any);
         const idToken = result.credential?.idToken;
         if (!idToken) throw new Error("Google sign-in did not return an ID token.");
+        // The app always stays signed in — an earlier email attempt may have left session storage set.
+        await setPersistence(auth, indexedDBLocalPersistence);
         await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
       } else {
         // Web browser: popup with redirect fallback
@@ -336,7 +339,15 @@ export function LoginPageContent() {
         }
       }
 
-      await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+      // In the installed app the sign-in is always kept: without "Remember me" it went to session
+      // storage, which Android throws away whenever it closes the app in the background. The box
+      // still decides whether the account is saved on this device with a PIN.
+      await setPersistence(
+        auth,
+        Capacitor.isNativePlatform()
+          ? indexedDBLocalPersistence
+          : rememberMe ? browserLocalPersistence : browserSessionPersistence,
+      );
       await signInWithEmailAndPassword(auth, finalEmail, password);
       setShouldRemember(rememberMe);
       const nextPath = resolvePostLoginPath();
