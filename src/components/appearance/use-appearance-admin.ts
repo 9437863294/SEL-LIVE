@@ -10,6 +10,7 @@ import {
   type BrandAssetKind,
   type CompanyAppearanceConfig,
   type CompanyBranding,
+  type DirectDefaultField,
   type PublishedAppearance,
 } from '@/lib/appearance/model';
 import type { AppearanceAdminRights } from '@/lib/appearance/permissions';
@@ -137,6 +138,22 @@ export function useAppearanceAdmin() {
     [afterLive],
   );
 
+  /**
+   * One company default, live at once as a new version (the route needs Theme Management:
+   * Publish). `clearChoices` also removes everyone's own choice of it, so it reaches them too.
+   */
+  const saveDefault = useCallback(
+    async (field: DirectDefaultField, value: string, options: { clearChoices: boolean; note: string }) => {
+      const result = await callAppearanceApi<{ published: unknown; changes: string[]; cleared: number }>('/api/appearance/admin/default', {
+        method: 'POST',
+        body: JSON.stringify({ field, value, clearChoices: options.clearChoices, note: options.note }),
+      });
+      await afterLive();
+      return result;
+    },
+    [afterLive],
+  );
+
   const uploadAsset = useCallback(async (kind: BrandAssetKind, file: File) => {
     const form = new FormData();
     form.append('kind', kind);
@@ -145,5 +162,5 @@ export function useAppearanceAdmin() {
     return body.asset;
   }, []);
 
-  return { data, error, loading, reload: load, saveDraft, publish, restore, saveBranding, uploadAsset };
+  return { data, error, loading, reload: load, saveDraft, publish, restore, saveBranding, saveDefault, uploadAsset };
 }

@@ -327,19 +327,6 @@
 
 /* ── The bar's contents, in every design but Classic ──────────────────────────────────────── */
 
-/* The logo on a white chip, as in the mock-up — so the light logo reads on every surface. */
-.mark {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 9px;
-  background: #ffffff;
-  padding: 3px 7px;
-  box-shadow: 0 4px 12px -6px #c8102e66, 0 0 0 1px #c8102e22;
-}
-.surface[data-tone='dark'] .mark {
-  box-shadow: 0 0 0 1px #ffffff22, 0 0 18px -4px #e11d48aa;
-}
-
 /* The spinning colour ring around the avatar. */
 .avatarRing {
   position: relative;

@@ -563,7 +563,7 @@ export default function Header() {
         <ImpersonationBanner />
         {/* The design chosen in Settings › Appearance › Branding › Top bar (Classic by default). */}
         <HeaderSurface design={headerDesign} mode={resolvedMode} className="flex h-14 items-center px-3 md:h-16 md:px-6">
-          <HeaderBrand design={headerDesign} logoSrc={logoSrc} companyName={branding.companyName} tagline={branding.headerTagline} href="/" preload />
+          <HeaderBrand logoSrc={logoSrc} companyName={branding.companyName} tagline={branding.headerTagline} href="/" preload />
 
           <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4" data-header-actions="">
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>

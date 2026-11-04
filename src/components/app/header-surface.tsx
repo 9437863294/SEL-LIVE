@@ -5,7 +5,8 @@
  *
  * One component draws a design for both the real header and the settings preview, so what an
  * administrator picks is what everyone gets. The design is only a backdrop and a few touches (the
- * logo chip, the avatar ring, a lift on hover); the bar's contents are the header's own.
+ * avatar ring, a lift on hover); the bar's contents are the header's own, and the logo and company
+ * name are Classic's in every design.
  *
  * Classic renders a plain element with the caller's classes and nothing else, so a company that
  * never picks a design sees exactly the header it always had.
@@ -32,11 +33,11 @@ export const DEFAULT_LOGO_URL =
   'https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788';
 
 /**
- * Classic shows the dark-background logo in dark mode (else the light one). The designs set the
- * logo on a white chip, so they always take the light one. The SEL logo until one is published.
+ * The dark-background logo on a dark bar (dark mode, or an always-dark design such as Midnight
+ * Current), else the light one, exactly as Classic does. The SEL logo until one is published.
  */
 export function headerLogoSrc(design: HeaderDesignId, mode: HeaderTone, branding: Pick<CompanyBranding, 'logoLight' | 'logoDark'>): string {
-  const asset = design === 'classic' && mode === 'dark' ? branding.logoDark ?? branding.logoLight : branding.logoLight;
+  const asset = headerToneOf(design, mode) === 'dark' ? branding.logoDark ?? branding.logoLight : branding.logoLight;
   return asset?.url ?? DEFAULT_LOGO_URL;
 }
 
@@ -202,45 +203,34 @@ export function HeaderSurface({
 }
 
 /**
- * The logo, the company name and the tagline. Classic keeps the header's original sizes; the
- * designs put the logo on a white chip (the light logo reads on every surface) and set the name
- * as in the mock-up. `href` is omitted in the preview, which must not navigate.
+ * The logo, the company name and the tagline, the same in every design: Classic's sizes, with the
+ * logo straight on the bar (`headerLogoSrc` picks the one for the bar's tone). `href` is omitted
+ * in the preview, which must not navigate.
  */
 export function HeaderBrand({
-  design,
   logoSrc,
   companyName,
   tagline,
   href,
   preload,
 }: {
-  design: HeaderDesignId;
   logoSrc: string;
   companyName: string;
   tagline?: string;
   href?: string;
   preload?: boolean;
 }) {
-  const classic = design === 'classic';
   const logo = (
-    <div className={cn('relative', classic ? 'h-8 w-24 md:h-10 md:w-28' : 'h-7 w-20 md:h-8 md:w-24')}>
+    <div className="relative h-8 w-24 md:h-10 md:w-28">
       <Image src={logoSrc} alt={`${companyName} logo`} fill sizes="112px" style={{ objectFit: 'contain' }} preload={preload} />
     </div>
   );
-  const mark = classic ? logo : <span className={cn(styles.mark, 'keep-light')}>{logo}</span>;
   return (
-    <div className={cn('flex items-center gap-2 md:gap-4', !classic && 'min-w-0')}>
-      {href ? <Link href={href}>{mark}</Link> : mark}
-      <div className={cn('border-l pl-3 md:pl-4', !classic && 'min-w-0')}>
+    <div className="flex items-center gap-2 md:gap-4">
+      {href ? <Link href={href}>{logo}</Link> : logo}
+      <div className="border-l pl-3 md:pl-4">
         {/* Not a heading: each page's own title is its one <h1>. */}
-        <p
-          className={cn(
-            'hidden text-sm text-foreground sm:block',
-            classic ? 'font-semibold md:text-lg' : 'truncate font-extrabold tracking-tight md:text-base',
-          )}
-        >
-          {companyName}
-        </p>
+        <p className="hidden text-sm font-semibold text-foreground sm:block md:text-lg">{companyName}</p>
         {tagline ? <p className="hidden truncate text-[11px] font-semibold leading-tight text-muted-foreground md:block">{tagline}</p> : null}
       </div>
     </div>

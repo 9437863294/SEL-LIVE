@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, Building2, History, ImageIcon, Inbox, LayoutDashboard, Loader2, LogIn, MessageCircle, Monitor, Moon, PanelTop, Plus, Save, ShieldAlert, Smartphone, Sun, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,9 +12,11 @@ import { BrandAssetField } from '@/components/appearance/BrandAssetField';
 import { ChoiceGroup, PreviewCollapsed, PreviewToggle, SettingsSection, SwitchRow, usePreviewVisible } from '@/components/appearance/controls';
 import { LOGIN_PREVIEW_DEVICES, LoginPreviewFrame, type LoginPreviewDevice } from '@/components/appearance/LoginPreviewFrame';
 import { VersionHistory } from '@/components/appearance/VersionHistory';
-import { useAppearanceAdmin } from '@/components/appearance/use-appearance-admin';
+import { callAppearanceApi, useAppearanceAdmin } from '@/components/appearance/use-appearance-admin';
 import { HeaderAvatarRing, HeaderBrand, HeaderSurface, headerLogoSrc, headerToneOf, type HeaderTone } from '@/components/app/header-surface';
 import { BannerEffectThumb, HomeEffectsPreview, ModulesEffectThumb } from '@/components/appearance/home-effects-preview';
+import { HomeDesignPreview } from '@/components/home/home-design-preview';
+import { HOME_DESIGN_META } from '@/components/home/home-designs';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAppearance } from '@/components/theme/ThemeProvider';
 import {
@@ -22,6 +25,7 @@ import {
   HEADER_TAGLINE_MAX,
   HOME_BANNER_EFFECTS,
   HOME_BANNER_EFFECT_META,
+  HOME_DESIGNS,
   HOME_MODULES_EFFECTS,
   HOME_MODULES_EFFECT_META,
   LOGIN_DESIGNS,
@@ -34,12 +38,22 @@ import {
   type CompanyBranding,
   type HeaderDesignId,
   type HomeBannerEffect,
+  type HomeDesign,
   type HomeModulesEffect,
   type LoginDesignId,
   type LoginHighlight,
 } from '@/lib/appearance/model';
 import { getInitials } from '@/lib/chat';
 import { cn } from '@/lib/utils';
+
+const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`;
+
+const homeDesignOptions = HOME_DESIGNS.map((value) => ({
+  value,
+  label: HOME_DESIGN_META[value].label,
+  description: HOME_DESIGN_META[value].description,
+  preview: <HomeDesignPreview design={value} />,
+}));
 
 function TextField({
   id,
@@ -80,7 +94,7 @@ function HeaderThumb({ design, mode, tone }: { design: HeaderDesignId; mode: Hea
   return (
     <span className="relative block overflow-hidden rounded-lg border border-black/5 bg-background">
       <HeaderSurface design={design} mode={mode} previewTone={tone} className="flex h-14 items-center gap-2 px-2.5">
-        <span className={cn('h-5 w-9 shrink-0 rounded-md', design === 'classic' ? 'bg-primary/60' : 'keep-light bg-white shadow-sm ring-1 ring-black/5')} />
+        <span className="h-5 w-9 shrink-0 rounded-md bg-primary/60" />
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="h-1.5 w-3/5 rounded-full bg-current opacity-60" />
           <span className="h-1 w-2/5 rounded-full bg-current opacity-30" />
@@ -106,7 +120,7 @@ function HeaderPreview({ branding, mode, tone, userName }: { branding: CompanyBr
   return (
     <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
       <HeaderSurface design={design} mode={mode} previewTone={tone} className="flex h-14 items-center px-3 md:h-16 md:px-6">
-        <HeaderBrand design={design} logoSrc={headerLogoSrc(design, surfaceTone, branding)} companyName={branding.companyName} tagline={branding.headerTagline} />
+        <HeaderBrand logoSrc={headerLogoSrc(design, surfaceTone, branding)} companyName={branding.companyName} tagline={branding.headerTagline} />
         <div className="ml-auto flex items-center gap-1 sm:gap-2 md:gap-4" data-header-actions="" aria-hidden="true">
           <span className="hidden text-sm font-medium text-foreground sm:inline">{userName}</span>
           {[ThemeIcon, Inbox, MessageCircle].map((Icon, index) => (
@@ -246,7 +260,7 @@ function HighlightsEditor({ value, onChange, disabled }: { value: LoginHighlight
  * can be restored from the history below.
  */
 export default function CompanyBrandingPage() {
-  const { data, error, loading, saveBranding, uploadAsset, restore } = useAppearanceAdmin();
+  const { data, error, loading, saveBranding, saveDefault, uploadAsset, restore } = useAppearanceAdmin();
   const [draft, setDraft] = useState<CompanyBranding | null>(null);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -257,12 +271,36 @@ export default function CompanyBrandingPage() {
   const { user } = useAuth();
   // Which mode the top-bar preview shows; it starts as the administrator's own.
   const [headerTone, setHeaderTone] = useState<HeaderTone>(resolvedMode);
+  // The home page design is a company default (people may still choose their own), not branding:
+  // it is published beside the branding, as its own version. null while it is unchanged.
+  const [homeChoice, setHomeChoice] = useState<HomeDesign | null>(null);
+  const [switchOwn, setSwitchOwn] = useState(false);
+  // How many people chose their own home page design, and so keep it; null until known.
+  const [chosenOwn, setChosenOwn] = useState<number | null>(null);
+  const canSetHome = !!data?.rights.publishThemes;
+  const publishedVersion = data?.published.version;
 
   useEffect(() => {
     if (data) setDraft(data.published.branding);
   }, [data]);
 
-  const dirty = useMemo(() => !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.published.branding), [data, draft]);
+  useEffect(() => {
+    if (!canSetHome) return;
+    let cancelled = false;
+    // Counted again after every publish: switching people over changes it.
+    callAppearanceApi<{ chosen: number }>('/api/appearance/admin/default?field=homeDesign')
+      .then((body) => {
+        if (!cancelled) setChosenOwn(body.chosen);
+      })
+      .catch(() => {
+        if (!cancelled) setChosenOwn(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canSetHome, publishedVersion]);
+
+  const brandingDirty = useMemo(() => !!data && !!draft && JSON.stringify(draft) !== JSON.stringify(data.published.branding), [data, draft]);
 
   if (loading && !data) return <Skeleton className="h-96 rounded-xl" />;
   if (error && !data) {
@@ -276,17 +314,55 @@ export default function CompanyBrandingPage() {
 
   const canEdit = data.rights.editBranding;
   const update = (patch: Partial<CompanyBranding>) => setDraft((current) => (current ? { ...current, ...patch } : current));
+  const publishedHome = data.published.defaults.homeDesign;
+  const homeDesign = homeChoice ?? publishedHome;
+  const homeDirty = homeDesign !== publishedHome;
+  const dirty = brandingDirty || homeDirty;
+
+  const discard = () => {
+    setDraft(data.published.branding);
+    setHomeChoice(null);
+    setSwitchOwn(false);
+  };
 
   async function save() {
     if (!draft) return;
+    // Taken now: each publish reloads the page's data, which resets the unsaved draft.
+    const branding = brandingDirty ? sanitizeBranding(draft) : null;
+    const home = homeDirty ? homeDesign : null;
+    const clearChoices = switchOwn;
+    const userNote = cleanText(note, 200);
+    const versions: string[] = [];
+    let cleared = 0;
     setSaving(true);
     setMessage(null);
     try {
-      const result = await saveBranding(sanitizeBranding(draft), cleanText(note, 200) ?? 'Updated branding');
+      if (branding) {
+        const result = await saveBranding(branding, userNote ?? 'Updated branding');
+        versions.push(String((result.published as { version?: number }).version ?? ''));
+      }
+      if (home) {
+        const result = await saveDefault('homeDesign', home, {
+          clearChoices,
+          note: userNote ?? `Home page design default set to ${HOME_DESIGN_META[home].label}`,
+        });
+        versions.push(String((result.published as { version?: number }).version ?? ''));
+        cleared = result.cleared;
+        setHomeChoice(null);
+        setSwitchOwn(false);
+      }
       setNote('');
-      setMessage({ tone: 'success', text: `Published as version ${(result.published as { version?: number }).version ?? ''}. Everyone sees it on their next page load.` });
+      const switched = cleared ? ` ${people(cleared)} who had chosen their own home page design now follow the company's.` : '';
+      setMessage({
+        tone: 'success',
+        text: `Published as ${versions.length > 1 ? `versions ${versions.join(' and ')}` : `version ${versions[0]}`}. Everyone sees it on their next page load.${switched}`,
+      });
     } catch (e) {
-      setMessage({ tone: 'danger', text: e instanceof Error ? e.message : 'Branding could not be saved.' });
+      const reason = e instanceof Error ? e.message : 'Branding could not be saved.';
+      setMessage({
+        tone: 'danger',
+        text: versions.length ? `The branding was published as version ${versions[0]}, but the home page design was not: ${reason}` : reason,
+      });
     } finally {
       setSaving(false);
     }
@@ -309,8 +385,8 @@ export default function CompanyBrandingPage() {
 
       <SettingsSection title="Logos and icons" icon={ImageIcon} description="Images are checked for type, size and dimensions, then stored in the company's own storage.">
         <div className="grid gap-3 md:grid-cols-2">
-          <BrandAssetField kind="logoLight" value={draft.logoLight} onChange={(logoLight) => update({ logoLight })} upload={uploadAsset} background="light" disabled={!canEdit} description="Top bar in light mode, and on the white logo chip of the moving top-bar designs; the light sign-in design (Minimal)." />
-          <BrandAssetField kind="logoDark" value={draft.logoDark} onChange={(logoDark) => update({ logoDark })} upload={uploadAsset} background="dark" disabled={!canEdit} description="Top bar in dark mode with the Classic design, and the dark sign-in designs (Horizon, Midnight, Glass, Blueprint)." />
+          <BrandAssetField kind="logoLight" value={draft.logoLight} onChange={(logoLight) => update({ logoLight })} upload={uploadAsset} background="light" disabled={!canEdit} description="Top bar in light mode; the light sign-in design (Minimal)." />
+          <BrandAssetField kind="logoDark" value={draft.logoDark} onChange={(logoDark) => update({ logoDark })} upload={uploadAsset} background="dark" disabled={!canEdit} description="Top bar in dark mode, and always with the Midnight Current top bar; the dark sign-in designs (Horizon, Midnight, Glass, Blueprint)." />
           <BrandAssetField kind="favicon" value={draft.favicon} onChange={(favicon) => update({ favicon })} upload={uploadAsset} background="light" disabled={!canEdit} description="The browser tab icon." />
           <BrandAssetField
             kind="appIcon"
@@ -383,10 +459,40 @@ export default function CompanyBrandingPage() {
       <SettingsSection
         title="Home page"
         icon={LayoutDashboard}
-        description="Moving backgrounds for the Aurora Glass home page design — each person picks their home design in Settings › Appearance."
+        description="The home page design everyone gets until they choose their own, and the moving backgrounds of the Aurora Glass design."
       >
+        <div className="space-y-2">
+          <ChoiceGroup<HomeDesign>
+            label="Home page design"
+            description="How the Modules tab looks for everyone who follows the company default. Anyone can still choose their own in Settings › Appearance."
+            value={homeDesign}
+            columns={4}
+            disabled={!canSetHome}
+            onChange={(value) => setHomeChoice(value === publishedHome ? null : value)}
+            options={homeDesignOptions}
+          />
+          {!canSetHome ? (
+            <p className="text-xs text-muted-foreground">Changing the home page design needs the Theme Management: Publish permission.</p>
+          ) : homeDirty && chosenOwn ? (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border bg-muted/40 p-3 text-sm">
+              <Checkbox className="mt-0.5" checked={switchOwn} disabled={saving} onCheckedChange={(next) => setSwitchOwn(next === true)} />
+              <span>
+                <span className="block font-medium">Also switch the {people(chosenOwn)} who chose their own design</span>
+                <span className="block text-xs text-muted-foreground">
+                  Unticked, they keep their choice. Ticked, their choice is removed and they follow the company default from now on.
+                </span>
+              </span>
+            </label>
+          ) : chosenOwn ? (
+            <p className="text-xs text-muted-foreground">
+              {people(chosenOwn)} chose their own design in Settings › Appearance and {chosenOwn === 1 ? 'keeps it' : 'keep it'}.
+            </p>
+          ) : null}
+        </div>
+
         <ChoiceGroup<HomeBannerEffect>
           label="Greeting banner"
+          description="With the Aurora Glass design only."
           value={draft.homeBanner}
           columns={4}
           disabled={!canEdit}
@@ -401,6 +507,7 @@ export default function CompanyBrandingPage() {
 
         <ChoiceGroup<HomeModulesEffect>
           label="All modules"
+          description="With the Aurora Glass design only."
           value={draft.homeModules}
           columns={4}
           disabled={!canEdit}
@@ -416,7 +523,7 @@ export default function CompanyBrandingPage() {
         <div className="space-y-2.5">
           <div className="min-w-0">
             <p className="text-sm font-semibold">Preview</p>
-            <p className="text-xs text-muted-foreground">With your unpublished changes. Move the mouse over the tiles for Cursor spotlight and Card glow.</p>
+            <p className="text-xs text-muted-foreground">The Aurora Glass design, with your unpublished backgrounds. Move the mouse over the tiles for Cursor spotlight and Card glow.</p>
           </div>
           <HomeEffectsPreview banner={draft.homeBanner} modules={draft.homeModules} firstName={(user?.name || 'there').split(' ')[0]} />
         </div>
@@ -524,7 +631,7 @@ export default function CompanyBrandingPage() {
         </div>
       </SettingsSection>
 
-      {canEdit && (
+      {(canEdit || canSetHome) && (
         <div className="flex flex-wrap items-end gap-3 rounded-xl border p-4">
           <div className="min-w-[14rem] flex-1 space-y-1.5">
             <Label htmlFor="b-note">What changed (for the history)</Label>
@@ -535,7 +642,7 @@ export default function CompanyBrandingPage() {
             Publish branding
           </Button>
           {dirty && (
-            <Button variant="ghost" onClick={() => setDraft(data.published.branding)} disabled={saving}>
+            <Button variant="ghost" onClick={discard} disabled={saving}>
               Discard changes
             </Button>
           )}
