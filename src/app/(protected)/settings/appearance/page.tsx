@@ -28,7 +28,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ActionAnimationSettings } from '@/components/appearance/action-animation-settings';
 import { MakeCompanyDefault } from '@/components/appearance/make-company-default';
 import { themeModeMeta } from '@/components/theme/theme-preferences';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -371,7 +370,7 @@ export default function MyAppearancePage() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Motion" icon={Sparkles} description="Reduced motion removes slides, fades and animated counters.">
+        <SettingsSection title="Motion" icon={Sparkles} description="Reduced motion removes slides, fades, animated counters and button animations.">
           <ChoiceGroup<MotionPreference>
             label="Animations"
             value={effective.motion}
@@ -388,9 +387,6 @@ export default function MyAppearancePage() {
         </SettingsSection>
 
         </SettingsColumns>
-
-        {/* Full width: a list and an editor side by side, too much for half a page. */}
-        <ActionAnimationSettings scope="personal" />
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed p-4">
           <div>

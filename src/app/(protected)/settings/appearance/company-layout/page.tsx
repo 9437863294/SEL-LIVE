@@ -29,7 +29,7 @@ export default function CompanyLayoutPage() {
         <CompanyTextLabels />
       </TabsContent>
       <TabsContent value="animations" className="min-w-0">
-        <ActionAnimationSettings scope="company" />
+        <ActionAnimationSettings />
       </TabsContent>
     </Tabs>
   );

@@ -12,7 +12,9 @@
  *      (`onToastAdded` in use-toast) it plays the completion effect — or, for a destructive toast or
  *      one whose title reads as a failure, the failure effect — on that button;
  *   3. does nothing at all under reduced motion (the device's, or Appearance › Motion "Reduced"),
- *      when the company turned animations off, or when the user chose Off.
+ *      or when the company turned animations off. Everyone gets the company's animations: the
+ *      personal choice (`preferences.animations`) was removed from My Appearance on 2026-11-04,
+ *      and one saved before then is no longer read.
  *
  * Effects only animate transform, opacity and box-shadow of the button itself, or draw into a fixed
  * `pointer-events: none` layer appended to <body> over it, which is removed when it ends — so no
@@ -25,7 +27,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useCompanyProfile } from '@/hooks/use-company-profile';
 import { onToastAdded, type AddedToast } from '@/hooks/use-toast';
-import { useAppearance } from '@/components/theme/ThemeProvider';
 import {
   DEFAULT_ACTION_ANIMATIONS,
   INTENSITY_SCALE,
@@ -392,15 +393,13 @@ function onActivate(element: HTMLElement, point?: { x: number; y: number }) {
 /** Mount once, in the signed-in app shell. Renders nothing. */
 export function ActionAnimationProvider() {
   const { profile } = useCompanyProfile();
-  const { preferences } = useAppearance();
   const company = profile.design.animations;
-  const own = preferences.animations;
   const labels = profile.labels;
 
   useEffect(() => {
-    effective = resolveActionAnimations(company, own);
+    effective = resolveActionAnimations(company);
     companyLabels = labels;
-  }, [company, own, labels]);
+  }, [company, labels]);
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {

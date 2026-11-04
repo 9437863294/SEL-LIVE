@@ -2,12 +2,10 @@
 
 /**
  * Settings for the animated action buttons, self-contained (its own load, save, loading and error
- * states, toasts):
- *
- *   <ActionAnimationSettings scope="company" />   the company default per action kind — saved into
- *       Settings › Company Profile (`design.animations`), editable with Settings.Company Profile › Edit
- *   <ActionAnimationSettings scope="personal" />  this user's own choice — Company default / My own /
- *       Off — saved with their appearance preferences (`animations`)
+ * states, toasts): the company's animations per action kind — saved into Settings › Company Profile
+ * (`design.animations`), editable with Settings.Company Profile › Edit. Everyone gets them; there is
+ * no personal choice (it was removed from My Appearance), and Appearance › Motion "Reduced" turns
+ * them off for one person.
  *
  * Laid out as a list and an editor: the action kinds down the left, grouped (a scrolling strip on a
  * phone), with each one's current effects and a mark when it differs from its default; the chosen
@@ -16,7 +14,7 @@
  * page, which showed nothing until opened and one at a time when they were.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import {
   CheckCircle2,
@@ -47,8 +45,8 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { ChoiceGroup, SettingsSection, SwitchRow } from '@/components/appearance/controls';
-import { useAppearance, useReducedMotion } from '@/components/theme/ThemeProvider';
+import { SettingsSection, SwitchRow } from '@/components/appearance/controls';
+import { useReducedMotion } from '@/components/theme/ThemeProvider';
 import { playActionAnimation } from '@/components/shared/action-animations';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -58,19 +56,15 @@ import {
   ACTION_ANIMATION_PRESETS,
   ACTION_KINDS,
   ACTION_KIND_META,
-  ANIMATION_MODES,
   DEFAULT_ACTION_ANIMATIONS,
   DEFAULT_ACTION_KIND_CONFIGS,
   MAX_DURATION_MS,
   MIN_DURATION_MS,
-  resolveActionAnimations,
   sanitizeActionAnimations,
   sanitizeKindConfig,
   type ActionAnimationSettings as CompanyAnimations,
   type ActionKind,
   type ActionKindConfig,
-  type AnimationMode,
-  type UserActionAnimations,
 } from '@/lib/action-animations';
 import { cn } from '@/lib/utils';
 
@@ -131,8 +125,8 @@ const summaryOf = (config: ActionKindConfig) =>
     ? `${labelOf(ACTION_ANIMATION_PRESETS.press, config.press)} · ${labelOf(ACTION_ANIMATION_PRESETS.complete, config.complete)}`
     : 'Off';
 
-export function ActionAnimationSettings({ scope }: { scope: 'company' | 'personal' }) {
-  return scope === 'company' ? <CompanyAnimationSettings /> : <PersonalAnimationSettings />;
+export function ActionAnimationSettings() {
+  return <CompanyAnimationSettings />;
 }
 
 // ── Company scope ────────────────────────────────────────────────────────────────────────────────
@@ -167,7 +161,7 @@ function CompanyAnimationSettings() {
       });
       setEdited(null);
       invalidateCompanyProfile(result.profile);
-      toast({ title: 'Button animations saved', description: 'Everyone who follows the company default now sees them.' });
+      toast({ title: 'Button animations saved', description: 'Everyone sees them on their next page load.' });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Please try again.';
       setError(message);
@@ -180,19 +174,19 @@ function CompanyAnimationSettings() {
     <SettingsSection
       title="Button animations"
       icon={Sparkles}
-      description="The company default: how action buttons respond when pressed, and when their action finishes or fails — for everyone who has not chosen their own."
+      description="How action buttons respond when pressed, and when their action finishes or fails, for everyone. Anyone with Reduced motion sees none."
     >
       {loading || authzLoading ? (
         <LoadingRows />
       ) : (
         <>
           {!canEdit && (
-            <Notice>Only people with Settings › Company Profile › Edit can change the company default. You can still try each animation.</Notice>
+            <Notice>Only people with Settings › Company Profile › Edit can change the button animations. You can still try each animation.</Notice>
           )}
           <ReducedMotionNotice />
           <SwitchRow
             label="Animate action buttons"
-            description="Off turns every button animation off for people who follow the company."
+            description="Off turns every button animation off, for everyone."
             checked={draft.enabled}
             disabled={readOnly}
             onCheckedChange={(enabled) => setDraft({ ...draft, enabled })}
@@ -219,115 +213,6 @@ function CompanyAnimationSettings() {
               </Button>
             </Footer>
           )}
-        </>
-      )}
-    </SettingsSection>
-  );
-}
-
-// ── Personal scope ───────────────────────────────────────────────────────────────────────────────
-
-const MODE_META: Record<AnimationMode, { label: string; description: string }> = {
-  company: { label: 'Company default', description: 'Use the animations your company chose.' },
-  custom: { label: 'My own', description: 'Choose each animation yourself.' },
-  off: { label: 'Off', description: 'No button animations.' },
-};
-
-/** What to store for a choice: nothing for the company default, only the kinds that differ for "My own". */
-function toStored(mode: AnimationMode, kinds: Kinds, company: CompanyAnimations): UserActionAnimations | undefined {
-  if (mode === 'company') return undefined;
-  if (mode === 'off') return { mode: 'off' };
-  const own: Partial<Kinds> = {};
-  for (const kind of ACTION_KINDS) if (!same(kinds[kind], company.kinds[kind])) own[kind] = kinds[kind];
-  return { mode: 'custom', kinds: own };
-}
-
-function PersonalAnimationSettings() {
-  const { toast } = useToast();
-  const { preferences, updatePreferences, ready, signedIn, saveStatus, saveError } = useAppearance();
-  const { profile, loading } = useCompanyProfile();
-  const company = profile.design.animations;
-  const stored = preferences.animations;
-
-  const storedKinds = useMemo(() => resolveActionAnimations(company, stored?.mode === 'custom' ? stored : undefined).kinds, [company, stored]);
-  // Null until the user changes something: until then what is stored is shown.
-  const [edited, setEdited] = useState<{ mode: AnimationMode; kinds: Kinds } | null>(null);
-  const mode = edited?.mode ?? stored?.mode ?? 'company';
-  const kinds = edited?.kinds ?? storedKinds;
-  const setMode = (id: AnimationMode) => setEdited({ mode: id, kinds });
-  const setKinds = (next: Kinds) => setEdited({ mode, kinds: next });
-  const awaiting = useRef<'idle' | 'requested' | 'saving'>('idle');
-
-  const next = useMemo(() => toStored(mode, kinds, company), [mode, kinds, company]);
-  const dirty = Boolean(edited) && !same(next ?? null, stored ?? null);
-
-  useEffect(() => {
-    if (awaiting.current === 'idle') return;
-    if (saveStatus === 'saving') awaiting.current = 'saving';
-    else if (saveStatus === 'saved' && awaiting.current === 'saving') {
-      awaiting.current = 'idle';
-      toast({ title: 'Button animations saved', description: 'Your choice applies on every device you sign in on.' });
-    } else if (saveStatus === 'error') {
-      awaiting.current = 'idle';
-      toast({ title: 'Could not save button animations', description: saveError ?? 'Please try again.', variant: 'destructive' });
-    }
-  }, [saveStatus, saveError, toast]);
-
-  const save = () => {
-    updatePreferences((current) => {
-      const updated = { ...current };
-      if (next) updated.animations = next;
-      else delete updated.animations;
-      return updated;
-    });
-    setEdited(null);
-    if (signedIn) awaiting.current = 'requested';
-    else toast({ title: 'Button animations saved on this device' });
-  };
-
-  const discard = () => setEdited(null);
-
-  const shownKinds = mode === 'custom' ? kinds : company.kinds;
-  const busy = saveStatus === 'saving';
-
-  return (
-    <SettingsSection title="Button animations" icon={Sparkles} description="Just for you: how action buttons respond when pressed, and when their action finishes or fails.">
-      {!ready || loading ? (
-        <LoadingRows />
-      ) : (
-        <>
-          <ReducedMotionNotice />
-          <ChoiceGroup<AnimationMode>
-            label="Animations"
-            value={mode}
-            options={ANIMATION_MODES.map((id) => ({ value: id, label: MODE_META[id].label, description: MODE_META[id].description }))}
-            onChange={setMode}
-          />
-          {mode !== 'off' && (
-            <>
-              {mode === 'company' && (
-                <Notice>
-                  {company.enabled ? 'These are the company’s choices. Pick “My own” to change them for yourself.' : 'Your company has button animations turned off. Pick “My own” to have them anyway.'}
-                </Notice>
-              )}
-              <KindEditor
-                kinds={shownKinds}
-                disabled={mode !== 'custom'}
-                onChange={(kind, config) => setKinds({ ...kinds, [kind]: config })}
-                resetTo={(kind) => company.kinds[kind]}
-                resetLabel="Company default"
-              />
-            </>
-          )}
-          <Footer dirty={dirty}>
-            <Button variant="outline" disabled={!dirty} onClick={discard}>
-              Discard changes
-            </Button>
-            <Button disabled={!dirty || busy} onClick={save} action="save">
-              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Save
-            </Button>
-          </Footer>
         </>
       )}
     </SettingsSection>
