@@ -33,6 +33,7 @@ import {
   expensesAction,
   hasActors,
   mayAct,
+  viewableDepartmentsFor,
   type ActionContext,
   type ActionDecision,
   type ExpensesActionAssignment,
@@ -82,8 +83,27 @@ export interface ExpensesActor {
    * one case where a caller's own fallback must not override it.
    */
   restrictedToAssignees: (actionKey: ExpensesActionKey, context?: ActionContext) => boolean;
+  /**
+   * Whether this department's requests are the user's to see — overview card, register, report
+   * rows. `View All` on Expense Requests sees every one; otherwise the role must allow it and, for
+   * someone User Roles names by department, it must be one of theirs (`viewLimitedTo`).
+   */
+  canViewDepartment: (departmentId: string) => boolean;
+  /** Every department, present and future — so a page may read the whole register rather than by department. */
+  seesEveryDepartment: boolean;
+  /** The departments User Roles limits the user to, or null when it does not limit them. */
+  viewLimitedTo: readonly string[] | null;
+  /** Not outside `viewLimitedTo` — for gates that only need the limit, such as which departments New Request offers. */
+  withinViewLimit: (departmentId: string) => boolean;
   isLoading: boolean;
 }
+
+/**
+ * A department id no grant can name. `can('View', 'Expenses.Departments', …)` passes it only for a
+ * grant that covers every department (module-wide `View All`, or `View` on all departments) —
+ * never for a grant on particular departments — which is how a grant on all is told apart.
+ */
+const ANY_DEPARTMENT_PROBE = '__any_department__';
 
 export function useExpensesActor(): ExpensesActor {
   const { user, effectiveAccess } = useAuth();
@@ -180,11 +200,37 @@ export function useExpensesActor(): ExpensesActor {
     [assignment],
   );
 
+  /**
+   * Seeing departments. A role grant on Expenses › Departments names no department, so on its own
+   * it opens every one; User Roles is what knows where a person works, and narrows it (never
+   * widens). Unresolved until the assignment has loaded — see `isLoading`.
+   */
+  const viewAll = can('View All', 'Expenses.Expense Requests');
+  const viewLimitedTo = useMemo(
+    () => (viewAll || isRolesLoading ? null : viewableDepartmentsFor(rolesDoc, { userId, roleIds })),
+    [viewAll, isRolesLoading, rolesDoc, userId, roleIds],
+  );
+  const withinViewLimit = useCallback(
+    (departmentId: string) => !viewLimitedTo || viewLimitedTo.includes(departmentId),
+    [viewLimitedTo],
+  );
+  const canViewDepartment = useCallback(
+    (departmentId: string) =>
+      viewAll || (withinViewLimit(departmentId) && can('View', 'Expenses.Departments', departmentId)),
+    [viewAll, withinViewLimit, can],
+  );
+  const seesEveryDepartment =
+    viewAll || (!viewLimitedTo && can('View', 'Expenses.Departments', ANY_DEPARTMENT_PROBE));
+
   return {
     may,
     mayWith,
     assignment,
     restrictedToAssignees,
+    canViewDepartment,
+    seesEveryDepartment,
+    viewLimitedTo,
+    withinViewLimit,
     isLoading: isAuthLoading || isRolesLoading || roleIdsPending,
   };
 }

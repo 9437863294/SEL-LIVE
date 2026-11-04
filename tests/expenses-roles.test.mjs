@@ -12,6 +12,7 @@ import {
   mayAct,
   resolveExpensesRolesDoc,
   validateExpensesRoles,
+  viewableDepartmentsFor,
 } from '../src/lib/expenses-roles.ts';
 
 const docOf = (actions) => resolveExpensesRolesDoc({ actions });
@@ -149,6 +150,50 @@ test('the set-up is checked for gaps that would bite', () => {
   assert.ok(gone.some((issue) => /no longer exists/.test(issue.message)));
 });
 
+test('being named by department limits which departments a person sees', () => {
+  const raiseByDepartment = {
+    type: 'department',
+    byDepartment: { D1: { primary: ['asha'], alternates: ['bimal'] }, D2: { primary: ['bimal'], alternates: [] } },
+  };
+
+  // On unless turned off — a document saved before the switch existed limits too.
+  assert.equal(resolveExpensesRolesDoc(undefined).limitViewToAssignedDepartments, true);
+  assert.equal(resolveExpensesRolesDoc({ limitViewToAssignedDepartments: false }).limitViewToAssignedDepartments, false);
+
+  // Whatever the authority mode: roles-only still records where someone works.
+  const doc = docOf({ 'raise-request': raiseByDepartment });
+  assert.deepEqual(viewableDepartmentsFor(doc, { userId: 'asha' }), ['D1']);
+  assert.deepEqual(viewableDepartmentsFor(doc, { userId: 'bimal' }), ['D1', 'D2'], 'alternates count, across departments');
+  assert.equal(viewableDepartmentsFor(doc, { userId: 'chitra' }), null, 'not named anywhere: roles decide');
+  assert.equal(viewableDepartmentsFor(doc, { userId: '' }), null);
+
+  // Edit and Import by department add departments; other actions do not count.
+  const spread = docOf({
+    'raise-request': raiseByDepartment,
+    'edit-request': { mode: 'assigned-only', type: 'department', byDepartment: { D3: { primary: ['asha'], alternates: [] } } },
+    'manage-serials': { type: 'department', byDepartment: { D4: { primary: ['asha'], alternates: [] } } },
+  });
+  assert.deepEqual(viewableDepartmentsFor(spread, { userId: 'asha' }), ['D1', 'D3']);
+
+  // Named on a request action for every department — as a person, by role or by amount — is not limited.
+  for (const everywhere of [
+    { type: 'users', users: { primary: ['asha'], alternates: [] } },
+    { type: 'roles', roles: { primary: ['role-accounts'], alternates: [] } },
+    { type: 'roles', roles: { primary: ['role-other'], alternates: ['asha'] } },
+    { type: 'amount', bands: [{ id: 'b', from: 0, to: null, primary: [], alternates: ['asha'] }] },
+  ]) {
+    const mixed = docOf({ 'raise-request': raiseByDepartment, 'edit-request': everywhere });
+    assert.equal(viewableDepartmentsFor(mixed, { userId: 'asha', roleIds: ['role-accounts'] }), null, everywhere.type);
+  }
+  // …but a role the person does not hold names someone else.
+  const otherRole = docOf({ 'raise-request': raiseByDepartment, 'edit-request': { type: 'roles', roles: { primary: ['role-x'], alternates: [] } } });
+  assert.deepEqual(viewableDepartmentsFor(otherRole, { userId: 'asha', roleIds: ['role-accounts'] }), ['D1']);
+
+  // Turned off, nobody is limited.
+  const off = resolveExpensesRolesDoc({ limitViewToAssignedDepartments: false, actions: { 'raise-request': raiseByDepartment } });
+  assert.equal(viewableDepartmentsFor(off, { userId: 'asha' }), null);
+});
+
 test('the audit log gets readable before/after lines', () => {
   const flat = flattenExpensesRoles(
     docOf({ 'manage-accounts': { mode: 'assigned-only', users: { primary: ['u1'], alternates: ['u2'] } } }),
@@ -159,4 +204,5 @@ test('the audit log gets readable before/after lines', () => {
   assert.equal(flat['Manage Head / Sub-Head of A/c · people'], 'Asha');
   assert.equal(flat['Manage Head / Sub-Head of A/c · alternatives'], 'Bimal');
   assert.equal(flat['Raise an expense request · people'], '—');
+  assert.equal(flat['Department visibility'], 'People named by department see only those departments');
 });

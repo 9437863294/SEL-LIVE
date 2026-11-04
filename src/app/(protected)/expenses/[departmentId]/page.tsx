@@ -130,7 +130,7 @@ export default function DepartmentExpensesPage() {
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
   const { can } = useAuthorization();
-  const { may } = useExpensesActor();
+  const { may, canViewDepartment, isLoading: isActorLoading } = useExpensesActor();
 
   // Columns, form fields and data rules are module configuration now — see
   // Expenses › Settings › Table & Field Configuration.
@@ -181,11 +181,10 @@ export default function DepartmentExpensesPage() {
     setFilters(previous => ({ ...previous, dateRange: preset ? { from: preset.from, to: preset.to } : undefined }));
   }, [settings.data.defaultDateRange, hasTouchedDate]);
 
-  // 'View All' lives on Expenses.Expense Requests, not on the module node — asking the module for it
-  // was a clause that could never be true, so anyone holding the consolidated-view grant was sent to
-  // Access Denied by the very department cards the overview page had just listed for them.
-  const canViewPage =
-    can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses.Expense Requests');
+  // The overview's own test, so a card it shows always opens and a typed URL to someone else's
+  // department does not: `View All` on Expense Requests, or the role's View within the departments
+  // Settings › User Roles places the user in.
+  const canViewPage = canViewDepartment(departmentId);
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
 
   /**
@@ -320,10 +319,10 @@ export default function DepartmentExpensesPage() {
   }, [departmentId, toast]);
 
   useEffect(() => {
-    if (!departmentId || isAuthLoading) return;
+    if (!departmentId || isAuthLoading || isActorLoading) return;
     if (!canViewPage) { setIsLoading(false); return; }
     fetchData();
-  }, [departmentId, isAuthLoading, canViewPage, fetchData]);
+  }, [departmentId, isAuthLoading, isActorLoading, canViewPage, fetchData]);
 
   const getProjectName = (projectId: string) =>
     projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
@@ -584,7 +583,7 @@ export default function DepartmentExpensesPage() {
     }
   };
 
-  if (isLoading || isAuthLoading) {
+  if (isLoading || isAuthLoading || isActorLoading) {
     return (
       <div className="w-full space-y-4">
         <div className="flex items-center justify-between">

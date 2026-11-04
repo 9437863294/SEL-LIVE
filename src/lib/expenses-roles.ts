@@ -231,6 +231,12 @@ export const emptyAssignment = (): ExpensesActionAssignment => ({
 
 export interface ExpensesRolesDoc {
   actions: Record<string, ExpensesActionAssignment>;
+  /**
+   * Whether a person named for particular departments (see `viewableDepartmentsFor`) sees only
+   * those. On unless an administrator turns it off: a role grant on Expenses › Departments cannot
+   * name a department, so without this anyone allowed to view one department sees every one.
+   */
+  limitViewToAssignedDepartments: boolean;
 }
 
 const asStrings = (value: unknown): string[] =>
@@ -249,7 +255,8 @@ const asNumberOrNull = (value: unknown): number | null => {
 
 /** A stored document read back safely: unknown actions dropped, missing parts defaulted. */
 export function resolveExpensesRolesDoc(raw: unknown): ExpensesRolesDoc {
-  const stored = ((raw ?? {}) as Partial<ExpensesRolesDoc>).actions ?? {};
+  const saved = (raw ?? {}) as Partial<ExpensesRolesDoc>;
+  const stored = saved.actions ?? {};
   const actions: Record<string, ExpensesActionAssignment> = {};
   for (const def of EXPENSES_ACTIONS) {
     const held = (stored as Record<string, unknown>)[def.key];
@@ -280,7 +287,7 @@ export function resolveExpensesRolesDoc(raw: unknown): ExpensesRolesDoc {
         : [],
     };
   }
-  return { actions };
+  return { actions, limitViewToAssignedDepartments: saved.limitViewToAssignedDepartments !== false };
 }
 
 export const assignmentFor = (doc: ExpensesRolesDoc, key: ExpensesActionKey): ExpensesActionAssignment =>
@@ -411,6 +418,55 @@ export function mayAct(
   }
 }
 
+/* ── which departments a person sees ────────────────────────────────────────────────────────── */
+
+/** The request actions whose by-department assignment says which departments a person works in. */
+export const DEPARTMENT_WORK_ACTIONS: readonly ExpensesActionKey[] = ['raise-request', 'edit-request', 'import-requests'];
+
+/** Whether an assignment names this person whatever the department — by person, role or amount. */
+function namedForEveryDepartment(assignment: ExpensesActionAssignment, actor: Actor): boolean {
+  const roleIds = actor.roleIds ?? [];
+  const inPair = (pair: ActorPair) => pair.primary.includes(actor.userId) || pair.alternates.includes(actor.userId);
+  switch (assignment.type) {
+    case 'roles':
+      return assignment.roles.alternates.includes(actor.userId) || assignment.roles.primary.some(id => roleIds.includes(id));
+    case 'amount':
+      return assignment.bands.some(inPair);
+    case 'department':
+      return false;
+    default:
+      return inPair(assignment.users);
+  }
+}
+
+/**
+ * The departments this person is limited to seeing in Expenses, or null when they are not limited.
+ *
+ * Being named "By department" on raising, editing or importing requests (any authority mode — the
+ * record of where someone works is the same whether or not it is enforced) limits a person to
+ * those departments. Being named on one of those actions in a way that covers every department —
+ * as a person, through a role, or in an amount band — means they work across all of them, so they
+ * are not limited. Nobody named anywhere is not limited either: roles decide, as before.
+ *
+ * This only ever narrows. The caller still asks the role whether the department may be viewed;
+ * a department on this list is one the person *may at most* see.
+ */
+export function viewableDepartmentsFor(doc: ExpensesRolesDoc, actor: Actor): string[] | null {
+  if (!doc.limitViewToAssignedDepartments || !actor.userId) return null;
+  const departments = new Set<string>();
+  for (const key of DEPARTMENT_WORK_ACTIONS) {
+    const assignment = assignmentFor(doc, key);
+    if (assignment.type !== 'department') {
+      if (namedForEveryDepartment(assignment, actor)) return null;
+      continue;
+    }
+    for (const [departmentId, pair] of Object.entries(assignment.byDepartment)) {
+      if (pair.primary.includes(actor.userId) || pair.alternates.includes(actor.userId)) departments.add(departmentId);
+    }
+  }
+  return departments.size ? [...departments].sort() : null;
+}
+
 /* ── checking the set-up ────────────────────────────────────────────────────────────────────── */
 
 export interface RolesIssue {
@@ -518,6 +574,9 @@ export function flattenExpensesRoles(
 ): Record<string, string> {
   const flat: Record<string, string> = {};
   const list = (ids: readonly string[]) => (ids.length ? ids.map(nameOf).join(', ') : '—');
+  flat['Department visibility'] = doc.limitViewToAssignedDepartments
+    ? 'People named by department see only those departments'
+    : 'Roles alone decide which departments people see';
   for (const def of EXPENSES_ACTIONS) {
     const assignment = assignmentFor(doc, def.key);
     flat[`${def.title} · authority`] = MODE_LABELS[assignment.mode].title;

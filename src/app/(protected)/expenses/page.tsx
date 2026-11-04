@@ -95,7 +95,7 @@ export default function ExpensesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const { may } = useExpensesActor();
+  const { may, canViewDepartment, isLoading: isActorLoading } = useExpensesActor();
   const canViewModule = can('View Module', 'Expenses');
 
   useEffect(() => {
@@ -120,12 +120,10 @@ export default function ExpensesPage() {
     fetchDepartments();
   }, [isAuthLoading, canViewModule]);
 
+  /** Only the user's own departments when Settings › User Roles names them by department. */
   const visibleDepartments = useMemo(
-    () =>
-      departments.filter(
-        dept => can('View', 'Expenses.Departments', dept.id) || can('View All', 'Expenses.Expense Requests'),
-      ),
-    [departments, can],
+    () => departments.filter(dept => canViewDepartment(dept.id)),
+    [departments, canViewDepartment],
   );
 
   const departmentItems = useMemo(
@@ -149,7 +147,8 @@ export default function ExpensesPage() {
     [visibleDepartments, may],
   );
 
-  if (isAuthLoading || (isLoading && canViewModule)) {
+  // Waits for User Roles as well, so a department-limited user never glimpses every department first.
+  if (isAuthLoading || isActorLoading || (isLoading && canViewModule)) {
     return (
       <div className="w-full space-y-6">
         <Skeleton className="h-10 w-64" />

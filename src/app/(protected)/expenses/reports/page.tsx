@@ -20,7 +20,7 @@
  * those. The Payments reports read Daily Requisition too, scoped the same way.
  */
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { collection, getDocs, query, where, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
@@ -74,13 +74,6 @@ import type { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
 
-/**
- * A department id no grant can name. `can('View', 'Expenses.Departments', …)` passes it only for a
- * grant that covers every department (module-wide `View All`, or `View` on all departments) —
- * never for a grant on particular departments — which is how the page tells the two apart.
- */
-const ANY_DEPARTMENT_PROBE = '__any_department__';
-
 /** Firestore's cap on the values of one `in` filter. */
 const IN_QUERY_LIMIT = 30;
 
@@ -131,7 +124,13 @@ function ReportCell({ column, row }: { column: ExpenseReportColumn; row: Expense
 
 function ReportCentre() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const { may, restrictedToAssignees } = useExpensesActor();
+  const {
+    may,
+    restrictedToAssignees,
+    canViewDepartment,
+    seesEveryDepartment,
+    isLoading: isActorLoading,
+  } = useExpensesActor();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   // Which report is showing comes from the URL, so a report can be linked to and survives a refresh
@@ -153,14 +152,10 @@ function ReportCentre() {
   const canExport =
     exportDecision.allowed || (!restrictedToAssignees('export-reports') && canViewPage);
 
-  // The same test the department registers make: `View All` on Expense Requests sees everything;
-  // anyone else sees the departments they may open.
+  // The same test the department registers make (`useExpensesActor`): `View All` on Expense
+  // Requests sees everything; anyone else sees the departments they may open — for someone
+  // Settings › User Roles names by department, only those.
   const canViewAll = can('View All', 'Expenses.Expense Requests');
-  const seesEveryDepartment = canViewAll || can('View', 'Expenses.Departments', ANY_DEPARTMENT_PROBE);
-  const canViewDepartment = useCallback(
-    (departmentId: string) => canViewAll || can('View', 'Expenses.Departments', departmentId),
-    [canViewAll, can],
-  );
 
   const [isLoading, setIsLoading] = useState(true);
   const [expenses, setExpenses] = useState<EnrichedExpense[]>([]);
@@ -187,7 +182,8 @@ function ReportCentre() {
   }, [scopedDepartmentId]);
 
   useEffect(() => {
-    if (isAuthLoading) return;
+    // User Roles decides which departments are fetched, so the read waits for it.
+    if (isAuthLoading || isActorLoading) return;
     if (!canViewPage) {
       setIsLoading(false);
       return;
@@ -264,7 +260,7 @@ function ReportCentre() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthLoading, canViewPage, seesEveryDepartment, canViewDepartment, toast]);
+  }, [isAuthLoading, isActorLoading, canViewPage, seesEveryDepartment, canViewDepartment, toast]);
 
   /**
    * The only requests any report, the pivot or an export ever sees. The fetch is already scoped;

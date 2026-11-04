@@ -30,6 +30,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Eye,
   FileText,
   FlaskConical,
   Loader2,
@@ -64,6 +65,7 @@ import {
 } from '@/lib/access-control';
 import {
   ASSIGNMENT_LABELS,
+  DEPARTMENT_WORK_ACTIONS,
   EXPENSES_ACTIONS,
   EXPENSES_ACTION_GROUPS,
   MODE_LABELS,
@@ -73,6 +75,7 @@ import {
   mayAct,
   resolveExpensesRolesDoc,
   validateExpensesRoles,
+  viewableDepartmentsFor,
   type ActionMode,
   type ActorPair,
   type AmountBand,
@@ -89,6 +92,7 @@ import {
   ControlCard,
   IssueList,
   ReadOnlyNotice,
+  RuleRow,
   stampLine,
 } from '@/components/expenses/settings-control-kit';
 import type { ExpenseSettingsIssue } from '@/lib/expenses-settings';
@@ -99,6 +103,7 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 /** Radix Select cannot hold an empty item value, so "nothing chosen" travels as this. */
@@ -1030,13 +1035,44 @@ export default function ExpensesUserRolesPage() {
   const setAssignment = (key: ExpensesActionKey, next: ExpensesActionAssignment) =>
     setDraft(current => {
       const base = current ?? remote;
-      return { actions: { ...base.actions, [key]: next } };
+      return { ...base, actions: { ...base.actions, [key]: next } };
     });
+
+  const setLimitView = (limitViewToAssignedDepartments: boolean) =>
+    setDraft(current => ({ ...(current ?? remote), limitViewToAssignedDepartments }));
+
+  /**
+   * Who the department limit actually narrows, as it stands on this page — people named by
+   * department on the request actions, and the departments they are left with. Role ids come from
+   * the person's role name, as the session resolves them.
+   */
+  const limitedPeople = useMemo(() => {
+    const roleIdByName = new Map(roles.map(entry => [entry.name, entry.id]));
+    const named = new Set<string>();
+    for (const key of DEPARTMENT_WORK_ACTIONS) {
+      for (const pair of Object.values(assignmentFor(value, key).byDepartment)) {
+        for (const id of [...pair.primary, ...pair.alternates]) named.add(id);
+      }
+    }
+    return [...named]
+      .map(userId => {
+        const person = userById.get(userId);
+        const roleId = person?.role ? roleIdByName.get(person.role) : undefined;
+        const departmentIds = viewableDepartmentsFor(value, {
+          userId,
+          roleIds: [person?.role, roleId].filter(Boolean) as string[],
+        });
+        return departmentIds ? { userId, name: nameOf(userId), departments: departmentIds.map(departmentName) } : null;
+      })
+      .filter((entry): entry is { userId: string; name: string; departments: string[] } => entry !== null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [value, roles, userById, nameOf, departmentName]);
 
   /* ── save ── */
 
   /** Plain arrays and nulls only; `undefined` is what Firestore rejects. */
   const buildPayload = () => ({
+    limitViewToAssignedDepartments: value.limitViewToAssignedDepartments,
     actions: Object.fromEntries(
       EXPENSES_ACTIONS.map(def => {
         const assignment = assignmentFor(value, def.key);
@@ -1097,12 +1133,17 @@ export default function ExpensesUserRolesPage() {
       );
       setDraft(resolveExpensesRolesDoc(payload));
       setAwaitingFrom(remoteKey);
+      const limited = value.limitViewToAssignedDepartments ? limitedPeople.length : 0;
       toast({
         title: 'Assignments saved',
-        description:
+        description: [
           enforcedCount === 0
-            ? 'Recorded for reference. Who may act in Expenses is unchanged.'
+            ? 'Who may act in Expenses is unchanged.'
             : `${enforcedCount} ${enforcedCount === 1 ? 'action is' : 'actions are'} now decided by these assignments.`,
+          limited > 0 ? `${limited} ${limited === 1 ? 'person sees' : 'people see'} only their departments.` : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       });
     } catch (error) {
       console.error('Could not save the Expenses user roles:', error);
@@ -1294,6 +1335,51 @@ export default function ExpensesUserRolesPage() {
       </p>
 
       <IssueList issues={issues} />
+
+      {/* ── who sees which departments ── */}
+      <ControlCard
+        icon={Eye}
+        title="Department visibility"
+        description="Which departments’ requests, registers and reports people see."
+      >
+        <div className="space-y-3">
+          <RuleRow
+            title="People named by department see only those departments"
+            hint="Anyone named for particular departments under Raise, Edit or Import requests sees only those — the overview cards, the registers, New Request and the report figures. A role’s View on Expenses › Departments cannot name a department, so without this it opens every one. People with View All on Expense Requests, and people not named by department, are not affected."
+            control={
+              <Switch
+                checked={value.limitViewToAssignedDepartments}
+                disabled={!canEdit}
+                onCheckedChange={setLimitView}
+                aria-label="People named by department see only those departments"
+              />
+            }
+          />
+          {value.limitViewToAssignedDepartments && (
+            limitedPeople.length === 0 ? (
+              <p className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+                Nobody is named by department yet, so this limits nobody. Choose “By department” on Raise, Edit or Import
+                requests below to place people in their departments.
+              </p>
+            ) : (
+              <div className="rounded-lg border bg-slate-50/60">
+                <p className="border-b px-3 py-1.5 text-[11px] font-medium text-slate-600">
+                  {limitedPeople.length} {limitedPeople.length === 1 ? 'person sees' : 'people see'} only their departments
+                  {isDirty ? ' (with the unsaved changes)' : ''}
+                </p>
+                <ul className="max-h-48 divide-y overflow-y-auto">
+                  {limitedPeople.map(entry => (
+                    <li key={entry.userId} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-3 py-1.5 text-xs">
+                      <span className="font-medium text-slate-800">{entry.name}</span>
+                      <span className="min-w-0 text-muted-foreground">{entry.departments.join(', ')}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          )}
+        </div>
+      </ControlCard>
 
       {/* ── the actions, grouped ── */}
       {EXPENSES_ACTION_GROUPS.map(group => {

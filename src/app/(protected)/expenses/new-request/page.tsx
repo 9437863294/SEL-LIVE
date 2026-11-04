@@ -21,7 +21,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { logUserActivity } from '@/lib/activity-logger';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
@@ -36,6 +36,7 @@ import {
 import { ExpenseBadge } from '@/components/expenses/page-header';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
+import type { ActionContext, ActionDecision } from '@/lib/expenses-roles';
 import { findDuplicateRequest, resolveFormField, toIsoStamp } from '@/lib/expenses-settings';
 import { allocateRequestNos } from '@/lib/expenses-import';
 import { PageHeader } from '@/components/shared/page-header';
@@ -63,7 +64,25 @@ function NewExpenseRequestForm() {
   // The module's own assignment is part of the answer, so the refusal below has to wait for it:
   // `assigned-only` can name someone the permission map does not, and showing Access Denied for the
   // moment before the assignment arrives would turn their own page into a locked door.
-  const { may, isLoading: isActorLoading } = useExpensesActor();
+  const { may, withinViewLimit, isLoading: isActorLoading } = useExpensesActor();
+
+  /**
+   * Raising, kept to the departments Settings › User Roles places the user in: someone named for
+   * particular departments is not offered the others, whatever their role says — the same limit
+   * that keeps the other departments' registers and reports from them.
+   */
+  const mayRaise = useCallback(
+    (context: ActionContext): ActionDecision =>
+      context.departmentId && !withinViewLimit(context.departmentId)
+        ? {
+            allowed: false,
+            basis: 'none',
+            mode: 'assigned-only',
+            reason: 'You are assigned to other departments in Expenses › Settings › User Roles.',
+          }
+        : may('raise-request', context),
+    [may, withinViewLimit],
+  );
   const { settings } = useExpensesSettings();
   const searchParams = useSearchParams();
 
@@ -137,8 +156,8 @@ function NewExpenseRequestForm() {
   const watchedAmount = Number(form.watch('amount')) || 0;
 
   const creatableDepartments = useMemo(
-    () => departments.filter(dept => may('raise-request', { departmentId: dept.id, amount: watchedAmount }).allowed),
-    [departments, may, watchedAmount],
+    () => departments.filter(dept => mayRaise({ departmentId: dept.id, amount: watchedAmount }).allowed),
+    [departments, mayRaise, watchedAmount],
   );
 
   /**
@@ -146,12 +165,12 @@ function NewExpenseRequestForm() {
    * has been typed would leave nowhere to type one. The amount narrows the dropdown above.
    */
   const raisableDepartments = useMemo(
-    () => departments.filter(dept => may('raise-request', { departmentId: dept.id }).allowed),
-    [departments, may],
+    () => departments.filter(dept => mayRaise({ departmentId: dept.id }).allowed),
+    [departments, mayRaise],
   );
 
   const canUseUrlDepartment = departmentIdFromUrl
-    ? may('raise-request', { departmentId: departmentIdFromUrl }).allowed
+    ? mayRaise({ departmentId: departmentIdFromUrl }).allowed
     : true;
 
   const isDenied =
@@ -159,7 +178,7 @@ function NewExpenseRequestForm() {
 
   /** The verdict for what is on the form now — the Save button's state and the words for a refusal. */
   const raiseDecision = watchedDepartmentId
-    ? may('raise-request', { departmentId: watchedDepartmentId, amount: watchedAmount })
+    ? mayRaise({ departmentId: watchedDepartmentId, amount: watchedAmount })
     : null;
 
   useEffect(() => {
@@ -251,7 +270,7 @@ function NewExpenseRequestForm() {
     }
     // Checked again here, against the department and the amount being saved: the button is not the
     // gate, and an amount-banded assignment is only knowable once the figure is known.
-    const decision = may('raise-request', {
+    const decision = mayRaise({
       departmentId: data.departmentId,
       amount: Number(data.amount) || 0,
     });
