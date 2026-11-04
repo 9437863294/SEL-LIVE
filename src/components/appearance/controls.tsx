@@ -178,7 +178,10 @@ export interface SectionLink {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Links are shown in groups (e.g. "Company"); a new group starts with a divider and its name. */
+  /**
+   * Consecutive links with the same group share one strip, captioned with the group's name once
+   * there is more than one strip (someone who sees only their own sections gets no captions).
+   */
   group?: string;
 }
 
@@ -191,37 +194,51 @@ export interface SectionLink {
  */
 export function AppearanceSectionNav({ links }: { links: SectionLink[] }) {
   const pathname = usePathname() ?? '';
+  const groups: { name?: string; links: SectionLink[] }[] = [];
+  for (const link of links) {
+    const last = groups[groups.length - 1];
+    if (last && last.name === link.group) last.links.push(link);
+    else groups.push({ name: link.group, links: [link] });
+  }
+  const captioned = groups.length > 1;
   return (
-    <nav aria-label="Appearance sections" className="-mx-1 overflow-x-auto px-1 pb-1">
-      <ul className="flex min-w-max items-center gap-1 rounded-xl bg-muted p-1">
-        {links.map(({ href, label, icon: Icon, group }, index) => {
-          const active = href === '/settings/appearance' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
-          const startsGroup = index > 0 && group !== links[index - 1].group && Boolean(group);
-          return (
-            <li key={href} className="flex items-center gap-1">
-              {startsGroup && (
-                <span className="flex items-center gap-1.5 pl-1 pr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  <span className="h-5 w-px bg-border" aria-hidden="true" />
-                  {group}
-                </span>
-              )}
-              <Link
-                href={href}
-                replace
-                onClick={markReplaceOnPlainClick}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  active ? 'bg-[image:var(--sel-tab-gradient)] text-[color:var(--sel-tab-on)] shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+    // Each strip is as wide as its tabs, as the standard tabs are; side by side where they fit, one
+    // above the other where they do not. A strip wider than a phone scrolls sideways by itself.
+    <nav aria-label="Appearance sections" className="flex flex-wrap items-end gap-x-5 gap-y-3">
+      {groups.map((group, index) => (
+        <div key={group.name ?? index} className="min-w-0 max-w-full space-y-1.5">
+          {captioned && group.name ? (
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" aria-hidden="true">
+              {group.name}
+            </p>
+          ) : null}
+          <ul aria-label={captioned ? group.name : undefined} className="flex w-fit max-w-full items-center gap-1 rounded-xl bg-muted p-1 max-sm:overflow-x-auto">
+            {group.links.map(({ href, label, icon: Icon }) => {
+              const active = href === '/settings/appearance' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <li key={href} className="shrink-0">
+                  <Link
+                    href={href}
+                    replace
+                    onClick={markReplaceOnPlainClick}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      // The standard tabs' active pill (src/components/ui/tabs.tsx): the accent, with its glow.
+                      active
+                        ? 'bg-[image:var(--sel-tab-gradient)] text-[color:var(--sel-tab-on)] shadow-[0_6px_16px_-6px_var(--sel-tab-glow)]'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
     </nav>
   );
 }

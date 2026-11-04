@@ -23,11 +23,12 @@ export default function AppearanceLayout({ children }: { children: ReactNode }) 
   const { can } = useAuthorization();
   const rights = appearanceAdminRights(can);
   const viewCompanyProfile = can('View', COMPANY_PROFILE_RESOURCE) || can('Edit', COMPANY_PROFILE_RESOURCE);
-  const company = 'Company';
+  const personal = 'Just for you';
+  const company = 'Company-wide';
   const links: SectionLink[] = [
-    { href: '/settings/appearance', label: 'My Appearance', icon: Palette },
-    { href: '/settings/appearance/layout-navigation', label: 'Layout and Navigation', icon: LayoutPanelLeft },
-    { href: '/settings/appearance/accessibility', label: 'Accessibility', icon: Accessibility },
+    { href: '/settings/appearance', label: 'My Appearance', icon: Palette, group: personal },
+    { href: '/settings/appearance/layout-navigation', label: 'Layout and Navigation', icon: LayoutPanelLeft, group: personal },
+    { href: '/settings/appearance/accessibility', label: 'Accessibility', icon: Accessibility, group: personal },
     ...(rights.viewBranding ? [{ href: '/settings/appearance/branding', label: 'Company Branding', icon: Building2, group: company }] : []),
     ...(rights.viewThemes ? [{ href: '/settings/appearance/themes', label: 'Theme Management', icon: SwatchBook, group: company }] : []),
     ...(viewCompanyProfile || canOpenAppearanceAdmin(rights)
