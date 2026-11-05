@@ -119,6 +119,33 @@ function monthlyTrend(trips: TripRecord[], today: string, months = 6) {
 
 const sumKm = (trips: TripRecord[]) => Math.round(trips.reduce((total, trip) => total + trip.distanceKm, 0) * 10) / 10;
 
+/** A GPS route thinned to `limit` evenly spaced points (both ends kept), at ~1 m precision — enough for a thumbnail. */
+function thinPath(path: ReadonlyArray<{ lat: number; lng: number }> | undefined, limit = 40): Array<{ lat: number; lng: number }> {
+  const points = (path ?? []).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+  const round = (value: number) => Math.round(value * 1e5) / 1e5;
+  if (points.length <= limit) return points.map((point) => ({ lat: round(point.lat), lng: round(point.lng) }));
+  const step = (points.length - 1) / (limit - 1);
+  return Array.from({ length: limit }, (_, index) => {
+    const point = points[Math.round(index * step)];
+    return { lat: round(point.lat), lng: round(point.lng) };
+  });
+}
+
+/** A trip as the dashboard's "My recent trips" draws it: the route as a thumbnail, never the whole GPS record. */
+const recentTripRow = (trip: TripRecord) => ({
+  id: trip.id,
+  tripDate: trip.tripDate,
+  fromPlace: trip.fromPlace,
+  toPlace: trip.toPlace,
+  distanceKm: trip.distanceKm,
+  amount: trip.decision ? trip.decision.approvedAmount : trip.totalAmount,
+  status: trip.status,
+  ownership: trip.ownership,
+  vehicleType: trip.vehicleType,
+  vehicleNumber: trip.vehicleNumber,
+  path: thinPath(trip.gps?.path),
+});
+
 const claimRow = (claim: TripClaim) => ({
   id: claim.id,
   claimNumber: claim.claimNumber,
@@ -164,6 +191,13 @@ export async function dashboard(context: TripContext) {
     },
     trend: monthlyTrend(myTrips, context.today),
     recentClaims: myClaims.slice(0, 5).map(claimRow),
+    // Newest first (listMyTrips' order).
+    recentTrips: myTrips.slice(0, 5).map(recentTripRow),
+    /** The own vehicle of the newest own-vehicle trip — the one the employee claims for. */
+    lastOwnVehicle: (() => {
+      const trip = myTrips.find((entry) => entry.ownership === 'own' && entry.vehicleNumber);
+      return trip ? { vehicleNumber: trip.vehicleNumber, vehicleType: trip.vehicleType, tripDate: trip.tripDate } : null;
+    })(),
   };
 
   const named = namedStageKinds(settings, context.userId);

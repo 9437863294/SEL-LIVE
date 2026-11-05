@@ -137,6 +137,23 @@ export interface Tally {
   trips: number;
 }
 
+/** A trip on the dashboard's "My recent trips": its route thinned to a thumbnail. */
+export interface RecentTrip {
+  id: string;
+  tripDate: string;
+  fromPlace: string;
+  toPlace: string;
+  distanceKm: number;
+  /** The approved amount once an approver decided, else the claimed one. */
+  amount: number;
+  status: TripRecord['status'];
+  ownership: TripRecord['ownership'];
+  vehicleType: string;
+  vehicleNumber: string;
+  /** Up to 40 points of the GPS route; empty for a trip typed in by hand. */
+  path: Array<{ lat: number; lng: number }>;
+}
+
 export interface DashboardData {
   today: string;
   financialYear: string;
@@ -149,6 +166,9 @@ export interface DashboardData {
     ownership: { own: number; company: number };
     trend: TrendPoint[];
     recentClaims: ClaimRow[];
+    /** Absent from a server older than the redesigned Overview. */
+    recentTrips?: RecentTrip[];
+    lastOwnVehicle?: { vehicleNumber: string; vehicleType: string; tripDate: string } | null;
   };
   workflow: (InboxCounts & { oldest: ClaimRow[] }) | null;
   organisation: {

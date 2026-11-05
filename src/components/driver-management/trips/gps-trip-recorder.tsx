@@ -84,9 +84,10 @@ import { LiveRecordingCard } from '../live-recording-card';
 import { reverseGeocode, type Bootstrap } from './trip-api';
 import { OwnReviewDialog, type OwnReview } from './own-review-dialog';
 import { OwnStartDialog } from './own-start-dialog';
+import { OWN_TRIP_STORAGE_KEY } from './own-trip-in-flight';
 
 /** Survives a backgrounded tab or an accidental reload — losing a driven trip is unforgivable. */
-const STORAGE_KEY = 'driver-management.gps-trip.v1';
+const STORAGE_KEY = OWN_TRIP_STORAGE_KEY;
 
 /** Firestore caps a document at 1 MB; a four-hour drive at one fix per 10s is 1,440 points. */
 const MAX_SAVED_PATH_POINTS = 500;

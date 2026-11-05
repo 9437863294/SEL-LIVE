@@ -1,21 +1,24 @@
 'use client';
 
 /**
- * Driver Management's landing page: figures, not links (the sidebar navigates).
+ * Driver Management's landing page, after the "SEL – My Trips" mock-up: figures and the next thing
+ * to do, not a page of links (the sidebar navigates).
  *
- * - Everyone: a hero with this month's reimbursement and the two things people come here to do
- *   (start a trip — or return to the one running — and claim what is unclaimed); where their money
- *   is, stage by stage; their monthly reimbursement, own-vs-company kilometres and latest claims.
- * - Drivers linked to a Vehicle Management driver record: their vehicle and driving figures
- *   (`DriverPanel`, which replaced the separate Driver Mobile hub page).
+ * - Everyone: a hero with this month's reimbursement and the round Start trip button (red, with a
+ *   live panel, while a fleet trip or a recorded own-vehicle trip is running); where their money is,
+ *   stage by stage; their latest trips with the route drawn; their vehicle and six months of km;
+ *   the rate card in effect today.
+ * - Drivers linked to a Vehicle Management driver record: the vehicle card is theirs — the assigned
+ *   vehicle, fleet trips and fuel (`DriverPanel`, which replaced the separate Driver Mobile hub page).
  * - People named on the workflow (or holding Override): what waits for them, oldest first.
  * - Trip Claims · View All: the organisation's pipeline, trend, projects and top claimants.
  *
  * `TripDashboardView` draws it from the dashboard payload alone, so it renders without the API.
  */
 
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, CalendarClock, Clock, Gauge, Inbox, Undo2, Wallet } from 'lucide-react';
+import { ArrowRight, CalendarClock, Clock, Gauge, Undo2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
@@ -23,55 +26,17 @@ import { SectionHeader } from '@/components/shared/page-header';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { useFleet } from '@/components/fleet/fleet-provider';
 import { DriverPanel } from '@/components/driver-management/driver-app/driver-panel';
-import { formatINRCompact } from '@/lib/employee-trips/rates';
-import { cn } from '@/lib/utils';
-import type { ClaimRow, DashboardData } from './trip-api';
+import { shortPlace } from '@/lib/fleet/places';
+import { FLEET_CATEGORY_LABELS } from '@/lib/fleet/types';
+import { formatINR, formatINRCompact, rateFor, revisionOn } from '@/lib/employee-trips/rates';
+import { formatKm } from '@/lib/employee-trips/types';
+import type { Bootstrap, DashboardData } from './trip-api';
+import { useTripClaims } from './trip-claims-provider';
 import { useTripQuery } from './use-trip-query';
 import { ChartCard, MonthlyAmountChart, OwnershipSplit, RankedAmounts } from './trip-charts';
-import { ClaimJourney, OverviewHero, PipelineBar } from './overview-parts';
-import { ClaimStatusBadge, ErrorBlock, Money, shortDate } from './trip-ui';
-
-const STATUS_DOT: Record<ClaimRow['status'], string> = {
-  pending: 'bg-amber-400',
-  approved: 'bg-violet-500',
-  paid: 'bg-emerald-500',
-  returned: 'bg-amber-400',
-  rejected: 'bg-rose-500',
-  withdrawn: 'bg-slate-300',
-};
-
-function ClaimRows({ rows, showEmployee, empty }: { rows: ClaimRow[]; showEmployee?: boolean; empty: string }) {
-  const router = useRouter();
-  if (!rows.length) return <p className="py-6 text-center text-sm text-muted-foreground">{empty}</p>;
-  return (
-    <ul className="-mx-2 divide-y divide-slate-100">
-      {rows.map((row) => (
-        <li key={row.id}>
-          <button type="button" onClick={() => router.push(`/driver-management/claims/${row.id}`)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-slate-50">
-            <span className={cn('h-2 w-2 shrink-0 rounded-full', STATUS_DOT[row.status])} aria-hidden />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-slate-800">
-                {showEmployee ? row.employeeName : row.claimNumber}
-                {showEmployee ? <span className="font-normal text-muted-foreground"> · {row.claimNumber}</span> : null}
-              </span>
-              <span className={cn('block truncate text-xs', row.overdue ? 'text-rose-700' : 'text-muted-foreground')}>
-                {row.status === 'paid'
-                  ? `Paid ${shortDate(row.paidOn)}`
-                  : row.waitingFor.length
-                    ? `${row.stageName} · ${row.waitingFor.join(', ')}${row.overdue ? ' · overdue' : ''}`
-                    : `${row.totals.tripCount} trips · submitted ${shortDate(row.submittedAt)}`}
-              </span>
-            </span>
-            <span className="flex shrink-0 flex-col items-end gap-1">
-              <Money value={row.status === 'pending' ? row.totals.claimedAmount : row.totals.approvedAmount} className="text-sm font-semibold text-slate-800" />
-              <ClaimStatusBadge status={row.status} />
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
+import { MoneyPipeline, OverviewHero, PipelineBar, RatesCard, RecentTrips, VehicleCard, WaitingCard, type LiveTrip } from './overview-parts';
+import { ownTripInFlight } from './own-trip-in-flight';
+import { ErrorBlock } from './trip-ui';
 
 function Notice({ icon: Icon, children, action, onAction }: { icon: React.ElementType; children: React.ReactNode; action: string; onAction: () => void }) {
   return (
@@ -86,31 +51,64 @@ function Notice({ icon: Icon, children, action, onAction }: { icon: React.Elemen
   );
 }
 
+/** The two columns: the money and the trips on the left, the vehicle and the rates beside them. */
+const COLUMNS = 'grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]';
+
 function DashboardSkeleton() {
   return (
-    <div className="space-y-5" aria-busy="true">
-      <Skeleton className="h-52 w-full rounded-2xl sm:h-48" />
-      <Skeleton className="h-36 w-full rounded-2xl lg:h-28" />
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Skeleton className="h-72 w-full rounded-xl lg:col-span-2" />
-        <Skeleton className="h-72 w-full rounded-xl" />
+    <div className="space-y-4" aria-busy="true">
+      <Skeleton className="h-80 w-full rounded-3xl sm:h-64 lg:h-52" />
+      <div className={COLUMNS}>
+        <div className="space-y-4">
+          <Skeleton className="h-56 w-full rounded-[20px]" />
+          <Skeleton className="h-80 w-full rounded-[20px]" />
+        </div>
+        <div className="space-y-4">
+          <Skeleton className="h-96 w-full rounded-[20px]" />
+          <Skeleton className="h-44 w-full rounded-[20px]" />
+        </div>
       </div>
     </div>
   );
+}
+
+export interface RateSummary {
+  rows: Array<{ label: string; value: string }>;
+  footnote?: string;
+}
+
+/** The rate card in effect today, the claim window and who claims go to first — from the trip-claims bootstrap. */
+function rateSummary(bootstrap: Bootstrap): RateSummary {
+  const revision = revisionOn(bootstrap.settings.rateRevisions, bootstrap.today);
+  const rows: RateSummary['rows'] = (revision?.rates ?? [])
+    .filter((row) => typeof row.own === 'number')
+    .map((row) => ({ label: `Own ${row.vehicleType.trim().toLowerCase()}`, value: `${formatINR(row.own)} / km` }));
+  if (!rows.length) rows.push({ label: 'Own vehicle', value: 'No rate set yet' });
+  const window = bootstrap.settings.rules.claimWindowDays;
+  if (window) rows.push({ label: 'Claim within', value: `${window} days of the trip` });
+  const first = bootstrap.firstApproval;
+  if (first.dependsOnTrips) rows.push({ label: 'Claims go first to', value: `${first.stageName} · by project` });
+  else if (first.names.length) rows.push({ label: 'Claims go first to', value: first.names.join(', ') });
+  const from = revision ? new Date(`${revision.effectiveFrom}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  return { rows, footnote: from ? `Rates in effect from ${from}. A trip is paid at the rate on its date.` : undefined };
 }
 
 export function TripDashboardView({
   data,
   error,
   onRetry,
-  openTrip,
+  liveTrip,
   driverPanel,
+  rates,
 }: {
   data: DashboardData | null;
   error: string | null;
   onRetry?: () => void;
-  openTrip: { vehicleNumber: string } | null;
+  /** A trip running now, if any. */
+  liveTrip: LiveTrip | null;
+  /** A Driver Master driver's own vehicle card; everyone else gets theirs from `data`. */
   driverPanel?: React.ReactNode;
+  rates?: RateSummary | null;
 }) {
   const router = useRouter();
   if (error && !data) return <ErrorBlock message={error} onRetry={onRetry} />;
@@ -118,17 +116,11 @@ export function TripDashboardView({
 
   const { personal, workflow, organisation } = data;
   const toMyTrips = () => router.push('/driver-management/my-trips');
+  const own = personal.lastOwnVehicle ?? null;
 
   return (
-    <div className="space-y-5">
-      <OverviewHero
-        today={data.today}
-        financialYear={data.financialYear}
-        personal={personal}
-        openTrip={openTrip}
-        onStart={() => router.push('/driver-management/fleet?kind=choose')}
-        onClaim={() => router.push('/driver-management/my-trips?claim=1')}
-      />
+    <div className="space-y-4">
+      <OverviewHero today={data.today} personal={personal} liveTrip={liveTrip} onStart={() => router.push('/driver-management/fleet?kind=choose')} />
 
       {(personal.unclaimed.expiringSoon > 0 || personal.unclaimed.sentBack > 0) && (
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -145,63 +137,36 @@ export function TripDashboardView({
         </div>
       )}
 
-      <ClaimJourney personal={personal} financialYear={data.financialYear} />
-
-      {workflow && (
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700" aria-hidden>
-                <Inbox className="h-5 w-5" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold text-slate-800">Waiting for you</h2>
-                <p className="text-xs text-muted-foreground">Claims at a stage you are named on, oldest first.</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-6">
-              <div>
-                <p className="text-[11px] font-medium text-muted-foreground">To approve</p>
-                <p className="text-lg font-semibold tabular-nums text-slate-900">{workflow.approvals}</p>
-                <p className="truncate text-[11px] text-muted-foreground">{formatINRCompact(workflow.approvalsAmount)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-medium text-muted-foreground">To pay</p>
-                <p className="text-lg font-semibold tabular-nums text-slate-900">{workflow.payments}</p>
-                <p className="truncate text-[11px] text-muted-foreground">{formatINRCompact(workflow.paymentsAmount)}</p>
-              </div>
-              <div>
-                <p className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
-                  <Clock className="h-3 w-3" aria-hidden />
-                  Overdue
-                </p>
-                <p className={cn('text-lg font-semibold tabular-nums', workflow.overdue ? 'text-rose-700' : 'text-slate-900')}>{workflow.overdue}</p>
-                <p className="truncate text-[11px] text-muted-foreground">past the stage&apos;s time</p>
-              </div>
-            </div>
-          </div>
-          <div className="px-4 py-2">
-            <ClaimRows rows={workflow.oldest} showEmployee empty="Nothing is waiting for you." />
-          </div>
-        </section>
-      )}
-
-      {driverPanel}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2">
-          <ChartCard title="My reimbursement by month" description="Last six months, by trip date — approved figures where an approver changed them.">
-            <MonthlyAmountChart points={personal.trend} label="My reimbursement by month" />
-          </ChartCard>
+      <div className={COLUMNS}>
+        <div className="min-w-0 space-y-4">
+          <MoneyPipeline personal={personal} financialYear={data.financialYear} />
+          <RecentTrips trips={personal.recentTrips ?? []} />
+          {workflow && <WaitingCard workflow={workflow} />}
         </div>
-        <div className="flex min-w-0 flex-col gap-4">
-          <ChartCard title="Own vs company vehicle" description="Kilometres over the last six months.">
-            <OwnershipSplit own={personal.ownership.own} company={personal.ownership.company} />
-          </ChartCard>
-          <ChartCard title="My latest claims">
-            <ClaimRows rows={personal.recentClaims} empty="No claims yet — submit trips from My Trips." />
-          </ChartCard>
-        </div>
+        <aside className="min-w-0 space-y-4" aria-label="My vehicle and rates">
+          {driverPanel ?? (
+            <VehicleCard
+              subtitle="The vehicle you claim for, and the km you drove"
+              vehicle={
+                own
+                  ? {
+                      number: own.vehicleNumber,
+                      caption: `Own ${own.vehicleType.trim().toLowerCase() || 'vehicle'} · last used ${new Date(`${own.tripDate}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+                    }
+                  : null
+              }
+              emptyNote="Your vehicle appears here after your first own-vehicle trip."
+              stats={[
+                { label: 'Trip now', value: liveTrip ? 'Running' : 'Not running', href: '/driver-management/fleet', live: Boolean(liveTrip) },
+                { label: 'Trips this month', value: String(personal.thisMonth.trips), href: '/driver-management/my-trips' },
+                { label: 'Km this month', value: formatKm(personal.thisMonth.km) },
+                { label: 'Not yet claimed', value: formatINRCompact(personal.unclaimed.amount), href: '/driver-management/my-trips' },
+              ]}
+              trend={personal.trend}
+            />
+          )}
+          {rates && <RatesCard rows={rates.rows} footnote={rates.footnote} />}
+        </aside>
       </div>
 
       {organisation && (
@@ -248,15 +213,48 @@ export function TripDashboardView({
 export default function TripDashboard() {
   const { driver } = useCurrentDriverProfile();
   const fleet = useFleet();
+  const { data: bootstrap } = useTripClaims();
   const { data, error, reload } = useTripQuery<DashboardData>('dashboard');
+  // Read once: the page shows a skeleton until the dashboard loads, so the server render (no
+  // storage) and the first client render agree. Stopping the trip happens on Fleet Trip.
+  const [ownTrip] = useState(() => (typeof window === 'undefined' ? null : ownTripInFlight()));
+
   const openTrip = fleet.data?.openTrip ?? null;
+  const today = bootstrap?.today ?? data?.today ?? null;
+  const liveTrip = useMemo<LiveTrip | null>(() => {
+    if (openTrip) {
+      return {
+        kind: 'company',
+        vehicle: `${openTrip.vehicleNumber} · company ${(FLEET_CATEGORY_LABELS[openTrip.vehicleCategory] ?? 'vehicle').toLowerCase()}`,
+        startedAt: openTrip.startedAt,
+        distanceKm: openTrip.gpsDistanceKm,
+        detail: openTrip.purposeName || openTrip.projectName,
+        ratePerKm: null,
+      };
+    }
+    if (ownTrip) {
+      const rate = bootstrap && today ? rateFor(bootstrap.settings.rateRevisions, today, ownTrip.vehicleType, 'own').ratePerKm : null;
+      return {
+        kind: 'own',
+        vehicle: [ownTrip.vehicleNumber, `own ${ownTrip.vehicleType.trim().toLowerCase() || 'vehicle'}`].filter(Boolean).join(' · '),
+        startedAt: ownTrip.startedAtIso,
+        distanceKm: null,
+        detail: shortPlace(ownTrip.fromPlace) || ownTrip.purpose,
+        ratePerKm: rate,
+      };
+    }
+    return null;
+  }, [bootstrap, openTrip, ownTrip, today]);
+  const rates = useMemo(() => (bootstrap ? rateSummary(bootstrap) : null), [bootstrap]);
+
   return (
     <TripDashboardView
       data={data}
       error={error}
       onRetry={reload}
-      openTrip={openTrip ? { vehicleNumber: openTrip.vehicleNumber } : null}
-      driverPanel={driver?.id ? <DriverPanel driver={driver} /> : null}
+      liveTrip={liveTrip}
+      driverPanel={driver?.id && data ? <DriverPanel driver={driver} trend={data.personal.trend} kmThisMonth={data.personal.thisMonth.km} /> : null}
+      rates={rates}
     />
   );
 }
