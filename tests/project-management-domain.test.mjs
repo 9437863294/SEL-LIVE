@@ -2395,6 +2395,72 @@ test('supply funnel values each gate and names the leak, not just the conversion
   assert.equal(withCancellation[0].value, 600);
 });
 
+test('supply demand prices the BOQ and the indents raised against it, supply scope only', async () => {
+  const { buildSupplyDemand } = await import('../src/lib/project-management-supply-analytics.ts');
+  const demand = buildSupplyDemand(
+    [
+      { id: 'b1', 'Scope 2': 'Supply', QTY: 10, 'Budget Price': 100 },
+      { id: 'b2', 'Scope 2': 'supply', QTY: 4, 'Budget Price': 50 },
+      { id: 'b3', 'Scope 2': 'Civil', QTY: 100, 'Budget Price': 999 },
+    ],
+    [
+      { id: 'i1', status: 'Approved', items: [{ boqItemId: 'b1', requestedQty: 6 }] },
+      { id: 'i2', status: 'Submitted', items: [{ boqItemId: 'b1', requestedQty: 2 }] },
+      { id: 'i3', status: 'Cancelled', items: [{ boqItemId: 'b1', requestedQty: 99 }] },
+      { id: 'i4', status: 'Approved', items: [{ boqItemId: 'b3', requestedQty: 50 }] },
+    ],
+  );
+  assert.equal(demand.boqValue, 1200, 'the civil line is not supply');
+  assert.equal(demand.boqLineCount, 2, 'Scope 2 matching ignores case');
+  // (6 + 2) × 100 — the cancelled indent and the civil line are both out.
+  assert.equal(demand.indentedValue, 800);
+  assert.equal(demand.indentedLineCount, 1);
+});
+
+test('supply demand prefers a stored total over recomputing qty by rate', async () => {
+  const { buildSupplyDemand } = await import('../src/lib/project-management-supply-analytics.ts');
+  const demand = buildSupplyDemand(
+    [{ id: 'b1', 'Scope 2': 'Supply', QTY: 10, 'Budget Price': 100, 'Total Amount': 1500 }],
+    [],
+  );
+  assert.equal(demand.boqValue, 1500);
+});
+
+test('the pipeline rebases every gate on BOQ value and leads with the pre-PO stages', async () => {
+  const { buildSupplyDemand, buildSupplyFunnel, buildSupplyPipeline } = await import(
+    '../src/lib/project-management-supply-analytics.ts'
+  );
+  const demand = buildSupplyDemand(
+    [{ id: 'b1', 'Scope 2': 'Supply', QTY: 20, 'Budget Price': 100 }],
+    [{ id: 'i1', status: 'Approved', items: [{ boqItemId: 'b1', requestedQty: 16 }] }],
+  );
+  const funnel = buildSupplyFunnel([
+    supplyLine({ boqItemId: 'b1', rate: 100, orderedQty: 10, acceptedQtyByGate: { mc: 10, inspection: 8, mdcc: 8, di: 6, grn: 6, mvac: 4 } }),
+  ]);
+  const pipeline = buildSupplyPipeline({ demand, funnel });
+
+  assert.deepEqual(pipeline.map((s) => s.key), [
+    'boq', 'indent', 'ordered', 'mc', 'inspection', 'mdcc', 'di', 'grn', 'mvac',
+  ]);
+  assert.equal(pipeline[0].label, 'BOQ');
+  assert.equal(pipeline[0].pctOfBoq, 100);
+  assert.equal(pipeline[1].pctOfBoq, 80, '1600 indented of a 2000 BOQ');
+  assert.equal(pipeline[2].label, 'PO placed', 'the first funnel gate is renamed for this scale');
+  assert.equal(pipeline[2].pctOfBoq, 50, '1000 ordered of 2000 — half the BOQ is not yet bought');
+  assert.equal(pipeline.at(-1).pctOfBoq, 20, '400 accepted of 2000');
+});
+
+test('a BOQ with no value gives null shares rather than dividing by zero', async () => {
+  const { buildSupplyDemand, buildSupplyFunnel, buildSupplyPipeline } = await import(
+    '../src/lib/project-management-supply-analytics.ts'
+  );
+  const pipeline = buildSupplyPipeline({
+    demand: buildSupplyDemand([], []),
+    funnel: buildSupplyFunnel([]),
+  });
+  assert.equal(pipeline.every((s) => s.pctOfBoq === null), true);
+});
+
 test('bottlenecks weight age by value so a big recent block outranks a small old one', async () => {
   const { buildSupplyBottlenecks } = await import('../src/lib/project-management-supply-analytics.ts');
   const today = new Date(2026, 8, 11);
