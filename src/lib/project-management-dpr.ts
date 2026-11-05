@@ -205,15 +205,31 @@ export function eachDayInRange(startDate: string, endDate: string): string[] {
   return days;
 }
 
-/** Inclusive overlap, in days, between two ranges. */
+/**
+ * A range bound: `undefined` when it is deliberately left blank (unbounded on that side), `null`
+ * when it was given but could not be read — which is an error, not an invitation to assume.
+ */
+const rangeBound = (value: string): Date | null | undefined =>
+  value ? parseIsoDate(value) : undefined;
+
+/**
+ * Inclusive overlap, in days, between two ranges.
+ *
+ * Either end of either range may be left blank to mean "unbounded", matching `isDateInRange`; the
+ * other range's bound then governs. That is what lets a cumulative question — "everything up to
+ * this date" — be asked of a projection without inventing a sentinel start date for it.
+ */
 export function overlapDays(a: DprDateRange, b: DprDateRange): number {
-  const startA = parseIsoDate(a.startDate);
-  const endA = parseIsoDate(a.endDate);
-  const startB = parseIsoDate(b.startDate);
-  const endB = parseIsoDate(b.endDate);
-  if (!startA || !endA || !startB || !endB) return 0;
-  const start = Math.max(startA.getTime(), startB.getTime());
-  const end = Math.min(endA.getTime(), endB.getTime());
+  const startA = rangeBound(a.startDate);
+  const endA = rangeBound(a.endDate);
+  const startB = rangeBound(b.startDate);
+  const endB = rangeBound(b.endDate);
+  if (startA === null || endA === null || startB === null || endB === null) return 0;
+
+  const start = startA && startB ? Math.max(startA.getTime(), startB.getTime()) : (startA ?? startB)?.getTime();
+  const end = endA && endB ? Math.min(endA.getTime(), endB.getTime()) : (endA ?? endB)?.getTime();
+  // Unbounded on the same side in both ranges: there is no finite overlap to measure.
+  if (start === undefined || end === undefined) return 0;
   if (end < start) return 0;
   return Math.round((end - start) / DAY_MS) + 1;
 }

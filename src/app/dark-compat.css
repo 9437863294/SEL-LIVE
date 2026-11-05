@@ -139,6 +139,9 @@
   .dark :where(.bg-slate-300\/15:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--dc-300) / 0.15);
   }
+  .dark :where(.bg-stone-300\/50:not(.keep-light, .keep-light *)) {
+    background-color: hsl(var(--dc-300) / 0.5);
+  }
   .dark :where(.text-black:not(.keep-light, .keep-light *)),
   .dark :where(.text-slate-900:not(.keep-light, .keep-light *)),
   .dark :where(.text-slate-950:not(.keep-light, .keep-light *)),
@@ -511,6 +514,9 @@
   .dark :where(.bg-orange-200:not(.keep-light, .keep-light *)) {
     background-color: rgb(249 115 22 / 0.260);
   }
+  .dark :where(.bg-orange-200\/50:not(.keep-light, .keep-light *)) {
+    background-color: rgb(249 115 22 / 0.156);
+  }
   .dark :where(.border-orange-200:not(.keep-light, .keep-light *)) {
     border-color: rgb(249 115 22 / 0.400);
   }
@@ -768,6 +774,9 @@
   }
   .dark :where(.bg-green-200:not(.keep-light, .keep-light *)) {
     background-color: rgb(34 197 94 / 0.260);
+  }
+  .dark :where(.bg-green-200\/50:not(.keep-light, .keep-light *)) {
+    background-color: rgb(34 197 94 / 0.156);
   }
   .dark :where(.border-green-200:not(.keep-light, .keep-light *)),
   .dark :where(.border-green-200\/60:not(.keep-light, .keep-light *)) {
