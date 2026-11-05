@@ -361,3 +361,23 @@ test('a stage name that could never be opened is rejected', () => {
   // Two stages whose names slug alike share one page — Workflow Configuration compares slugs.
   assert.equal(dailyStepSlug('Payment Stage'), dailyStepSlug('payment  stage'));
 });
+
+/* ── edit and delete, by stage ── */
+
+test('verified entries follow their own rule, never looser than after receiving', async () => {
+  const { receivedRuleBlock, resolveDataControl } = await import('../src/lib/daily-requisition-settings.ts');
+  const open = { allowEditAfterReceived: true, allowDeleteAfterReceived: true, allowEditAfterVerified: false, allowDeleteAfterVerified: true };
+  assert.equal(receivedRuleBlock('Received', open, 'edit'), null);
+  assert.match(receivedRuleBlock('Verified', open, 'edit'), /once verified/);
+  assert.equal(receivedRuleBlock('Received for Payment', open, 'delete'), null);
+  const closed = { ...open, allowEditAfterReceived: false, allowEditAfterVerified: true };
+  assert.match(receivedRuleBlock('Verified', closed, 'edit'), /once received/, 'blocked after receiving blocks verified too');
+  assert.equal(receivedRuleBlock('Pending', closed, 'edit'), null);
+});
+
+test('a document saved before the verified rule applies its received rule to verified entries', async () => {
+  const { resolveDataControl } = await import('../src/lib/daily-requisition-settings.ts');
+  const d = resolveDataControl({ allowEditAfterReceived: false, allowDeleteAfterReceived: true });
+  assert.equal(d.allowEditAfterVerified, false);
+  assert.equal(d.allowDeleteAfterVerified, true);
+});

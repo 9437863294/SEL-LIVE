@@ -285,6 +285,13 @@ export interface DRDataControl {
   allowEditAfterReceived: boolean;
   /** Whether an entry can still be deleted once its status has moved past Pending. */
   allowDeleteAfterReceived: boolean;
+  /**
+   * Whether an entry can still be edited once GST & TDS Verification has verified it (or flagged
+   * it, or sent it for payment). Never more than after receiving: both must allow it.
+   */
+  allowEditAfterVerified: boolean;
+  /** The same, for deleting. */
+  allowDeleteAfterVerified: boolean;
   /** New entries must be received from an expense request (a DEP No). */
   requireExpenseRequest: boolean;
   /** Whether the net amount may be higher than the gross. */
@@ -334,6 +341,8 @@ export const DEFAULT_DATA_CONTROL: DRDataControl = {
   dateControl: { enabled: false, backdateDays: 7, futureDays: 0, applyToImport: true },
   allowEditAfterReceived: true,
   allowDeleteAfterReceived: true,
+  allowEditAfterVerified: true,
+  allowDeleteAfterVerified: true,
   requireExpenseRequest: false,
   netMayExceedGross: true,
   highValueThreshold: 0,
@@ -443,6 +452,10 @@ export function resolveDataControl(stored: unknown): DRDataControl {
     },
     allowEditAfterReceived: bool(saved.allowEditAfterReceived, d.allowEditAfterReceived),
     allowDeleteAfterReceived: bool(saved.allowDeleteAfterReceived, d.allowDeleteAfterReceived),
+    // A document saved before these existed applies its "after received" rule to verified entries
+    // too, exactly as it did.
+    allowEditAfterVerified: bool(saved.allowEditAfterVerified, bool(saved.allowEditAfterReceived, d.allowEditAfterReceived)),
+    allowDeleteAfterVerified: bool(saved.allowDeleteAfterVerified, bool(saved.allowDeleteAfterReceived, d.allowDeleteAfterReceived)),
     requireExpenseRequest: bool(saved.requireExpenseRequest, d.requireExpenseRequest),
     netMayExceedGross: bool(saved.netMayExceedGross, d.netMayExceedGross),
     highValueThreshold: amount(saved.highValueThreshold, d.highValueThreshold),
@@ -683,18 +696,25 @@ export function resolveDatePreset(preset: DRDatePreset, today: Date = new Date()
  * Why an entry may not be edited or deleted under Data Control, or null when it may.
  * Only the status rule — the caller applies the payment lock first, and its message wins.
  */
+/** Statuses from GST & TDS Verification on: verified, flagged, sent for payment, paid. */
+export const DR_VERIFIED_STATUSES: readonly string[] = ['Verified', 'Needs Review', 'Received for Payment', 'Partially Paid', 'Paid'];
+
 export function receivedRuleBlock(
   status: unknown,
-  data: Pick<DRDataControl, 'allowEditAfterReceived' | 'allowDeleteAfterReceived'>,
+  data: Pick<DRDataControl, 'allowEditAfterReceived' | 'allowDeleteAfterReceived'> &
+    Partial<Pick<DRDataControl, 'allowEditAfterVerified' | 'allowDeleteAfterVerified'>>,
   action: 'edit' | 'delete',
 ): string | null {
   const current = typeof status === 'string' && status.trim() ? status.trim() : 'Pending';
   if (current === 'Pending') return null;
-  const allowed = action === 'edit' ? data.allowEditAfterReceived : data.allowDeleteAfterReceived;
-  if (allowed) return null;
+  const afterReceived = action === 'edit' ? data.allowEditAfterReceived : data.allowDeleteAfterReceived;
+  const verified = DR_VERIFIED_STATUSES.includes(current);
+  const afterVerified = (action === 'edit' ? data.allowEditAfterVerified : data.allowDeleteAfterVerified) ?? afterReceived;
+  if (afterReceived && (!verified || afterVerified)) return null;
+  const stage = verified && afterReceived ? 'verified' : 'received';
   return action === 'edit'
-    ? `This entry is ${current}. Entries cannot be edited once received (Daily Requisition › Settings › Data Control).`
-    : `This entry is ${current}. Entries cannot be deleted once received (Daily Requisition › Settings › Data Control).`;
+    ? `This entry is ${current}. Entries cannot be edited once ${stage} (Daily Requisition › Settings › Data Control).`
+    : `This entry is ${current}. Entries cannot be deleted once ${stage} (Daily Requisition › Settings › Data Control).`;
 }
 
 export interface DREntryValues {
@@ -839,6 +859,12 @@ export function validateDailyRequisitionSettings(settings: DailyRequisitionSetti
     if (dc?.enabled && dc.backdateDays === 0 && dc.futureDays === 0) warn('Entries can only be dated today.');
     if (data.allowEditAfterReceived === false) warn('Received entries can no longer be edited from the Entry Sheet.');
     if (data.allowDeleteAfterReceived === false) warn('Received entries can no longer be deleted from the Entry Sheet.');
+    if (data.allowEditAfterReceived !== false && data.allowEditAfterVerified === false) {
+      warn('Verified entries can no longer be edited from the Entry Sheet.');
+    }
+    if (data.allowDeleteAfterReceived !== false && data.allowDeleteAfterVerified === false) {
+      warn('Verified entries can no longer be deleted from the Entry Sheet.');
+    }
     if (data.importDuplicateDetection === false) warn('Imports will not skip rows repeating an entry already recorded.');
   }
 
@@ -883,6 +909,8 @@ export function flattenDataControl(data: DRDataControl): Flat {
     'Reception date window · applies to import': d.dateControl.applyToImport,
     'Allow edit after received': d.allowEditAfterReceived,
     'Allow delete after received': d.allowDeleteAfterReceived,
+    'Allow edit after verified': d.allowEditAfterReceived && d.allowEditAfterVerified,
+    'Allow delete after verified': d.allowDeleteAfterReceived && d.allowDeleteAfterVerified,
     'Require expense request': d.requireExpenseRequest,
     'Net may exceed gross': d.netMayExceedGross,
     'High-value threshold': d.highValueThreshold,
