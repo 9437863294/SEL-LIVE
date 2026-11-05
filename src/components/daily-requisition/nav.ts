@@ -12,12 +12,15 @@ import {
   LayoutDashboard,
   Receipt,
   Settings,
+  ShieldCheck,
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase';
 import { DR_STATIC_SEGMENTS, dailyStepNameProblem, dailyStepSlug } from '@/lib/daily-requisition-settings';
+import { placeSteps, stepNamesUser } from '@/lib/daily-requisition-flow';
 import type { WorkflowStep } from '@/lib/types';
 
 export const DAILY_REQUISITION_BASE = '/daily-requisition';
@@ -36,6 +39,8 @@ const STAGE_LOOKS: ReadonlyArray<{ icon: LucideIcon; color: string; bg: string }
   { icon: Banknote, color: 'text-amber-700', bg: 'bg-amber-50' },
 ];
 const LATER_STAGE_LOOK = { icon: Workflow, color: 'text-slate-700', bg: 'bg-slate-100' };
+/** A Verification step (src/lib/daily-requisition-flow.ts), wherever it sits. */
+const VERIFICATION_STEP_LOOK = { icon: ShieldCheck, color: 'text-sky-700', bg: 'bg-sky-50' };
 
 export function dailyStageIcon(index: number): LucideIcon {
   return (STAGE_LOOKS[index] ?? LATER_STAGE_LOOK).icon;
@@ -137,21 +142,31 @@ export interface DailyRequisitionNavItem {
  */
 export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; isLoading: boolean } {
   const { can, isLoading } = useAuthorization();
+  const { user } = useAuth();
+  const userId = user?.id ?? '';
   const { steps } = useDailyRequisitionWorkflowSteps();
 
   const items = useMemo(() => {
     if (isLoading) return [];
     const access = dailyRequisitionAccess(can);
     const base = DAILY_REQUISITION_BASE;
+    const placed = placeSteps(steps);
+    // A Verification step has no permission of its own: it opens for the people it assigns, and for
+    // anyone who works the module's stages or its workflow (who see what waits there).
+    const worksStages = access.workflowConfiguration || placed.some((p) => p.role !== 'verification' && access.stage(p.step.name));
 
-    const stages: Array<DailyRequisitionNavItem & { allowed: boolean }> = steps.map((step, index) => {
+    const stages: Array<DailyRequisitionNavItem & { allowed: boolean }> = placed.map(({ step, role, builtinIndex }) => {
       const slug = dailyStepSlug(step.name);
+      const isVerification = role === 'verification';
       return {
         href: `${base}/${slug}`,
         label: step.name,
         group: 'Workflow',
-        ...(STAGE_LOOKS[index] ?? LATER_STAGE_LOOK),
-        allowed: slug !== '' && !DR_STATIC_SEGMENTS.includes(slug) && access.stage(step.name),
+        ...(isVerification ? VERIFICATION_STEP_LOOK : (STAGE_LOOKS[builtinIndex ?? -1] ?? LATER_STAGE_LOOK)),
+        allowed:
+          slug !== '' &&
+          !DR_STATIC_SEGMENTS.includes(slug) &&
+          (isVerification ? access.stage(step.name) || stepNamesUser(step, userId) || worksStages : access.stage(step.name)),
       };
     });
 
@@ -180,7 +195,7 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
     ];
 
     return visibleOnce(all);
-  }, [can, isLoading, steps]);
+  }, [can, isLoading, steps, userId]);
 
   return { items, isLoading };
 }

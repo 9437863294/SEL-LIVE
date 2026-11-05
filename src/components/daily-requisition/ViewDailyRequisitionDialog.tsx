@@ -35,6 +35,9 @@ import { registrationLabel } from '@/lib/gst-registrations';
 import { treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
 import type { BankAccount, DailyRequisitionEntry, Department, ExpenseRequest, Project } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { holdForMove } from '@/lib/daily-requisition-flow';
+import { useDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
+import { FlowTrail } from '@/components/daily-requisition/workflow-flow';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;
@@ -117,7 +120,8 @@ interface StatusChange {
   to: DailyRequisitionEntry['status'];
   /** Whether the stored status still allows the change. */
   allowedFrom: (status: string | undefined) => boolean;
-  fields: (userId: string) => Record<string, unknown>;
+  /** What to write, worked out from the requisition as the transaction read it. */
+  fields: (userId: string, current: DailyRequisitionEntry) => Record<string, unknown>;
   /** Unlink the expense request (DEP) this requisition was received from, so it can be received again. */
   releaseExpenseRequest?: boolean;
   done: string;
@@ -177,6 +181,8 @@ export default function ViewDailyRequisitionDialog({
   const { log } = useActivityLogger(ACTIVITY_MODULES.DAILY_REQUISITION);
   const [busy, setBusy] = useState<BusyAction | null>(null);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
+  /** The workflow, for its Verification steps: receiving one here lands it at the first of them. */
+  const { steps: workflowSteps } = useDailyRequisitionWorkflowSteps();
 
   const handleOpenChange = (open: boolean) => {
     if (!open) setConfirmCancelOpen(false);
@@ -221,7 +227,7 @@ export default function ViewDailyRequisitionDialog({
         }
         const expenseSnaps = await Promise.all(expenseRefs.map((ref) => tx.get(ref)));
 
-        tx.update(requisitionRef, change.fields(user.id));
+        tx.update(requisitionRef, change.fields(user.id, current));
         const released: string[] = [];
         for (const expenseSnap of expenseSnaps) {
           if (!expenseSnap.exists() || expenseSnap.get('receptionNo') !== receptionNo) continue;
@@ -274,7 +280,12 @@ export default function ViewDailyRequisitionDialog({
       action: 'Mark Requisition Received',
       to: 'Received',
       allowedFrom: (status) => status === 'Pending',
-      fields: (userId) => ({ status: 'Received', receivedAt: Timestamp.now(), receivedById: userId }),
+      fields: (userId, current) => ({
+        status: 'Received',
+        receivedAt: Timestamp.now(),
+        receivedById: userId,
+        ...holdForMove(workflowSteps, current, 'Received', Timestamp.now()),
+      }),
       done: `${entry.receptionNo} marked as received.`,
     });
   };
@@ -286,7 +297,12 @@ export default function ViewDailyRequisitionDialog({
       action: 'Return Requisition to Pending',
       to: 'Pending',
       allowedFrom: (status) => status === 'Received',
-      fields: () => ({ status: 'Pending', receivedAt: null, receivedById: null }),
+      fields: (_userId, current) => ({
+        status: 'Pending',
+        receivedAt: null,
+        receivedById: null,
+        ...holdForMove(workflowSteps, current, 'Pending', Timestamp.now()),
+      }),
       done: `${entry.receptionNo} returned to pending.`,
     });
   };
@@ -298,7 +314,7 @@ export default function ViewDailyRequisitionDialog({
       action: 'Cancel Requisition',
       to: 'Cancelled',
       allowedFrom: (status) => status !== 'Cancelled',
-      fields: () => ({ status: 'Cancelled' }),
+      fields: (_userId, current) => ({ status: 'Cancelled', ...holdForMove(workflowSteps, current, 'Cancelled', Timestamp.now()) }),
       releaseExpenseRequest: true,
       done: `${entry.receptionNo} cancelled.`,
     });
@@ -473,6 +489,9 @@ export default function ViewDailyRequisitionDialog({
               </div>
             </section>
           )}
+
+          {/* Where a Verification step holds it, and what happened at those steps and early takes. */}
+          <FlowTrail entry={entry} steps={workflowSteps} />
 
           {showPayment && (
             <section className="space-y-2.5 border-t pt-4">

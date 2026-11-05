@@ -91,11 +91,11 @@ function OverviewCard({
   children: ReactNode;
 }) {
   return (
-    <section aria-labelledby={id} className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-      <header className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-[18px]">
-        <AppIcon icon={icon} gradient={gradient} accent={accent} />
+    <section aria-labelledby={id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white sm:rounded-[20px]">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-100 px-3.5 py-3 sm:px-[18px] sm:py-3.5">
+        <AppIcon icon={icon} gradient={gradient} accent={accent} className="h-[30px] w-[30px] rounded-[9px] sm:h-[34px] sm:w-[34px] sm:rounded-[10px]" />
         <div className="min-w-0 flex-1">
-          <h2 id={id} className="text-[15px] font-bold leading-tight text-slate-900">
+          <h2 id={id} className="text-sm font-bold leading-tight text-slate-900 sm:text-[15px]">
             {title}
           </h2>
           <p className="truncate text-xs text-slate-400">{description}</p>
@@ -159,10 +159,10 @@ function Road() {
 
 function HeroStat({ label, value, note }: { label: string; value: ReactNode; note: string }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-[8px] sm:px-3.5">
-      <dt className="truncate text-[11.5px] font-semibold text-teal-100">{label}</dt>
-      <dd className="truncate text-lg font-extrabold tabular-nums sm:text-xl">{value}</dd>
-      <dd className="truncate text-[11px] text-emerald-200">{note}</dd>
+    <div className="min-w-0 rounded-xl border border-white/20 bg-white/10 px-2.5 py-2 backdrop-blur-[8px] sm:rounded-2xl sm:px-3.5 sm:py-2.5">
+      <dt className="truncate text-[10.5px] font-semibold text-teal-100 sm:text-[11.5px]">{label}</dt>
+      <dd className="truncate text-base font-extrabold tabular-nums sm:text-xl">{value}</dd>
+      <dd className="truncate text-[10.5px] text-emerald-200 sm:text-[11px]">{note}</dd>
     </div>
   );
 }
@@ -191,16 +191,21 @@ export function OverviewHero({
   const { trips, km, amount } = personal.thisMonth;
   const paid = personal.paidThisYear;
   const estimate = liveTrip?.distanceKm != null && liveTrip.ratePerKm != null ? liveTrip.distanceKm * liveTrip.ratePerKm : null;
+  // 76px on a phone, where it sits beside the amount; the mock-up's 118px from `lg`.
   const goClass = cn(
     styles.go,
-    'grid h-[104px] w-[104px] shrink-0 place-items-center rounded-full text-center shadow-[0_18px_40px_-14px_#022c22] transition duration-200 hover:scale-[1.04]',
-    'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 lg:h-[118px] lg:w-[118px]',
+    'grid h-[76px] w-[76px] shrink-0 place-items-center rounded-full text-center shadow-[0_14px_30px_-12px_#022c22] transition duration-200 hover:scale-[1.04]',
+    'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 sm:h-[96px] sm:w-[96px] lg:h-[118px] lg:w-[118px] lg:shadow-[0_18px_40px_-14px_#022c22]',
   );
+  const goLabel = 'text-xs font-extrabold leading-tight sm:text-sm';
+  const goIcon = 'mx-auto mb-0.5 h-5 w-5 sm:mb-1 sm:h-6 sm:w-6 lg:h-7 lg:w-7';
 
   return (
+    // Phone: the greeting and amount beside the button, the figures under both. From `lg`: the
+    // greeting and figures on the left, the button (with its hint) in a column on the right.
     <section
       aria-label="This month"
-      className="keep-light relative isolate grid items-center gap-6 overflow-hidden rounded-3xl px-5 py-6 text-white sm:px-7 lg:grid-cols-[minmax(0,1fr)_auto]"
+      className="keep-light relative isolate grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 overflow-hidden rounded-2xl px-4 py-4 text-white sm:gap-y-4 sm:rounded-3xl sm:px-6 sm:py-5 lg:gap-x-6 lg:px-7 lg:py-6"
     >
       <span aria-hidden className={styles.drift} />
       <span aria-hidden className={styles.dots} />
@@ -211,39 +216,41 @@ export function OverviewHero({
       {/* Dark mode: the same picture, a step deeper. */}
       <span aria-hidden className="pointer-events-none absolute inset-0 -z-[1] hidden bg-slate-950/25 dark:block" />
 
-      <div className="min-w-0 max-w-[560px]">
-        <p className="text-xs font-bold text-teal-100">
+      <div className="col-start-1 row-start-1 min-w-0 max-w-[560px]">
+        <p className="text-[11px] font-bold text-teal-100 sm:text-xs">
           {greeting()} · {month}
         </p>
-        <p className="mt-2 text-[13px] font-semibold text-sky-100">Reimbursement from this month&apos;s trips</p>
-        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-4xl font-extrabold leading-tight tracking-[-0.03em] sm:text-[46px]">
+        <p className="mt-1 text-xs font-semibold text-sky-100 sm:mt-2 sm:text-[13px]">Reimbursement from this month&apos;s trips</p>
+        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[28px] font-extrabold leading-tight tracking-[-0.03em] sm:text-4xl lg:text-[46px]">
           <Money value={amount} />
-          <small className="text-sm font-semibold tracking-normal text-teal-100">{trips ? `from ${plural(trips, 'trip')}` : 'no trips yet this month'}</small>
+          <small className="text-xs font-semibold tracking-normal text-teal-100 sm:text-sm">{trips ? `from ${plural(trips, 'trip')}` : 'no trips yet this month'}</small>
         </p>
-        <dl className="mt-3 grid grid-cols-3 gap-2.5">
-          <HeroStat label="Trips" value={trips} note={trips ? 'this month' : 'start one →'} />
-          <HeroStat label="Distance" value={formatKm(km)} note={km ? 'this month' : '—'} />
-          <HeroStat label="Paid this FY" value={<Money value={paid.amount} compact />} note={paid.claims ? plural(paid.claims, 'claim') : '—'} />
-        </dl>
       </div>
 
-      <div className="flex items-center gap-4 lg:min-w-[190px] lg:flex-col lg:gap-2">
+      <dl className="col-span-2 row-start-2 grid max-w-[560px] grid-cols-3 gap-2 sm:gap-2.5 lg:col-span-1 lg:-mt-1">
+        <HeroStat label="Trips" value={trips} note={trips ? 'this month' : 'start one →'} />
+        <HeroStat label="Distance" value={formatKm(km)} note={km ? 'this month' : '—'} />
+        <HeroStat label="Paid this FY" value={<Money value={paid.amount} compact />} note={paid.claims ? plural(paid.claims, 'claim') : '—'} />
+      </dl>
+
+      <div className="col-start-2 row-start-1 flex flex-col items-center gap-2 lg:row-span-2 lg:min-w-[190px]">
         {liveTrip ? (
           <Link href="/driver-management/fleet" className={cn(goClass, 'bg-red-500 text-white')}>
-            <span className="text-sm font-extrabold leading-tight">
-              <Square className="mx-auto mb-1 h-7 w-7" aria-hidden />
+            <span className={goLabel}>
+              <Square className={goIcon} aria-hidden />
               Stop trip
             </span>
           </Link>
         ) : (
           <button type="button" onClick={onStart} className={cn(goClass, 'bg-white text-teal-700')}>
-            <span className="text-sm font-extrabold leading-tight">
-              <Navigation className="mx-auto mb-1 h-7 w-7" aria-hidden />
+            <span className={goLabel}>
+              <Navigation className={goIcon} aria-hidden />
               Start trip
             </span>
           </button>
         )}
-        <p className="max-w-[190px] text-[11.5px] font-semibold text-teal-100 lg:text-center">
+        {/* Room for the hint only beside the figures' column; a phone has the button's own label. */}
+        <p className="hidden max-w-[190px] text-center text-[11.5px] font-semibold text-teal-100 lg:block">
           {liveTrip ? (
             'Recording your route… tap to stop and review it.'
           ) : (
@@ -257,7 +264,7 @@ export function OverviewHero({
       </div>
 
       {liveTrip && (
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-white/20 bg-black/15 px-4 py-3 lg:col-span-2">
+        <div className="col-span-2 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-white/20 bg-black/15 px-3 py-2.5 sm:rounded-2xl sm:px-4 sm:py-3">
           <span className={cn(styles.blink, 'h-[9px] w-[9px] shrink-0 rounded-full bg-red-400')} aria-hidden />
           <LiveFact label="Trip running">
             <Elapsed since={liveTrip.startedAt} />
@@ -320,7 +327,7 @@ export function MoneyPipeline({ personal, financialYear }: { personal: Personal;
       title="Where my money is"
       description="Every rupee from your trips, from driving to your bank account"
     >
-      <ol className="relative grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:p-[18px]">
+      <ol className="relative grid grid-cols-2 gap-x-2 gap-y-1 p-2.5 sm:grid-cols-4 sm:gap-3 sm:p-[18px]">
         {/* The rail runs between the first and last icons' centres (each column's middle). */}
         <li aria-hidden className="absolute left-[calc(18px+12.5%)] right-[calc(18px+12.5%)] top-[45px] hidden h-1 rounded-sm bg-slate-100 sm:block">
           <span
@@ -332,18 +339,18 @@ export function MoneyPipeline({ personal, financialYear }: { personal: Personal;
           <li key={stage.label} className="min-w-0">
             <Link
               href={stage.href}
-              className="block rounded-2xl px-1.5 pb-2.5 text-center transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="block rounded-xl px-1 py-1.5 text-center transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:rounded-2xl sm:px-1.5 sm:pb-2.5 sm:pt-0"
             >
-              {/* The white pad is the ring that lifts the icon off the rail. */}
-              <span className="relative z-[1] mx-auto mb-2 block w-fit rounded-[18px] bg-white p-1.5">
-                <AppIcon icon={stage.icon} gradient={stage.gradient} accent={stage.accent} className="h-[46px] w-[46px] rounded-[14px]" />
+              {/* The white pad is the ring that lifts the icon off the rail (the rail is `sm` and up). */}
+              <span className="relative z-[1] mx-auto mb-1 block w-fit rounded-[18px] bg-white sm:mb-2 sm:p-1.5">
+                <AppIcon icon={stage.icon} gradient={stage.gradient} accent={stage.accent} className="h-9 w-9 rounded-xl sm:h-[46px] sm:w-[46px] sm:rounded-[14px]" />
               </span>
-              <span className="block text-xs font-bold text-slate-600">{stage.label}</span>
-              <span className={cn('my-0.5 block truncate text-[22px] font-extrabold tabular-nums tracking-[-0.02em]', stage.amount ? 'text-slate-900' : 'text-slate-300')}>
+              <span className="block truncate text-[11px] font-bold text-slate-600 sm:text-xs">{stage.label}</span>
+              <span className={cn('block truncate text-lg font-extrabold tabular-nums tracking-[-0.02em] sm:my-0.5 sm:text-[22px]', stage.amount ? 'text-slate-900' : 'text-slate-300')}>
                 <Money value={stage.amount} />
               </span>
-              <span className="block truncate text-[11.5px] font-semibold text-slate-400">{stage.hint}</span>
-              {stage.cta && <span className="mt-2 inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-[11.5px] font-extrabold text-teal-700">{stage.cta}</span>}
+              <span className="block truncate text-[11px] font-semibold text-slate-400 sm:text-[11.5px]">{stage.hint}</span>
+              {stage.cta && <span className="mt-1 inline-block rounded-full bg-teal-100 px-2 py-0.5 text-[11px] font-extrabold text-teal-700 sm:mt-2 sm:px-2.5 sm:text-[11.5px]">{stage.cta}</span>}
             </Link>
           </li>
         ))}
@@ -422,13 +429,13 @@ function RouteThumb({ trip }: { trip: RecentTrip }) {
 function TripsEmpty() {
   const steps = ['Tap Start trip', 'Drive — GPS records it', 'Stop & claim in one tap'];
   return (
-    <div className="px-4 py-8 text-center text-slate-400">
-      <AppIcon icon={Navigation} gradient="from-sky-300 to-sky-700" accent="#0369a1" className="mx-auto mb-3 h-[60px] w-[60px] rounded-[20px]" />
-      <p className="text-[15px] font-bold text-slate-900">No trips yet</p>
-      <p className="mb-3 mt-1 text-sm">Your trips appear here with their route, distance and claim status.</p>
-      <ol className="flex flex-wrap justify-center gap-2.5">
+    <div className="px-3.5 py-5 text-center text-slate-400 sm:px-4 sm:py-8">
+      <AppIcon icon={Navigation} gradient="from-sky-300 to-sky-700" accent="#0369a1" className="mx-auto mb-2 h-11 w-11 rounded-[14px] sm:mb-3 sm:h-[60px] sm:w-[60px] sm:rounded-[20px]" />
+      <p className="text-sm font-bold text-slate-900 sm:text-[15px]">No trips yet</p>
+      <p className="mb-2.5 mt-0.5 text-xs sm:mb-3 sm:mt-1 sm:text-sm">Your trips appear here with their route, distance and claim status.</p>
+      <ol className="flex flex-wrap justify-center gap-1.5 sm:gap-2.5">
         {steps.map((step, index) => (
-          <li key={step} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+          <li key={step} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-2 sm:text-xs">
             <span className="grid h-5 w-5 place-items-center rounded-full bg-teal-700 text-[11px] font-extrabold text-white">{index + 1}</span>
             {step}
           </li>
@@ -646,7 +653,7 @@ function KmBars({ trend }: { trend: TrendPoint[] }) {
   return (
     <figure className="mt-3.5">
       <figcaption className="text-xs font-bold text-slate-600">Km driven · last {trend.length} months</figcaption>
-      <div className="mt-1 flex h-[90px] items-end gap-[5px] pt-1.5" role="img" aria-label={trend.map((point) => `${monthName(point.month)} ${formatKm(point.km)}`).join(', ')}>
+      <div className="mt-1 flex h-[64px] items-end gap-[5px] pt-1.5 sm:h-[90px]" role="img" aria-label={trend.map((point) => `${monthName(point.month)} ${formatKm(point.km)}`).join(', ')}>
         {trend.map((point, index) => (
           <span
             key={point.month}
@@ -688,10 +695,10 @@ export function VehicleCard({
 }) {
   return (
     <OverviewCard id="my-vehicle" icon={CarFront} gradient="from-blue-300 to-blue-700" accent="#1d4ed8" title="My vehicle & driving" description={subtitle}>
-      <div className="px-4 py-4 sm:px-[18px]">
-        <div className="mb-3.5 flex items-center gap-3.5">
-          <span className="grid h-[54px] w-[84px] shrink-0 place-items-center rounded-[14px] bg-gradient-to-br from-sky-100 to-teal-100 text-sky-700 dark:from-sky-950/60 dark:to-teal-950/60 dark:text-sky-300" aria-hidden>
-            <CarFront className="h-11 w-11" strokeWidth={1.4} />
+      <div className="px-3.5 py-3.5 sm:px-[18px] sm:py-4">
+        <div className="mb-3 flex items-center gap-3 sm:mb-3.5 sm:gap-3.5">
+          <span className="grid h-11 w-[68px] shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sky-100 to-teal-100 text-sky-700 sm:h-[54px] sm:w-[84px] sm:rounded-[14px] dark:from-sky-950/60 dark:to-teal-950/60 dark:text-sky-300" aria-hidden>
+            <CarFront className="h-8 w-8 sm:h-11 sm:w-11" strokeWidth={1.4} />
           </span>
           {vehicle ? (
             <div className="min-w-0">
@@ -707,7 +714,8 @@ export function VehicleCard({
             <StatTile key={stat.label} stat={stat} />
           ))}
         </div>
-        {trend.length > 0 && <KmBars trend={trend} />}
+        {/* Six empty bars say nothing; the chart appears with the first km. */}
+        {trend.some((point) => point.km > 0) && <KmBars trend={trend} />}
         {note && <p className="mt-3 text-xs text-amber-700">{note}</p>}
         {children && <div className="mt-3">{children}</div>}
       </div>

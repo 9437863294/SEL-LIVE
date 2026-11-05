@@ -120,6 +120,7 @@ export const permissionModules = {
       "Return to Pending",
       "Reject",
       "Cancel",
+      "Hand Over",
     ],
     "GST & TDS Verification": [
       "View",
@@ -127,11 +128,15 @@ export const permissionModules = {
       "Re-verify",
       "Return to Pending",
       "Send for Payment",
+      "Take Early",
+      "Hand Over",
     ],
     "Processed for Payment": [
       "View",
       "Mark as Received for Payment",
       "Approve",
+      "Take Early",
+      "Hand Over",
     ],
     "Manage Documents": [
       "View",

@@ -52,7 +52,7 @@ function Notice({ icon: Icon, children, action, onAction }: { icon: React.Elemen
 }
 
 /** The two columns: the money and the trips on the left, the vehicle and the rates beside them. */
-const COLUMNS = 'grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px]';
+const COLUMNS = 'grid grid-cols-1 items-start gap-3 sm:gap-4 xl:grid-cols-[minmax(0,1fr)_380px]';
 
 function DashboardSkeleton() {
   return (
@@ -119,7 +119,7 @@ export function TripDashboardView({
   const own = personal.lastOwnVehicle ?? null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <OverviewHero today={data.today} personal={personal} liveTrip={liveTrip} onStart={() => router.push('/driver-management/fleet?kind=choose')} />
 
       {(personal.unclaimed.expiringSoon > 0 || personal.unclaimed.sentBack > 0) && (
@@ -138,12 +138,12 @@ export function TripDashboardView({
       )}
 
       <div className={COLUMNS}>
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 space-y-3 sm:space-y-4">
           <MoneyPipeline personal={personal} financialYear={data.financialYear} />
           <RecentTrips trips={personal.recentTrips ?? []} />
           {workflow && <WaitingCard workflow={workflow} />}
         </div>
-        <aside className="min-w-0 space-y-4" aria-label="My vehicle and rates">
+        <aside className="min-w-0 space-y-3 sm:space-y-4" aria-label="My vehicle and rates">
           {driverPanel ?? (
             <VehicleCard
               subtitle="The vehicle you claim for, and the km you drove"

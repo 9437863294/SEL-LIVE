@@ -15,6 +15,7 @@ import {
   Search,
   SlidersHorizontal,
   X,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -79,6 +80,23 @@ import {
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
 import { dailyStepSlug } from '@/lib/daily-requisition-settings';
+import {
+  allowsHandOver,
+  assignedStageOf,
+  heldStep,
+  holdForMove,
+  isHeld,
+  placeSteps,
+  stageOfStatus,
+  takeSourcesOf,
+  type StageRole,
+} from '@/lib/daily-requisition-flow';
+import {
+  HandOverDialog,
+  StageAssignedView,
+  TakeEarlyPanel,
+  VerificationStepView,
+} from '@/components/daily-requisition/workflow-flow';
 
 /* ──────────────────── helpers ──────────────────── */
 
@@ -230,6 +248,8 @@ interface MovedRecord {
   changes: Record<string, FieldChange>;
   requestsReleased: number;
   requestsRelinked: number;
+  /** The Verification step it landed at, when the move handed it into one. */
+  heldAtName?: string;
 }
 
 interface MoveSkips {
@@ -404,7 +424,14 @@ type EnrichedEntry = DailyRequisitionEntry & {
   fyStart: number | null;
   /** When this stage's own step was done today (received, verified, paid). */
   doneToday: boolean;
+  /** Who it was handed to at this stage, by name; '' when it is with the stage as a whole. */
+  assignedNames: string;
+  /** Handed to the signed-in person at this stage. */
+  assignedToMe: boolean;
 };
+
+/** The Assigned filter: anyone, handed to me, handed to someone, or with the stage as a whole. */
+type AssignedFilter = '' | 'me' | 'assigned' | 'unassigned';
 
 /** Names for the ids a requisition carries. */
 interface Lookups {
@@ -429,7 +456,12 @@ function DynamicWorkflowStepContent() {
   /* ── workflow state ── */
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [currentStep, setCurrentStep] = useState<WorkflowStep | null>(null);
+  /** The stage's position among the built-in stages (0 receiving, 1 GST & TDS, 2 payment); -1 for none. */
   const [dynamicIndex, setDynamicIndex] = useState<number>(-1);
+  /** The step's position in the whole workflow, Verification steps included. */
+  const [stepIndex, setStepIndex] = useState<number>(-1);
+  /** Set when the slug names a Verification step, which has a page of its own. */
+  const [verificationIndex, setVerificationIndex] = useState<number | null>(null);
   const [workflowLoading, setWorkflowLoading] = useState(true);
   const [workflowNotFound, setWorkflowNotFound] = useState(false);
 
@@ -457,6 +489,9 @@ function DynamicWorkflowStepContent() {
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+  const [assignedFilter, setAssignedFilter] = useState<AssignedFilter>('');
+  /** Requisitions being handed over (the hand-over dialog is open while set). */
+  const [handOverEntries, setHandOverEntries] = useState<EnrichedEntry[] | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // A `?q=` in the URL, from a link in another module, fills the search. A later link to this page
@@ -489,11 +524,16 @@ function DynamicWorkflowStepContent() {
           const steps: WorkflowStep[] = data.steps || [];
           setWorkflowSteps(steps);
 
-          // Find the matching step by slug — all config steps are dynamic stages
+          // Find the matching step by slug. A built-in stage works by its position among the
+          // built-in stages, so a Verification step placed before it does not shift its role.
           const idx = steps.findIndex((s) => toSlug(s.name) === stepSlug);
           if (idx >= 0) {
+            const placed = placeSteps(steps)[idx];
             setCurrentStep(steps[idx]);
-            setDynamicIndex(idx); // 0-based dynamic index
+            setStepIndex(idx);
+            // Both set every time, so moving between a stage and a Verification step never keeps the other's.
+            setVerificationIndex(placed.role === 'verification' ? idx : null);
+            setDynamicIndex(placed.role === 'verification' ? -1 : (placed.builtinIndex ?? -1));
           } else {
             setWorkflowNotFound(true);
           }
@@ -587,9 +627,13 @@ function DynamicWorkflowStepContent() {
     const queryStatuses = stepConfig.queryStatuses;
     const todayMs = today.getTime();
     const isToday = (date: Date | undefined) => Boolean(date) && startOfDay(date as Date).getTime() === todayMs;
+    const placed = placeSteps(workflowSteps);
 
     const data: EnrichedEntry[] = requisitionDocs
       .filter((d) => queryStatuses.includes((d.data() as any).status))
+      // Held at a Verification step before this stage: it is that step's until verified. (Receiving
+      // at Finance still lists what it received, wherever it went next.)
+      .filter((d) => dynamicIndex < 1 || !isHeld(workflowSteps, d.data() as DailyRequisitionEntry))
       .map((d) => {
         const raw = d.data() as DailyRequisitionEntry;
         const dateTs = asDate(raw.date) ?? asDate(raw.createdAt);
@@ -600,6 +644,8 @@ function DynamicWorkflowStepContent() {
         // How long it has waited at this stage: since its date at Receiving, since it was received at
         // Verification, since it was verified at Payment.
         const since = dynamicIndex === 0 ? dateTs : dynamicIndex === 1 ? receivedAtTs ?? dateTs : verifiedAtTs ?? receivedAtTs ?? dateTs;
+        // Handed to someone at this stage (an assignment elsewhere, or one that has lapsed, is not shown).
+        const assignedHere = stepIndex >= 0 && assignedStageOf(placed, raw)?.index === stepIndex ? raw.assignedTo ?? [] : [];
         const doneAt = dynamicIndex === 0 ? receivedAtTs : dynamicIndex === 1 ? verifiedAtTs : paidAtTs;
 
         return {
@@ -616,6 +662,8 @@ function DynamicWorkflowStepContent() {
           ageDays: since ? Math.max(0, Math.round((todayMs - startOfDay(since).getTime()) / DAY_MS)) : null,
           fyStart: dateTs ? fyStartOf(dateTs) : null,
           doneToday: isToday(doneAt),
+          assignedNames: assignedHere.map((id) => lookups.users.get(id) || id).join(', '),
+          assignedToMe: Boolean(user?.id) && assignedHere.includes(user?.id ?? ''),
         };
       });
 
@@ -624,7 +672,7 @@ function DynamicWorkflowStepContent() {
       (asDate(entry.paidAt) ?? asDate(entry.verifiedAt) ?? asDate(entry.receivedAt) ?? asDate(entry.createdAt))?.getTime() ?? 0;
     data.sort((a, b) => latest(b) - latest(a));
     return data;
-  }, [requisitionDocs, lookups, stepConfig, dynamicIndex, today]);
+  }, [requisitionDocs, lookups, stepConfig, dynamicIndex, today, workflowSteps, stepIndex, user?.id]);
 
   /* ──────────── 3 ─ what each tab shows ──────────── */
 
@@ -667,7 +715,11 @@ function DynamicWorkflowStepContent() {
       (!dateFrom || (Boolean(entry.dateKey) && entry.dateKey >= dateFrom)) &&
       (!dateTo || (Boolean(entry.dateKey) && entry.dateKey <= dateTo)) &&
       (min === null || Number.isNaN(min) || (Number(entry.netAmount) || 0) >= min) &&
-      (max === null || Number.isNaN(max) || (Number(entry.netAmount) || 0) <= max);
+      (max === null || Number.isNaN(max) || (Number(entry.netAmount) || 0) <= max) &&
+      (assignedFilter === '' ||
+        (assignedFilter === 'me' && entry.assignedToMe) ||
+        (assignedFilter === 'assigned' && entry.assignedNames !== '') ||
+        (assignedFilter === 'unassigned' && entry.assignedNames === ''));
 
     stepConfig.tabs.forEach((tab) => {
       map[tab.key] = scoped.filter(
@@ -684,7 +736,7 @@ function DynamicWorkflowStepContent() {
       );
     });
     return map;
-  }, [scoped, stepConfig, searchTerm, ageFilter, projectFilter, departmentFilter, dateFrom, dateTo, minAmount, maxAmount]);
+  }, [scoped, stepConfig, searchTerm, ageFilter, projectFilter, departmentFilter, dateFrom, dateTo, minAmount, maxAmount, assignedFilter]);
 
   // The open tab: the first until one is chosen.
   const tabValue = stepConfig?.tabs.some((tab) => tab.key === activeTab) ? activeTab : (stepConfig?.tabs[0]?.key ?? '');
@@ -763,7 +815,8 @@ function DynamicWorkflowStepContent() {
           chunk.forEach((entry, i) => {
             const snap = requisitionSnaps[i];
             const current = snap.exists() ? (snap.data() as DailyRequisitionEntry) : null;
-            if (!current || current.status !== entry.status) {
+            // A Verification step may have taken it since this page loaded; past Receiving it is that step's now.
+            if (!current || current.status !== entry.status || (dynamicIndex >= 1 && isHeld(workflowSteps, current))) {
               out.changed += 1;
               return;
             }
@@ -794,7 +847,13 @@ function DynamicWorkflowStepContent() {
             }
 
             const extraFields = options.fields?.(current) ?? {};
-            const update: Record<string, any> = { status: to, ...stampFor(to), ...extraFields };
+            // Received at Finance, or sent for payment, with a Verification step next: it waits
+            // there. Any other move releases a hold it had.
+            const hold = holdForMove(workflowSteps, current, to, Timestamp.now());
+            const heldAtName = hold.heldAt
+              ? (heldStep(placeSteps(workflowSteps), { ...current, status: to as DailyRequisitionEntry['status'], heldAt: hold.heldAt })?.step.name ?? '')
+              : '';
+            const update: Record<string, any> = { status: to, ...stampFor(to), ...hold, ...extraFields };
             tx.update(snap.ref, update);
             let released = 0;
             let relinked = 0;
@@ -813,6 +872,7 @@ function DynamicWorkflowStepContent() {
               changes: diffFields(current as Record<string, any>, extraFields as Record<string, any>),
               requestsReleased: released,
               requestsRelinked: relinked,
+              ...(heldAtName ? { heldAtName } : {}),
             });
           });
           return out;
@@ -848,6 +908,7 @@ function DynamicWorkflowStepContent() {
           ...(Object.keys(record.changes).length > 0 ? { changes: record.changes } : {}),
           ...(record.requestsReleased > 0 ? { expenseRequestsReleased: record.requestsReleased } : {}),
           ...(record.requestsRelinked > 0 ? { expenseRequestsRelinked: record.requestsRelinked } : {}),
+          ...(record.heldAtName ? { waitingAtVerificationStep: record.heldAtName } : {}),
           ...(options.logDetails ?? {}),
         },
         { recordId: record.entry.id, recordRef: record.entry.receptionNo || undefined },
@@ -871,7 +932,14 @@ function DynamicWorkflowStepContent() {
       );
     }
 
-    toast(moveToast(targets, moved.length, to, skipped, failed));
+    const done = moveToast(targets, moved.length, to, skipped, failed);
+    // Say where they went when a Verification step now holds them, so nobody looks for them at the next stage.
+    const heldNames = [...new Set(movedRecords.map((record) => record.heldAtName).filter(Boolean))];
+    const heldCount = movedRecords.filter((record) => record.heldAtName).length;
+    if (heldCount > 0) {
+      done.description = `${done.description} ${heldCount === 1 && movedRecords.length === 1 ? 'It is' : `${heldCount} ${heldCount === 1 ? 'is' : 'are'}`} now waiting at ${heldNames.map((name) => `"${name}"`).join(', ')} for verification.`;
+    }
+    toast(done);
     setSelectedIds(new Set());
     setIsUpdating(false);
     // No reload: the live list already shows the move.
@@ -953,6 +1021,24 @@ function DynamicWorkflowStepContent() {
   const canMarkAsPaid =
     stepActions.has('Mark as Received for Payment') && can('Mark as Received for Payment', permissionScope);
   const canPayViaVoucher = can('Add', 'Bank Balance.Expenses');
+  /** Set to take requisitions early (Workflow Configuration), and allowed to (`Take Early` on this stage). */
+  const showTakeEarly = useMemo(
+    () => stepIndex >= 0 && takeSourcesOf(placeSteps(workflowSteps), stepIndex).length > 0,
+    [workflowSteps, stepIndex],
+  );
+  const canTakeEarly = Boolean(permissionScope) && can('Take Early', permissionScope);
+
+  /** The built-in stage this page is, by what it does. */
+  const stageRole: StageRole | null = dynamicIndex === 0 ? 'receiving' : dynamicIndex === 1 ? 'gst' : dynamicIndex === 2 ? 'payment' : null;
+  /** Workflow Configuration lets this stage hand requisitions to someone. */
+  const handOverOn = Boolean(currentStep && stageRole && allowsHandOver(currentStep));
+  /** May hand over anything waiting here; otherwise only what was handed to them. */
+  const canHandOverAll = handOverOn && Boolean(permissionScope) && can('Hand Over', permissionScope);
+  const canHandOverEntry = (entry: EnrichedEntry) =>
+    handOverOn &&
+    stageOfStatus(entry.status) === stageRole &&
+    !isPaymentLocked(entry) &&
+    (canHandOverAll || entry.assignedToMe);
 
   /** Whether the user can select rows for the current step's bulk action */
   const canBulkAction = useMemo(() => {
@@ -1056,6 +1142,17 @@ function DynamicWorkflowStepContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          {canHandOverAll ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="bg-card"
+              onClick={() => setHandOverEntries(selectedEntries.filter(canHandOverEntry))}
+              disabled={selectedEntries.filter(canHandOverEntry).length === 0 || isUpdating}
+            >
+              <ArrowRightLeft className="mr-1.5 h-4 w-4" /> Hand over…
+            </Button>
+          ) : null}
           {canCancelSelected ? (
             <Button
               size="sm"
@@ -1120,8 +1217,12 @@ function DynamicWorkflowStepContent() {
       (dynamicIndex === 0 && (tabKey === 'received' || tabKey === 'cancelled')) ||
       (dynamicIndex === 1);
 
+    // Who it was handed to, on the tabs that hold what is still at this stage.
+    const tabDef = stepConfig?.tabs.find((tab) => tab.key === tabKey);
+    const showWith = handOverOn && Boolean(tabDef?.statuses.some((status) => stageOfStatus(status) === stageRole));
+
     const columnCount =
-      (showCheckbox ? 1 : 0) + 2 + (showAge ? 1 : 0) + (showPaidVia ? 1 : 0) + 2 + (showReceivedBy ? 1 : 0) + 1 + (isPaymentStep ? 2 : 0) + (showRowActions ? 1 : 0);
+      (showCheckbox ? 1 : 0) + 2 + (showAge ? 1 : 0) + (showPaidVia ? 1 : 0) + 2 + (showReceivedBy ? 1 : 0) + (showWith ? 1 : 0) + 1 + (isPaymentStep ? 2 : 0) + (showRowActions ? 1 : 0);
 
     const handleSelectAll = (checked: boolean | 'indeterminate') => {
       if (checked === true) setSelectedIds(new Set(data.map((item) => item.id)));
@@ -1163,6 +1264,7 @@ function DynamicWorkflowStepContent() {
                 <TableHead>Project</TableHead>
                 <TableHead>Party Name</TableHead>
                 {showReceivedBy && <TableHead>Received By</TableHead>}
+                {showWith && <TableHead>With</TableHead>}
                 <TableHead className="text-right">Net Amount</TableHead>
                 {isPaymentStep && (
                   <>
@@ -1232,6 +1334,30 @@ function DynamicWorkflowStepContent() {
                       </span>
                     </TableCell>
                     {showReceivedBy && <TableCell className="whitespace-nowrap">{entry.receivedByName || 'N/A'}</TableCell>}
+                    {showWith && (
+                      <TableCell className="whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={cn('block max-w-[160px] truncate', entry.assignedToMe ? 'font-medium text-violet-700' : !entry.assignedNames && 'text-muted-foreground')}
+                            title={entry.assignedNames || undefined}
+                          >
+                            {entry.assignedToMe ? 'You' : entry.assignedNames || '—'}
+                          </span>
+                          {canHandOverEntry(entry) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              title="Hand over to someone else"
+                              aria-label={`Hand over ${entry.receptionNo}`}
+                              onClick={() => setHandOverEntries([entry])}
+                            >
+                              <ArrowRightLeft className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </span>
+                      </TableCell>
+                    )}
                     <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
                     {isPaymentStep && (() => {
                       // Paid through Bank Balance vouchers (paidAmount), or marked Paid here in full.
@@ -1354,6 +1480,11 @@ function DynamicWorkflowStepContent() {
      RENDER
      ══════════════════════════════════════════════════════════════ */
 
+  // A Verification step: its own page, worked by its assignees (src/components/daily-requisition/workflow-flow.tsx).
+  if (!workflowLoading && !isAuthLoading && verificationIndex !== null) {
+    return <VerificationStepView steps={workflowSteps} index={verificationIndex} />;
+  }
+
   // Loading skeleton
   if (workflowLoading || isAuthLoading || (isLoading && canViewPage && stepConfig)) {
     return <StepPageSkeleton />;
@@ -1382,9 +1513,13 @@ function DynamicWorkflowStepContent() {
     );
   }
 
-  // Access denied
+  // Access denied — unless requisitions were handed to this person here, which they may work.
   if (!canViewPage) {
     return (
+      <StageAssignedView
+        steps={workflowSteps}
+        index={stepIndex}
+        fallback={
       <div className={dailyPageContainerClass}>
         <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition" title={currentStep.name} description={stepConfig.description} />
         <Card className={dailySurfaceCardClass}>
@@ -1397,6 +1532,8 @@ function DynamicWorkflowStepContent() {
           </CardContent>
         </Card>
       </div>
+        }
+      />
     );
   }
 
@@ -1438,7 +1575,7 @@ function DynamicWorkflowStepContent() {
     ...(maxAmount ? [{ key: 'max', label: 'Net ≤', value: formatCurrency(Number(maxAmount) || 0), onRemove: () => setMaxAmount('') }] : []),
   ];
   const activeFilterCount =
-    [fyFilter !== 'all', projectFilter, ageFilter !== null, searchTerm.trim()].filter(Boolean).length + moreChips.length;
+    [fyFilter !== 'all', projectFilter, ageFilter !== null, searchTerm.trim(), assignedFilter].filter(Boolean).length + moreChips.length;
   const clearFilters = () => {
     setSearchTerm('');
     setFyFilter('all');
@@ -1449,6 +1586,7 @@ function DynamicWorkflowStepContent() {
     setDateTo('');
     setMinAmount('');
     setMaxAmount('');
+    setAssignedFilter('');
   };
 
   /** The open tab's list, as shown — search and filters applied — to Excel. */
@@ -1672,6 +1810,19 @@ function DynamicWorkflowStepContent() {
                       options={AGE_OPTIONS.map((days) => ({ value: String(days), label: `More than ${days} days` }))}
                       allLabel="Any age"
                     />
+                    {handOverOn ? (
+                      <ToolbarSelect
+                        label="With"
+                        value={assignedFilter}
+                        onChange={(value) => setAssignedFilter(value as AssignedFilter)}
+                        options={[
+                          { value: 'me', label: 'Handed to me' },
+                          { value: 'assigned', label: 'Handed to someone' },
+                          { value: 'unassigned', label: 'Not handed over' },
+                        ]}
+                        allLabel="Anyone"
+                      />
+                    ) : null}
                   </>
                 }
                 chips={moreChips}
@@ -1691,6 +1842,8 @@ function DynamicWorkflowStepContent() {
             {renderSelectionBar()}
           </section>
 
+          {showTakeEarly && canTakeEarly && <TakeEarlyPanel steps={workflowSteps} targetIndex={stepIndex} canTake />}
+
           {stepConfig.tabs.map((tab) => (
             <TabsContent key={tab.key} value={tab.key} className="mt-0">
               {renderTable(tab.key)}
@@ -1707,6 +1860,20 @@ function DynamicWorkflowStepContent() {
           entry={selectedEntry}
           // Nothing to reload: the live list shows the verification as soon as it is saved.
           onSuccess={() => undefined}
+        />
+      )}
+
+      {/* Hand over to someone else (Workflow Configuration's "Allow hand over" on this stage). */}
+      {handOverOn && (
+        <HandOverDialog
+          steps={workflowSteps}
+          index={stepIndex}
+          entries={handOverEntries}
+          canHandOverAny={canHandOverAll}
+          onClose={() => {
+            setHandOverEntries(null);
+            setSelectedIds(new Set());
+          }}
         />
       )}
 
