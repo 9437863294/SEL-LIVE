@@ -111,6 +111,26 @@ test('day arithmetic survives a daylight-saving style month and overlap is inclu
   );
 });
 
+test('a blank range bound means unbounded, so a cumulative question needs no sentinel date', () => {
+  const november = { startDate: '2026-11-01', endDate: '2026-11-30' };
+  // "Everything up to 10 Nov" — the 10 days of November that have happened.
+  assert.equal(overlapDays(november, { startDate: '', endDate: '2026-11-10' }), 10);
+  // "Everything from 20 Nov onwards".
+  assert.equal(overlapDays(november, { startDate: '2026-11-20', endDate: '' }), 11);
+  // A range unbounded at both ends is "all time", so it contains the other range entirely.
+  assert.equal(overlapDays(november, { startDate: '', endDate: '' }), 30);
+  // Both unbounded on the *same* side is the one case with no finite overlap to measure.
+  assert.equal(overlapDays({ startDate: '', endDate: '2026-11-30' }, { startDate: '', endDate: '2026-11-10' }), 0);
+  // A bound that was given but cannot be read is an error, not an invitation to assume.
+  assert.equal(overlapDays(november, { startDate: '', endDate: '10-11-2026' }), 0);
+});
+
+test('a cumulative projection total needs no lower bound', () => {
+  const monthly = target({ periodType: 'Month', startDate: '2026-11-01', endDate: '2026-11-30', plannedQty: 600 });
+  // 10 of 30 days elapsed.
+  assert.equal(targetQtyInRange(monthly, { startDate: '', endDate: '2026-11-10' }), 200);
+});
+
 test('buckets step by granularity and always include the end date bucket', () => {
   assert.deepEqual(bucketsInRange('Day', '2026-11-02', '2026-11-05'), [
     '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05',
