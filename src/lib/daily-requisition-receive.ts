@@ -30,12 +30,16 @@ export interface ReceptionPlanItem<T> {
   receptionNo: string;
 }
 
-/** The requests in DEP order, each with the reception number it will take, and where the counter is left. */
+/**
+ * The requests in DEP order, each with the reception number it will take, where the counter is left,
+ * and the fields to write back to the series document.
+ */
 export function planReception<T extends { requestNo?: string }>(
   requests: readonly T[],
   config: RequisitionSerialConfig,
-): { items: Array<ReceptionPlanItem<T>>; nextIndex: number } {
+  on: Date = new Date(),
+): { items: Array<ReceptionPlanItem<T>>; nextIndex: number; update: { startingIndex: number; counterFy?: number } } {
   const ordered = orderForReception(requests);
-  const { receptionNos, nextIndex } = allocateReceptionNos(config, ordered.length);
-  return { items: ordered.map((request, index) => ({ request, receptionNo: receptionNos[index] })), nextIndex };
+  const { receptionNos, nextIndex, update } = allocateReceptionNos(config, ordered.length, on);
+  return { items: ordered.map((request, index) => ({ request, receptionNo: receptionNos[index] })), nextIndex, update };
 }

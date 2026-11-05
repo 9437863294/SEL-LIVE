@@ -9,49 +9,41 @@
  * the app's own styles, shown on screen, and the print dialog opens once it has loaded. It used to
  * copy its HTML into a pop-up window — which the browser blocks when no click opened it, and which
  * carried none of the styles the layout depends on.
+ *
+ * Laid out as Settings › Printing Setup says (`settings/printing`, src/lib/daily-requisition-print.ts):
+ * paper, margins, copies, type size, sections, footer and watermark. `?sample=1` prints a made-up
+ * requisition with the settings Printing Setup is still editing — its "Print test page".
  */
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { collection, documentId, getDocs, query, where, type FieldPath } from 'firebase/firestore';
+import { collection, doc, documentId, getDoc, getDocs, query, where, type FieldPath } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Loader2, Printer } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { CompanyLetterhead, SignatureBlock } from '@/components/shared/company-letterhead';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useUiText } from '@/hooks/use-company-profile';
 import type { DailyRequisitionEntry, ExpenseRequest, Project } from '@/lib/types';
 import { readChecklistPrintBatch } from '@/lib/checklist-print-batch';
-
-const inr = new Intl.NumberFormat('en-IN', {
-  style: 'currency',
-  currency: 'INR',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const money = (value: unknown) => inr.format(Number(value) || 0);
-
-const toDateSafe = (value: unknown): Date | null => {
-  if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
-  const maybe = value as { toDate?: () => Date; seconds?: number };
-  if (typeof maybe.toDate === 'function') return maybe.toDate();
-  if (typeof maybe.seconds === 'number') return new Date(maybe.seconds * 1000);
-  if (typeof value === 'string' || typeof value === 'number') {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  return null;
-};
-
-const formatDate = (value: unknown) => {
-  const date = toDateSafe(value);
-  return date ? format(date, 'dd MMM yyyy') : 'N/A';
-};
+import {
+  ChecklistSheet,
+  SAMPLE_EXPENSE_HEADS,
+  SAMPLE_PROJECT_NAME,
+  sampleChecklistEntry,
+} from '@/components/daily-requisition/checklist-sheet';
+import {
+  defaultPrintSettings,
+  marginsMm,
+  pageCss,
+  pageSizeMm,
+  PRINT_DRAFT_STORAGE_KEY,
+  PRINT_SETTINGS_DOC,
+  resolvePrintSettings,
+  type DRPrintSettings,
+} from '@/lib/daily-requisition-print';
 
 /** Firestore caps an `in` filter at 30 values, and a bulk print can select more. */
 const IN_LIMIT = 30;
@@ -66,10 +58,11 @@ async function getDocsWhereIn<T>(collectionName: string, field: string | FieldPa
   return snapshots.flatMap((snapshot) => snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as T));
 }
 
-const PrintStyles = () => (
+/** Each sheet on its own page, the page set up as Printing Setup says. */
+const PrintStyles = ({ settings }: { settings: DRPrintSettings }) => (
   <style>{`
     @media print {
-      @page { size: A4 portrait; margin: 14mm; }
+      ${pageCss(settings)}
       html, body { background: #fff !important; }
       .no-print { display: none !important; }
       .checklist-sheet { break-after: page; page-break-after: always; }
@@ -78,95 +71,13 @@ const PrintStyles = () => (
   `}</style>
 );
 
-function Field({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className="flex min-w-0">
-      <span className={`${wide ? 'w-36' : 'w-32'} shrink-0 font-medium`}>{label}</span>
-      <span className="min-w-0 break-words">{children}</span>
-    </div>
-  );
-}
-
-function Checklist({
-  entry,
-  project,
-  expenseRequest,
-  printedBy,
-  printedAt,
-}: {
-  entry: DailyRequisitionEntry;
-  project?: Project;
-  expenseRequest?: ExpenseRequest;
-  printedBy: string;
-  printedAt: string;
-}) {
-  const t = useUiText();
-  return (
-    <div className="bg-white p-8 font-sans text-black print:p-0">
-      <CompanyLetterhead title="Check List for Payment" className="mb-4" />
-
-      <div className="mb-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2 print:grid-cols-2">
-        <Field label="Reception No:">{entry.receptionNo}</Field>
-        <Field label="Reception Date:">{formatDate(entry.date)}</Field>
-        <Field label="DEP No:">{entry.depNo || 'N/A'}</Field>
-        <Field label="Project Name:">{project?.projectName || 'N/A'}</Field>
-      </div>
-
-      <Separator className="my-4 bg-gray-400" />
-
-      <div className="mb-4 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2 print:grid-cols-2">
-        <Field label="Name of the party:" wide>
-          <span className="font-semibold">{entry.partyName}</span>
-        </Field>
-        <div className="flex flex-wrap gap-x-6 gap-y-2">
-          <div className="flex">
-            <span className="w-28 shrink-0 font-medium">Gross Amount:</span>
-            <span className="tabular-nums">{money(entry.grossAmount)}</span>
-          </div>
-          <div className="flex">
-            <span className="w-28 shrink-0 font-medium">Net Amount:</span>
-            <span className="tabular-nums">{money(entry.netAmount)}</span>
-          </div>
-        </div>
-        <Field label="Head of A/c:" wide>{expenseRequest?.headOfAccount || 'N/A'}</Field>
-        <Field label="Sub-Head of A/c:">{expenseRequest?.subHeadOfAccount || 'N/A'}</Field>
-      </div>
-
-      <div className="mb-8 space-y-2 text-sm">
-        <p className="font-medium">Description:</p>
-        <p className="min-h-[50px] border-l-2 border-gray-200 pl-4">{entry.description}</p>
-      </div>
-
-      <SignatureBlock
-        className="mt-24"
-        labels={[
-          t('preparedBy', 'Prepared by'),
-          'Authorised by',
-          t('checkedBy', 'Checked by'),
-          t('approvedBy', 'Approved by'),
-          'Verified by',
-          'A/c Dept',
-        ]}
-      />
-
-      <div className="mt-24 flex flex-wrap justify-between gap-2 text-xs text-gray-500">
-        <div>
-          <span className="font-medium">Printed By:</span> <span>{printedBy}</span>
-        </div>
-        <div>
-          <span className="font-medium">Timestamp:</span> <span>{printedAt}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ChecklistPrint() {
   const params = useParams<{ id?: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, users } = useAuth();
   const t = useUiText();
+  const isSample = searchParams.get('sample') === '1';
 
   // A long selection arrives as a `?batch=` key to this browser's storage (checklist-print-batch.ts).
   // Storage is read after mount, so the server render and the first client render agree; `null`
@@ -191,13 +102,33 @@ function ChecklistPrint() {
   const [entries, setEntries] = useState<DailyRequisitionEntry[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [expenseRequests, setExpenseRequests] = useState<ExpenseRequest[]>([]);
+  const [settings, setSettings] = useState<DRPrintSettings>(defaultPrintSettings);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const printed = useRef(false);
 
+  // The test page from Printing Setup: a made-up requisition, printed with the settings still being
+  // edited there (handed over through this browser's storage).
+  useEffect(() => {
+    if (!isSample) return;
+    let draft: unknown = null;
+    try {
+      draft = JSON.parse(window.localStorage.getItem(PRINT_DRAFT_STORAGE_KEY) || 'null');
+    } catch {
+      draft = null;
+    }
+    const sample = sampleChecklistEntry();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser storage is read after mount, so the server render and the first client render agree
+    setSettings(resolvePrintSettings(draft));
+    setEntries([sample]);
+    setProjects([{ id: sample.projectId, projectName: SAMPLE_PROJECT_NAME } as Project]);
+    setExpenseRequests([{ ...SAMPLE_EXPENSE_HEADS, requestNo: sample.depNo, receptionNo: sample.receptionNo } as ExpenseRequest]);
+    setIsLoading(false);
+  }, [isSample]);
+
   useEffect(() => {
     let cancelled = false;
-    if (waitingForBatch) return;
+    if (waitingForBatch || isSample) return;
     if (!ids.length) {
       setError(
         batch
@@ -215,11 +146,14 @@ function ChecklistPrint() {
         // In the order they were chosen, not the order Firestore returned them.
         const order = new Map(ids.map((id, index) => [id, index]));
         found.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-        const [projectDocs, expenseDocs] = await Promise.all([
+        const [projectDocs, expenseDocs, settingsSnap] = await Promise.all([
           getDocsWhereIn<Project>('projects', documentId(), found.map((entry) => entry.projectId)),
           getDocsWhereIn<ExpenseRequest>('expenseRequests', 'requestNo', found.map((entry) => entry.depNo)),
+          // Printing Setup; without it the checklist prints as it always has.
+          getDoc(doc(db, PRINT_SETTINGS_DOC.collection, PRINT_SETTINGS_DOC.doc)).catch(() => null),
         ]);
         if (cancelled) return;
+        setSettings(resolvePrintSettings(settingsSnap?.exists() ? settingsSnap.data() : null));
         setEntries(found);
         setProjects(projectDocs);
         setExpenseRequests(expenseDocs);
@@ -235,7 +169,7 @@ function ChecklistPrint() {
     return () => {
       cancelled = true;
     };
-  }, [ids, batch, waitingForBatch]);
+  }, [ids, batch, waitingForBatch, isSample]);
 
   useEffect(() => {
     if (!entries.length) return;
@@ -262,16 +196,27 @@ function ChecklistPrint() {
   };
 
   const printedAt = format(new Date(), 'dd MMM yyyy HH:mm');
+  const nameOf = (id: string) => users.find((u) => u.id === id)?.name || id;
+  // Every sheet that prints: each requisition once per copy, in order.
+  const sheets = entries.flatMap((entry) => Array.from({ length: settings.copies }, (_, copyIndex) => ({ entry, copyIndex })));
+  const page = pageSizeMm(settings);
+  const margins = marginsMm(settings);
   const expenseFor = (entry: DailyRequisitionEntry) =>
     expenseRequests.find((er) => er.requestNo === entry.depNo && er.receptionNo === entry.receptionNo) ??
     expenseRequests.find((er) => er.requestNo === entry.depNo);
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8 print:bg-white print:p-0">
-      <PrintStyles />
+      <PrintStyles settings={settings} />
       <div className="no-print mx-auto mb-4 flex max-w-4xl flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-slate-600">
-          {isLoading ? t('loading', 'Loading…') : entries.length > 1 ? `${entries.length} checklists` : 'Payment checklist'}
+          {isLoading
+            ? t('loading', 'Loading…')
+            : isSample
+              ? 'Test page — a sample requisition, with the settings from Printing Setup'
+              : entries.length > 1
+                ? `${entries.length} checklists${settings.copies > 1 ? ` × ${settings.copies} copies` : ''}`
+                : `Payment checklist${settings.copies > 1 ? ` × ${settings.copies} copies` : ''}`}
         </p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={close}>
@@ -296,17 +241,27 @@ function ChecklistPrint() {
           </Link>
         </div>
       ) : (
-        entries.map((entry) => (
+        sheets.map(({ entry, copyIndex }, index) => (
+          // On screen, the sheet at its paper size with the margins drawn in; on paper, @page does both.
           <div
-            key={entry.id}
-            className="checklist-sheet mx-auto mb-6 max-w-4xl overflow-hidden rounded-lg border bg-white print:mb-0 print:max-w-none print:overflow-visible print:rounded-none print:border-0"
+            key={`${entry.id}-${copyIndex}`}
+            className="checklist-sheet mx-auto mb-6 max-w-full overflow-hidden rounded-lg border bg-white print:!m-0 print:!min-h-0 print:!w-auto print:!max-w-none print:overflow-visible print:rounded-none print:border-0 print:!p-0"
+            style={{
+              width: `${page.width}mm`,
+              minHeight: `${page.height}mm`,
+              padding: `${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm`,
+            }}
           >
-            <Checklist
+            <ChecklistSheet
               entry={entry}
-              project={projects.find((p) => p.id === entry.projectId)}
+              projectName={projects.find((p) => p.id === entry.projectId)?.projectName}
               expenseRequest={expenseFor(entry)}
               printedBy={user?.name || 'N/A'}
               printedAt={printedAt}
+              settings={settings}
+              copyIndex={copyIndex}
+              sheet={{ index, total: sheets.length }}
+              nameOf={nameOf}
             />
           </div>
         ))

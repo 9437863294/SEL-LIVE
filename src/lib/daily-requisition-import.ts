@@ -664,19 +664,86 @@ export function parseRequisitionImportRows(
 
 /* ── reception numbers ───────────────────────────────────────────────────── */
 
+/**
+ * `serialNumberConfigs/daily-requisition`. The first four fields are the original document; the
+ * rest are optional, so a document saved before them numbers exactly as it always did.
+ */
 export interface RequisitionSerialConfig {
   prefix?: string;
+  /** Literal text, or a financial-year token: {FY} "2026-27", {FY2} "26-27", {FYS} "FY27". */
   format?: string;
   suffix?: string;
   startingIndex?: number;
+  /** The running number's zero-padding, 3 to 6. Absent = 4. */
+  digits?: number;
+  /** 'fy': the running number starts again at 1 when the financial year changes. Absent = never. */
+  resetEvery?: "never" | "fy";
+  /** The financial year (by the year it starts) the counter last numbered in, for `resetEvery: 'fy'`. */
+  counterFy?: number;
 }
 
-/** The single-entry format the entry sheet uses, kept here so the import cannot drift from it. */
-export const formatReceptionNo = (config: RequisitionSerialConfig, index: number): string =>
-  `${config.prefix ?? ""}${config.format ?? ""}${String(index).padStart(4, "0")}${config.suffix ?? ""}`;
+/** The financial-year tokens a format may carry, and how each reads for FY 2026-27. */
+export const FY_TOKENS = { "{FY}": "2026-27", "{FY2}": "26-27", "{FYS}": "FY27" } as const;
+export type FyToken = keyof typeof FY_TOKENS;
+
+/** The Indian financial year (April–March) a day falls in, by the year it starts. */
+export function fyStartOf(date: Date): number {
+  return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+}
+
+/** A financial year as a token writes it. */
+export function fyLabel(startYear: number, token: FyToken): string {
+  const end2 = String((startYear + 1) % 100).padStart(2, "0");
+  if (token === "{FY2}") return `${String(startYear % 100).padStart(2, "0")}-${end2}`;
+  if (token === "{FYS}") return `FY${end2}`;
+  return `${startYear}-${end2}`;
+}
+
+/** Text with its financial-year tokens filled in for the day given. */
+export function fillFyTokens(text: string, date: Date): string {
+  const fy = fyStartOf(date);
+  return text.replace(/\{FY2\}|\{FYS\}|\{FY\}/g, (token) => fyLabel(fy, token as FyToken));
+}
+
+/** Whether the number carries an automatic financial year anywhere. */
+export function hasFyToken(config: Pick<RequisitionSerialConfig, "prefix" | "format" | "suffix">): boolean {
+  return /\{FY2?\}|\{FYS\}/.test(`${config.prefix ?? ""}${config.format ?? ""}${config.suffix ?? ""}`);
+}
+
+/** The running number's zero-padding: 3 to 6, 4 when unset or out of range. */
+export function serialDigits(config: RequisitionSerialConfig): number {
+  const d = Math.trunc(Number(config.digits));
+  return d >= 3 && d <= 6 ? d : 4;
+}
 
 /**
- * A contiguous block of reception numbers, and the index the counter should be left at.
+ * The single-entry format the entry sheet uses, kept here so the import cannot drift from it.
+ * `on` is the day the number is issued, for a financial-year token.
+ */
+export const formatReceptionNo = (config: RequisitionSerialConfig, index: number, on: Date = new Date()): string =>
+  fillFyTokens(
+    `${config.prefix ?? ""}${config.format ?? ""}${String(index).padStart(serialDigits(config), "0")}${config.suffix ?? ""}`,
+    on,
+  );
+
+/** Where the counter stands on the day given: back to 1 when it restarts each financial year and a new one has begun. */
+export function counterStart(config: RequisitionSerialConfig, on: Date = new Date()): number {
+  // The counter has to survive a half-written config document. `Math.max(1, NaN)` is NaN, so a
+  // missing, blank or non-numeric startingIndex used to allocate "0NaN" and then write NaN back —
+  // poisoning the series for every entry after it. Anything unusable starts the series at 1.
+  const raw = Math.trunc(Number(config.startingIndex));
+  const start = Number.isFinite(raw) && raw >= 1 ? raw : 1;
+  // Starting again at 1 is only safe when the number itself carries the year: with fixed text the
+  // new year's numbers would repeat last year's.
+  if (config.resetEvery !== "fy" || !hasFyToken(config)) return start;
+  const last = Math.trunc(Number(config.counterFy));
+  return Number.isFinite(last) && last > 0 && last !== fyStartOf(on) ? 1 : start;
+}
+
+/**
+ * A contiguous block of reception numbers, the index the counter should be left at, and the
+ * fields to write back to the series document (the index, and the financial year when it
+ * restarts each year).
  *
  * Returned together rather than leaving the caller to do the arithmetic: getting the next index
  * wrong is exactly how the entry sheet afterwards hands out a number an imported row already has.
@@ -684,15 +751,17 @@ export const formatReceptionNo = (config: RequisitionSerialConfig, index: number
 export function allocateReceptionNos(
   config: RequisitionSerialConfig,
   count: number,
-): { receptionNos: string[]; nextIndex: number } {
-  // The counter has to survive a half-written config document. `Math.max(1, NaN)` is NaN, so a
-  // missing, blank or non-numeric startingIndex used to allocate "0NaN" and then write NaN back —
-  // poisoning the series for every entry after it. Anything unusable starts the series at 1.
-  const raw = Math.trunc(Number(config.startingIndex));
-  const start = Number.isFinite(raw) && raw >= 1 ? raw : 1;
+  on: Date = new Date(),
+): { receptionNos: string[]; nextIndex: number; update: { startingIndex: number; counterFy?: number } } {
+  const start = counterStart(config, on);
   const wanted = Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : 0;
-  const receptionNos = Array.from({ length: wanted }, (_, offset) => formatReceptionNo(config, start + offset));
-  return { receptionNos, nextIndex: start + wanted };
+  const receptionNos = Array.from({ length: wanted }, (_, offset) => formatReceptionNo(config, start + offset, on));
+  const nextIndex = start + wanted;
+  return {
+    receptionNos,
+    nextIndex,
+    update: config.resetEvery === "fy" ? { startingIndex: nextIndex, counterFy: fyStartOf(on) } : { startingIndex: nextIndex },
+  };
 }
 
 /* ── what an imported entry carries beyond the sheet ─────────────────────── */
