@@ -482,7 +482,7 @@ export function DailyRequisitionImportDialog({
           }
           const config = snapshot.data() as SerialNumberConfig;
           const allocated = allocateReceptionNos(config, rows.length);
-          transaction.update(configRef, { startingIndex: allocated.nextIndex });
+          transaction.update(configRef, allocated.update);
           return allocated.receptionNos;
         });
       }

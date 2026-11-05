@@ -412,6 +412,8 @@ test('a half-written serial config cannot poison the counter', () => {
   assert.deepEqual(allocateReceptionNos({ prefix: 'SEL/REC/', format: '2026-27/' }, 1), {
     receptionNos: ['SEL/REC/2026-27/0001'],
     nextIndex: 2,
+    // What the caller writes back: just the counter, for a series that never starts again.
+    update: { startingIndex: 2 },
   });
   assert.deepEqual(allocateReceptionNos({ startingIndex: Number.NaN }, 2).receptionNos, ['0001', '0002']);
   assert.equal(allocateReceptionNos({ startingIndex: Number.NaN }, 2).nextIndex, 3);

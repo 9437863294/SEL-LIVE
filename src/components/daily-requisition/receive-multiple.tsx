@@ -229,8 +229,9 @@ export function ReceiveMultiplePanel({
           );
         }
 
-        const { items, nextIndex } = planReception(chosen, configSnap.data() as SerialNumberConfig);
-        tx.update(configRef, { startingIndex: nextIndex });
+        const { items, update } = planReception(chosen, configSnap.data() as SerialNumberConfig);
+        // The counter, and the financial year it numbered in when it restarts each year.
+        tx.update(configRef, update);
 
         // One millisecond apart, so the register (newest first) keeps the block in its order.
         const createdBase = Date.now();

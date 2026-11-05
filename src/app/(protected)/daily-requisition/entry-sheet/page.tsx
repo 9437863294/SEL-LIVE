@@ -686,9 +686,9 @@ function EntrySheetPageComponent() {
         // The same allocator the import and the multi-receive use: one definition of the format, and
         // a missing or non-numeric startingIndex falls back to 1 instead of writing NaN to the
         // counter — which would hand every entry after it a Reception No reading "…NaN".
-        const { receptionNos, nextIndex } = allocateReceptionNos(configDoc.data() as SerialNumberConfig, 1);
+        const { receptionNos, update } = allocateReceptionNos(configDoc.data() as SerialNumberConfig, 1);
         generatedReceptionNo = receptionNos[0];
-        transaction.update(configRef, { startingIndex: nextIndex });
+        transaction.update(configRef, update);
       });
 
       const attachmentUrls: Attachment[] = [];
