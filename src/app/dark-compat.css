@@ -1218,6 +1218,9 @@
   .dark :where(.hover\:bg-indigo-100\/70:not(.keep-light, .keep-light *)):hover {
     background-color: rgb(99 102 241 / 0.240);
   }
+  .dark :where(.bg-indigo-100\/80:not(.keep-light, .keep-light *)) {
+    background-color: rgb(99 102 241 / 0.144);
+  }
   .dark :where(.border-indigo-100:not(.keep-light, .keep-light *)),
   .dark :where(.border-indigo-100\/70:not(.keep-light, .keep-light *)) {
     border-color: rgb(99 102 241 / 0.320);

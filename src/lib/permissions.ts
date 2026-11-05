@@ -785,6 +785,11 @@ export const permissionModules = {
     Supply: ["View"],
     Civil: ["View", "Add", "Edit", "Delete", "Export"],
     Erection: ["View", "Add", "Edit", "Delete", "Export"],
+    // Daily progress against the Civil and Erection BOQ lines: the projections (planned, at
+    // whatever day/week/month granularity suits) and the daily sheets recorded against them
+    // (see src/lib/project-management-dpr.ts). "Add" records a day; "Edit" also covers setting
+    // projections, since planning the work and correcting a filed sheet are the same authority.
+    DPR: ["View", "Add", "Edit", "Delete", "Export"],
     // Tower-wise execution hosted inside Erection: the seven construction activities per tower, their
     // photographic evidence, and the reporting engine over both (see
     // src/lib/project-management-tower-progress.ts). "Verify Progress" is deliberately separate from

@@ -33,14 +33,15 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ModuleShell, type ModuleNavGroup, type ModuleNavTab } from '@/components/shared/module-shell';
+import { ModuleShell, type ModuleNavGroup, type ModuleNavItem, type ModuleNavTab } from '@/components/shared/module-shell';
+import { readWorkflowSteps, type NamedStep } from '@/lib/billing-recon/workflow-steps';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { projectMatchesSlug, projectSlugCanonical } from '@/lib/project-slug';
-import { billingReconRegister, type BillingReconRegister } from '@/lib/billing-recon/register';
+import { WORKFLOWS_COLLECTION, billingReconRegister, type BillingReconRegister } from '@/lib/billing-recon/register';
 import { BR_TONE } from './page-kit';
 import { canViewSubcontractorAudit } from '@/lib/subcontractors-audit-scope';
 
@@ -186,13 +187,42 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
     canViewModule ||
     ['BOQ', 'JMC', 'MVAC', 'Combined Log', 'Billing', 'Reconciliation', 'Data Separation'].some(sees);
 
+  // The JMC and MVAC workflows' steps for the menu project, so each register's entry can list its
+  // stage queues. Read once per project (two documents), through the project's own register.
+  const [menuSteps, setMenuSteps] = useState<{ key: string; jmc: NamedStep[]; mvac: NamedStep[] } | null>(null);
+  const menuRegister = useMemo(() => billingReconRegister(menuProject), [menuProject]);
+  const stepsKey = menuProject && !authLoading ? `${menuProject.id}|${menuRegister.jmcWorkflowId}` : '';
+  useEffect(() => {
+    if (!stepsKey) return;
+    let cancelled = false;
+    const read = (id: string) => getDoc(doc(db, WORKFLOWS_COLLECTION, id)).then((snap) => (snap.exists() ? snap.data().steps : []));
+    Promise.all([read(menuRegister.jmcWorkflowId).catch(() => []), read(menuRegister.mvacWorkflowId).catch(() => [])]).then(([jmc, mvac]) => {
+      if (!cancelled) setMenuSteps({ key: stepsKey, jmc: readWorkflowSteps(jmc, 'JMC'), mvac: readWorkflowSteps(mvac, 'MVAC') });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [stepsKey, menuRegister]);
+  const steps = menuSteps?.key === stepsKey ? menuSteps : null;
+
   const groups = useMemo<ModuleNavGroup[]>(() => {
     const p = menuSlug ? `${BASE}/${menuSlug}` : '';
     // Grouped like Bank Balance's menu; each entry's colour is its page family's (BR_TONE), so the
-    // menu tile, the page backdrop and the page's section tiles agree.
+    // menu tile, the page backdrop and the page's section tiles agree. An entry with sub-pages
+    // opens out to show them while you are in that section (ModuleShell's `children`).
     const has = Boolean(p);
     // Subcontractors' rights are granted per project (by id), as on that module's own sidebar.
     const scProject = menuProject?.id;
+    // MVAC rights may be granted per project (by slug), as the MVAC pages check them.
+    const mvacCan = (action: string) => can(action, `${MODULE}.MVAC`, menuSlug || undefined);
+    const jmcCan = (action: string) => can(action, `${MODULE}.JMC`);
+    const stageItems = (register: 'jmc' | 'mvac', list: NamedStep[] | undefined, visible: boolean): ModuleNavItem[] =>
+      (list ?? []).map((step, index) => ({
+        id: `${register}-stage-${step.id}`,
+        label: `${index + 1}. ${step.name}`,
+        href: `${p}/${register}/stage/${encodeURIComponent(step.id)}`,
+        visible: has && visible,
+      }));
     return [
       {
         id: 'overview',
@@ -208,9 +238,49 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
         id: 'registers',
         label: 'Registers',
         items: [
-          { id: 'boq', label: 'BOQ', href: `${p}/boq`, icon: ClipboardList, tone: BR_TONE.boq, visible: has && sees('BOQ') },
-          { id: 'jmc', label: 'JMC', href: `${p}/jmc`, icon: HardHat, tone: BR_TONE.jmc, visible: has && sees('JMC') },
-          { id: 'mvac', label: 'MVAC', href: `${p}/mvac`, icon: Truck, tone: BR_TONE.mvac, visible: has && sees('MVAC') },
+          {
+            id: 'boq',
+            label: 'BOQ',
+            href: `${p}/boq`,
+            icon: ClipboardList,
+            tone: BR_TONE.boq,
+            visible: has && sees('BOQ'),
+            children: [
+              { id: 'boq-view', label: 'View BOQ', href: `${p}/boq/view`, visible: has && sees('BOQ') },
+              { id: 'boq-import', label: 'Import BOQ', href: `${p}/boq/import`, visible: has && can('Import', `${MODULE}.BOQ`) },
+              { id: 'boq-add', label: 'Add Items', href: `${p}/boq/add`, visible: has && can('Add Manual', `${MODULE}.BOQ`) },
+            ],
+          },
+          {
+            id: 'jmc',
+            label: 'JMC',
+            href: `${p}/jmc`,
+            icon: HardHat,
+            tone: BR_TONE.jmc,
+            visible: has && sees('JMC'),
+            children: [
+              { id: 'jmc-entry', label: 'New JMC', href: `${p}/jmc/entry`, visible: has && jmcCan('Create JMC Entry') },
+              { id: 'jmc-log', label: 'JMC Log', href: `${p}/jmc/log`, visible: has && jmcCan('View Log') },
+              ...stageItems('jmc', steps?.jmc, sees('JMC')),
+              { id: 'jmc-reports', label: 'Reports', href: `${p}/jmc/reports`, visible: has && jmcCan('View Reports') },
+              { id: 'jmc-settings', label: 'Settings', href: `${p}/jmc/settings`, visible: has && jmcCan('View Settings') },
+            ],
+          },
+          {
+            id: 'mvac',
+            label: 'MVAC',
+            href: `${p}/mvac`,
+            icon: Truck,
+            tone: BR_TONE.mvac,
+            visible: has && mvacCan('View'),
+            children: [
+              { id: 'mvac-entry', label: 'New MVAC', href: `${p}/mvac/entry`, visible: has && mvacCan('Create MVAC Entry') },
+              { id: 'mvac-log', label: 'MVAC Log', href: `${p}/mvac/log`, visible: has && mvacCan('View Log') },
+              ...stageItems('mvac', steps?.mvac, mvacCan('View')),
+              { id: 'mvac-reports', label: 'Reports', href: `${p}/mvac/reports`, visible: has && mvacCan('View Reports') },
+              { id: 'mvac-settings', label: 'Settings', href: `${p}/mvac/settings`, visible: has && mvacCan('View Settings') },
+            ],
+          },
           { id: 'combined-log', label: 'Combined Log', href: `${p}/combined-log`, icon: History, tone: BR_TONE.log, visible: has && sees('Combined Log') },
         ],
       },
@@ -219,7 +289,15 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
         label: 'Billing',
         items: [
           { id: 'reconciliation', label: 'Reconciliation', href: `${p}/reconciliation`, icon: Scale, tone: BR_TONE.reconciliation, visible: has && sees('Reconciliation') },
-          { id: 'billing', label: 'RA Bills', href: `${p}/billing`, icon: Calculator, tone: BR_TONE.billing, visible: has && sees('Billing') },
+          {
+            id: 'billing',
+            label: 'RA Bills',
+            href: `${p}/billing`,
+            icon: Calculator,
+            tone: BR_TONE.billing,
+            visible: has && sees('Billing'),
+            children: [{ id: 'billing-create', label: 'New RA Bill', href: `${p}/billing/create`, visible: has && can('Create Bill', `${MODULE}.Billing`) }],
+          },
         ],
       },
       {
@@ -227,18 +305,28 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
         // (/billing-recon/[project]/subcontractors). Same screens and records as that module — its
         // registers, not Billing Recon's — and gated by its rights, scoped to the project as its
         // own sidebar does.
+        // No heading: the group's one entry is "Subcontractors" itself, so a divider sets it apart.
         id: 'subcontractors',
-        label: 'Subcontractors',
         items: [
           // Always there once a project is chosen, so the section is never silently missing: without
           // Subcontractors Management's rights its page says which one is needed (the screens check
           // their own rights wherever they are shown), and the entries below stay hidden.
-          { id: 'sc-home', label: 'Subcontractors', href: `${p}/subcontractors`, icon: Briefcase, tone: 'rose', match: 'exact', visible: has },
-          { id: 'sc-manage', label: 'Manage', href: `${p}/subcontractors/manage`, icon: Users, tone: 'sky', visible: has && can('View', `${SUBCONTRACTORS}.Manage Subcontractors`, scProject) },
-          { id: 'sc-work-orders', label: 'Work Orders', href: `${p}/subcontractors/work-order`, icon: FileText, tone: 'violet', visible: has && can('View', `${SUBCONTRACTORS}.Work Order`, scProject) },
-          { id: 'sc-billing', label: 'Subcontractor Bills', href: `${p}/subcontractors/billing`, icon: Wallet, tone: 'amber', visible: has && can('View', `${SUBCONTRACTORS}.Billing`, scProject) },
-          { id: 'sc-reports', label: 'Reports', href: `${p}/subcontractors/reports`, icon: PieChart, tone: 'indigo', visible: has && can('View', `${SUBCONTRACTORS}.Reports`, scProject) },
-          { id: 'sc-audit-log', label: 'Audit Log', href: `${p}/subcontractors/audit-log`, icon: ScrollText, tone: 'slate', visible: has && canViewSubcontractorAudit(can, scProject) },
+          // One entry that opens out to its pages while you are in it, like JMC and MVAC above.
+          {
+            id: 'sc-home',
+            label: 'Subcontractors',
+            href: `${p}/subcontractors`,
+            icon: Briefcase,
+            tone: 'rose',
+            visible: has,
+            children: [
+              { id: 'sc-manage', label: 'Manage', href: `${p}/subcontractors/manage`, icon: Users, visible: has && can('View', `${SUBCONTRACTORS}.Manage Subcontractors`, scProject) },
+              { id: 'sc-work-orders', label: 'Work Orders', href: `${p}/subcontractors/work-order`, icon: FileText, visible: has && can('View', `${SUBCONTRACTORS}.Work Order`, scProject) },
+              { id: 'sc-billing', label: 'Subcontractor Bills', href: `${p}/subcontractors/billing`, icon: Wallet, visible: has && can('View', `${SUBCONTRACTORS}.Billing`, scProject) },
+              { id: 'sc-reports', label: 'Reports', href: `${p}/subcontractors/reports`, icon: PieChart, visible: has && can('View', `${SUBCONTRACTORS}.Reports`, scProject) },
+              { id: 'sc-audit-log', label: 'Audit Log', href: `${p}/subcontractors/audit-log`, icon: ScrollText, visible: has && canViewSubcontractorAudit(can, scProject) },
+            ],
+          },
         ],
       },
       {
@@ -249,7 +337,7 @@ export function BillingReconShell({ children }: { children: ReactNode }) {
         ],
       },
     ];
-  }, [menuSlug, menuProject, canViewModule, canSettings, sees, can]);
+  }, [menuSlug, menuProject, canViewModule, canSettings, sees, can, steps]);
 
   const mobileTabs = useMemo<ModuleNavTab[]>(() => {
     const p = menuSlug ? `${BASE}/${menuSlug}` : '';

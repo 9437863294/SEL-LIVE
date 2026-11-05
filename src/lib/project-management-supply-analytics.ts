@@ -228,6 +228,128 @@ export function buildSupplyFunnel(lines: SupplyChainLine[]): SupplyFunnelStage[]
   });
 }
 
+/* ── 1b. The whole pipeline, measured against the BOQ ───────────────────────────────────────── */
+
+/** What the project set out to buy, before any of it was ordered. */
+export interface SupplyDemand {
+  /** Σ value of the BOQ lines whose Scope 2 is Supply. */
+  boqValue: number;
+  boqLineCount: number;
+  /** Σ indented qty × the BOQ line's own rate — demand raised, whether or not it is ordered yet. */
+  indentedValue: number;
+  indentedLineCount: number;
+}
+
+type DemandRecord = Record<string, unknown>;
+
+const isSupplyScope = (item: DemandRecord): boolean =>
+  String(item["Scope 2"] ?? "").trim().toLowerCase() === "supply";
+
+/** Rate per unit, under whichever of the BOQ's rate headers this import happened to use. */
+const boqRate = (item: DemandRecord): number =>
+  num(item["Budget Price"] ?? item["Unit Rate"] ?? item.Rate ?? item.rate);
+
+const boqQty = (item: DemandRecord): number => num(item.QTY ?? item.Quantity ?? item.quantity);
+
+/**
+ * The demand side of the pipeline, from the BOQ and the indents raised against it.
+ *
+ * Indented value is priced at the BOQ rate rather than at any quoted rate: at indent time nothing
+ * has been quoted, so the BOQ is the only price there is, and it keeps this stage comparable with
+ * the BOQ stage it is measured against.
+ */
+export function buildSupplyDemand(
+  boqItems: readonly DemandRecord[],
+  indents: readonly DemandRecord[],
+): SupplyDemand {
+  const supplyItems = boqItems.filter(isSupplyScope);
+  const rateByBoqItemId = new Map<string, number>();
+  let boqValue = 0;
+  for (const item of supplyItems) {
+    const stored = num(item["Total Amount"] ?? item.totalAmount);
+    boqValue += stored > 0 ? stored : boqQty(item) * boqRate(item);
+    rateByBoqItemId.set(String(item.id ?? ""), boqRate(item));
+  }
+
+  const indentedQtyByBoqItem = new Map<string, number>();
+  for (const indent of indents) {
+    if (["Rejected", "Cancelled"].includes(String(indent.status ?? ""))) continue;
+    const items = Array.isArray(indent.items) ? (indent.items as DemandRecord[]) : [];
+    for (const item of items) {
+      const boqItemId = String(item.boqItemId ?? "");
+      // Only lines that belong to the supply scope; an indent may span scopes.
+      if (!boqItemId || !rateByBoqItemId.has(boqItemId)) continue;
+      indentedQtyByBoqItem.set(
+        boqItemId,
+        (indentedQtyByBoqItem.get(boqItemId) ?? 0) + num(item.requestedQty ?? item.qty),
+      );
+    }
+  }
+
+  let indentedValue = 0;
+  for (const [boqItemId, qty] of indentedQtyByBoqItem) {
+    indentedValue += qty * (rateByBoqItemId.get(boqItemId) ?? 0);
+  }
+
+  return {
+    boqValue,
+    boqLineCount: supplyItems.length,
+    indentedValue,
+    indentedLineCount: indentedQtyByBoqItem.size,
+  };
+}
+
+export interface SupplyPipelineStage {
+  key: "boq" | "indent" | SupplyChainGate;
+  label: string;
+  value: number;
+  lineCount: number;
+  /** Share of the BOQ baseline, 0–100. null when the BOQ carries no value to measure against. */
+  pctOfBoq: number | null;
+}
+
+/**
+ * The full pipeline as a single scale: what the BOQ says this project will buy, and how much of
+ * that value has reached each gate.
+ *
+ * The funnel in `buildSupplyFunnel` is based on *ordered* value, which answers "how is the order
+ * book converting". This one is based on BOQ value, which answers the earlier question — "how much
+ * of what we promised to buy have we actually bought, and received" — and so it leads with the two
+ * stages that happen before a PO exists.
+ */
+export function buildSupplyPipeline(input: {
+  demand: SupplyDemand;
+  funnel: SupplyFunnelStage[];
+}): SupplyPipelineStage[] {
+  const { demand, funnel } = input;
+  const share = (value: number) =>
+    demand.boqValue > 0 ? Math.round((value / demand.boqValue) * 1000) / 10 : null;
+
+  return [
+    {
+      key: "boq",
+      label: "BOQ",
+      value: demand.boqValue,
+      lineCount: demand.boqLineCount,
+      pctOfBoq: demand.boqValue > 0 ? 100 : null,
+    },
+    {
+      key: "indent",
+      label: "Indented",
+      value: demand.indentedValue,
+      lineCount: demand.indentedLineCount,
+      pctOfBoq: share(demand.indentedValue),
+    },
+    ...funnel.map((stage) => ({
+      key: stage.gate,
+      label: stage.gate === "ordered" ? "PO placed" : stage.label,
+      value: stage.value,
+      lineCount: stage.lineCount,
+      pctOfBoq: share(stage.value),
+    })),
+  ];
+}
+
 /* ── 2. Where value is stuck ────────────────────────────────────────────────────────────────── */
 
 export interface SupplyBottleneck {
