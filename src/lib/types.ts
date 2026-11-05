@@ -9,6 +9,11 @@ export type UploadRequirement = "Required" | "Optional" | "Not Required";
 export interface AssignedTo {
   primary: string;
   alternative?: string;
+  /**
+   * Anyone else who acts for this project or department, after the primary and alternative.
+   * Daily Requisition only (src/lib/daily-requisition-flow.ts); other modules read the first two.
+   */
+  additional?: string[];
 }
 
 /** Allow richer per-step action config */
@@ -872,6 +877,22 @@ export interface WorkflowStepBase {
   escalationUserId?: string;
   /** Percentage of TAT elapsed before escalation fires (default 80) */
   escalationThreshold?: number;
+  /**
+   * Daily Requisition (src/lib/daily-requisition-flow.ts): 'verification' marks a Verification
+   * step — its assignee verifies, or hands it to someone else. Absent on a built-in stage.
+   */
+  kind?: "verification";
+  /** A reference that survives reordering (`id` is the step's position). */
+  key?: string;
+  /**
+   * Whether the step's people may hand a requisition to someone else. Absent = on for a
+   * Verification step, off for a built-in stage.
+   */
+  allowHandOver?: boolean;
+  /** Who it may be handed to. Empty or absent = anyone. */
+  handOverUserIds?: string[];
+  /** The earlier steps (by `key`) this step may take a requisition from before it arrives. */
+  takeFrom?: string[];
 }
 
 export interface WorkflowStepUser extends WorkflowStepBase {
@@ -1010,6 +1031,42 @@ export interface DailyRequisitionEntry {
   manualPaid?: boolean;
   paidById?: string;
   paidByName?: string;
+  /**
+   * The Verification step holding it (the step's `key`), or null/absent when it waits at a
+   * built-in stage. See src/lib/daily-requisition-flow.ts.
+   */
+  heldAt?: string | null;
+  /** Who must verify it there: the step's assignees for its project or department, or whoever it was handed to. */
+  heldAssignees?: string[];
+  /** When it reached that step, or was handed over. */
+  heldSince?: Timestamp | null;
+  /**
+   * Handed to someone at a built-in stage: which stage ('receiving' | 'gst' | 'payment'). The
+   * assignment stands only while the requisition is still at that stage.
+   */
+  assignedStage?: "receiving" | "gst" | "payment" | null;
+  /** Who it was handed to there. They do that stage's work on it. */
+  assignedTo?: string[];
+  assignedSince?: Timestamp | null;
+  /** What happened at Verification steps and early takes, oldest first. */
+  flowTrail?: DailyFlowEvent[];
+}
+
+/** One event at a Daily Requisition Verification step, or an early take. */
+export interface DailyFlowEvent {
+  action: "Verified" | "Handed over" | "Taken early";
+  stepKey: string;
+  stepName: string;
+  userId: string;
+  userName: string;
+  at: Timestamp;
+  comment?: string;
+  /** Handed over: to whom. */
+  toUserIds?: string[];
+  toUserNames?: string[];
+  /** Taken early: the step it was taken from, and the steps passed over (that one first). */
+  fromStep?: string;
+  skipped?: string[];
 }
 
 /** ---------- User settings ---------- **/

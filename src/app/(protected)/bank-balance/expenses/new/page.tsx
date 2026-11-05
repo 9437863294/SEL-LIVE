@@ -44,7 +44,8 @@ import {
   type VoucherLine,
 } from '@/lib/bank-payments';
 import { voucherHref } from '@/lib/requisition-progress';
-import type { BankAccount, BankExpense, DailyRequisitionEntry } from '@/lib/types';
+import type { BankAccount, BankExpense, DailyRequisitionEntry, WorkflowStep } from '@/lib/types';
+import { isHeld } from '@/lib/daily-requisition-flow';
 import { useEntryControls } from '@/components/bank-balance/controls/use-entry-controls';
 import { useBBFieldControl } from '@/components/bank-balance/controls/use-field-control';
 import { cn } from '@/lib/utils';
@@ -268,6 +269,11 @@ function NewPaymentForm() {
 
   // Requisitions sent by "Pay via voucher": which ?requisitions= value has been applied, and what was left off.
   const preloadedFor = useRef<string | null>(null);
+  /**
+   * Daily Requisition's workflow, for its Verification steps: a requisition one of them holds before
+   * payment is not payable until it is verified (src/lib/daily-requisition-flow.ts).
+   */
+  const requisitionStepsRef = useRef<WorkflowStep[]>([]);
   const [preloadNote, setPreloadNote] = useState('');
 
   // Requisition picker.
@@ -288,7 +294,7 @@ function NewPaymentForm() {
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [accountSnap, txnSnap, voucherSnap, reqSnap, projectSnap, settingsSnap, methodSnap] = await Promise.all([
+      const [accountSnap, txnSnap, voucherSnap, reqSnap, projectSnap, settingsSnap, methodSnap, requisitionWorkflowSnap] = await Promise.all([
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses')),
         getDocs(collection(db, 'bankPayments')),
@@ -296,14 +302,18 @@ function NewPaymentForm() {
         getDocs(collection(db, 'projects')),
         getDoc(doc(db, 'bankBalanceSettings', 'paymentEntry')),
         getDocs(collection(db, 'paymentMethods')),
+        // Without it nothing counts as held, as before Verification steps existed.
+        getDoc(doc(db, 'workflows', 'daily-requisition-workflow')).catch(() => null),
       ]);
+      const requisitionSteps = requisitionWorkflowSnap?.exists() ? requisitionWorkflowSnap.data().steps : [];
+      requisitionStepsRef.current = Array.isArray(requisitionSteps) ? (requisitionSteps as WorkflowStep[]) : [];
       const projectNames = new Map(projectSnap.docs.map((d) => [d.id, String(d.data().projectName ?? '')]));
       const payable: Payable[] = reqSnap.docs
         .map((d) => {
           const entry = { id: d.id, ...d.data() } as DailyRequisitionEntry;
           return { ...entry, projectName: projectNames.get(entry.projectId) || '—', balance: requisitionBalance(entry), dateText: reqDateText(entry.date) };
         })
-        .filter((entry) => entry.balance > 0)
+        .filter((entry) => entry.balance > 0 && !isHeld(requisitionStepsRef.current, entry))
         .sort((a, b) => (a.receptionNo || '').localeCompare(b.receptionNo || ''));
       setAccounts(accountSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankAccount)).sort((a, b) => accountLabel(a).localeCompare(accountLabel(b))));
       setTransactions(txnSnap.docs.map((d) => ({ id: d.id, ...d.data() } as BankExpense)));
@@ -615,6 +625,9 @@ function NewPaymentForm() {
             const req = snap.data() as DailyRequisitionEntry;
             if (req.status !== 'Received for Payment' && req.status !== 'Partially Paid') {
               throw new Error(`Row ${index + 1}: ${line.ref} is now "${req.status}" and can no longer be paid here.`);
+            }
+            if (isHeld(requisitionStepsRef.current, req)) {
+              throw new Error(`Row ${index + 1}: ${line.ref} is waiting at a Daily Requisition verification step and cannot be paid until it is verified.`);
             }
             // Lines grouped by requisition, in line order — folded into one update below.
             const group = byRequisition.get(line.requisitionId) ?? { req, receptionNo: line.ref.trim(), rows: [], refs: [] };

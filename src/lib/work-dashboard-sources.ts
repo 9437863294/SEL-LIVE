@@ -36,7 +36,9 @@
 
 import {
   collection,
+  doc,
   getCountFromServer,
+  getDoc,
   getDocs,
   limit as fsLimit,
   orderBy,
@@ -48,6 +50,8 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { ACTIVITY_MODULES } from './activity-modules';
+import { assignedStageOf, heldStep, placeSteps, type FlowStepLike } from './daily-requisition-flow';
+import { dailyStepSlug } from './daily-requisition-settings';
 import {
   REQUISITION_STAGE_LABEL,
   STOCK_POSTING_ACTIONS,
@@ -870,6 +874,88 @@ export const WORK_SOURCES: WorkSource[] = [
           count: open,
         },
       ];
+    },
+  },
+  {
+    id: 'daily-requisition-verification',
+    module: ACTIVITY_MODULES.DAILY_REQUISITION,
+    label: 'Daily requisitions waiting for your verification',
+    lane: 'action',
+    // Unlike the stage queues, a Verification step names the person (`heldAssignees`), and anyone can
+    // be handed one whatever they hold in the module — so it is asked for everybody. One
+    // `array-contains me` read, which the rules let a holder make (firestore.rules drHeldByMe).
+    visible: () => true,
+    load: async (context) => {
+      const held = await fetchWhere('dailyRequisitions', 'heldAssignees', 'array-contains', context.userId);
+      if (!held.length) return [];
+      // The requisition names its step by key; the step's page is reached by its name.
+      const workflow = await getDoc(doc(db, 'workflows', 'daily-requisition-workflow')).catch(() => null);
+      const raw = workflow?.exists() ? workflow.data().steps : [];
+      const placed = placeSteps(Array.isArray(raw) ? (raw as FlowStepLike[]) : []);
+      return held.flatMap((row) => {
+        const step = heldStep(placed, {
+          status: text(row.status),
+          heldAt: text(row.heldAt) || null,
+          heldAssignees: Array.isArray(row.heldAssignees) ? (row.heldAssignees as string[]) : [],
+        });
+        if (!step) return [];
+        return [
+          {
+            id: `daily-requisition-verification:${row.id}`,
+            sourceId: 'daily-requisition-verification',
+            kind: 'approval' as WorkKind,
+            module: ACTIVITY_MODULES.DAILY_REQUISITION,
+            lane: 'action' as WorkLane,
+            title: `Verify ${text(row.partyName, 'requisition')}`,
+            reference: text(row.receptionNo) || null,
+            stage: step.step.name,
+            href: `/daily-requisition/${dailyStepSlug(step.step.name)}`,
+            dueAt: null,
+            amount: num(row.netAmount),
+          },
+        ];
+      });
+    },
+  },
+  {
+    id: 'daily-requisition-handed-over',
+    module: ACTIVITY_MODULES.DAILY_REQUISITION,
+    label: 'Daily requisitions handed to you at a stage',
+    lane: 'action',
+    // A stage marked for hand-over names the person (`assignedTo`), who may hold nothing else in the
+    // module — so, like the verification source above, it is asked for everybody (drAssignedToMe).
+    visible: () => true,
+    load: async (context) => {
+      const assigned = await fetchWhere('dailyRequisitions', 'assignedTo', 'array-contains', context.userId);
+      if (!assigned.length) return [];
+      const workflow = await getDoc(doc(db, 'workflows', 'daily-requisition-workflow')).catch(() => null);
+      const raw = workflow?.exists() ? workflow.data().steps : [];
+      const placed = placeSteps(Array.isArray(raw) ? (raw as FlowStepLike[]) : []);
+      return assigned.flatMap((row) => {
+        // Only while it is still at that stage: the assignment lapses once it moves on.
+        const stage = assignedStageOf(placed, {
+          status: text(row.status),
+          heldAt: text(row.heldAt) || null,
+          assignedStage: text(row.assignedStage) || null,
+          assignedTo: Array.isArray(row.assignedTo) ? (row.assignedTo as string[]) : [],
+        });
+        if (!stage) return [];
+        return [
+          {
+            id: `daily-requisition-handed-over:${row.id}`,
+            sourceId: 'daily-requisition-handed-over',
+            kind: 'approval' as WorkKind,
+            module: ACTIVITY_MODULES.DAILY_REQUISITION,
+            lane: 'action' as WorkLane,
+            title: `${stage.step.name}: ${text(row.partyName, 'requisition')}`,
+            reference: text(row.receptionNo) || null,
+            stage: stage.step.name,
+            href: `/daily-requisition/${dailyStepSlug(stage.step.name)}`,
+            dueAt: null,
+            amount: num(row.netAmount),
+          },
+        ];
+      });
     },
   },
   {

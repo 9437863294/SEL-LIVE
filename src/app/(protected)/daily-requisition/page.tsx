@@ -65,6 +65,7 @@ import {
 } from '@/lib/daily-requisition-dashboard';
 import { balanceOf, paidOf, requisitionProgress } from '@/lib/requisition-progress';
 import type { DailyRequisitionEntry, Department, Project } from '@/lib/types';
+import { isVerificationStep } from '@/lib/daily-requisition-flow';
 import { cn } from '@/lib/utils';
 
 /** Stage names when the workflow has fewer than three steps configured. */
@@ -156,6 +157,8 @@ export default function DailyRequisitionDashboardPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
   const { steps, isLoading: stepsLoading } = useDailyRequisitionWorkflowSteps();
+  /** The built-in stages alone: the stage cards are receiving, verification and payment, whatever Verification steps sit between. */
+  const stageSteps = useMemo(() => steps.filter((step) => !isVerificationStep(step)), [steps]);
   const access = useMemo(() => dailyRequisitionAccess(can), [can]);
   const palette = useDashboardPalette();
 
@@ -254,19 +257,19 @@ export default function DailyRequisitionDashboardPage() {
   const periodLabel = period === 'custom' ? 'Custom' : (DASHBOARD_PERIODS.find((option) => option.value === period)?.label ?? 'Period');
 
   const stageNames: Record<OpenStage, string> = {
-    receiving: steps[0]?.name || FALLBACK_STAGE_NAMES.receiving,
-    verification: steps[1]?.name || FALLBACK_STAGE_NAMES.verification,
-    payment: steps[2]?.name || FALLBACK_STAGE_NAMES.payment,
+    receiving: stageSteps[0]?.name || FALLBACK_STAGE_NAMES.receiving,
+    verification: stageSteps[1]?.name || FALLBACK_STAGE_NAMES.verification,
+    payment: stageSteps[2]?.name || FALLBACK_STAGE_NAMES.payment,
   };
   /** Each stage's queue page, where the viewer may open it. */
   const stageHrefs = useMemo(() => {
     const hrefs: Partial<Record<OpenStage, string>> = {};
     STAGE_ORDER.forEach((stage, index) => {
-      const step = steps[index];
+      const step = stageSteps[index];
       if (step && !dailyStepNameProblem(step.name) && access.stage(step.name)) hrefs[stage] = `/daily-requisition/${dailyStepSlug(step.name)}`;
     });
     return hrefs;
-  }, [steps, access]);
+  }, [stageSteps, access]);
   /** A panel's link to the report its figures come from, for those who may open the reports. */
   const reportLink = (slug: string, label: string): PanelAction | undefined =>
     access.reports ? { href: `/daily-requisition/reports/${slug}`, label } : undefined;
