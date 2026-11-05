@@ -249,15 +249,6 @@ export default function SupplyPage() {
           gradient: "from-amber-300 to-amber-600",
           chips: [],
         },
-        {
-          show: canViewDrawing,
-          href: withProject("/project-management/drawing"),
-          title: "Drawing",
-          description: "Submissions, revisions and approvals before manufacture.",
-          icon: PenTool,
-          gradient: "from-slate-400 to-slate-700",
-          chips: [],
-        },
       ],
     },
     {
@@ -306,6 +297,17 @@ export default function SupplyPage() {
                   formatCurrency(headline.orderedValue),
                 ]
               : [],
+        },
+        // Drawing sits after the order, not before it: the vendor submits against a signed PO and
+        // manufacture waits on the approval, so it belongs to Procure rather than Plan & specify.
+        {
+          show: canViewDrawing,
+          href: withProject("/project-management/drawing"),
+          title: "Drawing",
+          description: "Submissions, revisions and approvals before manufacture.",
+          icon: PenTool,
+          gradient: "from-slate-400 to-slate-700",
+          chips: [],
         },
       ],
     },
