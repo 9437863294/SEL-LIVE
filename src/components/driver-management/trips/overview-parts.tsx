@@ -1,21 +1,40 @@
 'use client';
 
 /**
- * The Overview's own pieces: the hero (this month, and the two things a person comes here to do)
- * and the claim journey (where their money is, stage by stage).
+ * The Overview's own pieces, after the "SEL – My Trips" mock-up:
  *
- * The hero is a coloured surface in both themes — its own `dark:` steps, white text, translucent
- * white chips — so the dark-compat layer has nothing to remap; the one white button carries
- * `keep-light` to stay white. The journey uses the pastel chip colours the compat layer already maps.
+ * - the hero: this month's reimbursement over a drifting teal gradient with a road and a car on it,
+ *   and the round Start trip button — red, with a live panel, while a trip is running;
+ * - the money pipeline: unclaimed → in approval → awaiting payment → paid, on one rail;
+ * - recent trips, each with its GPS route drawn as a thumbnail;
+ * - what waits for an approver or payer; the vehicle and the km driven; the rate card.
+ *
+ * The hero is a coloured surface in both themes and carries `keep-light`, so the dark-compat layer
+ * leaves its white glass alone. The cards use the light utilities that layer already maps.
  */
 
 import Link from 'next/link';
-import { ArrowRight, Banknote, ChevronRight, CircleCheck, Hourglass, Navigation, ReceiptText, Wallet, type LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { formatKm } from '@/lib/employee-trips/types';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  ArrowRight,
+  Banknote,
+  CarFront,
+  CircleCheck,
+  Hourglass,
+  Inbox,
+  IndianRupee,
+  Navigation,
+  Route,
+  Square,
+  Wallet,
+  type LucideIcon,
+} from 'lucide-react';
+import { shortPlace } from '@/lib/fleet/places';
+import { formatKm, TRIP_STATUS_LABELS, type TripStatus } from '@/lib/employee-trips/types';
 import { cn } from '@/lib/utils';
-import type { DashboardData } from './trip-api';
+import type { ClaimRow, DashboardData, InboxCounts, RecentTrip, TrendPoint } from './trip-api';
 import { Money } from './trip-ui';
+import styles from './overview.module.css';
 
 type Personal = DashboardData['personal'];
 
@@ -26,147 +45,695 @@ const greeting = () => {
   return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 };
 
-/** A dashed route between two stops, drawn faintly behind the hero's figures. */
-function RouteArt({ className }: { className?: string }) {
+/** "2 Nov" for a YYYY-MM-DD date. */
+const dayMonth = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+/** "own car", "company two-wheeler". */
+const vehicleWords = (ownership: RecentTrip['ownership'], vehicleType: string) =>
+  `${ownership === 'own' ? 'own' : 'company'} ${vehicleType.trim().toLowerCase() || 'vehicle'}`;
+
+/* ── Shared ───────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A white glyph on a gradient tile with a soft shadow in its own colour, as the mock-up's app icons.
+ * `gradient` is full Tailwind class names (so they are kept); `accent` its end colour as hex.
+ */
+function AppIcon({ icon: Icon, gradient, accent, className }: { icon: LucideIcon; gradient: string; accent: string; className?: string }) {
   return (
-    <svg viewBox="0 0 320 160" fill="none" aria-hidden className={className}>
-      <path d="M18 132 C 70 132, 72 70, 128 70 S 190 18, 246 30 S 300 70, 300 70" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="2 10" />
-      <circle cx="18" cy="132" r="7" stroke="currentColor" strokeWidth="3" />
-      <path d="M300 44c-10 0-17 7.4-17 16.4C283 72 300 88 300 88s17-16 17-27.6C317 51.4 310 44 300 44Z" fill="currentColor" />
-      <circle cx="300" cy="60" r="5" className="fill-sky-700 dark:fill-sky-900" />
+    <span
+      aria-hidden
+      style={{ boxShadow: `0 6px 14px -5px ${accent}99, inset 0 1px 0 #ffffff45` } as CSSProperties}
+      className={cn('grid shrink-0 place-items-center bg-gradient-to-br text-white', gradient, className ?? 'h-[34px] w-[34px] rounded-[10px]')}
+    >
+      <Icon className="h-[46%] w-[46%]" />
+    </span>
+  );
+}
+
+/** A card with the mock-up's header: icon, title over a one-line description, and an optional right side. */
+function OverviewCard({
+  id,
+  icon,
+  gradient,
+  accent,
+  title,
+  description,
+  side,
+  children,
+}: {
+  id: string;
+  icon: LucideIcon;
+  gradient: string;
+  accent: string;
+  title: string;
+  description: string;
+  side?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-labelledby={id} className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+      <header className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-[18px]">
+        <AppIcon icon={icon} gradient={gradient} accent={accent} />
+        <div className="min-w-0 flex-1">
+          <h2 id={id} className="text-[15px] font-bold leading-tight text-slate-900">
+            {title}
+          </h2>
+          <p className="truncate text-xs text-slate-400">{description}</p>
+        </div>
+        {side}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** "42:10" or "1:42:10" since the start, ticking each second; its own component so only it re-renders. */
+function Elapsed({ since }: { since: string }) {
+  const start = Date.parse(since);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  if (!Number.isFinite(start)) return <>—</>;
+  const seconds = Math.max(0, Math.floor((now - start) / 1000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return <>{h ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`}</>;
+}
+
+/* ── Hero ─────────────────────────────────────────────────────────────────────────────────── */
+
+/** A trip running now: a company vehicle's fleet trip, or an own vehicle this phone is recording. */
+export interface LiveTrip {
+  kind: 'own' | 'company';
+  /** "OD02CN2501 · own car". */
+  vehicle: string;
+  startedAt: string;
+  /** As of the phone's last sync (company trips); unknown here for an own trip. */
+  distanceKm: number | null;
+  /** The purpose, or where it began. */
+  detail: string;
+  /** The own vehicle's rate today, for the estimate. */
+  ratePerKm: number | null;
+}
+
+/** Kept in step with `.car`'s offset-path in overview.module.css. */
+const ROAD_D = 'M560 150 C 700 60, 820 170, 960 90 S 1180 40, 1300 110';
+
+function Road() {
+  return (
+    <svg className={styles.road} viewBox="520 0 880 220" preserveAspectRatio="xMaxYMid slice" aria-hidden focusable="false">
+      <path className={styles.roadDash} d={ROAD_D} fill="none" stroke="#ffffff66" strokeWidth="3" strokeLinecap="round" />
+      <circle cx="560" cy="150" r="7" fill="none" stroke="#fff" strokeWidth="2.5" />
+      <path d="M1300 92a14 14 0 00-14 14c0 10 14 22 14 22s14-12 14-22a14 14 0 00-14-14z" fill="#ffffff55" />
+      <g className={styles.car}>
+        <circle r="12" fill="#ffffff33" />
+        <circle r="7" fill="#fff" />
+      </g>
     </svg>
   );
 }
 
-function HeroFact({ label, children }: { label: string; children: React.ReactNode }) {
+function HeroStat({ label, value, note }: { label: string; value: ReactNode; note: string }) {
   return (
-    <div className="min-w-0 rounded-xl border border-white/15 bg-black/15 px-3 py-2">
-      <dt className="truncate text-[11px] font-medium text-white/90">{label}</dt>
-      <dd className="truncate text-sm font-semibold tabular-nums text-white">{children}</dd>
+    <div className="min-w-0 rounded-2xl border border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-[8px] sm:px-3.5">
+      <dt className="truncate text-[11.5px] font-semibold text-teal-100">{label}</dt>
+      <dd className="truncate text-lg font-extrabold tabular-nums sm:text-xl">{value}</dd>
+      <dd className="truncate text-[11px] text-emerald-200">{note}</dd>
+    </div>
+  );
+}
+
+function LiveFact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] font-semibold text-teal-100">{label}</p>
+      <p className="truncate text-base font-extrabold tabular-nums sm:text-lg">{children}</p>
     </div>
   );
 }
 
 export function OverviewHero({
   today,
-  financialYear,
   personal,
-  openTrip,
+  liveTrip,
   onStart,
-  onClaim,
 }: {
   today: string;
-  financialYear: string;
   personal: Personal;
-  /** A fleet trip that is running now, from the fleet bootstrap. */
-  openTrip: { vehicleNumber: string } | null;
+  liveTrip: LiveTrip | null;
   onStart: () => void;
-  onClaim: () => void;
 }) {
   const month = new Date(`${today}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-  const unclaimed = personal.unclaimed.trips;
+  const { trips, km, amount } = personal.thisMonth;
+  const paid = personal.paidThisYear;
+  const estimate = liveTrip?.distanceKm != null && liveTrip.ratePerKm != null ? liveTrip.distanceKm * liveTrip.ratePerKm : null;
+  const goClass = cn(
+    styles.go,
+    'grid h-[104px] w-[104px] shrink-0 place-items-center rounded-full text-center shadow-[0_18px_40px_-14px_#022c22] transition duration-200 hover:scale-[1.04]',
+    'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 lg:h-[118px] lg:w-[118px]',
+  );
 
   return (
-    <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-700 via-cyan-700 to-teal-700 p-4 text-white shadow-[0_18px_40px_-24px_rgba(14,116,144,0.9)] sm:p-6 dark:from-sky-900 dark:via-cyan-900 dark:to-teal-900">
-      <RouteArt className="pointer-events-none absolute -right-6 -top-6 h-24 w-48 text-white/15 sm:-right-4 sm:top-2 sm:h-44 sm:w-[22rem] sm:text-white/20" />
+    <section
+      aria-label="This month"
+      className="keep-light relative isolate grid items-center gap-6 overflow-hidden rounded-3xl px-5 py-6 text-white sm:px-7 lg:grid-cols-[minmax(0,1fr)_auto]"
+    >
+      <span aria-hidden className={styles.drift} />
+      <span aria-hidden className={styles.dots} />
+      {/* The road would crowd the figures below this width (the mock-up drops it at 1150px). */}
+      <span aria-hidden className="pointer-events-none absolute inset-0 -z-[1] hidden xl:block">
+        <Road />
+      </span>
+      {/* Dark mode: the same picture, a step deeper. */}
+      <span aria-hidden className="pointer-events-none absolute inset-0 -z-[1] hidden bg-slate-950/25 dark:block" />
 
-      <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0 lg:max-w-xl">
-          <p className="text-xs font-medium text-white/90">
-            {greeting()} · {month}
-          </p>
-          <p className="mt-3 text-sm text-white/90">Reimbursement from this month&apos;s trips</p>
-          <p className="mt-0.5 text-3xl font-semibold tracking-tight sm:text-4xl">
-            <Money value={personal.thisMonth.amount} />
-          </p>
-          <dl className="mt-4 grid grid-cols-3 gap-2 sm:max-w-md">
-            <HeroFact label="Trips">{personal.thisMonth.trips}</HeroFact>
-            <HeroFact label="Distance">{formatKm(personal.thisMonth.km)}</HeroFact>
-            <HeroFact label="Paid this FY">
-              <Money value={personal.paidThisYear.amount} compact />
-            </HeroFact>
-          </dl>
-        </div>
-
-        <div className="flex flex-col gap-2 sm:flex-row lg:w-64 lg:flex-col">
-          {openTrip ? (
-            <Button asChild className="keep-light h-11 flex-1 bg-white font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50 lg:flex-none">
-              <Link href="/driver-management/fleet">
-                <span className="relative mr-2 flex h-2.5 w-2.5" aria-hidden>
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75 motion-reduce:hidden" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                </span>
-                <span className="truncate">On a trip · {openTrip.vehicleNumber}</span>
-                <ArrowRight className="ml-auto h-4 w-4 shrink-0 pl-0.5" aria-hidden />
-              </Link>
-            </Button>
-          ) : (
-            <Button type="button" onClick={onStart} className="keep-light h-11 flex-1 bg-white font-semibold text-sky-700 shadow-sm hover:bg-sky-50 lg:flex-none">
-              <Navigation className="mr-2 h-4 w-4" aria-hidden />
-              Start a trip
-            </Button>
-          )}
-          {unclaimed > 0 && (
-            <Button type="button" onClick={onClaim} className="h-11 flex-1 border border-white/30 bg-black/15 font-semibold text-white shadow-none hover:bg-black/25 lg:flex-none">
-              <ReceiptText className="mr-2 h-4 w-4" aria-hidden />
-              Claim {plural(unclaimed, 'trip')} · <Money value={personal.unclaimed.amount} compact className="ml-1" />
-            </Button>
-          )}
-        </div>
+      <div className="min-w-0 max-w-[560px]">
+        <p className="text-xs font-bold text-teal-100">
+          {greeting()} · {month}
+        </p>
+        <p className="mt-2 text-[13px] font-semibold text-sky-100">Reimbursement from this month&apos;s trips</p>
+        <p className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-4xl font-extrabold leading-tight tracking-[-0.03em] sm:text-[46px]">
+          <Money value={amount} />
+          <small className="text-sm font-semibold tracking-normal text-teal-100">{trips ? `from ${plural(trips, 'trip')}` : 'no trips yet this month'}</small>
+        </p>
+        <dl className="mt-3 grid grid-cols-3 gap-2.5">
+          <HeroStat label="Trips" value={trips} note={trips ? 'this month' : 'start one →'} />
+          <HeroStat label="Distance" value={formatKm(km)} note={km ? 'this month' : '—'} />
+          <HeroStat label="Paid this FY" value={<Money value={paid.amount} compact />} note={paid.claims ? plural(paid.claims, 'claim') : '—'} />
+        </dl>
       </div>
+
+      <div className="flex items-center gap-4 lg:min-w-[190px] lg:flex-col lg:gap-2">
+        {liveTrip ? (
+          <Link href="/driver-management/fleet" className={cn(goClass, 'bg-red-500 text-white')}>
+            <span className="text-sm font-extrabold leading-tight">
+              <Square className="mx-auto mb-1 h-7 w-7" aria-hidden />
+              Stop trip
+            </span>
+          </Link>
+        ) : (
+          <button type="button" onClick={onStart} className={cn(goClass, 'bg-white text-teal-700')}>
+            <span className="text-sm font-extrabold leading-tight">
+              <Navigation className="mx-auto mb-1 h-7 w-7" aria-hidden />
+              Start trip
+            </span>
+          </button>
+        )}
+        <p className="max-w-[190px] text-[11.5px] font-semibold text-teal-100 lg:text-center">
+          {liveTrip ? (
+            'Recording your route… tap to stop and review it.'
+          ) : (
+            <>
+              GPS records the route.
+              <br />
+              Claim it when you stop.
+            </>
+          )}
+        </p>
+      </div>
+
+      {liveTrip && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-white/20 bg-black/15 px-4 py-3 lg:col-span-2">
+          <span className={cn(styles.blink, 'h-[9px] w-[9px] shrink-0 rounded-full bg-red-400')} aria-hidden />
+          <LiveFact label="Trip running">
+            <Elapsed since={liveTrip.startedAt} />
+          </LiveFact>
+          {liveTrip.distanceKm != null && <LiveFact label="Distance · last sync">{formatKm(liveTrip.distanceKm)}</LiveFact>}
+          {estimate != null && (
+            <LiveFact label="Est. claim">
+              <Money value={estimate} />
+            </LiveFact>
+          )}
+          <LiveFact label="Vehicle">
+            {liveTrip.vehicle}
+            {liveTrip.ratePerKm != null ? ` · ₹${liveTrip.ratePerKm}/km` : ''}
+          </LiveFact>
+          {liveTrip.detail && <LiveFact label={liveTrip.kind === 'own' ? 'Started' : 'Purpose'}>{liveTrip.detail}</LiveFact>}
+        </div>
+      )}
     </section>
   );
 }
 
-type Step = { label: string; icon: LucideIcon; chip: string; amount: number; hint: string };
+/* ── Where my money is ────────────────────────────────────────────────────────────────────── */
 
-/** Unclaimed → in approval → awaiting payment → paid: one card, the stages in the order money moves. */
-export function ClaimJourney({ personal, financialYear }: { personal: Personal; financialYear: string }) {
-  const steps: Step[] = [
+type Stage = { label: string; icon: LucideIcon; gradient: string; accent: string; amount: number; hint: string; href: string; cta?: string };
+
+/** Unclaimed → in approval → awaiting payment → paid, on a rail filled up to the last stage holding money. */
+export function MoneyPipeline({ personal, financialYear }: { personal: Personal; financialYear: string }) {
+  const unclaimed = personal.unclaimed;
+  const stages: Stage[] = [
     {
       label: 'Not yet claimed',
       icon: Wallet,
-      chip: 'bg-sky-100 text-sky-700',
-      amount: personal.unclaimed.amount,
-      hint: `${plural(personal.unclaimed.trips, 'trip')} · ${formatKm(personal.unclaimed.km)}`,
+      gradient: 'from-slate-300 to-slate-500',
+      accent: '#64748b',
+      amount: unclaimed.amount,
+      hint: `${plural(unclaimed.trips, 'trip')} · ${formatKm(unclaimed.km)}`,
+      href: unclaimed.trips ? '/driver-management/my-trips?claim=1' : '/driver-management/my-trips',
+      cta: unclaimed.trips ? 'Claim now →' : undefined,
     },
-    { label: 'In approval', icon: Hourglass, chip: 'bg-amber-100 text-amber-700', amount: personal.inApproval.amount, hint: plural(personal.inApproval.claims, 'claim') },
-    { label: 'Awaiting payment', icon: CircleCheck, chip: 'bg-violet-100 text-violet-700', amount: personal.awaitingPayment.amount, hint: `${plural(personal.awaitingPayment.claims, 'claim')} approved` },
-    { label: `Paid · FY ${financialYear}`, icon: Banknote, chip: 'bg-emerald-100 text-emerald-700', amount: personal.paidThisYear.amount, hint: plural(personal.paidThisYear.claims, 'claim') },
+    { label: 'In approval', icon: Hourglass, gradient: 'from-amber-300 to-amber-600', accent: '#d97706', amount: personal.inApproval.amount, hint: plural(personal.inApproval.claims, 'claim'), href: '/driver-management/my-claims' },
+    {
+      label: 'Awaiting payment',
+      icon: CircleCheck,
+      gradient: 'from-violet-300 to-violet-600',
+      accent: '#7c3aed',
+      amount: personal.awaitingPayment.amount,
+      hint: `${personal.awaitingPayment.claims} approved`,
+      href: '/driver-management/my-claims',
+    },
+    { label: `Paid · FY ${financialYear}`, icon: Banknote, gradient: 'from-green-300 to-green-600', accent: '#16a34a', amount: personal.paidThisYear.amount, hint: plural(personal.paidThisYear.claims, 'claim'), href: '/driver-management/my-claims' },
   ];
+  const reached = stages.reduce((last, stage, index) => (stage.amount > 0 ? index : last), -1);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4" aria-labelledby="claim-journey">
-      <h2 id="claim-journey" className="mb-3 px-1 text-sm font-semibold text-slate-800">
-        Where my money is
-      </h2>
-      <ol className="grid grid-cols-2 gap-2 lg:grid-cols-4 lg:gap-0">
-        {steps.map((step, index) => {
-          const Icon = step.icon;
-          return (
-            <li key={step.label} className={cn('relative min-w-0 rounded-xl bg-slate-50 p-3 lg:rounded-none lg:bg-transparent lg:px-5 lg:py-1', index > 0 && 'lg:border-l lg:border-slate-100')}>
-              <div className="flex min-w-0 items-center gap-2">
-                <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-full', step.chip)} aria-hidden>
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <span className="min-w-0 text-xs font-medium leading-tight text-slate-600">{step.label}</span>
-              </div>
-              <p className={cn('mt-2.5 truncate text-lg font-semibold leading-tight sm:text-xl', step.amount ? 'text-slate-900' : 'text-slate-500')}>
-                <Money value={step.amount} />
-              </p>
-              <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{step.hint}</p>
-              {index < steps.length - 1 && (
-                <span className="absolute -right-3 top-1/2 z-10 hidden h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 lg:flex" aria-hidden>
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </span>
-              )}
-            </li>
-          );
-        })}
+    <OverviewCard
+      id="money-pipeline"
+      icon={Wallet}
+      gradient="from-teal-300 to-teal-700"
+      accent="#0f766e"
+      title="Where my money is"
+      description="Every rupee from your trips, from driving to your bank account"
+    >
+      <ol className="relative grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 sm:p-[18px]">
+        {/* The rail runs between the first and last icons' centres (each column's middle). */}
+        <li aria-hidden className="absolute left-[calc(18px+12.5%)] right-[calc(18px+12.5%)] top-[45px] hidden h-1 rounded-sm bg-slate-100 sm:block">
+          <span
+            className="block h-full rounded-sm transition-[width] duration-700"
+            style={{ width: `${reached <= 0 ? 0 : (reached / 3) * 100}%`, background: 'linear-gradient(90deg,#94a3b8,#f59e0b,#8b5cf6,#16a34a)' }}
+          />
+        </li>
+        {stages.map((stage) => (
+          <li key={stage.label} className="min-w-0">
+            <Link
+              href={stage.href}
+              className="block rounded-2xl px-1.5 pb-2.5 text-center transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {/* The white pad is the ring that lifts the icon off the rail. */}
+              <span className="relative z-[1] mx-auto mb-2 block w-fit rounded-[18px] bg-white p-1.5">
+                <AppIcon icon={stage.icon} gradient={stage.gradient} accent={stage.accent} className="h-[46px] w-[46px] rounded-[14px]" />
+              </span>
+              <span className="block text-xs font-bold text-slate-600">{stage.label}</span>
+              <span className={cn('my-0.5 block truncate text-[22px] font-extrabold tabular-nums tracking-[-0.02em]', stage.amount ? 'text-slate-900' : 'text-slate-300')}>
+                <Money value={stage.amount} />
+              </span>
+              <span className="block truncate text-[11.5px] font-semibold text-slate-400">{stage.hint}</span>
+              {stage.cta && <span className="mt-2 inline-block rounded-full bg-teal-100 px-2.5 py-0.5 text-[11.5px] font-extrabold text-teal-700">{stage.cta}</span>}
+            </Link>
+          </li>
+        ))}
       </ol>
-    </section>
+    </OverviewCard>
   );
 }
+
+/* ── My recent trips ──────────────────────────────────────────────────────────────────────── */
+
+const STATUS_CHIP: Record<TripStatus, string> = {
+  draft: 'bg-slate-100 text-slate-600',
+  submitted: 'bg-violet-100 text-violet-700',
+  approved: 'bg-sky-100 text-sky-700',
+  paid: 'bg-emerald-100 text-emerald-700',
+  rejected: 'bg-rose-100 text-rose-700',
+};
+
+/** A small, stable number from a string, for the decorative streets behind a route. */
+const hashOf = (text: string) => [...text].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 7);
+
+const THUMB = { w: 140, h: 70, pad: 10 };
+
+/** The route fitted into the thumbnail, north up, without stretching (longitude scaled by latitude). */
+function fitRoute(path: RecentTrip['path']): Array<[number, number]> | null {
+  if (path.length < 2) return null;
+  const midLat = path.reduce((total, point) => total + point.lat, 0) / path.length;
+  const kx = Math.cos((midLat * Math.PI) / 180);
+  const xs = path.map((point) => point.lng * kx);
+  const ys = path.map((point) => -point.lat);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  if (spanX < 1e-7 && spanY < 1e-7) return null;
+  const scale = Math.min((THUMB.w - 2 * THUMB.pad) / Math.max(spanX, 1e-7), (THUMB.h - 2 * THUMB.pad) / Math.max(spanY, 1e-7));
+  const offsetX = (THUMB.w - spanX * scale) / 2;
+  const offsetY = (THUMB.h - spanY * scale) / 2;
+  return xs.map((x, index) => [offsetX + (x - minX) * scale, offsetY + (ys[index] - minY) * scale]);
+}
+
+function RouteThumb({ trip }: { trip: RecentTrip }) {
+  const points = fitRoute(trip.path);
+  const seed = hashOf(trip.id);
+  const streets = [0, 1, 2].map((index) => {
+    const a = ((seed >> (index * 5)) % 120) + 10;
+    const b = ((seed >> (index * 5 + 3)) % 120) + 10;
+    return `M${a} 0 L${b} 70`;
+  });
+  const start = points?.[0];
+  const end = points?.[points.length - 1];
+  return (
+    <span className="relative block h-[70px] overflow-hidden rounded-xl border border-slate-100 bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/40 dark:to-blue-950/40">
+      <svg viewBox={`0 0 ${THUMB.w} ${THUMB.h}`} className="absolute inset-0 h-full w-full" aria-hidden focusable="false">
+        {streets.map((d) => (
+          <path key={d} d={d} className="stroke-white dark:stroke-white/10" strokeWidth="4" />
+        ))}
+        {points && start && end ? (
+          <>
+            <polyline points={points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')} fill="none" stroke="#4f46e5" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx={start[0]} cy={start[1]} r="4" fill="#fff" stroke="#16a34a" strokeWidth="2.5" />
+            <circle cx={end[0]} cy={end[1]} r="4" fill="#4f46e5" />
+          </>
+        ) : (
+          // Typed in by hand: no route was measured, so only the idea of one.
+          <>
+            <path d="M18 52 C 50 52, 60 20, 92 26 S 118 22, 122 18" fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="3 5" strokeLinecap="round" />
+            <circle cx="18" cy="52" r="4" fill="#fff" stroke="#16a34a" strokeWidth="2.5" />
+            <circle cx="122" cy="18" r="4" fill="#4f46e5" />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
+function TripsEmpty() {
+  const steps = ['Tap Start trip', 'Drive — GPS records it', 'Stop & claim in one tap'];
+  return (
+    <div className="px-4 py-8 text-center text-slate-400">
+      <AppIcon icon={Navigation} gradient="from-sky-300 to-sky-700" accent="#0369a1" className="mx-auto mb-3 h-[60px] w-[60px] rounded-[20px]" />
+      <p className="text-[15px] font-bold text-slate-900">No trips yet</p>
+      <p className="mb-3 mt-1 text-sm">Your trips appear here with their route, distance and claim status.</p>
+      <ol className="flex flex-wrap justify-center gap-2.5">
+        {steps.map((step, index) => (
+          <li key={step} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+            <span className="grid h-5 w-5 place-items-center rounded-full bg-teal-700 text-[11px] font-extrabold text-white">{index + 1}</span>
+            {step}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+export function RecentTrips({ trips }: { trips: RecentTrip[] }) {
+  return (
+    <OverviewCard
+      id="recent-trips"
+      icon={Route}
+      gradient="from-sky-300 to-sky-700"
+      accent="#0369a1"
+      title="My recent trips"
+      description="Tap a trip to see the route or claim it"
+      side={
+        <Link href="/driver-management/my-trips" className="shrink-0 text-[12.5px] font-bold text-teal-700 hover:underline">
+          All trips →
+        </Link>
+      }
+    >
+      {trips.length === 0 ? (
+        <TripsEmpty />
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {trips.map((trip) => {
+            const from = shortPlace(trip.fromPlace) || 'Start';
+            const to = shortPlace(trip.toPlace) || 'End';
+            return (
+              <li key={trip.id}>
+                <Link
+                  href={`/driver-management/trips/${trip.id}?from=overview`}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5 px-4 py-3 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-none sm:grid-cols-[140px_minmax(0,1fr)_auto] sm:px-[18px]"
+                >
+                  <span className="hidden sm:block">
+                    <RouteThumb trip={trip} />
+                  </span>
+                  <span className="min-w-0">
+                    {/* One above the other on a phone; on one line, each end truncating, from `sm`. */}
+                    <span className="flex min-w-0 flex-col gap-y-0.5 text-sm font-bold text-slate-900 sm:flex-row sm:items-center sm:gap-x-2">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2 w-2 shrink-0 rounded-full border-[2.5px] border-green-600" aria-hidden />
+                        <span className="min-w-0 truncate">{from}</span>
+                      </span>
+                      <span className="hidden w-[22px] shrink-0 border-t-2 border-dashed border-slate-300 sm:block" aria-hidden />
+                      <span className="sr-only">to</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-600" aria-hidden />
+                        <span className="min-w-0 truncate">{to}</span>
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-400">
+                      {dayMonth(trip.tripDate)} · {formatKm(trip.distanceKm)} · {vehicleWords(trip.ownership, trip.vehicleType)}
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <Money value={trip.amount} className="block text-base font-extrabold text-slate-900" />
+                    <span className={cn('mt-0.5 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-bold', STATUS_CHIP[trip.status])}>
+                      {TRIP_STATUS_LABELS[trip.status]}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </OverviewCard>
+  );
+}
+
+/* ── Waiting for you ──────────────────────────────────────────────────────────────────────── */
+
+const AVATAR_COLOURS = ['#0d9488', '#ea580c', '#4f46e5', '#db2777', '#0284c7', '#16a34a'];
+
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('') || '?';
+
+/** "today", "1 day", "4 days" since an ISO time. */
+function waitedFor(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return '';
+  const days = Math.max(0, Math.floor((Date.now() - ms) / 86_400_000));
+  return days === 0 ? 'today' : plural(days, 'day');
+}
+
+function WaitCount({ label, value, hot }: { label: string; value: number; hot?: boolean }) {
+  return (
+    <div className={cn('min-w-[76px] rounded-xl px-3 py-1.5 text-center', hot ? 'bg-rose-100' : 'bg-slate-100')}>
+      <p className="text-[10.5px] font-bold uppercase tracking-[0.04em] text-slate-400">{label}</p>
+      <p className={cn('text-base font-extrabold tabular-nums', hot ? 'text-rose-700' : 'text-slate-900')}>{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Claims at a stage the person is named on, oldest first. Review opens the claim: approving and
+ * paying stay on its page, where the trips, the amounts and the remarks are.
+ */
+export function WaitingCard({ workflow }: { workflow: InboxCounts & { oldest: ClaimRow[] } }) {
+  return (
+    <OverviewCard
+      id="waiting-for-you"
+      icon={Inbox}
+      gradient="from-amber-300 to-amber-600"
+      accent="#d97706"
+      title="Waiting for you"
+      description="Claims at a stage you are named on, oldest first"
+      side={
+        <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
+          <WaitCount label="To approve" value={workflow.approvals} />
+          <WaitCount label="To pay" value={workflow.payments} />
+          <WaitCount label="Overdue" value={workflow.overdue} hot={workflow.overdue > 0} />
+        </div>
+      }
+    >
+      {workflow.oldest.length === 0 ? (
+        <div className="px-4 py-6 text-center text-slate-400">
+          <AppIcon icon={CircleCheck} gradient="from-green-300 to-green-600" accent="#16a34a" className="mx-auto mb-2.5 h-[46px] w-[46px] rounded-[15px]" />
+          <p className="text-[15px] font-bold text-slate-900">Nothing is waiting for you</p>
+          <p className="mt-0.5 text-sm">Claims you need to approve or pay will show here.</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {workflow.oldest.map((row) => {
+            const amount = row.status === 'pending' ? row.totals.claimedAmount : row.totals.approvedAmount;
+            return (
+              <li key={row.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-[18px]">
+                <span
+                  aria-hidden
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-extrabold text-white"
+                  style={{ background: AVATAR_COLOURS[hashOf(row.employeeName) % AVATAR_COLOURS.length] }}
+                >
+                  {initialsOf(row.employeeName)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold text-slate-900">
+                    {row.employeeName} <span className="font-normal text-slate-400">· {row.claimNumber}</span>
+                  </p>
+                  <p className={cn('truncate text-xs', row.overdue ? 'text-rose-700' : 'text-slate-400')}>
+                    {plural(row.totals.tripCount, 'trip')} · {row.stageName} · waiting {waitedFor(row.submittedAt)}
+                    {row.overdue ? ' · overdue' : ''}
+                  </p>
+                </div>
+                <Money value={amount} className="hidden shrink-0 text-sm font-extrabold text-slate-900 sm:block" />
+                <Link
+                  href={`/driver-management/claims/${row.id}`}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-[11px] bg-gradient-to-r from-teal-700 to-green-600 px-3 py-1.5 text-[13px] font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {row.status === 'pending' ? 'Review' : 'Pay'}
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </OverviewCard>
+  );
+}
+
+/* ── My vehicle & driving ─────────────────────────────────────────────────────────────────── */
+
+/** A vehicle number as a plate: the blue IND band, then the registration in a fixed-width face. */
+function NumberPlate({ number }: { number: string }) {
+  return (
+    <span className="keep-light inline-flex max-w-full items-stretch overflow-hidden rounded-lg border-2 border-slate-900 bg-white shadow-[0_6px_14px_-8px_#0f172a66]">
+      <span className="flex shrink-0 flex-col justify-end bg-blue-700 px-1 pb-0.5 text-[8px] font-extrabold text-white" aria-hidden>
+        IND
+      </span>
+      <span className="truncate px-2.5 py-1 font-mono text-[17px] font-bold uppercase tracking-[0.12em] text-slate-900">{number}</span>
+    </span>
+  );
+}
+
+export interface VehicleStat {
+  label: string;
+  value: string;
+  href?: string;
+  /** A green dot before the value — a trip running. */
+  live?: boolean;
+}
+
+function StatTile({ stat }: { stat: VehicleStat }) {
+  const body = (
+    <>
+      <span className="block truncate text-[11px] font-bold text-slate-400">{stat.label}</span>
+      <span className={cn('flex items-center gap-1.5 truncate text-[15px] font-extrabold tabular-nums', stat.live ? 'text-emerald-700' : 'text-slate-900')}>
+        {stat.live && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden />}
+        {stat.value}
+      </span>
+    </>
+  );
+  return stat.href ? (
+    <Link href={stat.href} className="min-w-0 rounded-xl bg-slate-100 px-3 py-2 transition-colors hover:bg-slate-200/70">
+      {body}
+    </Link>
+  ) : (
+    <div className="min-w-0 rounded-xl bg-slate-100 px-3 py-2">{body}</div>
+  );
+}
+
+/** Six months of km as bars, the current month in indigo. */
+function KmBars({ trend }: { trend: TrendPoint[] }) {
+  const max = Math.max(1, ...trend.map((point) => point.km));
+  const monthName = (key: string) => new Date(`${key}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short' });
+  return (
+    <figure className="mt-3.5">
+      <figcaption className="text-xs font-bold text-slate-600">Km driven · last {trend.length} months</figcaption>
+      <div className="mt-1 flex h-[90px] items-end gap-[5px] pt-1.5" role="img" aria-label={trend.map((point) => `${monthName(point.month)} ${formatKm(point.km)}`).join(', ')}>
+        {trend.map((point, index) => (
+          <span
+            key={point.month}
+            title={`${monthName(point.month)} · ${formatKm(point.km)}`}
+            className={cn('min-h-[3px] flex-1 rounded-t-[5px] bg-gradient-to-b', index === trend.length - 1 ? 'from-indigo-300 to-indigo-600' : 'from-teal-300 to-teal-700')}
+            style={{ height: `${(point.km / max) * 100}%` }}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex gap-[5px]" aria-hidden>
+        {trend.map((point) => (
+          <span key={point.month} className="flex-1 text-center text-[10px] font-bold text-slate-400">
+            {monthName(point.month)}
+          </span>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
+export function VehicleCard({
+  subtitle,
+  vehicle,
+  emptyNote,
+  stats,
+  trend,
+  note,
+  children,
+}: {
+  subtitle: string;
+  vehicle: { number: string; caption: string } | null;
+  /** Said where the plate would be, when there is no vehicle. */
+  emptyNote: string;
+  stats: VehicleStat[];
+  trend: TrendPoint[];
+  /** A problem loading part of it. */
+  note?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <OverviewCard id="my-vehicle" icon={CarFront} gradient="from-blue-300 to-blue-700" accent="#1d4ed8" title="My vehicle & driving" description={subtitle}>
+      <div className="px-4 py-4 sm:px-[18px]">
+        <div className="mb-3.5 flex items-center gap-3.5">
+          <span className="grid h-[54px] w-[84px] shrink-0 place-items-center rounded-[14px] bg-gradient-to-br from-sky-100 to-teal-100 text-sky-700 dark:from-sky-950/60 dark:to-teal-950/60 dark:text-sky-300" aria-hidden>
+            <CarFront className="h-11 w-11" strokeWidth={1.4} />
+          </span>
+          {vehicle ? (
+            <div className="min-w-0">
+              <NumberPlate number={vehicle.number} />
+              <p className="mt-1.5 truncate text-xs text-slate-400">{vehicle.caption}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400">{emptyNote}</p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {stats.map((stat) => (
+            <StatTile key={stat.label} stat={stat} />
+          ))}
+        </div>
+        {trend.length > 0 && <KmBars trend={trend} />}
+        {note && <p className="mt-3 text-xs text-amber-700">{note}</p>}
+        {children && <div className="mt-3">{children}</div>}
+      </div>
+    </OverviewCard>
+  );
+}
+
+/* ── My rates ─────────────────────────────────────────────────────────────────────────────── */
+
+export function RatesCard({ rows, footnote }: { rows: Array<{ label: string; value: string }>; footnote?: string }) {
+  return (
+    <OverviewCard id="my-rates" icon={IndianRupee} gradient="from-violet-300 to-violet-700" accent="#6d28d9" title="My rates" description="What each km pays you">
+      <dl className="px-4 pb-3 pt-2 sm:px-[18px]">
+        {rows.map((row) => (
+          <div key={row.label} className="flex justify-between gap-3 border-b border-dashed border-slate-200 py-[7px] text-[12.5px] last:border-b-0">
+            <dt className="min-w-0 text-slate-600">{row.label}</dt>
+            <dd className="min-w-0 text-right font-bold text-slate-900">{row.value}</dd>
+          </div>
+        ))}
+        {footnote && <p className="pt-2 text-[11px] text-slate-400">{footnote}</p>}
+      </dl>
+    </OverviewCard>
+  );
+}
+
+/* ── Organisation ─────────────────────────────────────────────────────────────────────────── */
 
 /** A share of a whole, as one bar in parts; each part's figure is in the legend beside it. */
 export function PipelineBar({ parts }: { parts: { label: string; amount: number; claims: number; color: string }[] }) {

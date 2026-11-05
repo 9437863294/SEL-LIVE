@@ -9,8 +9,8 @@
  * Read-only, as the registers are: an unclaimed trip is edited, deleted and claimed from My Trips,
  * and a claimed one belongs to its claim's workflow. The page mirrors the company trip's
  * (fleet/trip-detail.tsx) so the two kinds of trip read alike. The server decides who may open it
- * (the employee, Trip Claims · View All, the claim's workflow). `?from=all|fleet` sends the back
- * button to the register the trip was opened from.
+ * (the employee, Trip Claims · View All, the claim's workflow). `?from=all|fleet|overview` sends the
+ * back button to the register (or the Overview) the trip was opened from.
  */
 
 import type { ReactNode } from 'react';
@@ -70,7 +70,7 @@ export default function TripRecordDetailView({ tripId }: { tripId: string }) {
   const { trip, mine } = query.data;
   const from = params.get('from');
   const backHref =
-    from === 'all' ? '/driver-management/all-trips' : from === 'fleet' ? '/driver-management/fleet' : mine ? '/driver-management/my-trips' : trip.claimId ? `/driver-management/claims/${trip.claimId}` : '/driver-management/all-trips';
+    from === 'all' ? '/driver-management/all-trips' : from === 'fleet' ? '/driver-management/fleet' : from === 'overview' ? '/driver-management' : mine ? '/driver-management/my-trips' : trip.claimId ? `/driver-management/claims/${trip.claimId}` : '/driver-management/all-trips';
 
   const gps = trip.gps;
   const route = gps?.path ?? [];

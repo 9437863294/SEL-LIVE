@@ -1,0 +1,151 @@
+/*
+ * The Overview hero's motion, after the "SEL – My Trips" mock-up: a drifting gradient, a dashed road
+ * with a car travelling along it, and pulsing rings round the Start trip button.
+ *
+ * Chrome 109 (the office's Windows 7 PCs) and cost: the mock-up drifted the gradient by animating
+ * `background-position` — a repaint of the whole hero on every frame. Here the same picture is drawn
+ * on a layer 140% the hero's size and moved with a transform instead (as home-effects' Mesh flow).
+ * The rings and the car are transforms too; only the road's dashes repaint, a thin SVG stroke.
+ *
+ * Motion runs only under `prefers-reduced-motion: no-preference`, and never when the user chose
+ * reduced motion in Settings › Accessibility (`html[data-motion='reduced']`).
+ */
+
+/* The hero's gradient, on its own layer so it can drift. */
+.drift {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: -2;
+  width: 140%;
+  height: 140%;
+  pointer-events: none;
+  background:
+    radial-gradient(520px 260px at 95% 0%, #a3e63599, transparent 65%),
+    radial-gradient(600px 320px at 60% 130%, #2563ebaa, transparent 65%),
+    linear-gradient(115deg, #065f46, #0f766e 40%, #0891b2 75%, #2563eb);
+  will-change: transform;
+}
+
+/* A faint dot grid, fading in towards the right. */
+.dots {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(#ffffff14 1px, transparent 1px);
+  background-size: 18px 18px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 70%);
+  mask-image: linear-gradient(90deg, transparent, #000 70%);
+}
+
+/* The road, right of the figures; fades in from its left edge. */
+.road {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  width: 46%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%);
+  mask-image: linear-gradient(90deg, transparent, #000 22%);
+}
+.roadDash {
+  stroke-dasharray: 4 10;
+}
+/* Kept in step with ROAD_D in overview-parts.tsx. */
+.car {
+  offset-path: path('M560 150 C 700 60, 820 170, 960 90 S 1180 40, 1300 110');
+  offset-rotate: 0deg;
+  /* Without motion the car waits at the start of the road. */
+  offset-distance: 0%;
+}
+
+/* Start trip: two rings, half a beat apart. */
+.go {
+  position: relative;
+}
+.go::before,
+.go::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  border: 2px solid #ffffff55;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* The live panel's dot. */
+.blink {
+  box-shadow: 0 0 0 4px #f8717155;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .drift {
+    animation: ov-drift 18s ease-in-out infinite alternate;
+  }
+  .roadDash {
+    animation: ov-dash 3s linear infinite;
+  }
+  .car {
+    animation: ov-drive 10s linear infinite;
+  }
+  .go::before,
+  .go::after {
+    animation: ov-ring 2.4s ease-out infinite;
+  }
+  .go::after {
+    animation-delay: 1.2s;
+  }
+  .blink {
+    animation: ov-blink 1s infinite;
+  }
+}
+
+/* Reduced motion chosen in the app, whatever the device says. */
+:global(html[data-motion='reduced']) .drift,
+:global(html[data-motion='reduced']) .roadDash,
+:global(html[data-motion='reduced']) .car,
+:global(html[data-motion='reduced']) .go::before,
+:global(html[data-motion='reduced']) .go::after,
+:global(html[data-motion='reduced']) .blink {
+  animation: none !important;
+}
+
+/* The mock-up's 0% → 100% 50% on a 140% background, as an offset of a 140% layer: -(40/140) = -28.6%. */
+@keyframes ov-drift {
+  to {
+    transform: translate(-28.6%, -14.3%);
+  }
+}
+@keyframes ov-dash {
+  to {
+    stroke-dashoffset: -56;
+  }
+}
+@keyframes ov-drive {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+@keyframes ov-ring {
+  from {
+    transform: scale(0.85);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+@keyframes ov-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
