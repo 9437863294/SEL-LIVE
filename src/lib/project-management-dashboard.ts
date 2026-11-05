@@ -53,6 +53,37 @@ export interface ProjectAttentionItem {
   target: ProjectAttentionTarget;
 }
 
+/** A dated commitment that has not happened yet. */
+export interface ProjectUpcomingItem {
+  id: string;
+  /** yyyy-mm-dd. */
+  date: string;
+  /** 0 is today; never negative, since anything past is an attention item, not an upcoming one. */
+  daysAway: number;
+  title: string;
+  detail: string;
+  target: ProjectAttentionTarget;
+}
+
+/** The four delivery scopes, in the order the work actually happens. */
+export type ProjectScopeKey = "engineering" | "supply" | "civil" | "erection";
+
+export interface ProjectScopeStage {
+  key: ProjectScopeKey;
+  label: string;
+  /**
+   * null when the scope has nothing recorded yet — deliberately not 0, which would read as
+   * "started and achieved nothing" rather than "not started".
+   */
+  progressPct: number | null;
+  /** What the percentage is a ratio of, so a bare number never stands on its own. */
+  basis: string;
+  /** The two figures behind the percentage. */
+  stats: Array<{ label: string; value: string }>;
+  tone: "ok" | "warn" | "bad" | "idle";
+  statusLabel: string;
+}
+
 export interface ProjectControlTowerInput {
   boqItems: UnknownRecord[];
   indents: UnknownRecord[];
@@ -76,6 +107,9 @@ export interface ProjectControlTowerInput {
    */
   mvacEntries?: UnknownRecord[];
   subcontractorBills?: UnknownRecord[];
+  /** Civil and Erection work packages (`scopeWorkPackages`) — the only record of erection progress,
+   * which otherwise has nothing in this input to measure it by. Optional, like the civil joins. */
+  workPackages?: UnknownRecord[];
   leadTimeDays?: number;
   /** Same variation tolerance the Indent screen enforces; used by the quantity roll-up. */
   tolerancePct?: number;
@@ -160,12 +194,238 @@ export interface ProjectControlTowerSummary {
     warningCount: number;
   };
   attention: ProjectAttentionItem[];
+  /**
+   * The four delivery scopes as a pipeline, each with the ratio it is measured by.
+   *
+   * The four percentages measure four different things — drawings approved, material delivered,
+   * quantity certified, packages progressed — because that is what each scope actually has. They
+   * are not interchangeable, which is why every stage carries its `basis` and the two figures
+   * behind it rather than a bare percentage.
+   */
+  scopes: ProjectScopeStage[];
+  /** Mean of the scopes that have something recorded; null when none do. */
+  overallProgressPct: number | null;
+  /** Dated commitments falling due soon, soonest first. */
+  upcoming: ProjectUpcomingItem[];
 }
 
 const OPEN_INDENT_STATUSES = new Set(["Draft", "Submitted", "Approved"]);
 const OPEN_RFQ_STATUSES = new Set(["Draft", "Sent", "Partially Awarded"]);
 const LIVE_PO_STATUSES = new Set(["Issued", "Received"]);
 const APPROVED_MDL_STATUSES = new Set(["Approved", "Approved with Comments"]);
+
+const ratioPct = (done: number, total: number): number | null =>
+  total > 0 ? Math.round((done / total) * 1000) / 10 : null;
+
+const countOf = (value: number) => String(value);
+
+/**
+ * The delivery pipeline: each scope's progress, expressed in the terms that scope is actually
+ * measured in.
+ *
+ * Exported for its own tests, and because the honest answer for a scope with nothing recorded is
+ * `null` rather than `0` — a rule worth pinning down in one place.
+ */
+export function buildProjectScopeStages(input: {
+  engineering: { drawingCount: number; approvedDrawingCount: number; overdueDrawingCount: number };
+  supply: { orderedCount: number; atSiteCount: number; livePoCount: number; overduePoCount: number };
+  civil: {
+    workOrderCount: number;
+    workOrderValue: number;
+    certifiedValue: number;
+    openMeasurementCount: number;
+  };
+  erection: { packageCount: number; completedCount: number; blockedCount: number; averageProgressPct: number | null };
+}): ProjectScopeStage[] {
+  const { engineering, supply, civil, erection } = input;
+
+  return [
+    {
+      key: "engineering",
+      label: "Design & Engineering",
+      progressPct: ratioPct(engineering.approvedDrawingCount, engineering.drawingCount),
+      basis: "Drawings approved out of drawings listed",
+      stats: [
+        { label: "Drawings", value: countOf(engineering.drawingCount) },
+        { label: "Approved", value: countOf(engineering.approvedDrawingCount) },
+      ],
+      tone:
+        engineering.drawingCount === 0
+          ? "idle"
+          : engineering.overdueDrawingCount > 0
+            ? "warn"
+            : "ok",
+      statusLabel:
+        engineering.drawingCount === 0
+          ? "Nothing listed"
+          : engineering.overdueDrawingCount > 0
+            ? `${engineering.overdueDrawingCount} overdue`
+            : "On track",
+    },
+    {
+      key: "supply",
+      label: "Supply",
+      progressPct: ratioPct(supply.atSiteCount, supply.orderedCount),
+      basis: "Ordered lines received at site",
+      stats: [
+        { label: "Live POs", value: countOf(supply.livePoCount) },
+        { label: "At site", value: countOf(supply.atSiteCount) },
+      ],
+      tone:
+        supply.orderedCount === 0 ? "idle" : supply.overduePoCount > 0 ? "warn" : "ok",
+      statusLabel:
+        supply.orderedCount === 0
+          ? "Nothing ordered"
+          : supply.overduePoCount > 0
+            ? `${supply.overduePoCount} delayed`
+            : "On track",
+    },
+    {
+      key: "civil",
+      label: "Civil",
+      // Against what has been subcontracted, not against the BOQ: a work order is the commitment
+      // civil execution is actually measured and certified against.
+      progressPct: ratioPct(civil.certifiedValue, civil.workOrderValue),
+      basis: "Certified value against subcontracted value",
+      stats: [
+        { label: "Work orders", value: countOf(civil.workOrderCount) },
+        { label: "JMRs open", value: countOf(civil.openMeasurementCount) },
+      ],
+      tone:
+        civil.workOrderCount === 0 ? "idle" : civil.openMeasurementCount > 0 ? "warn" : "ok",
+      statusLabel:
+        civil.workOrderCount === 0
+          ? "Not started"
+          : civil.openMeasurementCount > 0
+            ? `${civil.openMeasurementCount} awaiting certification`
+            : "On track",
+    },
+    {
+      key: "erection",
+      label: "Erection",
+      progressPct: erection.packageCount > 0 ? erection.averageProgressPct : null,
+      basis: "Mean progress across erection work packages",
+      stats: [
+        { label: "Packages", value: countOf(erection.packageCount) },
+        { label: "Completed", value: countOf(erection.completedCount) },
+      ],
+      tone:
+        erection.packageCount === 0 ? "idle" : erection.blockedCount > 0 ? "bad" : "ok",
+      statusLabel:
+        erection.packageCount === 0
+          ? "Not started"
+          : erection.blockedCount > 0
+            ? `${erection.blockedCount} blocked`
+            : "On track",
+    },
+  ];
+}
+
+const daysBetween = (fromDate: Date, isoDate: string): number | null => {
+  if (typeof isoDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
+  const target = new Date(`${isoDate}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const startOfToday = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  return Math.round((target.getTime() - startOfToday.getTime()) / 86_400_000);
+};
+
+/**
+ * Dated commitments falling due inside the horizon, soonest first.
+ *
+ * Deliberately only things the registers actually carry a date for — a PO's delivery date, a
+ * drawing's planned approval, a work package's planned finish, a BOQ line's required-at-site date,
+ * and the project's own completion. Anything already past is left out: that is a problem to be
+ * reported as attention, not a date to look forward to.
+ */
+export function buildProjectUpcoming(
+  input: Pick<
+    ProjectControlTowerInput,
+    "purchaseOrders" | "mdlDrawings" | "boqItems" | "workPackages" | "projectEndDate"
+  >,
+  today: Date = new Date(),
+  horizonDays = 45,
+  limit = 6,
+): ProjectUpcomingItem[] {
+  const items: ProjectUpcomingItem[] = [];
+
+  const consider = (
+    isoDate: unknown,
+    build: (date: string, daysAway: number) => ProjectUpcomingItem,
+  ) => {
+    const date = String(isoDate ?? "");
+    const daysAway = daysBetween(today, date);
+    if (daysAway === null || daysAway < 0 || daysAway > horizonDays) return;
+    items.push(build(date, daysAway));
+  };
+
+  for (const po of input.purchaseOrders) {
+    if (["Received", "Cancelled"].includes(String(po.status ?? ""))) continue;
+    consider(po.endDate, (date, daysAway) => ({
+      id: `po-${String(po.id ?? date)}`,
+      date,
+      daysAway,
+      title: `${String(po.poNumber ?? "Purchase order")} delivery due`,
+      detail: `Supply · ${String(po.vendorName ?? po.vendor ?? "vendor")}`,
+      target: "purchase-orders",
+    }));
+  }
+
+  for (const drawing of input.mdlDrawings) {
+    if (APPROVED_MDL_STATUSES.has(String(drawing.status ?? ""))) continue;
+    consider(drawing.plannedEndDate, (date, daysAway) => ({
+      id: `mdl-${String(drawing.id ?? date)}`,
+      date,
+      daysAway,
+      title: `${String(drawing.drawingNo ?? drawing.title ?? "Drawing")} approval due`,
+      detail: `Design & Engineering · ${String(drawing.status ?? "in progress")}`,
+      target: "mdl",
+    }));
+  }
+
+  for (const workPackage of input.workPackages ?? []) {
+    if (String(workPackage.status ?? "") === "Completed") continue;
+    consider(workPackage.plannedEndDate, (date, daysAway) => ({
+      id: `wp-${String(workPackage.id ?? date)}`,
+      date,
+      daysAway,
+      title: `${String(workPackage.title ?? "Work package")} due`,
+      detail: `${String(workPackage.scope ?? "Execution")} · ${String(workPackage.status ?? "")}`,
+      target: "civil",
+    }));
+  }
+
+  for (const item of input.boqItems) {
+    consider(item.requiredAtSiteDate, (date, daysAway) => ({
+      id: `boq-${String(item.id ?? date)}`,
+      date,
+      daysAway,
+      title: `${String(item["BOQ SL No"] ?? "BOQ line")} required at site`,
+      detail: String(item.Description ?? "Material required on site"),
+      target: "requirement-planner",
+    }));
+  }
+
+  consider(input.projectEndDate, (date, daysAway) => ({
+    id: "project-completion",
+    date,
+    daysAway,
+    title: "Planned project completion",
+    detail: "The contract's own completion date",
+    target: "projects",
+  }));
+
+  return items
+    .sort((a, b) => a.date.localeCompare(b.date) || a.title.localeCompare(b.title))
+    .slice(0, limit);
+}
+
+/** Mean of the scopes that have something recorded. Scopes with no data do not drag it down. */
+export function overallScopeProgress(scopes: readonly ProjectScopeStage[]): number | null {
+  const measured = scopes.filter((scope) => scope.progressPct !== null);
+  if (measured.length === 0) return null;
+  const total = measured.reduce((sum, scope) => sum + (scope.progressPct ?? 0), 0);
+  return Math.round((total / measured.length) * 10) / 10;
+}
 
 export function projectManagementNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -559,6 +819,60 @@ export function calculateProjectControlTower(
     heldMvac.length > 0;
   const overdueWithOpenWork = daysPastEnd != null && daysPastEnd > 0 && hasOpenWork;
 
+  // Erection has no register in this input other than its work packages, so that is what it is
+  // measured by. Civil packages are ignored here: civil is certified through JMC, which is a
+  // truer measure than a self-reported percentage.
+  const erectionPackages = (input.workPackages ?? []).filter(
+    (workPackage) => String(workPackage.scope ?? "") === "Erection",
+  );
+  const erectionProgressTotal = erectionPackages.reduce(
+    (sum, workPackage) => sum + projectManagementNumber(workPackage.progressPct),
+    0,
+  );
+  const orderedLineCount = uniqueCount(
+    committedPurchaseOrders.flatMap((po) => (Array.isArray(po.items) ? (po.items as UnknownRecord[]) : [])),
+    () => true,
+  );
+  const atSiteCount = uniqueCount(input.grns, (record) =>
+    ["Received Clean", "Received with Discrepancy"].includes(String(record.status ?? "")),
+  );
+  const scopes = buildProjectScopeStages({
+    engineering: {
+      drawingCount: input.mdlDrawings.length,
+      approvedDrawingCount: input.mdlDrawings.filter((drawing) =>
+        APPROVED_MDL_STATUSES.has(String(drawing.status ?? "")),
+      ).length,
+      overdueDrawingCount: overdueDrawings.length,
+    },
+    supply: {
+      orderedCount: orderedLineCount,
+      atSiteCount,
+      livePoCount: committedPurchaseOrders.length,
+      overduePoCount: overduePurchaseOrders.length,
+    },
+    civil: {
+      workOrderCount: liveWorkOrders.length,
+      workOrderValue,
+      certifiedValue: civilCertifiedValue,
+      openMeasurementCount: nonVoidMeasurements.filter((entry) =>
+        WORKFLOW_WAITING_STATUSES.has(String(entry.status ?? "")),
+      ).length,
+    },
+    erection: {
+      packageCount: erectionPackages.length,
+      completedCount: erectionPackages.filter(
+        (workPackage) => String(workPackage.status ?? "") === "Completed",
+      ).length,
+      blockedCount: erectionPackages.filter((workPackage) =>
+        ["Blocked", "On Hold"].includes(String(workPackage.status ?? "")),
+      ).length,
+      averageProgressPct:
+        erectionPackages.length > 0
+          ? Math.round((erectionProgressTotal / erectionPackages.length) * 10) / 10
+          : null,
+    },
+  });
+
   const attention: ProjectAttentionItem[] = [];
   const addAttention = (
     count: number,
@@ -765,5 +1079,8 @@ export function calculateProjectControlTower(
       warningCount: quantityWarningCount,
     },
     attention,
+    scopes,
+    overallProgressPct: overallScopeProgress(scopes),
+    upcoming: buildProjectUpcoming(input, today),
   };
 }

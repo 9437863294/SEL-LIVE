@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildProjectScopeStages,
+  buildProjectUpcoming,
   calculateProjectControlTower,
+  overallScopeProgress,
   projectBoqValue,
   projectManagementNumber,
 } from '../src/lib/project-management-dashboard.ts';
@@ -579,6 +582,162 @@ const emptyTowerInput = {
   grns: [],
   mvacRecords: [],
 };
+
+test('upcoming lists only dated commitments still ahead, soonest first', () => {
+  const today = new Date(2026, 10, 5); // 05 Nov 2026
+  const upcoming = buildProjectUpcoming(
+    {
+      purchaseOrders: [
+        { id: 'po-1', poNumber: 'PO/14', vendorName: 'ABB', status: 'Issued', endDate: '2026-11-09' },
+        { id: 'po-2', poNumber: 'PO/15', status: 'Received', endDate: '2026-11-10' },
+        { id: 'po-3', poNumber: 'PO/16', status: 'Issued', endDate: '2026-11-01' },
+      ],
+      mdlDrawings: [
+        { id: 'd1', drawingNo: 'SLD-02', status: 'Submitted', plannedEndDate: '2026-11-20' },
+        { id: 'd2', drawingNo: 'SLD-03', status: 'Approved', plannedEndDate: '2026-11-07' },
+      ],
+      boqItems: [],
+      workPackages: [{ id: 'w1', title: 'Gantry erection', scope: 'Erection', status: 'Not Started', plannedEndDate: '2026-11-15' }],
+      projectEndDate: '2027-03-31',
+    },
+    today,
+  );
+  assert.deepEqual(upcoming.map((u) => u.date), ['2026-11-09', '2026-11-15', '2026-11-20']);
+  assert.equal(upcoming[0].title, 'PO/14 delivery due', 'a received PO and a past date are both out');
+  assert.equal(upcoming[0].daysAway, 4);
+  assert.equal(
+    upcoming.some((u) => u.title.includes('SLD-03')),
+    false,
+    'an approved drawing is not still due',
+  );
+  assert.equal(
+    upcoming.some((u) => u.id === 'project-completion'),
+    false,
+    'the completion date is beyond the 45-day horizon',
+  );
+});
+
+test('something due today is upcoming; something due yesterday is not', () => {
+  const today = new Date(2026, 10, 5);
+  const upcoming = buildProjectUpcoming(
+    {
+      purchaseOrders: [
+        { id: 'a', poNumber: 'PO/today', status: 'Issued', endDate: '2026-11-05' },
+        { id: 'b', poNumber: 'PO/yesterday', status: 'Issued', endDate: '2026-11-04' },
+      ],
+      mdlDrawings: [],
+      boqItems: [],
+      workPackages: [],
+    },
+    today,
+  );
+  assert.deepEqual(upcoming.map((u) => u.title), ['PO/today delivery due']);
+  assert.equal(upcoming[0].daysAway, 0);
+});
+
+test('upcoming ignores malformed and missing dates rather than guessing', () => {
+  const upcoming = buildProjectUpcoming(
+    {
+      purchaseOrders: [
+        { id: 'a', poNumber: 'PO/none', status: 'Issued' },
+        { id: 'b', poNumber: 'PO/bad', status: 'Issued', endDate: '09-11-2026' },
+      ],
+      mdlDrawings: [],
+      boqItems: [],
+      workPackages: [],
+    },
+    new Date(2026, 10, 5),
+  );
+  assert.deepEqual(upcoming, []);
+});
+
+test('a scope with nothing recorded reports null progress, not zero', () => {
+  const stages = buildProjectScopeStages({
+    engineering: { drawingCount: 0, approvedDrawingCount: 0, overdueDrawingCount: 0 },
+    supply: { orderedCount: 0, atSiteCount: 0, livePoCount: 0, overduePoCount: 0 },
+    civil: { workOrderCount: 0, workOrderValue: 0, certifiedValue: 0, openMeasurementCount: 0 },
+    erection: { packageCount: 0, completedCount: 0, blockedCount: 0, averageProgressPct: null },
+  });
+  assert.deepEqual(stages.map((s) => s.progressPct), [null, null, null, null]);
+  assert.deepEqual(stages.map((s) => s.tone), ['idle', 'idle', 'idle', 'idle']);
+  assert.equal(overallScopeProgress(stages), null, 'nothing anywhere means no overall figure');
+});
+
+test('each scope is measured by its own ratio, and carries the two figures behind it', () => {
+  const stages = buildProjectScopeStages({
+    engineering: { drawingCount: 64, approvedDrawingCount: 48, overdueDrawingCount: 0 },
+    supply: { orderedCount: 40, atSiteCount: 10, livePoCount: 22, overduePoCount: 0 },
+    civil: { workOrderCount: 3, workOrderValue: 1000, certifiedValue: 250, openMeasurementCount: 0 },
+    erection: { packageCount: 14, completedCount: 2, blockedCount: 0, averageProgressPct: 9 },
+  });
+  assert.equal(stages[0].progressPct, 75);
+  assert.equal(stages[1].progressPct, 25);
+  assert.equal(stages[2].progressPct, 25);
+  assert.equal(stages[3].progressPct, 9);
+  assert.deepEqual(stages[0].stats, [
+    { label: 'Drawings', value: '64' },
+    { label: 'Approved', value: '48' },
+  ]);
+  assert.equal(stages.every((s) => s.basis.length > 0), true, 'a bare percentage is never shown');
+});
+
+test('a scope in trouble reports it, with blocked erection the loudest', () => {
+  const stages = buildProjectScopeStages({
+    engineering: { drawingCount: 64, approvedDrawingCount: 48, overdueDrawingCount: 3 },
+    supply: { orderedCount: 40, atSiteCount: 10, livePoCount: 22, overduePoCount: 2 },
+    civil: { workOrderCount: 3, workOrderValue: 1000, certifiedValue: 250, openMeasurementCount: 4 },
+    erection: { packageCount: 14, completedCount: 2, blockedCount: 1, averageProgressPct: 9 },
+  });
+  assert.deepEqual(stages.map((s) => s.tone), ['warn', 'warn', 'warn', 'bad']);
+  assert.equal(stages[0].statusLabel, '3 overdue');
+  assert.equal(stages[1].statusLabel, '2 delayed');
+  assert.equal(stages[2].statusLabel, '4 awaiting certification');
+  assert.equal(stages[3].statusLabel, '1 blocked');
+});
+
+test('overall progress averages only the scopes that have data', () => {
+  const stages = buildProjectScopeStages({
+    engineering: { drawingCount: 10, approvedDrawingCount: 5, overdueDrawingCount: 0 },
+    supply: { orderedCount: 10, atSiteCount: 1, livePoCount: 2, overduePoCount: 0 },
+    civil: { workOrderCount: 0, workOrderValue: 0, certifiedValue: 0, openMeasurementCount: 0 },
+    erection: { packageCount: 0, completedCount: 0, blockedCount: 0, averageProgressPct: null },
+  });
+  // (50 + 10) / 2 — the two untouched scopes must not drag it to 15.
+  assert.equal(overallScopeProgress(stages), 30);
+});
+
+test('the control tower measures erection by its work packages, ignoring civil ones', () => {
+  const summary = calculateProjectControlTower({
+    ...emptyTowerInput,
+    today: new Date(2026, 7, 16),
+    workPackages: [
+      { id: 'w1', scope: 'Erection', status: 'In Progress', progressPct: 20 },
+      { id: 'w2', scope: 'Erection', status: 'Completed', progressPct: 100 },
+      { id: 'w3', scope: 'Erection', status: 'Blocked', progressPct: 0 },
+      { id: 'w4', scope: 'Civil', status: 'In Progress', progressPct: 90 },
+    ],
+  });
+  const erection = summary.scopes.find((scope) => scope.key === 'erection');
+  assert.equal(erection.progressPct, 40, '(20 + 100 + 0) / 3 — the civil package is not counted');
+  assert.equal(erection.stats[0].value, '3');
+  assert.equal(erection.stats[1].value, '1');
+  assert.equal(erection.tone, 'bad');
+  assert.equal(erection.statusLabel, '1 blocked');
+});
+
+test('supply progress is received lines over ordered lines', () => {
+  const summary = calculateProjectControlTower({
+    ...emptyTowerInput,
+    today: new Date(2026, 7, 16),
+    purchaseOrders: [
+      { id: 'po-1', status: 'Issued', totalAmount: 100, items: [{ boqItemId: 'a' }, { boqItemId: 'b' }, { boqItemId: 'c' }, { boqItemId: 'd' }] },
+    ],
+    grns: [{ id: 'g1', status: 'Received Clean' }],
+  });
+  const supply = summary.scopes.find((scope) => scope.key === 'supply');
+  assert.equal(supply.progressPct, 25);
+  assert.equal(supply.stats[0].value, '1', 'one live PO');
+});
 
 test('control tower reports commitment against budget and flags over-commitment', () => {
   const summary = calculateProjectControlTower({

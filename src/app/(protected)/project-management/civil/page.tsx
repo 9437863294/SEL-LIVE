@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  Activity,
   ArrowRight,
   BarChart3,
   Building2,
@@ -38,6 +39,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 import { PM_JMC_BASE_PATH } from "@/lib/jmc-module";
+import { DPR_BASE_PATH, DPR_PERMISSION_RESOURCE } from "@/lib/project-management-dpr";
 import { projectSlugCanonical } from "@/lib/project-slug";
 
 const MODULE_NAME = "Project Management";
@@ -61,6 +63,7 @@ export default function CivilPage() {
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
   const canView = can("View", PERMISSION_RESOURCE) || canViewBoq;
   // JMC is hosted by both modules against the same registers, so either view right opens it.
+  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE) || can("View", `${MODULE_NAME}.Civil`);
   const canViewJmc = can("View", `${MODULE_NAME}.JMC`) || can("View", "Billing Recon.JMC");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
@@ -149,6 +152,14 @@ export default function CivilPage() {
       description: "Work orders, billing and reports for this project's subcontractors.",
       icon: Users,
       gradient: "from-sky-500 to-blue-600",
+    },
+    {
+      show: canViewDpr,
+      href: `${DPR_BASE_PATH}?project=${encodeURIComponent(mappingId)}&scope=Civil`,
+      title: "Daily Progress",
+      description: "Projected against actual work, day by day, on this project's civil BOQ lines.",
+      icon: Activity,
+      gradient: "from-amber-500 to-orange-600",
     },
   ].filter((link) => link.show);
 

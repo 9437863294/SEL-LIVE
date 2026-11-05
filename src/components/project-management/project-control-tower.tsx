@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -16,29 +15,8 @@ import {
   Route,
   Scale,
 } from "lucide-react";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import {
-  calculateProjectControlTower,
-  type ProjectAttentionTarget,
-  type ProjectControlTowerSummary,
-} from "@/lib/project-management-dashboard";
-import {
-  JMC_ENTRY_COLLECTION,
-  SUBCONTRACTOR_BILL_COLLECTION,
-  WORK_ORDER_COLLECTION,
-} from "@/lib/civil-execution";
-import { MDL_COLLECTION } from "@/lib/mdl";
-import { PO_COLLECTION } from "@/lib/purchase-orders";
-import { RFQ_COLLECTION } from "@/lib/rfq";
-import {
-  DI_COLLECTION,
-  GRN_COLLECTION,
-  INSPECTION_COLLECTION,
-  MC_COLLECTION,
-  MDCC_COLLECTION,
-  MVAC_COLLECTION,
-} from "@/lib/supply-gates";
+import { type ProjectAttentionTarget } from "@/lib/project-management-dashboard";
+import { useControlTowerSummary } from "@/components/project-management/use-control-tower-summary";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,98 +70,9 @@ const metricCard =
   "overflow-hidden border-border/60 bg-card shadow-sm transition-shadow hover:shadow-md";
 
 export default function ProjectControlTower({ mapping }: ProjectControlTowerProps) {
-  const [summary, setSummary] = useState<ProjectControlTowerSummary | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const loadSummary = useCallback(async () => {
-    setIsLoading(true);
-    setError("");
-    try {
-      const projectPath = ["projects", mapping.globalProjectId] as const;
-      const mappingEndDate = mapping.endDate;
-      const [
-        boqSnapshot,
-        indentSnapshot,
-        rfqSnapshot,
-        poSnapshot,
-        mdlSnapshot,
-        mcSnapshot,
-        inspectionSnapshot,
-        mdccSnapshot,
-        diSnapshot,
-        grnSnapshot,
-        mvacSnapshot,
-        workOrderSnapshot,
-        jmcEntrySnapshot,
-        subBillSnapshot,
-        settingsSnapshot,
-      ] = await Promise.all([
-        getDocs(collection(db, ...projectPath, "boqItems")),
-        getDocs(collection(db, ...projectPath, "indents")),
-        getDocs(collection(db, ...projectPath, RFQ_COLLECTION)),
-        getDocs(collection(db, ...projectPath, PO_COLLECTION)),
-        getDocs(collection(db, ...projectPath, MDL_COLLECTION)),
-        getDocs(collection(db, ...projectPath, MC_COLLECTION)),
-        getDocs(collection(db, ...projectPath, INSPECTION_COLLECTION)),
-        getDocs(collection(db, ...projectPath, MDCC_COLLECTION)),
-        getDocs(collection(db, ...projectPath, DI_COLLECTION)),
-        getDocs(collection(db, ...projectPath, GRN_COLLECTION)),
-        getDocs(collection(db, ...projectPath, MVAC_COLLECTION)),
-        // The project's civil registers (Subcontractors Management work orders and bills, the
-        // project JMC register) — read-only join. Billing Recon's MVAC entries are not read.
-        getDocs(collection(db, ...projectPath, WORK_ORDER_COLLECTION)),
-        getDocs(collection(db, ...projectPath, JMC_ENTRY_COLLECTION)),
-        getDocs(collection(db, ...projectPath, SUBCONTRACTOR_BILL_COLLECTION)),
-        getDoc(doc(db, "projectManagementSettings", "general")),
-      ]);
-
-      const records = (snapshot: typeof boqSnapshot) =>
-        snapshot.docs.map((record) => ({ id: record.id, ...record.data() }));
-
-      setSummary(
-        calculateProjectControlTower({
-          boqItems: records(boqSnapshot),
-          indents: records(indentSnapshot),
-          rfqs: records(rfqSnapshot),
-          purchaseOrders: records(poSnapshot),
-          mdlDrawings: records(mdlSnapshot),
-          manufacturingClearances: records(mcSnapshot),
-          inspections: records(inspectionSnapshot),
-          mdccRecords: records(mdccSnapshot),
-          dispatchInstructions: records(diSnapshot),
-          grns: records(grnSnapshot),
-          mvacRecords: records(mvacSnapshot),
-          workOrders: records(workOrderSnapshot),
-          jmcEntries: records(jmcEntrySnapshot),
-          subcontractorBills: records(subBillSnapshot),
-          leadTimeDays:
-            typeof settingsSnapshot.data()?.leadTimeDays === "number"
-              ? settingsSnapshot.data()?.leadTimeDays
-              : undefined,
-          tolerancePct:
-            typeof settingsSnapshot.data()?.variationTolerancePct === "number"
-              ? settingsSnapshot.data()?.variationTolerancePct
-              : undefined,
-          stallDays:
-            typeof settingsSnapshot.data()?.stallDays === "number"
-              ? settingsSnapshot.data()?.stallDays
-              : undefined,
-          projectEndDate: mappingEndDate,
-        }),
-      );
-    } catch (loadError) {
-      console.error("Failed to load the Project Management control tower:", loadError);
-      setError("The live project summary could not be loaded. Your underlying registers are unchanged.");
-      setSummary(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [mapping.globalProjectId, mapping.endDate]);
-
-  useEffect(() => {
-    void loadSummary();
-  }, [loadSummary]);
+  // The register reads live in a shared hook so this screen and the module landing page cannot
+  // drift apart on what the same project is worth (see use-control-tower-summary.ts).
+  const { summary, isLoading, error, reload: loadSummary } = useControlTowerSummary(mapping);
 
   if (isLoading) {
     return (

@@ -98,10 +98,23 @@ export default {
             height: '0',
           },
         },
+        /* The soft colour fields behind the Project Management hub's hero. Two paths so adjacent
+           blobs drift apart rather than moving as one block. */
+        'blob-drift-a': {
+          '50%': { transform: 'translate(10rem, 2.5rem) scale(1.15)' },
+          '100%': { transform: 'translate(-3.75rem, 0.6rem)' },
+        },
+        'blob-drift-b': {
+          '50%': { transform: 'translate(-11rem, 3rem) scale(1.1)' },
+          '100%': { transform: 'translate(5.6rem, -0.6rem)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'blob-drift-a': 'blob-drift-a 18s ease-in-out infinite alternate',
+        'blob-drift-b': 'blob-drift-b 22s ease-in-out infinite alternate',
+        'blob-drift-c': 'blob-drift-a 20s ease-in-out infinite alternate-reverse',
       },
     },
   },

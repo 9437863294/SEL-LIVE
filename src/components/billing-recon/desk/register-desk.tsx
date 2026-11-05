@@ -62,6 +62,7 @@ import { db } from '@/lib/firebase';
 import { WORKFLOWS_COLLECTION, registerLabel } from '@/lib/billing-recon/register';
 import { entryValues, percent, summarizeProject, toMillis, type DashboardEntry } from '@/lib/billing-recon/dashboard';
 import { formatAmount, formatAmountCompact, formatIsoDate } from '@/lib/billing-recon/lines';
+import { readWorkflowSteps } from '@/lib/billing-recon/workflow-steps';
 import { statusTone } from '@/lib/status-tone';
 import type { WorkflowStep } from '@/lib/types';
 
@@ -144,24 +145,9 @@ const isOpen = (entry: DeskEntry) => !CLOSED.has(statusOf(entry).toLowerCase());
 /** "Certified" is the best outcome here, though the app-wide vocabulary doesn't know the word. */
 const entryTone = (status: string): StatusTone => (status.toLowerCase() === 'certified' ? 'success' : statusTone(status));
 
-const slugify = (s: string) =>
-  s
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '');
-
-/** The workflow's steps, defensively: named steps only, each with an id (as each hub did before). */
+/** The workflow's steps, defensively: named steps only, each with an id (the menu's stage links use the same rule). */
 function readSteps(raw: unknown, kind: RegisterKind): WorkflowStep[] {
-  const list = Array.isArray(raw) ? raw : [];
-  return list
-    .filter((s): s is WorkflowStep => Boolean(s && typeof s === 'object' && (s as { name?: unknown }).name))
-    .map((s, index) => ({
-      ...s,
-      // JMC fell back to the step's position, MVAC to its name; saved workflows always carry ids.
-      id: kind === 'JMC' ? String(s.id || index + 1) : String(s.id || slugify(String(s.name))),
-      name: String(s.name),
-    }));
+  return readWorkflowSteps<WorkflowStep>(raw, kind);
 }
 
 function stepLine(step: WorkflowStep, index: number, count: number): string {

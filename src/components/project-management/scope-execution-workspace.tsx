@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
   CalendarClock,
@@ -51,6 +52,7 @@ import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variat
 import { isBoqSectionHeader } from "@/lib/project-management-boq-columns";
 // Single source of truth for where the JMC screens live, so this link cannot drift from the routes.
 import { PM_JMC_BASE_PATH } from "@/lib/jmc-module";
+import { DPR_BASE_PATH, DPR_PERMISSION_RESOURCE } from "@/lib/project-management-dpr";
 import {
   TOWER_PROGRESS_PERMISSION_RESOURCE,
   towerProgressHref,
@@ -210,6 +212,7 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
   // Tower Progress has its own resource, but an existing Erection view right also opens it — the
   // feature would otherwise be invisible to the site engineers who already hold Erection rights
   // until every role had been edited.
+  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE) || canView;
   const canViewTowerProgress = can("View", TOWER_PROGRESS_PERMISSION_RESOURCE) || canView;
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
@@ -839,6 +842,18 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
             <Button variant="outline" className="flex-1 px-3 sm:flex-none sm:px-4" asChild>
               <Link href={towerProgressHref(mappingId)}>
                 <RadioTower className="mr-2 h-4 w-4" />Tower Progress
+              </Link>
+            </Button>
+          )}
+          {/* Daily progress against this scope's BOQ lines — projected versus actual, day by day
+              (see src/lib/project-management-dpr.ts). Both lanes run one, so the link carries the
+              scope through and the DPR opens already filtered to it. */}
+          {canViewDpr && (
+            <Button variant="outline" className="flex-1 px-3 sm:flex-none sm:px-4" asChild>
+              <Link
+                href={`${DPR_BASE_PATH}?project=${encodeURIComponent(mappingId)}&scope=${scope}`}
+              >
+                <Activity className="mr-2 h-4 w-4" />Daily Progress
               </Link>
             </Button>
           )}
