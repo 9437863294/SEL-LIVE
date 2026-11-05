@@ -200,6 +200,32 @@ test('Receiving at Finance: receive, return, cancel', async () => {
   await assertFails(move('receiving', 'pending', { status: 'Received', netAmount: 1, partyName: 'Z' }));
 });
 
+// A Verification step after Receiving at Finance (Workflow Configuration): Mark as Received places the
+// requisition there (daily-requisition-flow.ts holdForMove), a move back releases it, and a move out
+// of a hand-over ends the assignment — never names someone new.
+test('Receiving at Finance: Mark as Received places it at a Verification step; moves release holds', async () => {
+  await setDocAdmin('dailyRequisitions/toHold', req('Pending'));
+  await setDocAdmin('dailyRequisitions/handedOver', req('Pending', { assignedStage: 'receiving', assignedTo: ['uOther'], assignedSince: now }));
+  const held = { heldAt: 'verify-1', heldAssignees: ['uVer'], heldSince: now };
+  const released = { heldAt: null, heldAssignees: [], heldSince: null };
+  try {
+    await assertFails(move('entry', 'toHold', { status: 'Received', receivedAt: now, receivedById: 'uEntry', ...held }));
+    await assertSucceeds(move('receiving', 'toHold', { status: 'Received', receivedAt: now, receivedById: 'uRecv', ...held }));
+    await assertSucceeds(move('receiving', 'toHold', { status: 'Pending', receivedAt: null, receivedById: null, ...released }));
+    // A move may end an assignment, never make one.
+    await assertFails(move('receiving', 'handedOver', {
+      status: 'Received', receivedAt: now, receivedById: 'uRecv', ...held, assignedStage: 'gst', assignedTo: ['uRecv'], assignedSince: now,
+    }));
+    await assertSucceeds(move('receiving', 'handedOver', {
+      status: 'Received', receivedAt: now, receivedById: 'uRecv', ...held, assignedStage: null, assignedTo: [], assignedSince: null,
+    }));
+  } finally {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await Promise.all(['toHold', 'handedOver'].map((id) => ctx.firestore().doc(`dailyRequisitions/${id}`).delete()));
+    });
+  }
+});
+
 test('GST & TDS Verification: verify or flag, send back, and Send for Payment', async () => {
   const tax = { verifiedAt: now, igstAmount: 18, tdsAmount: 2, cgstAmount: 0, sgstAmount: 0, retentionAmount: 0, otherDeduction: 0, verificationNotes: '', gstNo: '22AAA', gstType: 'igst', gstRate: 18, gstRegistrationId: 'G1', netAmount: 116 };
   await assertSucceeds(move('verifier', 'received', { status: 'Verified', ...tax }));
