@@ -4,9 +4,15 @@
  * Record Daily Progress — one day, one scope.
  *
  * Opening a date that already has an entry loads it for editing, because a site files one DPR per
- * scope per day and a second one would double-count. Each BOQ line starts at the day's share of
- * whatever projections cover the date (see dailyPlannedByBoqItem), which the recorder can override
- * — the projection is what was planned centrally, the line is what the day was actually set.
+ * scope per day and a second one would double-count.
+ *
+ * **Actual is the only thing this sheet asks for.** Projection is read-only here: it is whatever
+ * the projection register (`dprTargets`) says for this date, pro-rated by day, and it is shown
+ * purely so the recorder can see what the day was aimed at. A BOQ line with no projection behind
+ * it still takes an actual — most days on a site are worked without a figure having been set for
+ * them, and refusing the record because nobody filed a plan would lose the only hard fact of the
+ * day. `plannedQty` is still written onto the saved line, as a snapshot of the projection at the
+ * time of filing, so the log can show plan against actual without re-deriving it.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -107,6 +113,13 @@ export default function RecordDailyProgressPage() {
   );
   const [date, setDate] = useState(initialDate);
   const [lines, setLines] = useState<DprLine[]>([]);
+  /**
+   * What is literally in each Actual box, keyed by line id. The line itself keeps the parsed
+   * number; this keeps the text, so a line that has not been typed into shows empty rather than a
+   * pre-filled `0`, and "0.5" survives being typed one character at a time (a controlled number
+   * input fed from the parsed value would blank itself on the leading "0").
+   */
+  const [actualText, setActualText] = useState<Record<string, string>>({});
   const [manpower, setManpower] = useState<DprManpowerLine[]>([]);
   const [equipment, setEquipment] = useState<DprEquipmentLine[]>([]);
   const [weather, setWeather] = useState("");
@@ -141,6 +154,13 @@ export default function RecordDailyProgressPage() {
     if (existing) {
       setExistingId(existing.id);
       setLines((existing.lines ?? []).map((line) => ({ ...line })));
+      // A filed sheet shows its figures as filed, zeros included: a recorded 0 is a statement that
+      // the line was not worked, not an untouched box.
+      setActualText(
+        Object.fromEntries(
+          (existing.lines ?? []).map((line) => [line.id, String(dprNumber(line.actualQty))]),
+        ),
+      );
       setManpower((existing.manpower ?? []).map((line) => ({ ...line })));
       setEquipment((existing.equipment ?? []).map((line) => ({ ...line })));
       setWeather(existing.weather ?? "");
@@ -168,7 +188,10 @@ export default function RecordDailyProgressPage() {
         actualQty: 0,
       });
     }
-    setLines(seeded);
+    // No projection covers this day: open with one blank line rather than an empty sheet, so the
+    // recorder can pick a BOQ item and type the actual straight away.
+    setLines(seeded.length > 0 ? seeded : [emptyLine()]);
+    setActualText({});
     setManpower([]);
     setEquipment([]);
     setWeather("");
@@ -207,13 +230,26 @@ export default function RecordDailyProgressPage() {
     });
   };
 
+  /**
+   * What the register projects for one BOQ line on this date. Always read from `dprTargets` —
+   * nothing on this screen types a projection, so there is no typed value to prefer.
+   */
+  const plannedFor = useCallback(
+    (boqItemId: string) =>
+      boqItemId ? Math.round((plannedToday.get(boqItemId) ?? 0) * 1000) / 1000 : 0,
+    [plannedToday],
+  );
+
+  /** Whether the projection register says anything at all about this scope on this date. */
+  const hasProjection = plannedToday.size > 0;
+
   const totals = useMemo(
     () => ({
-      planned: lines.reduce((sum, line) => sum + dprNumber(line.plannedQty), 0),
+      planned: lines.reduce((sum, line) => sum + plannedFor(line.boqItemId), 0),
       actual: lines.reduce((sum, line) => sum + dprNumber(line.actualQty), 0),
       manpower: manpower.reduce((sum, line) => sum + dprNumber(line.count), 0),
     }),
-    [lines, manpower],
+    [lines, manpower, plannedFor],
   );
 
   const buildDraft = (status: "Draft" | "Submitted"): DprEntryDraft => ({
@@ -224,7 +260,9 @@ export default function RecordDailyProgressPage() {
       .filter((line) => line.boqItemId)
       .map((line) => ({
         ...line,
-        plannedQty: dprNumber(line.plannedQty),
+        // Snapshot the projection as it stands now, so the log can show plan against actual for
+        // this day without re-deriving it. Zero simply means nothing was projected for the line.
+        plannedQty: plannedFor(line.boqItemId),
         actualQty: dprNumber(line.actualQty),
       })),
     manpower: manpower.filter((line) => String(line.trade ?? "").trim()),
@@ -411,7 +449,9 @@ export default function RecordDailyProgressPage() {
       <Card className="border-border/60">
         <SectionHeader
           title="Work done"
-          description={`${lines.length} line${lines.length === 1 ? "" : "s"} · projected ${formatQty(totals.planned)} · actual ${formatQty(totals.actual)}`}
+          description={`${lines.length} line${lines.length === 1 ? "" : "s"} · actual ${formatQty(totals.actual)}${
+            hasProjection ? ` · against a projection of ${formatQty(totals.planned)}` : ""
+          }`}
           icon={Activity}
           className="p-4 pb-0"
         />
@@ -424,6 +464,19 @@ export default function RecordDailyProgressPage() {
             />
           ) : (
             <>
+              {!hasProjection ? (
+                <p className="border-y border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+                  No projection covers this day. Record what was actually done — a projection is a
+                  reference, not a precondition. Figures are set in{" "}
+                  <Link
+                    href={withProject(`${DPR_BASE_PATH}/targets`)}
+                    className="underline underline-offset-2"
+                  >
+                    Projections
+                  </Link>
+                  .
+                </p>
+              ) : null}
               <Table>
                   <TableHeader>
                     <TableRow>
@@ -466,18 +519,13 @@ export default function RecordDailyProgressPage() {
                             </Select>
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-sm">{line.unit || "—"}</TableCell>
-                          <TableCell className="text-right">
-                            <Input
-                              type="number"
-                              min={0}
-                              step="any"
-                              inputMode="decimal"
-                              className="ml-auto min-w-[96px] text-right"
-                              value={line.plannedQty}
-                              onChange={(event) =>
-                                setLine(index, { plannedQty: dprNumber(event.target.value) })
-                              }
-                            />
+                          {/* Read-only: the projection register owns this figure, not the sheet. */}
+                          <TableCell className="whitespace-nowrap text-right text-sm tabular-nums">
+                            {plannedFor(line.boqItemId) > 0 ? (
+                              formatQty(plannedFor(line.boqItemId))
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             <Input
@@ -485,11 +533,15 @@ export default function RecordDailyProgressPage() {
                               min={0}
                               step="any"
                               inputMode="decimal"
+                              placeholder="0"
+                              aria-label={`Actual quantity for ${line.boqSlNo || "this line"}`}
                               className="ml-auto min-w-[96px] text-right"
-                              value={line.actualQty}
-                              onChange={(event) =>
-                                setLine(index, { actualQty: dprNumber(event.target.value) })
-                              }
+                              value={actualText[line.id] ?? (line.actualQty ? String(line.actualQty) : "")}
+                              onChange={(event) => {
+                                const text = event.target.value;
+                                setActualText((previous) => ({ ...previous, [line.id]: text }));
+                                setLine(index, { actualQty: dprNumber(text) });
+                              }}
                             />
                           </TableCell>
                           <TableCell>

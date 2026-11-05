@@ -428,6 +428,18 @@ test('an entry needs a real date, a scope and at least one BOQ line', () => {
   assert.equal(validateDprEntry(draftEntry({ lines: [] })).some((e) => e.field === 'lines'), true);
 });
 
+test('a day with no projection behind it still records, because actual is the fact of the day', () => {
+  // The entry screen shows projection read-only and never asks for one. Most days on a site are
+  // worked without a figure having been set for them, and refusing the record would lose the only
+  // hard fact the day produced. Nothing here may ever require a positive plannedQty.
+  const errors = validateDprEntry(draftEntry({
+    lines: [
+      { id: 'a', boqItemId: 'civil-1', boqSlNo: '1.1', description: '', unit: 'Cum', plannedQty: 0, actualQty: 42 },
+    ],
+  }));
+  assert.deepEqual(errors, []);
+});
+
 test('the same BOQ item twice in a day is rejected, so the day has one figure per line', () => {
   const errors = validateDprEntry(draftEntry({
     lines: [
