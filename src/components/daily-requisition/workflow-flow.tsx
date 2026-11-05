@@ -17,7 +17,8 @@
  * that is out of date can only refuse — never move something that has moved on since it loaded.
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import {
   collection,
   doc,
@@ -88,6 +89,29 @@ import { cn } from '@/lib/utils';
 /* ── shared bits ─────────────────────────────────────────────────────────── */
 
 type Entry = DailyRequisitionEntry & { id: string };
+
+// Loaded on first open: the dialog imports FlowTrail from this file, so a static import would be circular.
+const ViewDailyRequisitionDialog = dynamic(() => import('@/components/daily-requisition/ViewDailyRequisitionDialog'), {
+  ssr: false,
+});
+
+/** A row that opens its requisition, by click or Enter/Space on the row itself (not on a control inside it). */
+function openRowProps(open: () => void) {
+  return {
+    tabIndex: 0,
+    onClick: open,
+    onKeyDown: (event: KeyboardEvent<HTMLTableRowElement>) => {
+      if (event.target !== event.currentTarget) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        open();
+      }
+    },
+  };
+}
+
+/** Keeps a click on a cell's own controls (tick box, buttons) from also opening the row. */
+const stopRowOpen = (event: MouseEvent) => event.stopPropagation();
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount) || 0);
@@ -516,8 +540,19 @@ export function VerificationStepView({ steps, index }: VerificationStepViewProps
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [verifying, setVerifying] = useState<Entry[] | null>(null);
   const [handingOver, setHandingOver] = useState<Entry | null>(null);
+  /** The requisition whose details are open. */
+  const [viewing, setViewing] = useState<Entry | null>(null);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  // The details dialog takes lists; it only looks names up in them.
+  const projectList = useMemo(
+    () => [...(names?.projects ?? new Map<string, string>())].map(([id, projectName]) => ({ id, projectName }) as Project),
+    [names],
+  );
+  const departmentList = useMemo(
+    () => [...(names?.departments ?? new Map<string, string>())].map(([id, name]) => ({ id, name }) as Department),
+    [names],
+  );
 
   // What is waiting for me: named among the holders. Readable by the holders whatever else they may see.
   useEffect(() => {
@@ -761,8 +796,12 @@ export function VerificationStepView({ steps, index }: VerificationStepViewProps
                       rows.map(({ entry, holders, mine, handedBy }) => {
                         const receivedAt = asDate(entry.receivedAt);
                         return (
-                          <TableRow key={entry.id} className={selected.has(entry.id) ? SELECTED_ROW : STRIPED_ROW}>
-                            <TableCell>
+                          <TableRow
+                            key={entry.id}
+                            className={cn('cursor-pointer', selected.has(entry.id) ? SELECTED_ROW : STRIPED_ROW)}
+                            {...openRowProps(() => setViewing(entry))}
+                          >
+                            <TableCell onClick={stopRowOpen}>
                               <Checkbox
                                 aria-label={`Select ${entry.receptionNo}`}
                                 disabled={!mine}
@@ -798,7 +837,7 @@ export function VerificationStepView({ steps, index }: VerificationStepViewProps
                               )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right tabular-nums">{formatCurrency(entry.netAmount)}</TableCell>
-                            <TableCell className="whitespace-nowrap text-right">
+                            <TableCell className="whitespace-nowrap text-right" onClick={stopRowOpen}>
                               {mine ? (
                                 <div className="flex justify-end gap-1.5">
                                   <Button size="sm" className="h-7" disabled={busy} onClick={() => setVerifying([entry])}>
@@ -878,6 +917,19 @@ export function VerificationStepView({ steps, index }: VerificationStepViewProps
       </AlertDialog>
 
       <HandOverDialog steps={steps} index={index} entries={handingOver ? [handingOver] : null} onClose={() => setHandingOver(null)} />
+
+      {viewing && (
+        <ViewDailyRequisitionDialog
+          isOpen
+          onOpenChange={(open) => !open && setViewing(null)}
+          // The live copy while it is still listed here; the one clicked once it has moved on.
+          entry={[...mineRows, ...allRows].find((r) => r.entry.id === viewing.id)?.entry ?? viewing}
+          projects={projectList}
+          departments={departmentList}
+          // The lists are live: whatever the dialog changes arrives through the listeners.
+          onActionComplete={() => undefined}
+        />
+      )}
     </>
   );
 }
@@ -1019,7 +1071,8 @@ export function HandOverDialog({ steps, index, entries, canHandOverAny = false, 
 
   return (
     <Dialog open={entries !== null} onOpenChange={(o) => !o && !busy && close()}>
-      <DialogContent className="sm:max-w-md">
+      {/* DialogContent is a plain column: gap-4 keeps the header, fields and buttons apart. */}
+      <DialogContent className="gap-4 sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Hand over {count === 1 ? entries?.[0]?.receptionNo : `${count} requisitions`}</DialogTitle>
           <DialogDescription>
