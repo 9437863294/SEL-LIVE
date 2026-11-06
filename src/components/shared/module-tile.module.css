@@ -1,0 +1,76 @@
+/*
+ * The module tile's hover: a soft glow in the tile's own colour that follows the mouse, and a
+ * border that runs round the tile — the home page's "Card glow" (home-effects.module.css), so a
+ * module's landing page answers the mouse the way the home page's tiles do.
+ *
+ * `--x`/`--y` are written by ModuleTileGrid as the mouse moves; without them (touch, keyboard focus)
+ * the glow sits at the top centre, over the icon. The accent variables come from the tile's style.
+ */
+
+.tile {
+  isolation: isolate;
+}
+
+.tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(180px circle at var(--x, 50%) var(--y, 0%), var(--accent-30, #6366f14d), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+.tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--module-tile-angle, 0deg),
+    transparent 0 60%,
+    var(--accent-solid, #6366f1),
+    var(--accent-70, #4f46e5b3),
+    transparent 90%
+  );
+  /* Chrome 109 (the older office PCs) reads the prefixed pair, newer browsers `mask-composite`. */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+.tile:hover::before,
+.tile:hover::after,
+.tile:focus-visible::before {
+  opacity: 1;
+}
+
+@property --module-tile-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tile:hover::after {
+    animation: module-tile-run 2.4s linear infinite;
+  }
+}
+
+/* Reduced motion chosen in the app, whatever the device says. */
+:global(html[data-motion='reduced']) .tile::after {
+  animation: none !important;
+}
+
+@keyframes module-tile-run {
+  to {
+    --module-tile-angle: 360deg;
+  }
+}

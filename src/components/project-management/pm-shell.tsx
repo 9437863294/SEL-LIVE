@@ -24,7 +24,7 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, ChevronLeft, ChevronRight, Inbox, type LucideIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataList, type ListColumn } from "@/components/shared/data-list";
 import {
@@ -38,7 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Card, CardContent } from "@/components/ui/card";
+import { ModuleTile, ModuleTileGrid } from "@/components/shared/module-tile";
 import { useSidebarDefault } from "@/components/theme/use-sidebar-default";
 import { cn } from "@/lib/utils";
 
@@ -484,69 +484,20 @@ export type PmNavCardItem = {
 };
 
 /**
- * The hub tile every Project Management landing screen uses: a gradient accent strip, a small
- * gradient icon chip with a white glyph, title and description on one line, and an arrow that
- * slides on hover.
+ * The hub tile every Project Management landing screen uses. It is the app-wide module tile
+ * (`@/components/shared/module-tile`): a centred gradient icon, bold title and two-line
+ * description on a white rounded card, as the home page's "All modules" grid draws them.
  *
- * Defined once because it had been hand-copied into each hub, and the copies drifted — a flat
- * `primary/10` chip with no strip and no arrow in some modules, the full treatment in others,
- * which is precisely what made those modules read as different applications.
+ * Defined once because it had been hand-copied into each hub, and the copies drifted, which is
+ * precisely what made those modules read as different applications.
  */
 export function PmNavCard({ item }: { item: PmNavCardItem }) {
-  const disabled = item.disabled || item.href === "#";
-  const gradient = item.gradient ?? "from-slate-500 to-slate-700";
-
-  const card = (
-    <Card
-      className={cn(
-        "h-full overflow-hidden border-border/60 transition-all duration-200",
-        disabled
-          ? "cursor-not-allowed opacity-60"
-          : "hover:-translate-y-0.5 hover:border-border hover:shadow-md",
-      )}
-      aria-disabled={disabled || undefined}
-    >
-      <div className={cn("h-1 w-full bg-gradient-to-r", gradient)} />
-      <CardContent className="flex items-center gap-2.5 p-3">
-        <div
-          className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm transition-transform duration-200 group-hover:scale-105",
-            gradient,
-          )}
-        >
-          <item.icon className="h-4 w-4 text-white" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-tight">{item.title}</p>
-          <p className="truncate text-xs text-muted-foreground">{item.description}</p>
-        </div>
-        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
-      </CardContent>
-    </Card>
-  );
-
-  if (disabled) {
-    return (
-      <div className="h-full" title="You do not have permission for this" tabIndex={-1}>
-        {card}
-      </div>
-    );
-  }
-
-  return (
-    <Link href={item.href} className="group h-full no-underline">
-      {card}
-    </Link>
-  );
+  return <ModuleTile item={item} />;
 }
 
-/** The grid hub tiles sit in — the same breakpoints across every module. */
+/** The grid hub tiles sit in — the same one across every module. */
 export function PmNavCardGrid({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-      {children}
-    </div>
-  );
+  return <ModuleTileGrid>{children}</ModuleTileGrid>;
 }
 
 export function PmSectionHead({

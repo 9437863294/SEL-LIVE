@@ -24,6 +24,7 @@ import {
 import { getModuleIconEntry } from '@/components/module-hub/module-icon-registry';
 import type { ModuleIconProps } from '@/components/module-hub/module-icons';
 import { canonicalModuleName } from '@/lib/activity-modules';
+import { gradientAccent } from '@/lib/gradient-accent';
 import { moduleDisplayName } from '@/lib/module-display-names';
 import {
   compareWorkItems,
@@ -80,24 +81,9 @@ const LAUNCHER_TO_WORK: Record<string, string> = {
 };
 const workModuleOf = (name: string) => LAUNCHER_TO_WORK[name] ?? canonicalModuleName(name);
 
-/**
- * Hex for the `to-*` stop of each gradient in module-icon-registry.tsx (Tailwind's own palette), so a
- * card can cast a shadow in its icon's colour. A class built at runtime would not exist in the CSS,
- * hence a table. A gradient added to the registry later falls back to slate until listed here.
- */
-const TAILWIND_STOPS: Record<string, string> = {
-  'amber-600': '#d97706', 'amber-700': '#b45309', 'blue-600': '#2563eb', 'blue-700': '#1d4ed8',
-  'cyan-600': '#0891b2', 'emerald-700': '#047857', 'fuchsia-600': '#c026d3', 'gray-600': '#4b5563',
-  'green-600': '#16a34a', 'indigo-600': '#4f46e5', 'indigo-700': '#4338ca', 'orange-600': '#ea580c',
-  'pink-600': '#db2777', 'purple-700': '#7e22ce', 'red-600': '#dc2626', 'rose-600': '#e11d48',
-  'sky-600': '#0284c7', 'sky-700': '#0369a1', 'slate-700': '#334155', 'stone-700': '#44403c',
-  'teal-600': '#0d9488', 'teal-700': '#0f766e', 'violet-600': '#7c3aed',
-};
-
-export function gradientAccent(gradient: string): string {
-  const stop = /\bto-([a-z]+-\d{3})\b/.exec(gradient)?.[1];
-  return (stop && TAILWIND_STOPS[stop]) || '#475569';
-}
+// The table moved to `@/lib/gradient-accent` so module landing pages can use it without the home
+// page's data; re-exported here for the existing imports (work-module.ts).
+export { gradientAccent };
 
 /** "Good morning" until noon, "Good afternoon" until five, then "Good evening". */
 export function greeting(now: Date = new Date()): string {

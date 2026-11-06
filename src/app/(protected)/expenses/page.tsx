@@ -3,21 +3,18 @@
 
 'use client';
 
-import Link from 'next/link';
 import {
   Building2,
   IndianRupee,
   ShieldAlert,
   Plus,
   Wallet,
-  ArrowRight,
   Sparkles,
 } from 'lucide-react';
 import { ExpenseBadge } from '@/components/expenses/page-header';
 import { PageHeader, SectionHeader } from '@/components/shared/page-header';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
+import { ModuleTile, ModuleTileGrid, ModuleTileSkeletons, moduleTileGradient, type ModuleTileItem } from '@/components/shared/module-tile';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useEffect, useState, useMemo } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -25,71 +22,6 @@ import type { Department } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
-
-interface DeptCardItem {
-  icon: LucideIcon;
-  text: string;
-  href: string;
-  description: string;
-}
-
-/**
- * Departments cycle through these rather than all sharing one primary tint — a wall of identical
- * cards is hard to scan, and a department keeps the same colour across reloads because the tone is
- * picked by its position in the (stably ordered) list.
- */
-const DEPARTMENT_TONES = [
-  { tile: 'from-blue-500 to-indigo-600', soft: 'bg-blue-50', ring: 'group-hover:border-blue-300', bar: 'from-blue-500 to-indigo-500', text: 'group-hover:text-blue-600' },
-  { tile: 'from-violet-500 to-purple-600', soft: 'bg-violet-50', ring: 'group-hover:border-violet-300', bar: 'from-violet-500 to-purple-500', text: 'group-hover:text-violet-600' },
-  { tile: 'from-emerald-500 to-teal-600', soft: 'bg-emerald-50', ring: 'group-hover:border-emerald-300', bar: 'from-emerald-500 to-teal-500', text: 'group-hover:text-emerald-600' },
-  { tile: 'from-amber-500 to-orange-600', soft: 'bg-amber-50', ring: 'group-hover:border-amber-300', bar: 'from-amber-500 to-orange-500', text: 'group-hover:text-amber-600' },
-  { tile: 'from-fuchsia-500 to-pink-600', soft: 'bg-fuchsia-50', ring: 'group-hover:border-fuchsia-300', bar: 'from-fuchsia-500 to-pink-500', text: 'group-hover:text-fuchsia-600' },
-  { tile: 'from-cyan-500 to-sky-600', soft: 'bg-cyan-50', ring: 'group-hover:border-cyan-300', bar: 'from-cyan-500 to-sky-500', text: 'group-hover:text-cyan-600' },
-] as const;
-
-function DepartmentCard({ item, tone }: { item: DeptCardItem; tone: (typeof DEPARTMENT_TONES)[number] }) {
-  const isDisabled = item.href === '#';
-
-  const cardContent = (
-    <div
-      className={cn(
-        'group relative flex h-full flex-col overflow-hidden rounded-xl border bg-white/75 backdrop-blur-sm transition-all duration-300',
-        isDisabled
-          ? 'cursor-not-allowed border-border/50 opacity-50'
-          : cn('cursor-pointer border-white/70 shadow-sm hover:-translate-y-0.5 hover:shadow-lg', tone.ring),
-      )}
-    >
-      {!isDisabled && (
-        <div className={cn('absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r opacity-70 transition-opacity duration-300 group-hover:opacity-100', tone.bar)} />
-      )}
-
-      <CardHeader className="relative flex-row items-center gap-3.5 space-y-0 p-5">
-        <div
-          className={cn(
-            'flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm transition-transform duration-300 group-hover:scale-110',
-            tone.tile,
-          )}
-        >
-          <item.icon className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <CardTitle className={cn('truncate text-sm font-bold transition-colors', tone.text)}>{item.text}</CardTitle>
-          <CardDescription className="mt-0.5 line-clamp-2 text-xs">{item.description}</CardDescription>
-        </div>
-        {!isDisabled && (
-          <ArrowRight className="h-4 w-4 flex-shrink-0 text-muted-foreground/40 transition-all duration-300 group-hover:translate-x-0.5 group-hover:text-foreground/60" />
-        )}
-      </CardHeader>
-    </div>
-  );
-
-  if (isDisabled) return <div className="h-full">{cardContent}</div>;
-  return (
-    <Link href={item.href} className="no-underline h-full block">
-      {cardContent}
-    </Link>
-  );
-}
 
 export default function ExpensesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -126,13 +58,19 @@ export default function ExpensesPage() {
     [departments, canViewDepartment],
   );
 
+  /**
+   * Departments take the tile colours in turn rather than all sharing one — a wall of identical
+   * tiles is hard to scan — and a department keeps its colour across reloads, because the colour is
+   * picked by its position in the (stably ordered) list.
+   */
   const departmentItems = useMemo(
     () =>
-      visibleDepartments.map(dept => ({
+      visibleDepartments.map((dept, index): ModuleTileItem => ({
         icon: Building2,
-        text: dept.name,
+        title: dept.name,
         href: `/expenses/${dept.id}`,
         description: `View and manage expense requests for the ${dept.name} department.`,
+        gradient: moduleTileGradient(index),
       })),
     [visibleDepartments],
   );
@@ -152,9 +90,7 @@ export default function ExpensesPage() {
     return (
       <div className="w-full space-y-6">
         <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
-        </div>
+        <ModuleTileSkeletons count={4} />
       </div>
     );
   }
@@ -191,27 +127,24 @@ export default function ExpensesPage() {
         <SectionHeader title="Your Departments" icon={Building2} />
 
         {departmentItems.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {departmentItems.map((item, index) => (
-              <DepartmentCard key={item.text} item={item} tone={DEPARTMENT_TONES[index % DEPARTMENT_TONES.length]} />
+          <ModuleTileGrid>
+            {departmentItems.map((item) => (
+              <ModuleTile key={item.href} item={item} />
             ))}
-            {/* New Expense Request shortcut card */}
+            {/* New Expense Request shortcut: dashed, as the one tile that creates rather than opens. */}
             {canCreateAnywhere && (
-              <Link href="/expenses/new-request" className="h-full block">
-                <div className="group relative flex flex-col h-full rounded-xl border border-dashed border-primary/30 transition-all duration-300 overflow-hidden bg-primary/5 hover:bg-primary/10 hover:border-primary/50 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/10">
-                  <div className="flex flex-col items-center justify-center flex-1 p-5 text-center gap-2">
-                    <div className="flex items-center justify-center rounded-xl bg-primary/10 border border-primary/20 h-11 w-11 group-hover:scale-110 transition-transform duration-300">
-                      <Plus className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-primary">New Request</p>
-                      <p className="text-xs text-muted-foreground">Create expense request</p>
-                    </div>
-                  </div>
-                </div>
-              </Link>
+              <ModuleTile
+                item={{
+                  icon: Plus,
+                  title: 'New Request',
+                  description: 'Create an expense request.',
+                  href: '/expenses/new-request',
+                  gradient: 'from-indigo-500 to-blue-600',
+                  variant: 'action',
+                }}
+              />
             )}
-          </div>
+          </ModuleTileGrid>
         ) : (
           <div className="flex flex-col items-center justify-center py-16 rounded-xl border border-dashed border-border/50 bg-muted/20">
             <div className="flex items-center justify-center rounded-full bg-muted h-16 w-16 mb-4">

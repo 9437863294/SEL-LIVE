@@ -25,7 +25,7 @@ import type { WorkDashboardState } from '@/components/work-dashboard/hooks';
 import type { HomeBannerEffect, HomeModulesEffect } from '@/lib/appearance/model';
 import { cn } from '@/lib/utils';
 import { greeting, longDate, useHomeData, type HomeData, type HomeModule } from './home-data';
-import { BannerFx, ModulesFx, bannerEffectOf, modulesAreaClass, modulesEffectOf, useFxPointer } from './home-effects';
+import { BannerFx, ModulesFx, bannerEffectOf, modulesAreaClass, modulesEffectOf, shownBannerEffect, useFxPointer } from './home-effects';
 import { FavouriteButton, StretchedLink } from './home-parts';
 
 export type LaunchpadSkin = 'launchpad' | 'aurora';
@@ -61,7 +61,7 @@ export function AuroraHome({ work }: { work: WorkDashboardState }) {
     <LaunchpadView
       data={useHomeData(work)}
       skin="aurora"
-      bannerEffect={bannerEffectOf(branding.homeBanner)}
+      bannerEffect={shownBannerEffect(bannerEffectOf(branding.homeBanner))}
       modulesEffect={modulesEffectOf(branding.homeModules)}
     />
   );

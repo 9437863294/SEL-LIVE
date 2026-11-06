@@ -23,6 +23,13 @@ import styles from './home-effects.module.css';
 export const bannerEffectOf = (value: unknown): HomeBannerEffect => (isOneOf(HOME_BANNER_EFFECTS, value) ? value : 'none');
 export const modulesEffectOf = (value: unknown): HomeModulesEffect => (isOneOf(HOME_MODULES_EFFECTS, value) ? value : 'none');
 
+/**
+ * What the Aurora Glass greeting actually draws: Aurora drift is its standard background, so
+ * "none" shows it too; any other choice shows as chosen. The home page, the settings preview and
+ * the option thumbnail all go through here, so they agree.
+ */
+export const shownBannerEffect = (effect: HomeBannerEffect): HomeBannerEffect => (effect === 'none' ? 'aurora' : effect);
+
 /* ── Banner: Power line, computed once ────────────────────────────────────────────────────── */
 
 const TOWER_XS = [-40, 260, 560, 860, 1160, 1460, 1760, 2060];
@@ -200,26 +207,25 @@ export function ModulesFx({ effect }: { effect: HomeModulesEffect }) {
 }
 
 /**
- * The classes for the "All modules" area: a background effect gets a rounded panel of its own, as
- * in the mock-up; Card glow marks the area so its tiles (`data-fx-tile`) glow.
+ * The classes for the "All modules" area. Its tiles (`data-fx-tile`) always glow on hover, whatever
+ * background is chosen; a background effect also gets a rounded panel of its own, as in the mock-up.
  */
 export function modulesAreaClass(effect: HomeModulesEffect): string {
-  if (effect === 'none') return '';
-  if (effect === 'card-glow') return styles.cardGlow;
-  return 'relative isolate overflow-hidden rounded-[22px] px-3 pb-[18px] pt-3.5';
+  if (effect === 'none' || effect === 'card-glow') return styles.cardGlow;
+  return cn(styles.cardGlow, 'relative isolate overflow-hidden rounded-[22px] px-3 pb-[18px] pt-3.5');
 }
 
 /**
- * Pointer tracking for Cursor spotlight (`--mx`/`--my` on the area) and Card glow (`--x`/`--y` on
- * the tile under the mouse). Written straight to the element's style, once a frame at most — never
- * through React state, which would re-render thirty-odd tiles on every mouse move. Nothing is
- * attached for the other effects, or for touch, which has no hover to follow.
+ * Pointer tracking for the tile glow (`--x`/`--y` on the tile under the mouse, always) and Cursor
+ * spotlight (`--mx`/`--my` on the area, when chosen). Written straight to the element's style, once
+ * a frame at most — never through React state, which would re-render thirty-odd tiles on every
+ * mouse move. Nothing is tracked for touch, which has no hover to follow.
  */
 export function useFxPointer<T extends HTMLElement>(effect: HomeModulesEffect) {
   const ref = useRef<T | null>(null);
   useEffect(() => {
     const area = ref.current;
-    if (!area || (effect !== 'spotlight' && effect !== 'card-glow')) return;
+    if (!area) return;
     let frame = 0;
     let latest: PointerEvent | null = null;
 
@@ -231,7 +237,6 @@ export function useFxPointer<T extends HTMLElement>(effect: HomeModulesEffect) {
         const box = area.getBoundingClientRect();
         area.style.setProperty('--mx', `${event.clientX - box.left}px`);
         area.style.setProperty('--my', `${event.clientY - box.top}px`);
-        return;
       }
       const tile = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-fx-tile]') : null;
       if (!tile) return;
