@@ -1,41 +1,25 @@
 'use client';
 
 /**
- * The calendar (§8).
+ * The calendar's views (§8; redesigned 2026-11-06 from the user's mockup): month, week, day,
+ * agenda, and the mini month in the side rail.
  *
- * Four views — day, week, month, agenda — over one fetched window, plus task deadlines and
- * configured holidays. Meetings, tasks and holidays are three different kinds of thing on the same
- * grid, so they share a single `CalendarEntry` shape and are distinguished by colour and icon
- * rather than by being drawn differently.
+ * Every meeting is drawn by *my* state on it (`calendarMeetingState`): solid for going, striped
+ * with a dashed edge for waiting on my reply, greyed and struck through for declined or cancelled.
+ * State rather than meeting type decides the look, because the types are configurable and can
+ * outnumber any set of colours a person can tell apart; state is what a calendar is read for.
  *
  * ── Drag to reschedule ─────────────────────────────────────────────────────────────────────────
  *
- * §8 asks for it "if technically practical". In the month view it is: each day cell is a drop
- * target, each meeting chip is draggable, and a drop moves the meeting to that date keeping its
- * time. That is the reschedule people actually want — "move Thursday's review to Friday" — and it
- * goes through `updateMeeting`, so the participants are notified and the reminders are rebuilt just
- * as they would be from the form.
- *
- * It is deliberately *not* offered in the day and week views. Dropping onto a time column implies
- * changing the time too, which needs the drag to resolve to a minute rather than a cell; getting
- * that wrong silently moves a meeting by half an hour, and the form is one click away.
+ * Month view only: each day cell is a drop target, and a drop moves the meeting to that date keeping
+ * its time, through `updateMeeting` (participants notified, reminders rebuilt). Not offered on the
+ * time grids, where a drop would imply a new time too and a near-miss would silently move a meeting
+ * by half an hour. Without the capability no drag context is mounted at all.
  */
 
-import { useMemo } from 'react';
-import Link from 'next/link';
+import { useMemo, useRef, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  ListTodo,
-  PartyPopper,
-  Radio,
-  Video,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { ChevronLeft, ChevronRight, PartyPopper, Plus, Radio, Repeat, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
   DraggableProvided,
@@ -45,663 +29,755 @@ import type {
   DroppableStateSnapshot,
 } from '@hello-pangea/dnd';
 import {
-  CALENDAR_VIEWS,
-  OFFICE_HUB_BASE_PATH,
   OFFICE_HUB_WEEKDAYS,
   addDays,
   clockToMinutes,
-  daysBetween,
-  endOfMonth,
   formatClockTime,
   formatIsoDate,
-  holidayOn,
-  isTaskOverdue,
   isWorkingDay,
-  meetingTimeState,
-  startOfMonth,
-  startOfWeek,
+  layoutDayColumns,
+  minutesToClock,
+  monthGridDays,
   weekdayOf,
-  type CalendarView,
+  type CalendarMeetingState,
   type OfficeHubMeeting,
   type OfficeHubSettings,
   type OfficeHubTask,
 } from '@/lib/office-hub';
-import { OfficeHubEmptyState } from './ui';
 
-const DragDropContext = dynamic(
-  () => import('@hello-pangea/dnd').then((module) => module.DragDropContext),
-  { ssr: false },
-);
-const Droppable = dynamic(() => import('@hello-pangea/dnd').then((module) => module.Droppable), {
-  ssr: false,
-});
-const Draggable = dynamic(() => import('@hello-pangea/dnd').then((module) => module.Draggable), {
-  ssr: false,
-});
+const DragDropContext = dynamic(() => import('@hello-pangea/dnd').then((module) => module.DragDropContext), { ssr: false });
+const Droppable = dynamic(() => import('@hello-pangea/dnd').then((module) => module.Droppable), { ssr: false });
+const Draggable = dynamic(() => import('@hello-pangea/dnd').then((module) => module.Draggable), { ssr: false });
 
-export interface CalendarEntry {
-  kind: 'meeting' | 'task' | 'holiday';
-  id: string;
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export type CalendarItem =
+  | {
+      kind: 'meeting';
+      id: string;
+      date: string;
+      title: string;
+      start: number;
+      end: number;
+      meeting: OfficeHubMeeting;
+      state: CalendarMeetingState;
+      live: boolean;
+      draggable: boolean;
+    }
+  | {
+      kind: 'task';
+      id: string;
+      date: string;
+      title: string;
+      task: OfficeHubTask;
+      state: 'due' | 'late' | 'done';
+    };
+
+export interface CalendarHoliday {
   date: string;
-  title: string;
-  /** Meetings only. */
-  startTime?: string;
-  endTime?: string;
-  subtitle?: string;
-  href?: string;
-  tone: string;
-  meeting?: OfficeHubMeeting;
-  task?: OfficeHubTask;
-  draggable?: boolean;
+  name: string;
 }
 
-/** Turn meetings, tasks and holidays into one list the grid can render. */
-export function buildCalendarEntries(input: {
-  meetings: readonly OfficeHubMeeting[];
-  tasks: readonly OfficeHubTask[];
-  settings: Partial<OfficeHubSettings> | null;
-  from: string;
-  to: string;
-  today: string;
-  showMeetings: boolean;
-  showTasks: boolean;
-  showHolidays: boolean;
-  canReschedule: boolean;
-  now: Date;
-}): CalendarEntry[] {
-  const entries: CalendarEntry[] = [];
+export function monthTitle(anchor: string): string {
+  return `${MONTHS_LONG[Number(anchor.slice(5, 7)) - 1]} ${anchor.slice(0, 4)}`;
+}
 
-  if (input.showMeetings) {
-    for (const meeting of input.meetings) {
-      if (meeting.date < input.from || meeting.date > input.to) continue;
-      const state = meetingTimeState(meeting, input.now);
-      entries.push({
-        kind: 'meeting',
-        id: meeting.id,
-        date: meeting.date,
-        title: meeting.title,
-        startTime: meeting.startTime,
-        endTime: meeting.endTime,
-        subtitle: `${meeting.organizerName}${meeting.mode !== 'Offline' ? ' · online' : ''}`,
-        href: `${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`,
-        tone:
-          meeting.status === 'Cancelled'
-            ? 'border-slate-200 bg-slate-50 text-slate-400 line-through'
-            : state === 'live'
-              ? 'border-emerald-300 bg-emerald-100 text-emerald-900'
-              : meeting.priority === 'Critical'
-                ? 'border-rose-300 bg-rose-50 text-rose-900'
-                : 'border-indigo-200 bg-indigo-50 text-indigo-900',
-        meeting,
-        // A cancelled or completed meeting is not rescheduled; it is superseded.
-        draggable:
-          input.canReschedule && meeting.status !== 'Cancelled' && meeting.status !== 'Completed',
-      });
-    }
-  }
+/* ── chips ───────────────────────────────────────────────────────────────────────────────────── */
 
-  if (input.showTasks) {
-    for (const task of input.tasks) {
-      if (!task.dueDate || task.dueDate < input.from || task.dueDate > input.to) continue;
-      if (task.status === 'Cancelled') continue;
-      entries.push({
-        kind: 'task',
-        id: task.id,
-        date: task.dueDate,
-        title: task.title,
-        subtitle: task.assigneeName ?? task.teamName ?? 'Unassigned',
-        href: `${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`,
-        tone:
-          task.status === 'Completed'
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : isTaskOverdue(task, input.today)
-              ? 'border-rose-300 bg-rose-50 text-rose-900'
-              : 'border-amber-200 bg-amber-50 text-amber-900',
-        task,
-      });
-    }
-  }
+const MEETING_CHIP: Record<CalendarMeetingState, string> = {
+  going: 'border-l-primary bg-primary/10',
+  pending: 'oh-cal-pending border-dashed border-l-primary bg-card',
+  declined: 'border-l-muted-foreground/40 bg-muted/70 text-muted-foreground',
+  cancelled: 'border-l-muted-foreground/40 bg-muted/70 text-muted-foreground',
+  draft: 'border-dotted border-l-muted-foreground/60 bg-muted/40 text-muted-foreground',
+  other: 'border-l-sky-600 bg-sky-500/10',
+};
 
-  if (input.showHolidays) {
-    for (const holiday of input.settings?.holidays ?? []) {
-      if (holiday.date < input.from || holiday.date > input.to) continue;
-      entries.push({
-        kind: 'holiday',
-        id: `holiday-${holiday.date}`,
-        date: holiday.date,
-        title: holiday.name,
-        tone: 'border-violet-200 bg-violet-50 text-violet-900',
-      });
-    }
-  }
+export function meetingChipClass(item: Extract<CalendarItem, { kind: 'meeting' }>): string {
+  if (item.live && item.state !== 'cancelled') return 'border-l-emerald-600 bg-emerald-500/15';
+  return MEETING_CHIP[item.state];
+}
 
-  return entries.sort(
-    (a, b) =>
-      a.date.localeCompare(b.date) ||
-      (clockToMinutes(a.startTime ?? '23:59') ?? 1439) - (clockToMinutes(b.startTime ?? '23:59') ?? 1439),
+function struck(state: CalendarMeetingState): boolean {
+  return state === 'declined' || state === 'cancelled';
+}
+
+export function MeetingChip({
+  item,
+  onOpen,
+  showTime = true,
+  barOnPhone = false,
+}: {
+  item: Extract<CalendarItem, { kind: 'meeting' }>;
+  onOpen: (item: CalendarItem) => void;
+  showTime?: boolean;
+  /** In a month cell a phone has room for a coloured bar, not a title; tapping the day shows them. */
+  barOnPhone?: boolean;
+}) {
+  const online = item.meeting.mode !== 'Offline';
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen(item);
+      }}
+      title={`${item.meeting.startTime} ${item.title}${item.state === 'pending' ? ' · waiting for your reply' : item.state === 'declined' ? ' · you declined' : item.state === 'cancelled' ? ' · cancelled' : ''}`}
+      aria-label={`${item.meeting.startTime} ${item.title}`}
+      className={cn(
+        'flex w-full min-w-0 items-center gap-1 rounded-[7px] border-0 border-l-[3px] px-1.5 py-[3px] text-left text-[11.5px] font-bold leading-tight transition-shadow hover:shadow-sm',
+        meetingChipClass(item),
+        barOnPhone && 'max-sm:h-[7px] max-sm:rounded-full max-sm:p-0',
+      )}
+    >
+      {item.live ? <Radio className={cn('h-2.5 w-2.5 shrink-0 animate-pulse text-emerald-600', barOnPhone && 'max-sm:hidden')} aria-hidden /> : null}
+      {showTime && <span className="hidden shrink-0 text-[10.5px] font-semibold opacity-75 sm:inline">{item.meeting.startTime}</span>}
+      <span className={cn('min-w-0 flex-1 truncate', struck(item.state) && 'line-through decoration-muted-foreground/60', barOnPhone && 'max-sm:hidden')}>
+        {item.state === 'draft' ? 'Draft · ' : ''}
+        {item.title}
+      </span>
+      {online && !item.live && <Video className="hidden h-2.5 w-2.5 shrink-0 opacity-60 sm:block" aria-hidden />}
+    </button>
   );
 }
 
-export function MeetingCalendar({
-  view,
-  anchorDate,
-  entries,
-  settings,
-  today,
-  onNavigate,
-  onViewChange,
-  onReschedule,
-  onPickSlot,
+export function TaskChip({
+  item,
+  onOpen,
+  barOnPhone = false,
 }: {
-  view: CalendarView;
-  anchorDate: string;
-  entries: CalendarEntry[];
-  settings: OfficeHubSettings;
-  today: string;
-  onNavigate: (nextAnchor: string) => void;
-  onViewChange: (next: CalendarView) => void;
-  /** Called when a meeting chip is dropped on another day. */
-  onReschedule?: (meeting: OfficeHubMeeting, toDate: string) => void;
-  /** Called when an empty slot is clicked, to open the create form pre-dated. */
-  onPickSlot?: (date: string, time?: string) => void;
+  item: Extract<CalendarItem, { kind: 'task' }>;
+  onOpen: (item: CalendarItem) => void;
+  barOnPhone?: boolean;
 }) {
-  const byDate = useMemo(() => {
-    const map = new Map<string, CalendarEntry[]>();
-    for (const entry of entries) {
-      const list = map.get(entry.date) ?? [];
-      list.push(entry);
-      map.set(entry.date, list);
-    }
-    return map;
-  }, [entries]);
-
-  const step = (direction: -1 | 1) => {
-    if (view === 'day') return onNavigate(addDays(anchorDate, direction));
-    if (view === 'week') return onNavigate(addDays(anchorDate, 7 * direction));
-    if (view === 'month') {
-      const nextMonthAnchor =
-        direction === 1 ? addDays(endOfMonth(anchorDate), 1) : addDays(startOfMonth(anchorDate), -1);
-      return onNavigate(startOfMonth(nextMonthAnchor));
-    }
-    return onNavigate(addDays(anchorDate, 14 * direction));
-  };
-
-  const periodLabel = useMemo(() => {
-    if (view === 'day') return formatIsoDate(anchorDate, { withWeekday: true });
-    if (view === 'week') {
-      const start = startOfWeek(anchorDate);
-      return `${formatIsoDate(start, { year: false })} – ${formatIsoDate(addDays(start, 6))}`;
-    }
-    if (view === 'month') {
-      return new Date(`${anchorDate}T00:00:00Z`).toLocaleDateString(undefined, {
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-      });
-    }
-    return `${formatIsoDate(anchorDate)} – ${formatIsoDate(addDays(anchorDate, 13))}`;
-  }, [view, anchorDate]);
-
   return (
-    <div className="space-y-2">
-      <Card>
-        <CardContent className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-1">
-            <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => step(-1)} aria-label="Previous">
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => step(1)} aria-label="Next">
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => onNavigate(today)}>
-              Today
-            </Button>
-            <p className="ml-2 min-w-0 truncate text-sm font-semibold text-slate-800">{periodLabel}</p>
-          </div>
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen(item);
+      }}
+      title={`Task deadline: ${item.title}${item.state === 'late' ? ' · overdue' : item.state === 'done' ? ' · done' : ''}`}
+      aria-label={`Task deadline: ${item.title}`}
+      className={cn(
+        'flex w-full min-w-0 items-center gap-1.5 rounded-[7px] px-1 py-[3px] text-left text-[11.5px] font-bold leading-tight hover:bg-muted/60',
+        item.state === 'late' ? 'text-rose-700 dark:text-rose-300' : item.state === 'done' ? 'text-muted-foreground' : 'text-amber-800 dark:text-amber-300',
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'h-[9px] w-[9px] shrink-0 rounded-[3px] border-2',
+          item.state === 'late' ? 'border-rose-600' : 'border-amber-500',
+          item.state === 'done' && 'bg-amber-500',
+        )}
+      />
+      <span className={cn('min-w-0 flex-1 truncate', item.state === 'done' && 'line-through', barOnPhone && 'max-sm:hidden')}>{item.title}</span>
+    </button>
+  );
+}
 
-          <div className="flex items-center gap-1 rounded-lg border bg-white p-0.5" role="group" aria-label="Calendar view">
-            {CALENDAR_VIEWS.map((entry) => (
-              <Button
-                key={entry}
-                size="sm"
-                variant={view === entry ? 'default' : 'ghost'}
-                aria-pressed={view === entry}
-                className="h-7 px-2 text-xs capitalize"
-                onClick={() => onViewChange(entry)}
-              >
-                {entry}
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+function ItemChip({
+  item,
+  onOpen,
+  showTime,
+  barOnPhone,
+}: {
+  item: CalendarItem;
+  onOpen: (item: CalendarItem) => void;
+  showTime?: boolean;
+  barOnPhone?: boolean;
+}) {
+  return item.kind === 'meeting' ? (
+    <MeetingChip item={item} onOpen={onOpen} showTime={showTime} barOnPhone={barOnPhone} />
+  ) : (
+    <TaskChip item={item} onOpen={onOpen} barOnPhone={barOnPhone} />
+  );
+}
 
-      {view === 'month' && (
-        <MonthGrid
-          anchorDate={anchorDate}
-          byDate={byDate}
-          settings={settings}
-          today={today}
-          onReschedule={onReschedule}
-          onPickSlot={onPickSlot}
-        />
-      )}
-      {view === 'week' && (
-        <WeekGrid anchorDate={anchorDate} byDate={byDate} settings={settings} today={today} onPickSlot={onPickSlot} />
-      )}
-      {view === 'day' && (
-        <DayList date={anchorDate} entries={byDate.get(anchorDate) ?? []} settings={settings} today={today} onPickSlot={onPickSlot} />
-      )}
-      {view === 'agenda' && <AgendaList anchorDate={anchorDate} byDate={byDate} settings={settings} today={today} />}
+export function HolidayChip({ name }: { name: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1 rounded-[7px] border-0 border-l-[3px] border-l-pink-500 bg-pink-500/10 px-1.5 py-[3px] text-[11px] font-bold text-pink-800 dark:text-pink-200">
+      <PartyPopper className="h-2.5 w-2.5 shrink-0" aria-hidden />
+      <span className="truncate">{name}</span>
     </div>
   );
 }
 
 /* ── month ───────────────────────────────────────────────────────────────────────────────────── */
 
-function MonthGrid({
-  anchorDate,
+export function MonthView({
+  anchor,
   byDate,
+  holidays,
   settings,
   today,
-  onReschedule,
+  onOpen,
+  onShowDay,
   onPickSlot,
+  onReschedule,
 }: {
-  anchorDate: string;
-  byDate: Map<string, CalendarEntry[]>;
+  anchor: string;
+  byDate: ReadonlyMap<string, CalendarItem[]>;
+  holidays: ReadonlyMap<string, CalendarHoliday>;
   settings: OfficeHubSettings;
   today: string;
-  onReschedule?: (meeting: OfficeHubMeeting, toDate: string) => void;
+  onOpen: (item: CalendarItem) => void;
+  onShowDay: (date: string) => void;
   onPickSlot?: (date: string, time?: string) => void;
+  onReschedule?: (meeting: OfficeHubMeeting, toDate: string) => void;
 }) {
-  const monthStart = startOfMonth(anchorDate);
-  const gridStart = startOfWeek(monthStart);
-  const monthEnd = endOfMonth(anchorDate);
-  const gridEnd = addDays(startOfWeek(monthEnd), 6);
-  const dayCount = daysBetween(gridStart, gridEnd) + 1;
-  const days = Array.from({ length: dayCount }, (_, index) => addDays(gridStart, index));
-  const monthPrefix = anchorDate.slice(0, 7);
+  const days = useMemo(() => monthGridDays(anchor), [anchor]);
+  const monthPrefix = anchor.slice(0, 7);
 
-  const body = (
-    <div className="overflow-hidden rounded-xl border bg-white">
-      <div className="grid grid-cols-7 border-b bg-slate-50">
+  const cell = (date: string, position: number, drop?: { provided: DroppableProvided; snapshot: DroppableStateSnapshot }) => {
+    const items = byDate.get(date) ?? [];
+    const holiday = holidays.get(date);
+    const inMonth = date.startsWith(monthPrefix);
+    const working = isWorkingDay(date, settings);
+    const shown = items.slice(0, 3);
+    return (
+      <div
+        key={date}
+        ref={drop?.provided.innerRef}
+        {...(drop?.provided.droppableProps ?? {})}
+        className={cn(
+          'group relative min-h-[84px] min-w-0 border-b px-1.5 pb-2 pt-1.5 transition-colors sm:min-h-[118px]',
+          position % 7 !== 6 && 'border-r',
+          !inMonth && 'bg-muted/40',
+          inMonth && !working && 'bg-primary/[0.025]',
+          holiday && inMonth && 'bg-pink-500/[0.06]',
+          date === today && 'bg-primary/[0.07]',
+          drop?.snapshot.isDraggingOver && 'bg-primary/15 outline-dashed outline-2 -outline-offset-[3px] outline-primary/50',
+        )}
+      >
+        <div className="mb-1 flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onShowDay(date)}
+            aria-label={`Open ${formatIsoDate(date, { withWeekday: true })}`}
+            className={cn(
+              'grid h-[26px] w-[26px] shrink-0 place-items-center rounded-lg text-[12.5px] font-extrabold tabular-nums hover:bg-muted',
+              date === today && 'bg-gradient-to-br from-primary to-indigo-600 text-white shadow-md hover:bg-primary',
+              date !== today && !inMonth && 'text-muted-foreground/50',
+              date !== today && inMonth && date < today && 'text-muted-foreground',
+            )}
+          >
+            {Number(date.slice(8, 10))}
+          </button>
+          {holiday && (
+            <span className="min-w-0 truncate text-[10.5px] font-extrabold text-pink-700 dark:text-pink-300" title={holiday.name}>
+              {holiday.name}
+            </span>
+          )}
+          {onPickSlot && (
+            <button
+              type="button"
+              onClick={() => onPickSlot(date)}
+              title="Schedule on this day"
+              aria-label={`Schedule a meeting on ${formatIsoDate(date)}`}
+              className="ml-auto grid h-[22px] w-[22px] shrink-0 place-items-center rounded-[7px] bg-muted text-primary opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
+        </div>
+        <div className="space-y-[3px]">
+          {shown.map((item, index) =>
+            drop && item.kind === 'meeting' && item.draggable ? (
+              <Draggable draggableId={item.id} index={index} key={item.id}>
+                {(dragProvided: DraggableProvided, dragSnapshot: DraggableStateSnapshot) => (
+                  <div
+                    ref={dragProvided.innerRef}
+                    {...dragProvided.draggableProps}
+                    {...dragProvided.dragHandleProps}
+                    className={cn('cursor-grab', dragSnapshot.isDragging && 'opacity-80')}
+                  >
+                    <ItemChip item={item} onOpen={onOpen} barOnPhone />
+                  </div>
+                )}
+              </Draggable>
+            ) : (
+              <ItemChip key={item.id} item={item} onOpen={onOpen} barOnPhone />
+            ),
+          )}
+          {items.length > 3 && (
+            <button type="button" onClick={() => onShowDay(date)} className="pl-1 text-[11px] font-bold text-primary hover:underline">
+              +{items.length - 3} more
+            </button>
+          )}
+        </div>
+        {drop?.provided.placeholder}
+      </div>
+    );
+  };
+
+  const grid = (
+    <div>
+      <div className="grid grid-cols-7 border-b">
         {[1, 2, 3, 4, 5, 6, 0].map((weekday) => (
           <div
             key={weekday}
-            className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            className={cn(
+              'px-2 py-2 text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground',
+              !settings.workingDays.includes(weekday) && 'text-primary/70',
+            )}
           >
             {OFFICE_HUB_WEEKDAYS[weekday].short}
           </div>
         ))}
       </div>
-
       <div className="grid grid-cols-7">
-        {days.map((date) => {
-          const entries = byDate.get(date) ?? [];
-          const inMonth = date.startsWith(monthPrefix);
-          const holiday = holidayOn(date, settings);
-          const working = isWorkingDay(date, settings);
-
-          return (
-            <Droppable droppableId={date} key={date} isDropDisabled={!onReschedule}>
-              {(provided: DroppableProvided, snapshot: DroppableStateSnapshot) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  className={cn(
-                    'min-h-[6.5rem] border-b border-r p-1 last:border-r-0',
-                    !inMonth && 'bg-slate-50/60',
-                    // Non-working days are shaded, so a Sunday reads as a Sunday at a glance (§8).
-                    inMonth && !working && 'bg-slate-50',
-                    date === today && 'bg-indigo-50/60',
-                    snapshot.isDraggingOver && 'ring-2 ring-inset ring-indigo-400',
-                  )}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-1">
-                    <button
-                      type="button"
-                      onClick={() => onPickSlot?.(date)}
-                      className={cn(
-                        'rounded px-1 text-[11px] font-semibold tabular-nums hover:bg-white',
-                        date === today ? 'bg-indigo-600 text-white' : inMonth ? 'text-slate-700' : 'text-slate-400',
-                      )}
-                      aria-label={`Schedule a meeting on ${formatIsoDate(date)}`}
-                    >
-                      {Number(date.slice(8, 10))}
-                    </button>
-                    {holiday && (
-                      <PartyPopper className="h-3 w-3 shrink-0 text-violet-500" aria-label={holiday.name} />
-                    )}
-                  </div>
-
-                  <div className="space-y-0.5">
-                    {entries.slice(0, 4).map((entry, index) =>
-                      entry.draggable && entry.meeting ? (
-                        <Draggable draggableId={entry.id} index={index} key={entry.id}>
-                          {(dragProvided: DraggableProvided, dragSnapshot: DraggableStateSnapshot) => (
-                            <div
-                              ref={dragProvided.innerRef}
-                              {...dragProvided.draggableProps}
-                              {...dragProvided.dragHandleProps}
-                              className={cn(dragSnapshot.isDragging && 'opacity-80')}
-                            >
-                              <EntryChip entry={entry} compact />
-                            </div>
-                          )}
-                        </Draggable>
-                      ) : (
-                        <EntryChip entry={entry} key={entry.id} compact />
-                      ),
-                    )}
-                    {entries.length > 4 && (
-                      <p className="px-1 text-[10px] text-muted-foreground">+{entries.length - 4} more</p>
-                    )}
-                  </div>
-                  {provided.placeholder}
-                </div>
-              )}
+        {days.map((date, position) =>
+          onReschedule ? (
+            <Droppable droppableId={date} key={date}>
+              {(provided: DroppableProvided, snapshot: DroppableStateSnapshot) => cell(date, position, { provided, snapshot })}
             </Droppable>
-          );
-        })}
+          ) : (
+            cell(date, position)
+          ),
+        )}
       </div>
     </div>
   );
 
-  if (!onReschedule) return body;
-
+  if (!onReschedule) return grid;
   return (
-    <>
-      <DragDropContext
-        onDragEnd={(result: DropResult) => {
-          if (!result.destination) return;
-          const toDate = result.destination.droppableId;
-          const entry = (byDate.get(result.source.droppableId) ?? []).find(
-            (candidate) => candidate.id === result.draggableId,
-          );
-          if (!entry?.meeting || entry.meeting.date === toDate) return;
-          onReschedule(entry.meeting, toDate);
-        }}
-      >
-        {body}
-      </DragDropContext>
-      <p className="text-[11px] text-muted-foreground">
-        Drag a meeting to another day to reschedule it — the time is kept, participants are notified,
-        and the reminders move with it.
-      </p>
-    </>
+    <DragDropContext
+      onDragEnd={(result: DropResult) => {
+        if (!result.destination) return;
+        const toDate = result.destination.droppableId;
+        const item = (byDate.get(result.source.droppableId) ?? []).find((candidate) => candidate.id === result.draggableId);
+        if (item?.kind !== 'meeting' || item.meeting.date === toDate) return;
+        onReschedule(item.meeting, toDate);
+      }}
+    >
+      {grid}
+    </DragDropContext>
   );
 }
 
-/* ── week ────────────────────────────────────────────────────────────────────────────────────── */
+/* ── week & day ──────────────────────────────────────────────────────────────────────────────── */
 
-function WeekGrid({
-  anchorDate,
+const HOUR_PX = 46;
+
+export function TimeGridView({
+  days,
   byDate,
+  holidays,
   settings,
   today,
+  nowMinute,
+  onOpen,
   onPickSlot,
 }: {
-  anchorDate: string;
-  byDate: Map<string, CalendarEntry[]>;
+  days: readonly string[];
+  byDate: ReadonlyMap<string, CalendarItem[]>;
+  holidays: ReadonlyMap<string, CalendarHoliday>;
   settings: OfficeHubSettings;
   today: string;
+  nowMinute: number | null;
+  onOpen: (item: CalendarItem) => void;
   onPickSlot?: (date: string, time?: string) => void;
 }) {
-  const start = startOfWeek(anchorDate);
-  const days = Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  const meetingsByDay = days.map((date) =>
+    (byDate.get(date) ?? []).filter((item): item is Extract<CalendarItem, { kind: 'meeting' }> => item.kind === 'meeting'),
+  );
+  const all = meetingsByDay.flat();
+  const workStart = clockToMinutes(settings.workingHoursStart) ?? 540;
+  const workEnd = clockToMinutes(settings.workingHoursEnd) ?? 1080;
+  const firstHour = Math.max(0, Math.min(Math.floor(workStart / 60) - 1, ...all.map((item) => Math.floor(item.start / 60))));
+  const lastHour = Math.min(24, Math.max(Math.ceil(workEnd / 60) + 1, ...all.map((item) => Math.ceil(item.end / 60))));
+  const hours = Array.from({ length: lastHour - firstHour }, (_, index) => firstHour + index);
+  const columns = { gridTemplateColumns: `56px repeat(${days.length}, minmax(0, 1fr))` };
+  const top = (minute: number) => ((minute - firstHour * 60) / 60) * HOUR_PX;
 
   return (
-    // A horizontal scroller rather than a squeezed seven-column grid: seven columns of meeting
-    // titles at phone width are seven columns of nothing readable.
-    <div className="-mx-1 overflow-x-auto px-1">
-      <div className="flex min-w-0 gap-2 lg:grid lg:grid-cols-7">
-        {days.map((date) => {
-          const entries = byDate.get(date) ?? [];
-          const holiday = holidayOn(date, settings);
-          return (
-            <div
-              key={date}
-              className={cn(
-                'w-[13rem] shrink-0 rounded-xl border bg-white p-2 lg:w-auto',
-                date === today && 'border-indigo-300 bg-indigo-50/50',
-                !isWorkingDay(date, settings) && 'bg-slate-50',
-              )}
-            >
-              <div className="mb-2 flex items-baseline justify-between">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    {OFFICE_HUB_WEEKDAYS[weekdayOf(date)].short}
-                  </p>
-                  <p className={cn('text-sm font-semibold tabular-nums', date === today && 'text-indigo-700')}>
-                    {Number(date.slice(8, 10))}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-1 text-[11px]"
-                  onClick={() => onPickSlot?.(date, settings.workingHoursStart)}
-                >
-                  +
-                </Button>
-              </div>
-
-              {holiday && (
-                <Badge variant="progress" className="mb-1 w-full justify-center">
-                  {holiday.name}
-                </Badge>
-              )}
-
-              <div className="space-y-1">
-                {entries.length === 0 ? (
-                  <p className="py-3 text-center text-[11px] text-muted-foreground">—</p>
-                ) : (
-                  entries.map((entry) => <EntryChip entry={entry} key={entry.id} />)
+    <div className="overflow-x-auto">
+      <div className={cn(days.length > 1 && 'min-w-[720px]')}>
+        {/* headers */}
+        <div className="grid border-b" style={columns}>
+          <div />
+          {days.map((date) => (
+            <div key={date} className="border-l px-1.5 py-2 text-center">
+              <small className="block text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">
+                {OFFICE_HUB_WEEKDAYS[weekdayOf(date)].short}
+              </small>
+              <b
+                className={cn(
+                  'inline-block rounded-[9px] px-1.5 text-[19px] font-extrabold',
+                  date === today && 'bg-gradient-to-br from-primary to-indigo-600 text-white',
                 )}
-              </div>
+              >
+                {Number(date.slice(8, 10))}
+              </b>
             </div>
-          );
-        })}
+          ))}
+        </div>
+        {/* all-day: holidays and task deadlines */}
+        <div className="grid border-b" style={columns}>
+          <div className="px-1 py-2 text-right text-[10px] font-bold text-muted-foreground">All day</div>
+          {days.map((date) => {
+            const holiday = holidays.get(date);
+            const tasks = (byDate.get(date) ?? []).filter((item) => item.kind === 'task');
+            return (
+              <div key={date} className="min-h-[32px] min-w-0 space-y-[3px] border-l p-1">
+                {holiday && <HolidayChip name={holiday.name} />}
+                {tasks.map((item) => (
+                  <ItemChip key={item.id} item={item} onOpen={onOpen} />
+                ))}
+              </div>
+            );
+          })}
+        </div>
+        {/* the hours */}
+        <div className="grid" style={columns}>
+          <div>
+            {hours.map((hour, index) => (
+              <div key={hour} className="h-[46px] -translate-y-[7px] pr-1.5 text-right text-[10.5px] font-bold text-muted-foreground">
+                {index ? formatClockTime(`${String(hour).padStart(2, '0')}:00`, { lowercaseMeridiem: true }).replace(':00', '') : ''}
+              </div>
+            ))}
+          </div>
+          {days.map((date, dayIndex) => {
+            const meetings = meetingsByDay[dayIndex];
+            const layout = layoutDayColumns(meetings.map((item) => ({ id: item.id, start: item.start, end: item.end })));
+            return (
+              <DayColumn
+                key={date}
+                date={date}
+                height={hours.length * HOUR_PX}
+                firstHour={firstHour}
+                tinted={!isWorkingDay(date, settings) || date === today}
+                onPickSlot={onPickSlot}
+              >
+                {meetings.map((item) => {
+                  const slot = layout.get(item.id) ?? { column: 0, columns: 1 };
+                  const width = 100 / slot.columns;
+                  const height = Math.max(((item.end - item.start) / 60) * HOUR_PX - 3, 22);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpen(item);
+                      }}
+                      className={cn(
+                        'absolute overflow-hidden rounded-[9px] border-0 border-l-[3px] px-2 py-1 text-left text-[11.5px] font-bold leading-snug hover:z-10 hover:shadow-md',
+                        meetingChipClass(item),
+                      )}
+                      style={{
+                        top: top(item.start) + 1,
+                        height,
+                        left: `calc(${slot.column * width}% + 3px)`,
+                        width: `calc(${width}% - 6px)`,
+                      }}
+                    >
+                      {/* A solid card under the tint, so grid lines do not show through. */}
+                      <span aria-hidden className="absolute inset-0 -z-10 bg-card" />
+                      <b className={cn('block truncate', struck(item.state) && 'line-through')}>{item.title}</b>
+                      <small className="block truncate font-semibold opacity-75">
+                        {formatClockTime(item.meeting.startTime, { lowercaseMeridiem: true })} – {formatClockTime(item.meeting.endTime, { lowercaseMeridiem: true })}
+                        {height > 40 ? ` · ${placeOf(item.meeting)}` : ''}
+                      </small>
+                    </button>
+                  );
+                })}
+                {date === today && nowMinute != null && nowMinute >= firstHour * 60 && nowMinute <= lastHour * 60 && (
+                  <div aria-hidden className="pointer-events-none absolute inset-x-0 z-20 h-0.5 bg-rose-600" style={{ top: top(nowMinute) }}>
+                    <span className="absolute -left-1 -top-[3px] h-2 w-2 rounded-full bg-rose-600" />
+                  </div>
+                )}
+              </DayColumn>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
 
-/* ── day ─────────────────────────────────────────────────────────────────────────────────────── */
-
-function DayList({
+/** One day's column: hour lines, and a click on empty space schedules at that half hour. */
+function DayColumn({
   date,
-  entries,
-  settings,
-  today,
+  height,
+  firstHour,
+  tinted,
   onPickSlot,
+  children,
 }: {
   date: string;
-  entries: CalendarEntry[];
-  settings: OfficeHubSettings;
-  today: string;
+  height: number;
+  firstHour: number;
+  tinted: boolean;
   onPickSlot?: (date: string, time?: string) => void;
+  children: ReactNode;
 }) {
-  const holiday = holidayOn(date, settings);
-
-  /** Hour rows across the configured working day, plus any hour a meeting actually falls in. */
-  const hours = useMemo(() => {
-    const startHour = Math.floor((clockToMinutes(settings.workingHoursStart) ?? 540) / 60);
-    const endHour = Math.ceil((clockToMinutes(settings.workingHoursEnd) ?? 1110) / 60);
-    const range = new Set<number>();
-    for (let hour = startHour; hour <= endHour; hour += 1) range.add(hour);
-    for (const entry of entries) {
-      const minutes = clockToMinutes(entry.startTime ?? '');
-      if (minutes != null) range.add(Math.floor(minutes / 60));
-    }
-    return [...range].sort((a, b) => a - b);
-  }, [entries, settings.workingHoursStart, settings.workingHoursEnd]);
-
-  const undated = entries.filter((entry) => !entry.startTime);
-
+  const ref = useRef<HTMLDivElement>(null);
   return (
-    <div className="space-y-2">
-      {holiday && (
-        <Card className="border-violet-200 bg-violet-50/70">
-          <CardContent className="flex items-center gap-2 px-4 py-2.5">
-            <PartyPopper className="h-4 w-4 text-violet-600" />
-            <p className="text-sm font-medium text-violet-900">{holiday.name}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {undated.length > 0 && (
-        <Card>
-          <CardContent className="space-y-1 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Due today</p>
-            {undated.map((entry) => (
-              <EntryChip entry={entry} key={entry.id} />
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="overflow-hidden rounded-xl border bg-white">
-        {hours.map((hour) => {
-          const label = formatClockTime(`${String(hour).padStart(2, '0')}:00`);
-          const inHour = entries.filter((entry) => {
-            const minutes = clockToMinutes(entry.startTime ?? '');
-            return minutes != null && Math.floor(minutes / 60) === hour;
-          });
-          return (
-            <div key={hour} className="flex border-b last:border-b-0">
-              <div className="w-20 shrink-0 border-r bg-slate-50 px-2 py-2 text-right text-[11px] tabular-nums text-slate-500">
-                {label}
-              </div>
-              <button
-                type="button"
-                className="min-h-[3rem] flex-1 space-y-1 p-1.5 text-left hover:bg-slate-50"
-                onClick={() => onPickSlot?.(date, `${String(hour).padStart(2, '0')}:00`)}
-                aria-label={`Schedule a meeting at ${label} on ${formatIsoDate(date)}`}
-              >
-                {inHour.map((entry) => (
-                  <EntryChip entry={entry} key={entry.id} />
-                ))}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {entries.length === 0 && (
-        <OfficeHubEmptyState
-          icon={CalendarDays}
-          title={date === today ? 'No meetings scheduled for today.' : 'Nothing on this day.'}
-          description="Click an hour to schedule something."
-        />
-      )}
+    <div
+      ref={ref}
+      className={cn('relative isolate border-l', tinted && 'bg-primary/[0.03]', onPickSlot && 'cursor-copy')}
+      style={{
+        height,
+        backgroundImage: `repeating-linear-gradient(180deg, transparent 0 ${HOUR_PX - 1}px, hsl(var(--border)) ${HOUR_PX - 1}px ${HOUR_PX}px)`,
+      }}
+      title={onPickSlot ? 'Click an empty slot to schedule a meeting' : undefined}
+      onClick={(event) => {
+        if (!onPickSlot || !ref.current) return;
+        const offset = event.clientY - ref.current.getBoundingClientRect().top;
+        const minute = firstHour * 60 + Math.floor(((offset / HOUR_PX) * 60) / 30) * 30;
+        onPickSlot(date, minutesToClock(Math.max(0, Math.min(23 * 60 + 30, minute))));
+      }}
+    >
+      {children}
     </div>
   );
 }
 
 /* ── agenda ──────────────────────────────────────────────────────────────────────────────────── */
 
-function AgendaList({
-  anchorDate,
+export function AgendaView({
+  anchor,
   byDate,
-  settings,
+  holidays,
   today,
+  onOpen,
 }: {
-  anchorDate: string;
-  byDate: Map<string, CalendarEntry[]>;
-  settings: OfficeHubSettings;
+  anchor: string;
+  byDate: ReadonlyMap<string, CalendarItem[]>;
+  holidays: ReadonlyMap<string, CalendarHoliday>;
   today: string;
+  onOpen: (item: CalendarItem) => void;
 }) {
-  const days = Array.from({ length: 14 }, (_, index) => addDays(anchorDate, index)).filter(
-    (date) => (byDate.get(date) ?? []).length > 0,
+  const days = Array.from({ length: 31 }, (_, index) => addDays(anchor, index)).filter(
+    (date) => (byDate.get(date) ?? []).length > 0 || holidays.has(date),
   );
-
   if (!days.length) {
     return (
-      <OfficeHubEmptyState
-        icon={CalendarDays}
-        title="Nothing in the next fortnight."
-        description={`Looked from ${formatIsoDate(anchorDate)}.`}
-      />
+      <div className="m-4 rounded-2xl bg-gradient-to-r from-primary/10 to-blue-500/10 px-4 py-3 text-sm">
+        <b className="block">Nothing in the next 31 days</b>
+        <span className="text-muted-foreground">Looked from {formatIsoDate(anchor, { withWeekday: true })}.</span>
+      </div>
     );
   }
-
   return (
-    <div className="space-y-2">
+    <div className="px-3 pb-4 pt-1 sm:px-5">
       {days.map((date) => {
-        const holiday = holidayOn(date, settings);
+        const holiday = holidays.get(date);
         return (
-          <Card key={date}>
-            <CardContent className="p-3">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <p className={cn('text-sm font-semibold', date === today ? 'text-indigo-700' : 'text-slate-800')}>
-                  {formatIsoDate(date, { withWeekday: true })}
-                  {date === today && ' · today'}
-                </p>
-                {holiday && (
-                  <Badge variant="progress">
-                    {holiday.name}
-                  </Badge>
-                )}
-              </div>
-              <div className="space-y-1">
-                {(byDate.get(date) ?? []).map((entry) => (
-                  <EntryChip entry={entry} key={entry.id} showTime />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <div key={date} className="grid grid-cols-1 gap-2 border-b py-3 last:border-b-0 sm:grid-cols-[110px_minmax(0,1fr)] sm:gap-4">
+            <div>
+              <b className={cn('block text-[22px] font-extrabold leading-none', date === today && 'text-primary')}>{Number(date.slice(8, 10))}</b>
+              <small className="text-[11.5px] font-bold text-muted-foreground">
+                {OFFICE_HUB_WEEKDAYS[weekdayOf(date)].name}
+                <span className="hidden sm:inline">
+                  <br />
+                </span>
+                <span className="sm:hidden"> · </span>
+                {formatIsoDate(date, { year: true }).replace(/^\d+ /, '')}
+              </small>
+            </div>
+            <div className="min-w-0 space-y-1">
+              {holiday && (
+                <AgendaRow tone="holiday" time="All day" title={holiday.name} detail="Holiday" />
+              )}
+              {(byDate.get(date) ?? []).map((item) =>
+                item.kind === 'task' ? (
+                  <AgendaRow
+                    key={item.id}
+                    tone="task"
+                    time="Deadline"
+                    title={item.title}
+                    detail={`Task${item.task.assigneeName ? ` · ${item.task.assigneeName}` : ''}`}
+                    chip={item.state === 'late' ? 'Overdue' : item.state === 'done' ? 'Done' : 'Due'}
+                    onClick={() => onOpen(item)}
+                  />
+                ) : (
+                  <AgendaRow
+                    key={item.id}
+                    tone={item.state}
+                    time={formatClockTime(item.meeting.startTime, { lowercaseMeridiem: true })}
+                    sub={`${Math.round(item.end - item.start)} min`}
+                    title={item.title}
+                    detail={`${placeOf(item.meeting)} · organised by ${item.meeting.organizerName}`}
+                    repeats={Boolean(item.meeting.seriesId)}
+                    chip={STATE_LABEL[item.state]}
+                    onClick={() => onOpen(item)}
+                  />
+                ),
+              )}
+            </div>
+          </div>
         );
       })}
     </div>
   );
 }
 
-/* ── the chip ────────────────────────────────────────────────────────────────────────────────── */
+export const STATE_LABEL: Record<CalendarMeetingState, string> = {
+  going: 'Going',
+  pending: 'Reply needed',
+  declined: 'Declined',
+  cancelled: 'Cancelled',
+  draft: 'Draft',
+  other: 'Scheduled',
+};
 
-function EntryChip({
-  entry,
-  compact,
-  showTime,
+const STATE_CHIP: Record<string, string> = {
+  going: 'bg-emerald-100 text-emerald-700',
+  pending: 'bg-amber-100 text-amber-800',
+  declined: 'bg-muted text-muted-foreground',
+  cancelled: 'bg-muted text-muted-foreground',
+  draft: 'bg-muted text-muted-foreground',
+  other: 'bg-sky-100 text-sky-700',
+  Overdue: 'bg-rose-100 text-rose-700',
+  Done: 'bg-emerald-100 text-emerald-700',
+  Due: 'bg-amber-100 text-amber-800',
+  holiday: 'bg-pink-100 text-pink-700',
+};
+
+function AgendaRow({
+  tone,
+  time,
+  sub,
+  title,
+  detail,
+  chip,
+  repeats,
+  onClick,
 }: {
-  entry: CalendarEntry;
-  compact?: boolean;
-  showTime?: boolean;
+  tone: CalendarMeetingState | 'task' | 'holiday';
+  time: string;
+  sub?: string;
+  title: string;
+  detail: string;
+  chip?: string;
+  repeats?: boolean;
+  onClick?: () => void;
 }) {
-  const Icon = entry.kind === 'task' ? ListTodo : entry.kind === 'holiday' ? PartyPopper : CalendarDays;
-  const live = entry.meeting ? meetingTimeState(entry.meeting) === 'live' : false;
-
+  const edge =
+    tone === 'holiday'
+      ? 'border-l-pink-500 bg-pink-500/[0.07]'
+      : tone === 'task'
+        ? 'border-l-amber-500 bg-amber-500/[0.07]'
+        : tone === 'pending'
+          ? 'oh-cal-pending border-dashed border-l-primary'
+          : tone === 'declined' || tone === 'cancelled' || tone === 'draft'
+            ? 'border-l-muted-foreground/40 bg-muted/50 text-muted-foreground'
+            : tone === 'other'
+              ? 'border-l-sky-600 bg-sky-500/[0.07]'
+              : 'border-l-primary bg-primary/[0.07]';
+  const chipKey = tone === 'task' ? chip ?? 'Due' : tone === 'holiday' ? 'holiday' : tone;
+  const className = cn(
+    'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 rounded-xl border-0 border-l-[3px] px-3 py-2 text-left sm:grid-cols-[96px_minmax(0,1fr)_auto]',
+    edge,
+    onClick && 'hover:shadow-sm',
+  );
   const body = (
-    <span
-      className={cn(
-        'flex min-w-0 items-center gap-1 rounded border px-1.5 py-0.5',
-        compact ? 'text-[10px]' : 'text-[11px]',
-        entry.tone,
+    <>
+      <div className="col-span-2 text-xs font-bold sm:col-span-1">
+        {time}
+        {sub && <small className="ml-1 font-semibold text-muted-foreground sm:ml-0 sm:block">{sub}</small>}
+      </div>
+      <div className="min-w-0">
+        <b className={cn('block truncate text-[13px]', (tone === 'declined' || tone === 'cancelled') && 'line-through')}>{title}</b>
+        <span className="flex min-w-0 items-center gap-1 text-[11.5px] text-muted-foreground">
+          <span className="truncate">{detail}</span>
+          {repeats && <Repeat className="h-3 w-3 shrink-0" aria-label="Repeats" />}
+        </span>
+      </div>
+      {chip && (
+        <span className={cn('shrink-0 whitespace-nowrap rounded-full px-2 py-px text-[10.5px] font-bold', STATE_CHIP[chipKey] ?? STATE_CHIP.Due)}>{chip}</span>
       )}
-      title={`${entry.title}${entry.startTime ? ` · ${entry.startTime}` : ''}${
-        entry.subtitle ? ` · ${entry.subtitle}` : ''
-      }`}
-    >
-      {live ? (
-        <Radio className="h-2.5 w-2.5 shrink-0 animate-pulse" />
-      ) : entry.meeting?.mode !== 'Offline' && entry.kind === 'meeting' ? (
-        <Video className="h-2.5 w-2.5 shrink-0" />
-      ) : (
-        <Icon className="h-2.5 w-2.5 shrink-0" />
-      )}
-      {entry.startTime && (showTime || compact) && (
-        <span className="shrink-0 tabular-nums opacity-80">{entry.startTime}</span>
-      )}
-      <span className="min-w-0 flex-1 truncate font-medium">{entry.title}</span>
-      {!compact && entry.subtitle && <span className="shrink-0 truncate opacity-70">{entry.subtitle}</span>}
-    </span>
+    </>
   );
-
-  return entry.href ? (
-    <Link href={entry.href} className="block min-w-0">
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className}>
       {body}
-    </Link>
+    </button>
   ) : (
-    <span className="block min-w-0">{body}</span>
+    <div className={className}>{body}</div>
   );
+}
+
+/* ── mini month ──────────────────────────────────────────────────────────────────────────────── */
+
+export function MiniMonth({
+  anchor,
+  selected,
+  today,
+  marks,
+  holidays,
+  settings,
+  onPick,
+  onStep,
+}: {
+  anchor: string;
+  selected: string;
+  today: string;
+  marks: ReadonlyMap<string, { meeting: boolean; task: boolean }>;
+  holidays: ReadonlyMap<string, CalendarHoliday>;
+  settings: OfficeHubSettings;
+  onPick: (date: string) => void;
+  onStep: (direction: -1 | 1) => void;
+}) {
+  const days = useMemo(() => monthGridDays(anchor), [anchor]);
+  const prefix = anchor.slice(0, 7);
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <button type="button" onClick={() => onStep(-1)} aria-label="Previous month" className="rounded-md p-1 text-muted-foreground hover:bg-muted">
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <b className="text-[13.5px]">{monthTitle(anchor)}</b>
+        <button type="button" onClick={() => onStep(1)} aria-label="Next month" className="rounded-md p-1 text-muted-foreground hover:bg-muted">
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {[1, 2, 3, 4, 5, 6, 0].map((weekday) => (
+          <div key={weekday} className="py-0.5 text-[10px] font-extrabold text-muted-foreground">
+            {OFFICE_HUB_WEEKDAYS[weekday].short.slice(0, 1)}
+          </div>
+        ))}
+        {days.map((date) => {
+          const mark = marks.get(date);
+          const isToday = date === today;
+          return (
+            <button
+              key={date}
+              type="button"
+              onClick={() => onPick(date)}
+              aria-label={formatIsoDate(date, { withWeekday: true })}
+              className={cn(
+                'relative h-[30px] rounded-lg text-[11.5px] font-semibold tabular-nums hover:bg-muted',
+                !date.startsWith(prefix) && 'text-muted-foreground/40',
+                date.startsWith(prefix) && !isWorkingDay(date, settings) && 'text-muted-foreground',
+                date === selected && !isToday && 'bg-primary/15 font-extrabold text-primary',
+                isToday && 'bg-gradient-to-br from-primary to-indigo-600 font-extrabold text-white hover:bg-primary',
+                holidays.has(date) && !isToday && 'ring-[1.5px] ring-inset ring-pink-300',
+              )}
+            >
+              {Number(date.slice(8, 10))}
+              {mark && (mark.meeting || mark.task) && (
+                <i aria-hidden className="absolute bottom-[3px] left-1/2 flex -translate-x-1/2 gap-0.5">
+                  {mark.meeting && <em className={cn('h-1 w-1 rounded-full', isToday ? 'bg-white' : 'bg-primary')} />}
+                  {mark.task && <em className={cn('h-1 w-1 rounded-full', isToday ? 'bg-white' : 'bg-amber-500')} />}
+                </i>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function placeOf(meeting: Pick<OfficeHubMeeting, 'mode' | 'room' | 'location' | 'onlinePlatform'>): string {
+  if (meeting.mode === 'Online') return meeting.onlinePlatform ?? 'Online';
+  const place = [meeting.room, meeting.location].map((part) => part?.trim()).filter(Boolean).join(', ');
+  if (meeting.mode === 'Hybrid') return place ? `${place} + online` : 'Hybrid';
+  return place || 'Place to be confirmed';
 }

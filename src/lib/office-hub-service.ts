@@ -2394,6 +2394,26 @@ export async function listTasks(
     .sort((a, b) => (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31'));
 }
 
+/**
+ * How many open tasks a person holds — the new-task form's workload hint. One count query on the
+ * `assigneeId + status` index. Null when it cannot be read (someone else's tasks, without a grant
+ * that covers them): the hint is then left out rather than shown wrong.
+ */
+export async function countOpenTasksFor(userId: string): Promise<number | null> {
+  try {
+    const snapshot = await getCountFromServer(
+      query(
+        col(OFFICE_HUB_COLLECTIONS.tasks),
+        where('assigneeId', '==', userId),
+        where('status', 'in', ['Not Started', 'In Progress', 'On Hold']),
+      ),
+    );
+    return snapshot.data().count;
+  } catch {
+    return null;
+  }
+}
+
 /** Tasks the viewer is involved in through any route, for "My Tasks" (§25). */
 export async function listMyTasks(userId: string, options: TaskQueryOptions = {}): Promise<OfficeHubTask[]> {
   const [assigned, watching] = await Promise.all([

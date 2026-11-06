@@ -25,7 +25,6 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { AlertTriangle, GripVertical, ListTodo, Paperclip, MessageSquare } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,7 +43,7 @@ import {
 } from '@/lib/office-hub';
 import { setTaskStatus } from '@/lib/office-hub-service';
 import { useOfficeHub, useOfficeHubAction } from './hooks';
-import { OfficeHubEmptyState, PriorityBadge, TaskDueDate } from './ui';
+import { OfficeHubEmptyState, TaskDueDate } from './ui';
 
 /*
   Type-only, so it is erased at compile time and does not pull the library into the server bundle.
@@ -77,12 +76,20 @@ const Draggable = dynamic(() => import('@hello-pangea/dnd').then((module) => mod
   ssr: false,
 });
 
-const COLUMN_TONE: Record<TaskStatus, string> = {
-  'Not Started': 'border-slate-200 bg-slate-50',
-  'In Progress': 'border-sky-200 bg-sky-50/70',
-  'On Hold': 'border-amber-200 bg-amber-50/70',
-  Completed: 'border-emerald-200 bg-emerald-50/70',
-  Cancelled: 'border-rose-200 bg-rose-50/70',
+/** The column's dot — the board itself is one quiet surface, so the colour sits in the header. */
+const COLUMN_DOT: Record<TaskStatus, string> = {
+  'Not Started': 'bg-slate-400',
+  'In Progress': 'bg-blue-500',
+  'On Hold': 'bg-amber-500',
+  Completed: 'bg-emerald-600',
+  Cancelled: 'bg-rose-500',
+};
+
+const PRIORITY_EDGE: Record<string, string> = {
+  Low: '#10b981',
+  Medium: '#f59e0b',
+  High: '#ea580c',
+  Critical: '#e11d48',
 };
 
 export function TaskKanban({
@@ -193,16 +200,14 @@ export function TaskKanban({
                     ref={provided.innerRef}
                     {...provided.droppableProps}
                     className={cn(
-                      'flex w-[17rem] shrink-0 flex-col rounded-xl border p-2 lg:w-auto',
-                      COLUMN_TONE[status],
-                      snapshot.isDraggingOver && 'ring-2 ring-indigo-400 ring-offset-1',
+                      'flex min-h-[18rem] w-[17rem] shrink-0 flex-col rounded-2xl bg-muted/60 p-2.5 transition-colors lg:w-auto',
+                      snapshot.isDraggingOver && 'bg-primary/10 outline-dashed outline-2 outline-primary/50',
                     )}
                   >
-                    <div className="mb-2 flex items-center justify-between px-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">{status}</p>
-                      <Badge variant="neutral" className="tabular-nums">
-                        {list.length}
-                      </Badge>
+                    <div className="mx-1 mb-2.5 mt-0.5 flex items-center gap-2">
+                      <i aria-hidden className={cn('h-[9px] w-[9px] rounded-full', COLUMN_DOT[status])} />
+                      <p className="text-[12.5px] font-extrabold">{status}</p>
+                      <span className="rounded-full bg-card px-2 text-[11px] font-bold tabular-nums text-muted-foreground">{list.length}</span>
                     </div>
 
                     <div className="flex min-h-[4rem] flex-col gap-2">
@@ -229,8 +234,8 @@ export function TaskKanban({
                     </div>
 
                     {list.length === 0 && (
-                      <p className="px-1 py-3 text-center text-[11px] text-muted-foreground">
-                        Nothing here.
+                      <p className="rounded-xl border-[1.5px] border-dashed py-8 text-center text-xs text-muted-foreground">
+                        Drop tasks here
                       </p>
                     )}
                   </div>
@@ -266,43 +271,63 @@ function KanbanCard({
   const checklist = subtaskCompletion(task.subtasks);
 
   return (
-    <Card className={cn('border bg-white shadow-sm', overdue && 'border-rose-200')}>
+    <Card
+      className="rounded-[13px] border border-t-[3px] bg-card shadow-sm transition-all hover:-translate-y-px hover:shadow-md"
+      style={{ borderTopColor: PRIORITY_EDGE[task.priority] ?? PRIORITY_EDGE.Medium }}
+    >
       <CardContent className="space-y-1.5 p-2.5">
-        <div className="flex items-start gap-1.5">
+        <div className="flex items-center gap-1.5">
           <span
             {...(dragHandleProps ?? {})}
-            className="mt-0.5 shrink-0 cursor-grab rounded p-0.5 text-slate-300 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="shrink-0 cursor-grab rounded p-0.5 text-muted-foreground/50 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label={`Move ${task.title}`}
             role="button"
             tabIndex={0}
           >
             <GripVertical className="h-3.5 w-3.5" />
           </span>
-          <Link
-            href={`${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`}
-            className="min-w-0 flex-1 break-words text-sm font-medium text-slate-800 hover:underline"
-          >
-            {task.title}
-          </Link>
+          <span className="text-[11px] font-bold text-muted-foreground">{task.reference}</span>
+          {(task.tags ?? []).slice(0, 2).map((tag) => (
+            <span key={tag} className="truncate rounded-md bg-primary/10 px-1.5 text-[10.5px] font-bold text-primary">
+              #{tag}
+            </span>
+          ))}
         </div>
+        <Link
+          href={`${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`}
+          className="block break-words text-[12.5px] font-bold leading-snug hover:underline"
+        >
+          {task.title}
+        </Link>
 
-        <p className="truncate text-[11px] text-muted-foreground">
-          {task.reference} · {task.assigneeName || task.teamName || 'Unassigned'}
-        </p>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <PriorityBadge priority={task.priority} />
-          <TaskDueDate task={task} today={today} />
-          {overdue && <AlertTriangle className="h-3.5 w-3.5 text-rose-600" aria-label="Overdue" />}
-        </div>
-
-        {(checklist.total > 0 || (task.commentCount ?? 0) > 0 || (task.documentIds?.length ?? 0) > 0) && (
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="flex min-w-0 items-center gap-1">
+            <TaskDueDate task={task} today={today} />
+            {overdue && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-label="Overdue" />}
+          </span>
+          <span className="flex items-center gap-1.5">
             {checklist.total > 0 && (
-              <span className="tabular-nums">
-                {checklist.done}/{checklist.total} steps
+              <span className="text-[11px] font-bold tabular-nums text-muted-foreground">
+                {checklist.done}/{checklist.total}
               </span>
             )}
+            <span
+              title={task.assigneeName || task.teamName || 'Unassigned'}
+              className="grid h-6 w-6 place-items-center rounded-full bg-muted text-[9px] font-extrabold text-muted-foreground"
+            >
+              {(task.assigneeName || task.teamName || '?')
+                .split(/[\s.]+/)
+                .filter(Boolean)
+                .map((part) => part[0])
+                .join('')
+                .slice(0, 2)
+                .toUpperCase()}
+            </span>
+          </span>
+        </div>
+
+        {((task.commentCount ?? 0) > 0 || (task.documentIds?.length ?? 0) > 0) && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             {(task.commentCount ?? 0) > 0 && (
               <span className="inline-flex items-center gap-0.5">
                 <MessageSquare className="h-3 w-3" />
@@ -349,7 +374,7 @@ export function TaskKanbanSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
       {TASK_KANBAN_COLUMNS.map((status) => (
-        <div key={status} className={cn('rounded-xl border p-2', COLUMN_TONE[status])}>
+        <div key={status} className="rounded-2xl bg-muted/60 p-2.5">
           <Skeleton className="mb-2 h-4 w-24" />
           <div className="space-y-2">
             <Skeleton className="h-20 w-full rounded-lg" />

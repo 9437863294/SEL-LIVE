@@ -52,7 +52,7 @@
     "typecheck:greythr": "tsc -p tsconfig.greythr.json",
     "firebase:admin-env": "node scripts/set-firebase-admin-env.mjs",
     "firebase:admin-check": "node scripts/check-firebase-admin.mjs",
-    "test:office-hub": "node --experimental-strip-types --test tests/office-hub-domain.test.mjs tests/office-hub-recurrence.test.mjs tests/office-hub-reminders.test.mjs tests/office-hub-reports.test.mjs tests/office-hub-import.test.mjs tests/office-hub-google.test.mjs tests/office-hub-availability.test.mjs tests/office-hub-dashboard.test.mjs",
+    "test:office-hub": "node --experimental-strip-types --test tests/office-hub-domain.test.mjs tests/office-hub-recurrence.test.mjs tests/office-hub-reminders.test.mjs tests/office-hub-reports.test.mjs tests/office-hub-import.test.mjs tests/office-hub-google.test.mjs tests/office-hub-availability.test.mjs tests/office-hub-dashboard.test.mjs tests/office-hub-calendar.test.mjs tests/office-hub-register.test.mjs tests/office-hub-repeat-builder.test.mjs tests/office-hub-task-register.test.mjs",
     "typecheck:office-hub": "tsc -p tsconfig.office-hub.json",
     "test:mail-hub": "node --experimental-strip-types --test tests/mail-hub-sync.test.mjs tests/mail-hub-jobs.test.mjs tests/mail-hub-send.test.mjs tests/mail-hub-permissions.test.mjs tests/mail-hub-sanitize.test.mjs tests/mail-hub-providers.test.mjs tests/mail-hub-rules.test.mjs tests/mail-hub-webhooks.test.mjs",
     "typecheck:mail-hub": "tsc -p tsconfig.mail-hub.json",

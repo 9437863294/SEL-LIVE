@@ -859,7 +859,15 @@ export function MeetingForm({
             </div>
 
             <div className="mt-4">
-              <RecurrenceEditor value={draft.recurrence} startDate={draft.date} onChange={(next) => set('recurrence', next)} />
+              <RecurrenceEditor
+                value={draft.recurrence}
+                startDate={draft.date}
+                onChange={(next) => set('recurrence', next)}
+                holidays={settings.holidays ?? []}
+                workingDays={settings.workingDays}
+                durationMinutes={slotValid ? durationMinutes : undefined}
+                today={today}
+              />
             </div>
           </FormCard>
 

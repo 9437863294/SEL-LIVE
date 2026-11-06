@@ -178,9 +178,6 @@
   .dark :where(.text-stone-500:not(.keep-light, .keep-light *)) {
     color: hsl(0 0% 64%);
   }
-  .dark :where(.hover\:text-slate-500:not(.keep-light, .keep-light *)):hover {
-    color: hsl(0 0% 68%);
-  }
   .dark :where(.text-slate-600:not(.keep-light, .keep-light *)),
   .dark :where(.text-gray-600:not(.keep-light, .keep-light *)),
   .dark :where(.text-zinc-600:not(.keep-light, .keep-light *)),

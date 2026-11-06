@@ -20,6 +20,10 @@
  *   office-hub-google.ts       Google Meet request/response shaping    — imports model + integrations
  *   office-hub-availability.ts who is free, which rooms are taken      — imports time
  *   office-hub-dashboard.ts    the personal dashboard's figures        — imports time + model
+ *   office-hub-calendar.ts     calendar states, layout, month figures  — imports time + model
+ *   office-hub-register.ts     register tabs, minutes state, grouping  — imports time + model
+ *   office-hub-repeat-builder.ts repeat preview, holiday skips, warnings — imports recurrence
+ *   office-hub-task-register.ts quick add, due groups, tag suggestions  — imports time + model
  *   ─────────────────────────────────────────────────────────────────────────────────────────────
  *   office-hub.ts              this file: collections + re-exports     — imports firebase types
  *   office-hub-service.ts      every Firestore read and write          — imports the browser SDK
@@ -47,6 +51,10 @@ export * from './office-hub-integrations.ts';
 export * from './office-hub-google.ts';
 export * from './office-hub-availability.ts';
 export * from './office-hub-dashboard.ts';
+export * from './office-hub-calendar.ts';
+export * from './office-hub-register.ts';
+export * from './office-hub-repeat-builder.ts';
+export * from './office-hub-task-register.ts';
 
 /**
  * Every Firestore collection Office Hub owns.

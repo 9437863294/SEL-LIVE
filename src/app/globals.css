@@ -754,6 +754,14 @@ main {
   --oh-bad: #d03b3b;
 }
 
+/*
+  Office Hub calendar: a meeting still waiting for my reply is striped, so "may or may not happen"
+  reads differently from "happening" without leaning on colour (2026-11-06). Plain gradients only.
+*/
+.oh-cal-pending {
+  background-image: repeating-linear-gradient(135deg, transparent 0 5px, hsl(var(--primary) / 0.14) 5px 10px);
+}
+
 .wd-hero-dots {
   background-image: radial-gradient(rgb(255 255 255 / 0.08) 1px, transparent 1px);
   background-size: 18px 18px;
