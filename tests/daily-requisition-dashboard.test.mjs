@@ -14,6 +14,7 @@ import {
   monthEnd,
   periodRange,
   previousRange,
+  rowStage,
   stageOfStatus,
   topWithOther,
   weekStart,
@@ -93,6 +94,38 @@ test('open stages, ageing and what is still due', () => {
   assert.deepEqual(figures.ageing.map((b) => b.count), [1, 0, 0, 1, 1]);
   assert.equal(figures.cancelled.count, 1);
   assert.equal(figures.documents.Pending, 4, 'cancelled requisitions are left out of documents');
+});
+
+test('the pipeline is the workflow when rows carry where they wait', () => {
+  const stages = ['step:v', 'step:a1', 'work:receiving', 'work:gst', 'work:payment'];
+  const rows = [
+    // Pending, but still with Approval 1: counted there, not at Finance.
+    row({ status: 'Pending', stage: 'step:a1', dateKey: '2026-09-30', balance: 100 }),
+    row({ status: 'Pending', stage: 'step:a1', dateKey: '2026-09-20', balance: 50, net: 50 }),
+    row({ status: 'Received for Payment', stage: 'work:payment', dateKey: '2026-09-25', balance: 300, net: 300 }),
+    // Paid and cancelled go by their status, whatever stage they carried.
+    row({ status: 'Paid', stage: 'step:a1', net: 80, paid: 80, balance: 0 }),
+    // A position the order does not list still counts, at the end.
+    row({ status: 'Pending', stage: 'step:gone', balance: 10, net: 10 }),
+  ];
+  const figures = buildDashboard(rows, { todayKey: TODAY, period: 'all', stages });
+  assert.deepEqual(
+    figures.stages.map((s) => [s.stage, s.count, s.balance]),
+    [
+      ['step:v', 0, 0],
+      ['step:a1', 2, 150],
+      ['work:receiving', 0, 0],
+      ['work:gst', 0, 0],
+      ['work:payment', 1, 300],
+      ['step:gone', 1, 10],
+    ],
+  );
+  const overview = buildOverview(rows, { todayKey: TODAY, range: { from: '', to: TODAY }, stages });
+  assert.deepEqual(overview.stages.map((s) => s.stage), [...stages, 'step:gone']);
+  assert.equal(overview.stages[1].medianDays, 6);
+  assert.equal(rowStage({ status: 'Pending', stage: 'step:a1' }), 'step:a1');
+  assert.equal(rowStage({ status: 'Pending' }), 'receiving');
+  assert.equal(rowStage({ status: 'Cancelled', stage: 'step:a1' }), 'cancelled');
 });
 
 test('received by reception date, paid by payment date and never ahead of today', () => {

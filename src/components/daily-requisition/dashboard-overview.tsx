@@ -318,13 +318,15 @@ export function StageFlow({
 }) {
   const totalOpen = stages.reduce((sum, stage) => sum + stage.profile.count, 0);
   const arrow = (
-    <span className="hidden items-center justify-center text-muted-foreground/60 lg:flex" aria-hidden="true">
+    <span className="hidden shrink-0 items-center justify-center text-muted-foreground/60 lg:flex" aria-hidden="true">
       <ChevronRight className="h-5 w-5" />
     </span>
   );
 
+  // As many cards as the workflow has places to wait, then Paid: in a row that scrolls sideways when
+  // they do not fit, one under another on a phone.
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_1.25rem_minmax(0,1fr)_1.25rem_minmax(0,1fr)_1.25rem_minmax(0,1fr)]">
+    <div className="flex flex-col gap-2 sm:flex-row sm:overflow-x-auto sm:pb-1">
       {stages.map(({ key, name, profile }, index) => {
         const on = selected === key;
         const hot = profile.bands.some((band) => band.key === 'stale' && band.count > 0);
@@ -337,13 +339,13 @@ export function StageFlow({
               onClick={() => onSelect(on ? null : key)}
               title={on ? 'Show every stage in Needs action' : `Show only ${name} in Needs action`}
               className={cn(
-                'min-w-0 rounded-lg border bg-card p-3 text-left transition-colors hover:border-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'min-w-0 rounded-lg border bg-card p-3 text-left transition-colors hover:border-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:min-w-[210px] sm:flex-1',
                 hot && 'border-red-200 bg-[linear-gradient(hsl(var(--card)),color-mix(in_srgb,#ef4444_6%,hsl(var(--card))))]',
                 on && 'border-emerald-500 ring-2 ring-emerald-500/30',
               )}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+                <span className="min-w-0 truncate text-sm font-semibold text-foreground" title={name}>
                   {index + 1} · {name}
                 </span>
                 <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{share}% of open</span>
@@ -372,7 +374,7 @@ export function StageFlow({
           </div>
         );
       })}
-      <div className="min-w-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+      <div className="min-w-0 rounded-lg border border-emerald-200 bg-emerald-50 p-3 sm:min-w-[190px] sm:flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-800">
             <Check className="h-4 w-4" aria-hidden="true" /> Paid

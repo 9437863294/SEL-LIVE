@@ -4,13 +4,15 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { BarChart3, ChevronLeft } from 'lucide-react';
+import { BarChart3, ChevronLeft, Workflow } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { balanceOf, paidOf } from '@/lib/requisition-progress';
+import { pipelineKeyOf, pipelineOf, placeSteps, stepWorkLabel, type PipelinePosition } from '@/lib/daily-requisition-flow';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DAILY_STATUS_TONE, dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
+import { useDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { TableCard } from '@/components/shared/table-card';
 import {
@@ -58,7 +60,22 @@ const STATUS_GRADIENT: Record<string, string> = {
 };
 const OTHER_GRADIENT = 'from-slate-400 to-slate-500';
 
-const DESCRIPTION = 'Count, net amount, paid and outstanding by requisition status across the pipeline.';
+/** Each workflow position's bar, by the work done there. */
+const ROLE_GRADIENT: Record<PipelinePosition['role'], string> = {
+  verification: 'from-sky-500 to-blue-500',
+  receiving: 'from-amber-400 to-yellow-500',
+  gst: 'from-cyan-500 to-sky-400',
+  payment: 'from-violet-500 to-purple-500',
+};
+/** What kind of place each is, under its name. */
+const ROLE_CAPTION: Record<PipelinePosition['role'], string> = {
+  verification: 'Approval step',
+  receiving: 'Finance · receiving',
+  gst: 'Finance · sending for payment',
+  payment: 'Payment page',
+};
+
+const DESCRIPTION = 'Where requisitions are in the workflow, and by status: count, net amount, paid and outstanding.';
 
 export default function StatusOverviewReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -113,6 +130,39 @@ export default function StatusOverviewReportPage() {
 
   const statuses = useMemo(() => Array.from(stats.keys()), [stats]);
   const grand = useMemo(() => totalsOf(filtered), [filtered]);
+
+  /**
+   * Where each requisition is in the workflow as configured: the approval step holding it, else the
+   * finance work its status is at, else the payment page — then paid and cancelled. A Pending
+   * requisition still with an approver is counted at that step, not at Finance.
+   */
+  const { steps } = useDailyRequisitionWorkflowSteps();
+  const byStep = useMemo(() => {
+    const placed = placeSteps(steps);
+    const keyOf = (e: DailyRequisitionEntry) => {
+      const status = e.status || 'Pending';
+      return status === 'Paid' ? 'paid' : status === 'Cancelled' ? 'cancelled' : (pipelineKeyOf(placed, e) ?? status);
+    };
+    const positions = steps.length ? pipelineOf(steps) : [];
+    const rows = new Map<string, { name: string; caption: string; gradient: string; totals: RequisitionTotals }>();
+    for (const position of positions) {
+      const p = position.stepIndex !== null ? placed[position.stepIndex] : null;
+      const name = p && position.role !== 'verification' && p.roles.length > 1 ? `${p.step.name} · ${stepWorkLabel(p.step, position.role)}` : position.stepName;
+      rows.set(position.key, { name, caption: ROLE_CAPTION[position.role], gradient: ROLE_GRADIENT[position.role], totals: emptyTotals() });
+    }
+    rows.set('paid', { name: 'Paid', caption: 'Paid in full', gradient: STATUS_GRADIENT.Paid, totals: emptyTotals() });
+    rows.set('cancelled', { name: 'Cancelled', caption: 'Rejected or cancelled', gradient: STATUS_GRADIENT.Cancelled, totals: emptyTotals() });
+    for (const e of filtered) {
+      const key = keyOf(e);
+      let row = rows.get(key);
+      if (!row) {
+        row = { name: e.status || 'Pending', caption: 'Not at a configured step', gradient: OTHER_GRADIENT, totals: emptyTotals() };
+        rows.set(key, row);
+      }
+      addTo(row.totals, e);
+    }
+    return { rows, keyOf };
+  }, [steps, filtered]);
   const paidInFull = stats.get('Paid')?.count ?? 0;
 
   const exportExcel = async () => {
@@ -120,6 +170,28 @@ export default function StatusOverviewReportPage() {
     setIsExporting(true);
     try {
       const wb = new ExcelJS.Workbook();
+      const wsSteps = wb.addWorksheet('By Workflow Step');
+      wsSteps.columns = [
+        { header: 'Workflow step', key: 'step', width: 34 },
+        { header: 'Kind', key: 'kind', width: 26 },
+        { header: 'Count', key: 'count', width: 10 },
+        { header: 'Total Net Amount (INR)', key: 'totalNet', width: 24 },
+        { header: 'Paid (INR)', key: 'paid', width: 18 },
+        { header: 'Outstanding (INR)', key: 'outstanding', width: 20 },
+        { header: '% of Net', key: 'pct', width: 12 },
+      ];
+      for (const row of byStep.rows.values()) {
+        wsSteps.addRow({
+          step: row.name,
+          kind: row.caption,
+          count: row.totals.count,
+          totalNet: round2(row.totals.net),
+          paid: round2(row.totals.paid),
+          outstanding: round2(row.totals.outstanding),
+          pct: grand.net > 0 ? Number(((row.totals.net / grand.net) * 100).toFixed(1)) : 0,
+        });
+      }
+
       const ws = wb.addWorksheet('Status Overview');
       ws.columns = [
         { header: 'Status', key: 'status', width: 24 },
@@ -156,6 +228,7 @@ export default function StatusOverviewReportPage() {
         { header: 'Reception No', key: 'receptionNo', width: 18 },
         { header: 'Party', key: 'partyName', width: 28 },
         { header: 'Status', key: 'status', width: 20 },
+        { header: 'Workflow step', key: 'step', width: 30 },
         { header: 'Gross Amount', key: 'grossAmount', width: 18 },
         { header: 'Net Amount', key: 'netAmount', width: 16 },
         { header: 'Paid', key: 'paid', width: 16 },
@@ -167,6 +240,7 @@ export default function StatusOverviewReportPage() {
           receptionNo: e.receptionNo || '',
           partyName: e.partyName || '',
           status: e.status || '',
+          step: byStep.rows.get(byStep.keyOf(e))?.name ?? '',
           grossAmount: Number(e.grossAmount || 0),
           netAmount: Number(e.netAmount || 0),
           paid: paidOf(e),
@@ -221,6 +295,66 @@ export default function StatusOverviewReportPage() {
       />
 
       <ReportPeriodFilter state={period} />
+
+      {/* Where they are: the workflow as configured, step by step */}
+      <TableCard
+        icon={Workflow}
+        title="Summary by Workflow Step"
+        description="Where each requisition is now — the approval step holding it, the finance step working it, or payment."
+        scroll="natural"
+      >
+        {grand.count === 0 ? (
+          <div className="px-4 py-10 text-center text-muted-foreground">No data found for the selected period.</div>
+        ) : (
+          <Table className={REPORT_TABLE}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="min-w-[14rem]">Workflow step</TableHead>
+                <TableHead className="text-right">Count</TableHead>
+                <TableHead className="text-right">Total Net Amount</TableHead>
+                <TableHead className="text-right">Paid</TableHead>
+                <TableHead className="text-right">Outstanding</TableHead>
+                <TableHead className="text-right">% of Net</TableHead>
+                <TableHead className="min-w-[8rem]">Distribution</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {[...byStep.rows.entries()].map(([key, row], index) => {
+                const pct = grand.net > 0 ? (row.totals.net / grand.net) * 100 : 0;
+                return (
+                  <TableRow key={key} className={REPORT_ROW}>
+                    <TableCell>
+                      <span className="block font-medium">
+                        {key === 'paid' || key === 'cancelled' ? row.name : `${index + 1}. ${row.name}`}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">{row.caption}</span>
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">{row.totals.count}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.totals.net)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.totals.paid)}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(row.totals.outstanding)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{pctOf(row.totals.net, grand.net)}</TableCell>
+                    <TableCell>
+                      <div className="h-2 w-full rounded-full bg-slate-100">
+                        <div className={`h-2 rounded-full bg-gradient-to-r ${row.gradient} transition-all duration-500`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              <TableRow className="bg-muted/50 font-medium">
+                <TableCell>Total</TableCell>
+                <TableCell className="text-right tabular-nums">{grand.count}</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(grand.net)}</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(grand.paid)}</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">{inr(grand.outstanding)}</TableCell>
+                <TableCell className="text-right tabular-nums">{grand.net > 0 ? '100%' : '—'}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableBody>
+          </Table>
+        )}
+      </TableCard>
 
       {/* Summary table */}
       <TableCard icon={BarChart3} title="Summary by Status" description="Each status's share of the net amount." scroll="natural">
