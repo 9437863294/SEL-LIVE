@@ -1096,6 +1096,14 @@ export interface OfficeHubUserSettings extends OfficeHubAuditFields {
   defaultCalendarView?: CalendarView | null;
   /** Remembered so a user who dismissed the browser-permission prompt is not asked every visit. */
   browserPermissionAsked?: boolean;
+  /**
+   * The dashboard's tidy-ups for invitations to meetings that are already over (2026-11-06).
+   * Personal only: the invitation rows, and what the organizer sees, are untouched.
+   * `hiddenInvitationMeetingIds` is Dismiss, one at a time (kept to the latest 300);
+   * `pastInvitationsClearedAt` is "Clear all past" — anything that had ended by then is hidden.
+   */
+  hiddenInvitationMeetingIds?: string[];
+  pastInvitationsClearedAt?: string | null;
 }
 
 export type CalendarView = 'day' | 'week' | 'month' | 'agenda';

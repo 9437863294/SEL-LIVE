@@ -696,6 +696,64 @@ main {
     linear-gradient(120deg, #0b1220 0%, hsl(var(--primary) / 0.45) 100%);
 }
 
+/*
+  Office Hub's "Schedule a meeting" band (2026-11-06, from the user's mockup). Bright rather than
+  dark: the accent running into blue, with a sky glow in the corner. A plain colour and plain
+  gradients only (no color-mix), so the Chrome 109 PCs still paint it. Carries `keep-light` too.
+*/
+.oh-hero {
+  background-color: hsl(var(--primary));
+  background-image:
+    radial-gradient(480px 240px at 95% 0%, rgb(56 189 248 / 0.6), transparent 65%),
+    linear-gradient(115deg, rgb(30 10 70 / 0.5) 0%, rgb(30 10 70 / 0) 45%),
+    linear-gradient(115deg, hsl(var(--primary)) 0%, hsl(var(--primary)) 45%, #2563eb 100%);
+}
+
+.dark .oh-hero {
+  background-image:
+    radial-gradient(480px 240px at 95% 0%, rgb(56 189 248 / 0.35), transparent 65%),
+    linear-gradient(115deg, rgb(2 6 23 / 0.6) 0%, rgb(2 6 23 / 0.25) 100%),
+    linear-gradient(115deg, hsl(var(--primary)) 0%, hsl(var(--primary)) 45%, #2563eb 100%);
+}
+
+/* The dashboard band adds a magenta glow low in the middle, as on the user's dashboard mockup. */
+.oh-hero.oh-hero--glow {
+  background-image:
+    radial-gradient(500px 220px at 92% 0%, rgb(56 189 248 / 0.6), transparent 65%),
+    radial-gradient(520px 260px at 55% 140%, rgb(219 39 119 / 0.55), transparent 65%),
+    linear-gradient(115deg, rgb(30 10 70 / 0.5) 0%, rgb(30 10 70 / 0) 45%),
+    linear-gradient(115deg, hsl(var(--primary)) 0%, hsl(var(--primary)) 45%, #2563eb 100%);
+}
+
+.dark .oh-hero.oh-hero--glow {
+  background-image:
+    radial-gradient(500px 220px at 92% 0%, rgb(56 189 248 / 0.35), transparent 65%),
+    radial-gradient(520px 260px at 55% 140%, rgb(219 39 119 / 0.3), transparent 65%),
+    linear-gradient(115deg, rgb(2 6 23 / 0.6) 0%, rgb(2 6 23 / 0.25) 100%),
+    linear-gradient(115deg, hsl(var(--primary)) 0%, hsl(var(--primary)) 45%, #2563eb 100%);
+}
+
+/*
+  Office Hub dashboard chart colours (2026-11-06). Validated with the dataviz palette checker in
+  both modes; dark has its own steps, not a flip. Amber (unsettled / waiting) stays away from green
+  in every chart order — protan readers cannot tell those two apart.
+*/
+.oh-dash {
+  --oh-amber: #eda100;
+  --oh-neutral: #cbd5e1;
+  --oh-good: #16a34a;
+  --oh-blue: #2a78d6;
+  --oh-bad: #e11d48;
+}
+
+.dark .oh-dash {
+  --oh-amber: #c98500;
+  --oh-neutral: #475569;
+  --oh-good: #16a34a;
+  --oh-blue: #3987e5;
+  --oh-bad: #d03b3b;
+}
+
 .wd-hero-dots {
   background-image: radial-gradient(rgb(255 255 255 / 0.08) 1px, transparent 1px);
   background-size: 18px 18px;

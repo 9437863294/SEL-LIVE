@@ -778,6 +778,55 @@ export async function countAwaitingMyResponse(userId: string): Promise<number> {
   }
 }
 
+/**
+ * My invitation rows that are *not* Accepted, as meetingId → response.
+ *
+ * The dashboard's way of knowing my reply to every meeting around today without one read per
+ * meeting: a meeting of mine missing from this map was accepted (see `myMeetings`). Uses the
+ * `userId + response` index. The limit is generous because someone who never answers piles up
+ * "No Response" rows, and those are exactly the ones the dashboard has to show.
+ */
+export async function listMyUnacceptedResponses(
+  userId: string,
+  options: { limit?: number } = {},
+): Promise<Map<string, InvitationResponse>> {
+  const snapshot = await getDocs(
+    query(
+      col(OFFICE_HUB_COLLECTIONS.participants),
+      where('userId', '==', userId),
+      where('response', 'in', ['No Response', 'Maybe', 'Declined']),
+      fsLimit(options.limit ?? 800),
+    ),
+  );
+  const responses = new Map<string, InvitationResponse>();
+  for (const row of mapDocs<OfficeHubParticipant>(snapshot)) {
+    if (row.meetingId) responses.set(row.meetingId, row.response);
+  }
+  return responses;
+}
+
+/**
+ * The dashboard's personal tidy-up of invitations to meetings that are already over: Dismiss one
+ * (`meetingId`) or Clear all past (`clearAll`). Stored on the viewer's own Office Hub settings,
+ * which only they can write; the invitation itself, and the organizer's view of it, are untouched.
+ * Not logged — it is a view preference, like the default calendar view.
+ */
+export async function tidyPastInvitations(
+  actor: OfficeHubActor,
+  change: { meetingId: string; alreadyHidden: readonly string[] } | { clearAll: true },
+): Promise<void> {
+  const patch =
+    'clearAll' in change
+      ? { pastInvitationsClearedAt: new Date().toISOString() }
+      : { hiddenInvitationMeetingIds: [...new Set([...change.alreadyHidden, change.meetingId])].slice(-300) };
+  await setDoc(
+    docIn(OFFICE_HUB_COLLECTIONS.userSettings, actor.userId),
+    { ...patch, ...withUpdateAudit(auditActorOf(actor)) },
+    { merge: true },
+  );
+  clearOfficeHubPreferenceCache(actor.userId);
+}
+
 export async function listMyParticipations(
   userId: string,
   options: { limit?: number } = {},

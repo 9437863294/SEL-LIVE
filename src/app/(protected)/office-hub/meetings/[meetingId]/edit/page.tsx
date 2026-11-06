@@ -19,6 +19,7 @@ import {
   OFFICE_HUB_BASE_PATH,
   canEditMeeting,
   canViewMeeting,
+  formatClockTime,
   formatIsoDate,
   uniqueStrings,
   type ParticipantSelection,
@@ -133,26 +134,14 @@ export default function EditMeetingPage() {
   if (!selection) return <Skeleton className="h-96 w-full rounded-xl" />;
 
   return (
-    <div className="space-y-3">
-      <PageHeader
-        title={`Edit: ${meeting.title}`}
-        description={`Currently ${formatIsoDate(meeting.date, { withWeekday: true })} at ${meeting.startTime}. Changing the date, time or place notifies every participant.`}
-        actions={
-          <Button variant="ghost" asChild className="gap-2">
-            <Link href={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}>
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Link>
-          </Button>
-        }
-      />
-
-      <MeetingForm
-        initial={draftFromMeeting(meeting, selection)}
-        mode="edit"
-        meetingId={meeting.id}
-        isSeriesMember={Boolean(meeting.seriesId)}
-      />
-    </div>
+    <MeetingForm
+      initial={draftFromMeeting(meeting, selection)}
+      mode="edit"
+      meetingId={meeting.id}
+      isSeriesMember={Boolean(meeting.seriesId)}
+      eyebrow="Office Hub · Edit meeting"
+      subtitle={`Currently ${formatIsoDate(meeting.date, { withWeekday: true })} at ${formatClockTime(meeting.startTime, { lowercaseMeridiem: true })}. Changing the date, time or place notifies every participant.`}
+      backHref={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}
+    />
   );
 }

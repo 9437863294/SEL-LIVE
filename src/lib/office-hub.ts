@@ -18,6 +18,8 @@
  *   office-hub-import.ts       employee CSV parsing                    — imports time
  *   office-hub-integrations.ts provider interfaces                     — imports time + model
  *   office-hub-google.ts       Google Meet request/response shaping    — imports model + integrations
+ *   office-hub-availability.ts who is free, which rooms are taken      — imports time
+ *   office-hub-dashboard.ts    the personal dashboard's figures        — imports time + model
  *   ─────────────────────────────────────────────────────────────────────────────────────────────
  *   office-hub.ts              this file: collections + re-exports     — imports firebase types
  *   office-hub-service.ts      every Firestore read and write          — imports the browser SDK
@@ -43,6 +45,8 @@ export * from './office-hub-reports.ts';
 export * from './office-hub-search.ts';
 export * from './office-hub-integrations.ts';
 export * from './office-hub-google.ts';
+export * from './office-hub-availability.ts';
+export * from './office-hub-dashboard.ts';
 
 /**
  * Every Firestore collection Office Hub owns.

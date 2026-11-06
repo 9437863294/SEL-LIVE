@@ -15,11 +15,9 @@
  * That is §84's rule in practice: a follow-up to last month's review should not be typed in again.
  */
 
-import Link from 'next/link';
 import { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, CalendarPlus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { AlertTriangle, CalendarPlus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -48,7 +46,6 @@ import {
   emptyMeetingDraft,
   type MeetingDraft,
 } from '@/components/office-hub/meeting-form';
-import { PageHeader } from '@/components/shared/page-header';
 
 export default function NewMeetingPage() {
   const searchParams = useSearchParams();
@@ -233,25 +230,9 @@ export default function NewMeetingPage() {
   const source = followUpQuery.data;
   const template = templateId ? (templatesQuery.data ?? []).find((entry) => entry.id === templateId) : null;
 
-  return (
-    <div className="space-y-3">
-      <PageHeader
-        title={source ? 'Schedule a follow-up meeting' : template ? `New meeting from "${template.name}"` : 'Schedule a meeting'}
-        description={
-          source
-            ? `Following ${source.meeting.title} on ${formatIsoDate(source.meeting.date)}.`
-            : 'Invite people, whole teams or whole departments. Everything is editable before you send.'
-        }
-        actions={
-          <Button variant="ghost" asChild className="gap-2">
-            <Link href={`${OFFICE_HUB_BASE_PATH}/meetings`}>
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Link>
-          </Button>
-        }
-      />
-
+  /** Where a follow-up or a template came from, shown under the hero. */
+  const intro = (
+    <>
       {followUpId && !source && !followUpQuery.isLoading && (
         <OfficeHubCallout
           tone="amber"
@@ -262,7 +243,7 @@ export default function NewMeetingPage() {
       )}
 
       {source && (
-        <Card className="border-indigo-200 bg-indigo-50/60">
+        <Card className="rounded-2xl border-indigo-200 bg-indigo-50/60">
           <CardContent className="space-y-1 px-4 py-3 text-xs text-indigo-900">
             <p className="text-sm font-semibold">Carried over from {source.meeting.title}</p>
             <ul className="space-y-0.5">
@@ -295,15 +276,27 @@ export default function NewMeetingPage() {
           } default invitee selection(s). Change anything before you send.`}
         />
       )}
+    </>
+  );
 
-      <MeetingForm
-        initial={initial}
-        mode="create"
-        agendaItems={followUpAgendaItems ?? templateAgendaItems}
-        carryActionItemIds={source?.openActionItems.map((item) => item.id)}
-        followUpOf={source ? { id: source.meeting.id, title: source.meeting.title } : null}
-        templateId={templateId}
-      />
-    </div>
+  return (
+    <MeetingForm
+      initial={initial}
+      mode="create"
+      agendaItems={followUpAgendaItems ?? templateAgendaItems}
+      carryActionItemIds={source?.openActionItems.map((item) => item.id)}
+      followUpOf={source ? { id: source.meeting.id, title: source.meeting.title } : null}
+      templateId={templateId}
+      eyebrow={
+        source
+          ? 'Office Hub · Schedule a follow-up'
+          : template
+            ? `Office Hub · New meeting from “${template.name}”`
+            : 'Office Hub · Schedule a meeting'
+      }
+      subtitle={source ? `Following ${source.meeting.title} on ${formatIsoDate(source.meeting.date)}.` : undefined}
+      backHref={`${OFFICE_HUB_BASE_PATH}/meetings`}
+      intro={intro}
+    />
   );
 }

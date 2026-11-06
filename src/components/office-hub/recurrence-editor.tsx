@@ -35,6 +35,7 @@ import {
   type RecurrenceFrequency,
 } from '@/lib/office-hub';
 import { DateField } from './selectors';
+import { Segmented } from './meeting-form-parts';
 
 export function RecurrenceEditor({
   value,
@@ -71,23 +72,16 @@ export function RecurrenceEditor({
     <div className="space-y-3">
       <div>
         <Label className="mb-1 block text-xs">Repeats</Label>
-        <Select
+        {/* Six choices, all visible: a dropdown hid the one most people want ("Weekly") behind a click. */}
+        <Segmented<RecurrenceFrequency>
+          label="Repeats"
           value={value.frequency}
-          onValueChange={(next) =>
-            onChange(normalizeRecurrence({ ...value, frequency: next as RecurrenceFrequency }, startDate))
-          }
-        >
-          <SelectTrigger className="bg-white">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {RECURRENCE_FREQUENCIES.map((frequency) => (
-              <SelectItem key={frequency} value={frequency}>
-                {frequency === 'None' ? 'Does not repeat' : frequency}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(next) => onChange(normalizeRecurrence({ ...value, frequency: next }, startDate))}
+          options={RECURRENCE_FREQUENCIES.map((frequency) => ({
+            value: frequency,
+            label: frequency === 'None' ? 'Does not repeat' : frequency === 'Custom' ? 'Custom…' : frequency,
+          }))}
+        />
       </div>
 
       {normalized.frequency !== 'None' && (
