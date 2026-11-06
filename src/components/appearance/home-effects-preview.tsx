@@ -9,7 +9,7 @@
 
 import type { CSSProperties } from 'react';
 import { BarChart3, FileCheck, Landmark, Receipt, Route, Search, User, type LucideIcon } from 'lucide-react';
-import { BannerFx, ModulesFx, modulesAreaClass, useFxPointer } from '@/components/home/home-effects';
+import { BannerFx, ModulesFx, modulesAreaClass, shownBannerEffect, useFxPointer } from '@/components/home/home-effects';
 import type { HomeBannerEffect, HomeModulesEffect } from '@/lib/appearance/model';
 import { cn } from '@/lib/utils';
 
@@ -47,7 +47,7 @@ export function BannerEffectThumb({ effect }: { effect: HomeBannerEffect }) {
     // The plain page colour, not the home page glow: at this size the glow drowned every effect.
     <span className="relative isolate block h-16 overflow-hidden rounded-lg border bg-background">
       <span className={cn('absolute inset-1.5 isolate flex flex-col justify-center gap-1 overflow-hidden rounded-md px-2', glass)}>
-        <BannerFx effect={effect} />
+        <BannerFx effect={shownBannerEffect(effect)} />
         <span className="h-1 w-10 rounded-full bg-gradient-to-r from-teal-600 to-indigo-500" />
         <span className="h-1.5 w-16 rounded-full bg-gradient-to-r from-teal-700 via-indigo-600 to-pink-600" />
         <span className="keep-light h-2.5 w-20 rounded-sm bg-white shadow-sm dark:bg-card" />
@@ -113,8 +113,8 @@ export function HomeEffectsPreview({ banner, modules, firstName }: { banner: Hom
     <div className="relative isolate overflow-hidden rounded-xl border p-3 sm:p-4">
       <PageGlow />
 
-      <div className={cn(glass, 'flex flex-col gap-4 rounded-2xl p-4 lg:flex-row lg:items-center lg:justify-between', banner === 'none' ? 'backdrop-blur-[16px]' : 'relative isolate overflow-hidden')}>
-        <BannerFx effect={banner} />
+      <div className={cn(glass, 'flex flex-col gap-4 rounded-2xl p-4 lg:flex-row lg:items-center lg:justify-between', shownBannerEffect(banner) === 'none' ? 'backdrop-blur-[16px]' : 'relative isolate overflow-hidden')}>
+        <BannerFx effect={shownBannerEffect(banner)} />
         <div className="min-w-0">
           <p className="w-fit bg-gradient-to-r from-teal-600 to-indigo-500 bg-clip-text text-[11px] font-bold uppercase tracking-[0.08em] text-transparent dark:from-teal-300 dark:to-indigo-300">
             {today}

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/shared/page-header';
+import { ModuleTile, ModuleTileGrid, ModuleTileSkeletons, moduleTileGradient, type ModuleTileItem } from '@/components/shared/module-tile';
 import { FileText, BarChart3, Settings, GitMerge, Clock, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
-import Link from 'next/link';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
@@ -43,43 +43,6 @@ function StatCard({ label, value, icon: Icon, color, bg }: StatCardProps) {
       </CardContent>
     </Card>
   );
-}
-
-interface NavCardProps {
-  icon: LucideIcon;
-  text: string;
-  href: string;
-  description: string;
-  disabled?: boolean;
-  badge?: number;
-}
-
-function NavCard({ icon: Icon, text, href, description, disabled, badge }: NavCardProps) {
-  const card = (
-    <Card className={cn(
-      'group flex flex-col h-full overflow-hidden rounded-2xl border border-white/70 bg-white/65 shadow-[0_18px_60px_-45px_rgba(2,6,23,0.35)] backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_28px_80px_-55px_rgba(2,6,23,0.55)]',
-      disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-    )}>
-      <div className="h-1.5 w-full bg-gradient-to-r from-indigo-400 via-violet-400 to-blue-400 opacity-70" />
-      <CardHeader className="flex-row items-center gap-4 space-y-0 p-5">
-        <div className="relative rounded-2xl border border-white/70 bg-white/70 p-3 shadow-sm transition-colors group-hover:bg-white">
-          <Icon className="h-6 w-6 text-slate-900/80" />
-          {badge !== undefined && badge > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-bold text-white">
-              {badge > 99 ? '99+' : badge}
-            </span>
-          )}
-        </div>
-        <div className="flex-1">
-          <CardTitle className="text-slate-900">{text}</CardTitle>
-          <CardDescription className="mt-1 text-xs text-slate-600">{description}</CardDescription>
-        </div>
-      </CardHeader>
-    </Card>
-  );
-
-  if (disabled) return <div className="h-full">{card}</div>;
-  return <Link href={href} className="no-underline h-full">{card}</Link>;
 }
 
 export default function SiteFundRequestDashboard() {
@@ -136,20 +99,22 @@ export default function SiteFundRequestDashboard() {
     fetchData();
   }, [authIsLoading, projectAccess.isLoading, projectAccess.canViewAll, projectAccess.accessibleProjectIds, toast, user]);
 
-  const navCards = useMemo(() => {
-    const stageCards = workflowSteps.map(step => ({
+  const navCards = useMemo((): ModuleTileItem[] => {
+    // Each stage takes the next colour round, so neighbouring stages stay tellable apart.
+    const stageCards = workflowSteps.map((step, index): ModuleTileItem => ({
       icon: GitMerge,
-      text: step.name,
+      title: step.name,
       href: `/site-fund-request/stage/${step.id}`,
       description: `Manage tasks at the ${step.name} stage.`,
+      gradient: moduleTileGradient(index + 1),
       disabled: !canViewRequests,
     }));
 
     return [
-      { icon: FileText, text: 'All Requests', href: '/site-fund-request/requests', description: 'View and manage all fund requests.', disabled: !canViewRequests },
+      { icon: FileText, title: 'All Requests', href: '/site-fund-request/requests', description: 'View and manage all fund requests.', gradient: 'from-indigo-500 to-blue-600', disabled: !canViewRequests },
       ...stageCards,
-      { icon: BarChart3, text: 'Reports', href: '/site-fund-request/reports', description: 'View summary reports.', disabled: !can('View', `${MODULE}.Reports`) },
-      { icon: Settings, text: 'Settings', href: '/site-fund-request/settings', description: 'Configure workflow and settings.', disabled: !can('View', `${MODULE}.Settings`) },
+      { icon: BarChart3, title: 'Reports', href: '/site-fund-request/reports', description: 'View summary reports.', gradient: 'from-teal-500 to-cyan-600', disabled: !can('View', `${MODULE}.Reports`) },
+      { icon: Settings, title: 'Settings', href: '/site-fund-request/settings', description: 'Configure workflow and settings.', gradient: 'from-slate-500 to-slate-700', disabled: !can('View', `${MODULE}.Settings`) },
     ];
   }, [workflowSteps, canViewRequests, can]);
 
@@ -160,9 +125,7 @@ export default function SiteFundRequestDashboard() {
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)}
-        </div>
+        <ModuleTileSkeletons count={4} />
       </div>
     );
   }
@@ -186,11 +149,11 @@ export default function SiteFundRequestDashboard() {
       {/* Navigation cards */}
       <div>
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Quick Access</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+        <ModuleTileGrid>
           {navCards.map(card => (
-            <NavCard key={card.href} {...card} />
+            <ModuleTile key={card.href} item={card} />
           ))}
-        </div>
+        </ModuleTileGrid>
       </div>
     </div>
   );

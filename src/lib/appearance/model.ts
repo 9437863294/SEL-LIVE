@@ -126,7 +126,8 @@ export const HOME_BANNER_EFFECTS = ['none', 'aurora', 'mesh', 'power-line', 'spa
 export type HomeBannerEffect = (typeof HOME_BANNER_EFFECTS)[number];
 
 export const HOME_BANNER_EFFECT_META: Record<HomeBannerEffect, { label: string; description: string }> = {
-  none: { label: 'None', description: 'The frosted card, without motion.' },
+  // The greeting shows Aurora drift when nothing else is chosen (home-effects shownBannerEffect).
+  none: { label: 'Standard (Aurora drift)', description: 'The default: soft colour drifting slowly behind the greeting.' },
   aurora: { label: 'Aurora drift', description: 'Soft colour drifting slowly behind the greeting.' },
   mesh: { label: 'Mesh flow', description: 'Pastel gradients that slowly shift into each other.' },
   'power-line': { label: 'Power line', description: 'Transmission towers with current running along the lines.' },
@@ -143,7 +144,8 @@ export const HOME_MODULES_EFFECT_META: Record<HomeModulesEffect, { label: string
   'dot-grid': { label: 'Dot grid drift', description: 'A faint dot grid drifting behind the tiles.' },
   blobs: { label: 'Pastel blobs', description: 'Large soft blobs of colour moving slowly.' },
   spotlight: { label: 'Cursor spotlight', description: 'A soft light that follows the mouse.' },
-  'card-glow': { label: 'Card glow on hover', description: 'A tile glows in its own colour under the mouse, with a running border.' },
+  // Tiles now glow on hover whatever is chosen, so this reads as "no background" — kept so a saved choice stays valid.
+  'card-glow': { label: 'Card glow only', description: 'No background; the tiles’ own glow on hover, which every choice has.' },
   waves: { label: 'Wave bands', description: 'Wide colour bands flowing along the top and bottom.' },
 };
 

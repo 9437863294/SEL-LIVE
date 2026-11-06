@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight,
   Building2,
   ShieldAlert,
   ShoppingCart,
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/page-header";
+import { ModuleTile, ModuleTileGrid } from "@/components/shared/module-tile";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { VENDOR_COLLECTIONS, type Vendor } from "@/lib/vendor-management";
 
@@ -102,9 +102,9 @@ export default function VendorManagementPage() {
 
       {/* ── Stats + Quick access ────────────────────────────────────────── */}
       {canViewVendors && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-3">
           {!isLoading && (
-            <Card className="overflow-hidden border-border/60">
+            <Card className="overflow-hidden border-border/60 sm:max-w-xs">
               <CardContent className="flex items-center gap-3 p-4">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm">
                   <Building2 className="h-5 w-5 text-white" />
@@ -117,21 +117,17 @@ export default function VendorManagementPage() {
             </Card>
           )}
 
-          <Link href="/vendor-management/vendors" className="group no-underline">
-            <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-              <div className="h-1 w-full bg-gradient-to-r from-indigo-500 to-blue-600" />
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-sm">
-                  <Truck className="h-5 w-5 text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold leading-tight">Vendors</p>
-                  <p className="truncate text-xs text-muted-foreground">Manage the global vendor registry.</p>
-                </div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
-              </CardContent>
-            </Card>
-          </Link>
+          <ModuleTileGrid>
+            <ModuleTile
+              item={{
+                icon: Truck,
+                title: "Vendors",
+                description: "Manage the global vendor registry.",
+                href: "/vendor-management/vendors",
+                gradient: "from-indigo-500 to-blue-600",
+              }}
+            />
+          </ModuleTileGrid>
         </div>
       )}
 
