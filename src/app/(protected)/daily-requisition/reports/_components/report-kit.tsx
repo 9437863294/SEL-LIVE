@@ -35,6 +35,7 @@ import { DR_DATE_PRESETS, resolveDatePreset, type DRDatePreset } from '@/lib/dai
 import { balanceOf, paidOf } from '@/lib/requisition-progress';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { recordExport } from './hub-parts';
 
 /* ── Money ────────────────────────────────────────────────────────────────────────────────── */
 
@@ -291,10 +292,19 @@ export function ReportHeaderCard({
   );
 }
 
-/** The header card's export button. */
+/** The header card's export button. Each export is noted for the Reports hub's "Recently exported". */
 export function ExportExcelButton({ onClick, busy, disabled = false }: { onClick: () => void; busy: boolean; disabled?: boolean }) {
   return (
-    <Button size="sm" variant="outline" className="gap-1.5" onClick={onClick} disabled={busy || disabled}>
+    <Button
+      size="sm"
+      variant="outline"
+      className="gap-1.5"
+      onClick={() => {
+        recordExport(window.location.pathname);
+        onClick();
+      }}
+      disabled={busy || disabled}
+    >
       <Download className="h-4 w-4" />
       {busy ? 'Exporting…' : 'Export Excel'}
     </Button>

@@ -59,9 +59,6 @@
   .dark :where(.hover\:bg-slate-50\/70:not(.keep-light, .keep-light *)):hover {
     background-color: hsl(var(--dc-100) / 0.7);
   }
-  .dark :where(.bg-white\/75:not(.keep-light, .keep-light *)) {
-    background-color: hsl(var(--card) / 0.75);
-  }
   .dark :where(.bg-white\/80:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.8);
   }
