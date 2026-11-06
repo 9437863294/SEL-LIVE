@@ -84,17 +84,16 @@ export function normalizeRecurrence(
   const interval = Math.max(1, Math.round(recurrence?.interval ?? 1));
   const endMode = recurrence?.endMode ?? 'never';
 
-  const normalized: MeetingRecurrence = {
-    frequency,
-    interval,
-    endMode,
-    occurrences:
-      endMode === 'after-occurrences'
-        ? Math.max(1, Math.min(OFFICE_HUB_MAX_OCCURRENCES, Math.round(recurrence?.occurrences ?? 10)))
-        : undefined,
-    endDate: endMode === 'on-date' ? recurrence?.endDate ?? undefined : undefined,
-    exceptions: recurrence?.exceptions?.length ? [...new Set(recurrence.exceptions)] : undefined,
-  };
+  // Optional keys are set only when they apply — never present-but-`undefined`. This object is
+  // written to Firestore as it stands (`createMeeting`, `updateMeeting`, every series instance), and
+  // the web SDK refuses a nested `undefined` outright: "Unsupported field value: undefined (found in
+  // field recurrence.occurrences)". `clean()` cannot catch it, because it only strips the top level.
+  const normalized: MeetingRecurrence = { frequency, interval, endMode };
+  if (endMode === 'after-occurrences') {
+    normalized.occurrences = Math.max(1, Math.min(OFFICE_HUB_MAX_OCCURRENCES, Math.round(recurrence?.occurrences ?? 10)));
+  }
+  if (endMode === 'on-date' && recurrence?.endDate) normalized.endDate = recurrence.endDate;
+  if (recurrence?.exceptions?.length) normalized.exceptions = [...new Set(recurrence.exceptions)];
 
   if (frequency === 'Weekly' || (frequency === 'Custom' && recurrence?.weekdays?.length)) {
     const weekdays = (recurrence?.weekdays ?? []).filter((day) => day >= 0 && day <= 6);

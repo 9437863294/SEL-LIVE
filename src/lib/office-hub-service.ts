@@ -70,6 +70,7 @@ import {
   type AttendanceStatus,
   type CalendarView,
   type InvitationResponse,
+  type MeetingJoinAccess,
   type MeetingStatus,
   type MomStage,
   type OfficeHubActionItem,
@@ -855,6 +856,10 @@ export interface CreateMeetingInput {
   /** Action items carried forward from the meeting this one follows (§70). */
   carryActionItemIds?: string[];
   momRequired?: boolean;
+  /** The organizer's answer to "send email invitations?". */
+  emailInvitations?: boolean | null;
+  /** The organizer's answer to "who can join?". */
+  joinAccess?: MeetingJoinAccess | null;
 }
 
 export interface CreateMeetingResult {
@@ -941,6 +946,8 @@ export async function createMeeting(
     momRequired: input.momRequired ?? settings.momApprovalRequired,
     momStage: null,
     tags: input.tags ?? [],
+    emailInvitations: input.emailInvitations ?? null,
+    joinAccess: input.joinAccess ?? null,
     isDeleted: false,
     organizationId: actor.organizationId ?? null,
   });
@@ -988,6 +995,8 @@ export async function createMeeting(
       scheduleMeetingReminders(meeting, participants.map((participant) => participant.userId), settings),
       sendInvitations(actor, meeting, participants, settings),
     ]);
+    // After the Google sync on purpose: the server skips a meeting Google Calendar has just emailed.
+    if (input.emailInvitations) warnings.push(...(await emailInvitations(meetingRef.id)));
   }
 
   if (input.carryActionItemIds?.length) {
@@ -1380,9 +1389,14 @@ export async function updateMeeting(
    * email to every participant each time somebody fixed a typo in the notes — which is exactly the
    * behaviour that trains people to ignore calendar invitations.
    */
-  const googleWarnings =
-    rescheduled || patch.selection || patch.title != null || patch.description != null
-      ? await syncGoogleConference({ ...existing, ...update } as OfficeHubMeeting)
+  const eventChanged = rescheduled || Boolean(patch.selection) || patch.title != null || patch.description != null;
+  // "Who can join" is a setting on the Meet itself, not on the event: changing only that must not
+  // patch the event, which would email every guest about a change they cannot see.
+  const accessChanged = patch.joinAccess != null && patch.joinAccess !== existing.joinAccess;
+  const googleWarnings = eventChanged
+    ? await syncGoogleConference({ ...existing, ...update } as OfficeHubMeeting)
+    : accessChanged
+      ? await syncGoogleConference({ ...existing, ...update } as OfficeHubMeeting, 'save', { accessOnly: true })
       : [];
 
   logOfficeHub(
@@ -1557,6 +1571,7 @@ async function syncGoogleConference(
   meeting: Pick<OfficeHubMeeting, 'id' | 'mode' | 'status'> &
     Partial<Pick<OfficeHubMeeting, 'seriesId' | 'isSeriesParent' | 'googleEventId' | 'meetingUrl' | 'onlinePlatform'>>,
   intent: 'save' | 'cancel' = 'save',
+  options: { accessOnly?: boolean } = {},
 ): Promise<string[]> {
   const plan = googleSyncPlan(meeting, intent);
   // 'inherit' is handled by the parent's own sync, which pushes its link down the series.
@@ -1564,7 +1579,10 @@ async function syncGoogleConference(
 
   try {
     const { syncGoogleMeet, withdrawGoogleMeet } = await import('./office-hub-google-client');
-    const result = plan.action === 'cancel' ? await withdrawGoogleMeet(meeting.id) : await syncGoogleMeet(meeting.id);
+    const result =
+      plan.action === 'cancel'
+        ? await withdrawGoogleMeet(meeting.id)
+        : await syncGoogleMeet(meeting.id, { accessOnly: options.accessOnly });
 
     if (result.ok) return result.warnings;
 
@@ -1593,6 +1611,22 @@ async function syncGoogleConference(
   }
 }
 
+/**
+ * Ask the server to email the invitation, when the organizer chose to.
+ *
+ * Returns what the organizer should be told — who was not emailed, or that email is not set up —
+ * and never throws: the meeting is saved and everybody has the in-app invitation either way.
+ */
+async function emailInvitations(meetingId: string): Promise<string[]> {
+  try {
+    const { requestMeetingInvitationEmails } = await import('./office-hub-email-client');
+    return (await requestMeetingInvitationEmails(meetingId)).warnings;
+  } catch (error) {
+    console.error('[office-hub] Invitation emails could not run', error);
+    return ['The invitation emails could not be sent. Participants were notified in SEL Live.'];
+  }
+}
+
 /** Send the invitation notifications for a set of participants (§13). */
 async function sendInvitations(
   actor: OfficeHubActor,
@@ -1613,7 +1647,12 @@ async function sendInvitations(
 export async function sendMeetingInvitations(
   actor: OfficeHubActor,
   meetingId: string,
-  options: { settings?: OfficeHubSettings | null } = {},
+  options: {
+    settings?: OfficeHubSettings | null;
+    /** The answers on the form at the moment of sending, which win over what the draft stored. */
+    emailInvitations?: boolean | null;
+    joinAccess?: MeetingJoinAccess | null;
+  } = {},
 ): Promise<{ notified: number; warnings: string[] }> {
   const meeting = await getMeeting(meetingId);
   if (!meeting) throw new OfficeHubServiceError('That meeting no longer exists.', 'office-hub/not-found');
@@ -1624,12 +1663,18 @@ export async function sendMeetingInvitations(
     throw new OfficeHubServiceError('Invite at least one participant before sending.', 'office-hub/no-participants');
   }
 
+  const answers = clean({
+    emailInvitations: options.emailInvitations ?? undefined,
+    joinAccess: options.joinAccess ?? undefined,
+  });
+
   await updateDoc(docIn(OFFICE_HUB_COLLECTIONS.meetings, meetingId), {
     status: 'Scheduled',
+    ...answers,
     ...withUpdateAudit(auditActorOf(actor)),
   });
 
-  const scheduled = { ...meeting, status: 'Scheduled' as MeetingStatus };
+  const scheduled = { ...meeting, ...answers, status: 'Scheduled' as MeetingStatus };
 
   if (scheduled.recurrence.frequency !== 'None') {
     await materializeSeriesInstances(actor, { ...scheduled, seriesId: scheduled.seriesId ?? meetingId, isSeriesParent: true });
@@ -1647,6 +1692,7 @@ export async function sendMeetingInvitations(
 
   await scheduleMeetingReminders(scheduled, participants.map((participant) => participant.userId), settings);
   const sent = await sendInvitations(actor, scheduled, participants, settings);
+  if (scheduled.emailInvitations) warnings.push(...(await emailInvitations(meetingId)));
 
   logOfficeHub(actor, 'Send Meeting Invitations', { participants: participants.length, notified: sent }, { recordId: meetingId, recordRef: meeting.title });
   return { notified: sent, warnings };

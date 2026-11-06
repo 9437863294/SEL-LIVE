@@ -678,12 +678,16 @@ export interface MeetingJoinView {
  * URL *is* the access control for most conferencing platforms — anybody holding it can walk into
  * the meeting. Being able to see that a meeting exists is not the same as being entitled to attend
  * it, and the register deliberately shows the former to more people than the latter.
+ *
+ * The exception is an **open** meeting (`joinAccess: 'open'`), where the organizer said anyone with
+ * the link may join: then everybody who can see the meeting gets the link too.
  */
 export function meetingJoinView(
   meeting: Pick<
     OfficeHubMeeting,
     'mode' | 'meetingUrl' | 'location' | 'room' | 'status' | 'startAt' | 'endAt' | 'organizerId' | 'participantUserIds'
-  >,
+  > &
+    Partial<Pick<OfficeHubMeeting, 'joinAccess'>>,
   viewerUserId: string | null | undefined,
   options: { canViewAllMeetings?: boolean; now?: Date } = {},
 ): MeetingJoinView {
@@ -710,7 +714,7 @@ export function meetingJoinView(
     Boolean(viewerUserId) &&
     (meeting.organizerId === viewerUserId || (meeting.participantUserIds ?? []).includes(viewerUserId!));
 
-  if (!isParticipant && !options.canViewAllMeetings) {
+  if (!isParticipant && !options.canViewAllMeetings && meeting.joinAccess !== 'open') {
     return { ...base, reason: 'Only invited participants can see the joining link.' };
   }
 

@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   AlertTriangle,
+  BellOff,
   CalendarClock,
   CalendarPlus,
   ClipboardCheck,
@@ -28,8 +29,11 @@ import {
   Copy,
   ExternalLink,
   FileText,
+  Globe,
   ListTodo,
   Loader2,
+  Lock,
+  Mail,
   MapPin,
   Pencil,
   PlayCircle,
@@ -297,7 +301,9 @@ export default function MeetingDetailPage() {
       if (result.ok && result.meetUrl) {
         toast({ title: 'Meet link created', description: 'Participants can now join from Office Hub or Google Calendar.' });
       } else {
-        setMeetSyncError(result.error ?? 'Google did not return a Meet link.');
+        // The server's own reason when it did not ask Google at all (a draft, Meet switched off…),
+        // rather than blaming Google for a call that was never made.
+        setMeetSyncError(result.error ?? result.reason ?? 'Google did not return a Meet link.');
       }
       for (const warning of result.warnings) {
         toast({ title: 'One thing to know', description: warning, duration: 12_000 });
@@ -385,6 +391,36 @@ export default function MeetingDetailPage() {
           <Badge variant="neutral">
             <Repeat className="mr-1 h-3 w-3" />
             {describeRecurrence(meeting.recurrence, meeting.date)}
+          </Badge>
+        )}
+        {meeting.mode !== 'Offline' && meeting.joinAccess && (
+          <Badge variant="neutral">
+            {meeting.joinAccess === 'open' ? (
+              <>
+                <Globe className="mr-1 h-3 w-3" />
+                Open meeting: anyone with the link
+              </>
+            ) : (
+              <>
+                <Lock className="mr-1 h-3 w-3" />
+                Invited people only
+              </>
+            )}
+          </Badge>
+        )}
+        {meeting.emailInvitations != null && (
+          <Badge variant="neutral">
+            {meeting.emailInvitations ? (
+              <>
+                <Mail className="mr-1 h-3 w-3" />
+                Email invitations on
+              </>
+            ) : (
+              <>
+                <BellOff className="mr-1 h-3 w-3" />
+                No email invitations
+              </>
+            )}
           </Badge>
         )}
         {meeting.momStage && <MomStageBadge stage={meeting.momStage} />}
@@ -549,7 +585,22 @@ export default function MeetingDetailPage() {
                       means the Google call did not succeed. Shown with the reason and one action,
                       to the people who can take it — everybody else would see a button that 403s.
                     */}
-                    {!join?.url && verdicts?.edit.allowed && meeting.status !== 'Cancelled' && (
+                    {/*
+                      Keyed on the meeting having no link, not on this viewer seeing none — an editor
+                      outside an "only invited" meeting cannot see its link, and offering them
+                      "Create Meet link" there would replace a link participants already hold.
+                      And only where a link can actually be made: a draft gets its link when it is
+                      sent, and a finished or postponed meeting gets none.
+                    */}
+                    {!meeting.meetingUrl && verdicts?.edit.allowed && meeting.status === 'Draft' && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        The Meet link is created when you send the invitations.
+                      </p>
+                    )}
+                    {!meeting.meetingUrl &&
+                      verdicts?.edit.allowed &&
+                      (meeting.status === 'Scheduled' || meeting.status === 'In Progress') &&
+                      (!meeting.onlinePlatform || meeting.onlinePlatform === 'Google Meet') && (
                       <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
                         {(meeting.googleSyncError || meetSyncError) && (
                           <p className="text-[11px] leading-relaxed text-amber-900">

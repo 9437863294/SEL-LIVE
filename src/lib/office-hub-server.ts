@@ -224,6 +224,135 @@ async function loadEmails(db: Firestore, userIds: readonly string[]): Promise<Ma
   return result;
 }
 
+/* ── invitation emails (the organizer answered "send email invitations") ─────────────────────── */
+
+export interface MeetingInvitationEmailResult {
+  sent: number;
+  /** What the organizer should know — who was not emailed and why. Written for a person. */
+  notes: string[];
+}
+
+const nameList = (names: readonly string[]): string =>
+  names.length <= 4 ? names.join(', ') : `${names.slice(0, 4).join(', ')} and ${names.length - 4} more`;
+
+/**
+ * Email the invitation to a meeting's participants, through the office mail transport.
+ *
+ * Only for a meeting whose organizer chose to email, and only when Google has not already done it:
+ * a meeting with a Google Calendar event got Google's invitation (its `sendUpdates` follows the same
+ * answer), and a second email from here would be a duplicate with a second set of RSVP buttons. So
+ * in practice this is the in-person meeting, the meeting with a pasted link, and the Meet meeting
+ * whose Google sync failed.
+ *
+ * Idempotent per participant: `emailInvitationsSentTo` records who has been emailed, so pressing
+ * "Send invitations now" again emails only people added since. The sender is skipped, as the in-app
+ * invitation skips them. A recipient who turned Office Hub emails off is respected, and named.
+ */
+export async function sendMeetingInvitationEmails(input: {
+  meetingId: string;
+  actorUserId: string;
+}): Promise<MeetingInvitationEmailResult> {
+  const db = getFirebaseAdminFirestore();
+  const meetingRef = db.collection(OFFICE_HUB_COLLECTIONS.meetings).doc(input.meetingId);
+  const snapshot = await meetingRef.get();
+  if (!snapshot.exists) return { sent: 0, notes: ['That meeting no longer exists.'] };
+
+  const meeting = { ...(snapshot.data() as object), id: snapshot.id } as OfficeHubMeeting;
+  if (meeting.emailInvitations !== true) return { sent: 0, notes: [] };
+  if (meeting.status !== 'Scheduled' && meeting.status !== 'In Progress') return { sent: 0, notes: [] };
+  if (meeting.googleEventId) return { sent: 0, notes: [] };
+
+  const settings = await loadSettings(db);
+  if (!settings.emailNotificationsEnabled) {
+    return {
+      sent: 0,
+      notes: ['Office Hub email is switched off in Office Hub Settings, so participants were notified in SEL Live only.'],
+    };
+  }
+
+  await ensureEmailProvider();
+  const { getEmailProvider } = await import('./office-hub-integrations');
+  const provider = getEmailProvider();
+  if (!provider) {
+    return { sent: 0, notes: ['Email is not set up on this server, so participants were notified in SEL Live only.'] };
+  }
+
+  const already = new Set(meeting.emailInvitationsSentTo ?? []);
+  const participantSnapshot = await db
+    .collection(OFFICE_HUB_COLLECTIONS.participants)
+    .where('meetingId', '==', meeting.id)
+    .get();
+  const targets = participantSnapshot.docs
+    .map((entry) => entry.data() as { userId?: string; name?: string; email?: string | null })
+    .filter((row): row is { userId: string; name?: string; email?: string | null } =>
+      Boolean(row.userId) && row.userId !== input.actorUserId && !already.has(row.userId!),
+    );
+  if (!targets.length) return { sent: 0, notes: [] };
+
+  const preferences = new PreferenceCache(db, settings);
+  await preferences.load(targets.map((row) => row.userId));
+  const addresses = await loadEmails(db, targets.filter((row) => !row.email).map((row) => row.userId));
+
+  const agendaSnapshot = await db
+    .collection(OFFICE_HUB_COLLECTIONS.agenda)
+    .where('meetingId', '==', meeting.id)
+    .get();
+  const agendaTitles = agendaSnapshot.docs
+    .map((entry) => entry.data() as { title?: string; order?: number })
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((item) => item.title ?? '')
+    .filter(Boolean);
+
+  const baseUrl = resolveBaseUrl(process.env.NEXT_PUBLIC_APP_URL ?? process.env.APP_BASE_URL ?? null);
+  const sentTo: string[] = [];
+  const noAddress: string[] = [];
+  const optedOut: string[] = [];
+  const failed: string[] = [];
+
+  for (const group of chunk(targets, 10)) {
+    await Promise.all(
+      group.map(async (row) => {
+        const name = row.name || addresses.get(row.userId)?.name || 'Colleague';
+        if (!preferences.wantsEmail(row.userId)) {
+          optedOut.push(name);
+          return;
+        }
+        const email = row.email || addresses.get(row.userId)?.email;
+        if (!email) {
+          noAddress.push(name);
+          return;
+        }
+        const rendered = renderMeetingEmail('meeting-invitation', {
+          meeting,
+          recipientName: name,
+          baseUrl,
+          meetingId: meeting.id,
+          agendaTitles,
+        });
+        const outcome = await provider.send({ to: [email], subject: rendered.subject, html: rendered.html, text: rendered.text });
+        if (outcome.ok) sentTo.push(row.userId);
+        else failed.push(name);
+      }),
+    );
+  }
+
+  if (sentTo.length) {
+    await meetingRef
+      .set(
+        { emailInvitationsSentTo: FieldValue.arrayUnion(...sentTo), emailInvitationsSentAt: new Date().toISOString() },
+        { merge: true },
+      )
+      .catch((error) => console.error('[office-hub] Could not record who was emailed', error));
+  }
+
+  const notes: string[] = [];
+  if (failed.length) notes.push(`The invitation email could not be sent to ${nameList(failed)}. They were still notified in SEL Live.`);
+  if (noAddress.length) notes.push(`No email address is on file for ${nameList(noAddress)}, so they were notified in SEL Live only.`);
+  if (optedOut.length) notes.push(`${nameList(optedOut)} turned off Office Hub emails, so they were notified in SEL Live only.`);
+
+  return { sent: sentTo.length, notes };
+}
+
 export interface SweepResult {
   remindersDelivered: number;
   remindersLapsed: number;

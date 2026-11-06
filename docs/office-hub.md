@@ -548,6 +548,19 @@ participants while the calendar entry still appears.
 | `externalOnly` | Google emails guests outside the Workspace domain only. |
 | `none` | The calendar entry, and only Office Hub's invitation. The quieter arrangement. |
 
+Since 2026-11-06 the meeting form **asks** on every meeting, and the answer overrides this setting
+(which now applies only to meetings saved before the question existed):
+
+* **Send email invitations?** — *Yes*: a Meet meeting gets Google's invitation email (`sendUpdates:
+  all`); a meeting with no Google event (in person, a pasted link, or a failed Meet sync) gets
+  Office Hub's own invitation email over SMTP (`/api/office-hub/meetings/email-invitations`, never
+  both). *No*: `sendUpdates: none`, and no Office Hub email — the in-app notification only.
+* **Who can join?** (online and hybrid) — *Only invited people*: only participants see the link in
+  Office Hub, and the Meet is set to `RESTRICTED` (everyone else must ask to join). *Anyone with the
+  link*: everyone who can see the meeting gets the link, and the Meet is set to `OPEN`.
+
+Neither is pre-selected: Schedule (and Send invitations now) refuse until both are answered.
+
 **2. A recurring series is one Google event, not one per occurrence.**
 
 Office Hub materialises a series into N Firestore meetings. Syncing each would put N separate
@@ -563,6 +576,9 @@ nobody signed in and no Google credentials needed, which per-user OAuth could no
 **1. Create the OAuth client.** In [Google Cloud Console](https://console.cloud.google.com/):
 
 * Enable the **Google Calendar API** for the project.
+* Enable the **Google Meet REST API** too. It is what sets who may join a Meet (`spaces.patch`,
+  `config.accessType`). Without it meetings still get links, and the organizer is warned that Meet
+  is using Google's default access.
 * Configure the OAuth consent screen. **Internal** is the right user type for a Workspace
   organisation — it needs no Google verification review. **External** works but stays in "Testing"
   until verified, which caps it at 100 users and expires refresh tokens after seven days.
@@ -592,9 +608,21 @@ Office Hub degrades cleanly while they are absent: `googleMeetConfigured()` retu
 Settings card says the integration is not set up and names the missing variables for an
 administrator, and online meetings ask for a joining link to paste.
 
-**3. Each organizer connects their own account** at **Office Hub → Settings → My preferences →
-Google Meet**. There is no administrator step and no domain-wide delegation: the connection is
-personal, affects only that person's calendar, and they can revoke it from the same card.
+**3. Either each organizer connects their own account** at **Office Hub → Settings → My preferences →
+Google Meet** — the connection is personal, affects only that person's calendar, and they can
+revoke it from the same card — **or one person shares an office account for everyone** (since
+2026-11-06). Someone with Office Hub *Settings › Edit* connects their Google account, then presses
+**Use my Google account for everyone** under **Office settings → Google Meet**. After that nobody
+else needs to connect.
+
+The account used for a meeting is the first that can act, in this order: the account that already
+owns the meeting's event (only it can change or remove that event); the organizer's own; the
+account of whoever scheduled it for them; the shared office account (`resolveGoogleActingUser`).
+Only your *own* account can be shared — the route takes no user id — so an administrator cannot
+hand out a colleague's Google access. It is marked `sharedForOffice` on that connection document,
+and disconnecting ends the sharing. Meetings made with the office account sit on *its* Google
+Calendar and it is the Meet host, so it is the account that admits anyone who asks to join a
+"only invited" meeting.
 
 **4. Check the office-wide options** at **Settings → Office settings → Google Meet**: whether to
 create links at all, whether Google emails its own invitations, and which calendar to write to
@@ -605,6 +633,7 @@ create links at all, whether Google emails its own invitations, and which calend
 | Scope | Why |
 | --- | --- |
 | `.../auth/calendar.events` | Insert, patch and delete events — including minting a conference — on calendars the user can already write to. |
+| `.../auth/meetings.space.settings` | Set who may join (Open / Restricted) on the Meet a Calendar event created. Non-sensitive. Connections made before 2026-11-06 lack it: they keep working, the Settings card offers **Reconnect**, and until then Meet uses Google's default access. |
 | `openid`, `email` | So the connection card can show *which* Google account was authorised. Without it, somebody who picked their personal Gmail instead of their work account has no way to notice. |
 
 The broader `.../auth/calendar` scope would additionally grant calendar creation, sharing and ACL

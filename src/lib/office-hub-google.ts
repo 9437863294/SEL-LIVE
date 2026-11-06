@@ -36,7 +36,12 @@
  * `office-hub-google-server.ts`, so all of the below is tested directly under `node --test`.
  */
 
-import type { OfficeHubMeeting, OnlineMeetingPlatform } from './office-hub-model.ts';
+import type {
+  GoogleMeetAccessType,
+  MeetingJoinAccess,
+  OfficeHubMeeting,
+  OnlineMeetingPlatform,
+} from './office-hub-model.ts';
 import { recurrenceRuleFor } from './office-hub-integrations.ts';
 
 /* ── the platform ────────────────────────────────────────────────────────────────────────────── */
@@ -56,6 +61,16 @@ export const GOOGLE_OAUTH_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/
 export const GOOGLE_OAUTH_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 export const GOOGLE_OAUTH_REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
 export const GOOGLE_CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
+export const GOOGLE_MEET_API_BASE = 'https://meet.googleapis.com/v2';
+
+/**
+ * Read and change the settings of the user's Meet calls — including those Google Calendar created.
+ *
+ * This is what lets Office Hub set who may join (`SpaceConfig.accessType`) on the conference a
+ * Calendar event minted. The narrower `meetings.space.created` covers only spaces the app made
+ * through the Meet API itself, which is not how Office Hub makes them. Non-sensitive.
+ */
+export const GOOGLE_MEET_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/meetings.space.settings';
 
 /**
  * The scopes requested, and the ones deliberately not.
@@ -68,9 +83,14 @@ export const GOOGLE_CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3'
  * `openid` and `email` are there so the callback can record *which* Google account was connected.
  * Without it the connection card can only say "connected", and an organizer who authorised a
  * personal Gmail account instead of their work one has no way to notice.
+ *
+ * `meetings.space.settings` sets who may join the Meet ("only invited" or "anyone with the link").
+ * It is wanted, not required: a connection made before it was requested still creates events, and
+ * only the access setting is skipped — with a warning that says to reconnect.
  */
 export const GOOGLE_MEET_SCOPES: readonly string[] = [
   'https://www.googleapis.com/auth/calendar.events',
+  GOOGLE_MEET_SETTINGS_SCOPE,
   'openid',
   'email',
 ] as const;
@@ -256,6 +276,42 @@ export function grantCoversMeetCreation(scopes: readonly string[]): boolean {
   );
 }
 
+/** Whether a granted scope set can change who may join a Meet. Its absence is not unhealthy. */
+export function grantCoversMeetAccess(scopes: readonly string[]): boolean {
+  return scopes.includes(GOOGLE_MEET_SETTINGS_SCOPE);
+}
+
+/* ── the per-meeting answers: email, and who may join ────────────────────────────────────────── */
+
+/**
+ * Google's `sendUpdates` for one meeting.
+ *
+ * The organizer's answer on the form wins over the organisation-wide setting, in both directions:
+ * "send email invitations" emails everyone, "don't" emails nobody. A meeting saved before the form
+ * asked has no answer and keeps the setting, so nothing already scheduled changes behaviour.
+ */
+export function meetingSendUpdates(
+  meeting: { emailInvitations?: boolean | null },
+  fallback: 'all' | 'externalOnly' | 'none',
+): 'all' | 'externalOnly' | 'none' {
+  if (meeting.emailInvitations === true) return 'all';
+  if (meeting.emailInvitations === false) return 'none';
+  return fallback;
+}
+
+/**
+ * The Meet access type for an Office Hub answer.
+ *
+ * `'invited'` is `RESTRICTED` — only the event's guests walk straight in; everyone else, colleagues
+ * included, has to ask. `TRUSTED` would wave the whole organisation through, which is not what
+ * "only invited" means. Null for a meeting with no answer: leave Google's default alone.
+ */
+export function googleMeetAccessFor(joinAccess: MeetingJoinAccess | null | undefined): GoogleMeetAccessType | null {
+  if (joinAccess === 'open') return 'OPEN';
+  if (joinAccess === 'invited') return 'RESTRICTED';
+  return null;
+}
+
 /**
  * Classify a stored connection.
  *
@@ -437,11 +493,17 @@ export interface GoogleCalendarEventBody {
  * meeting with two Meet links where participants hold whichever one their invitation happened to
  * carry. The same property is why `office-hub-service.ts` can retry a failed sync without checking
  * anything first.
+ *
+ * `attempt` is the exception, and it matters: Google *ignores* a create request whose id it has
+ * already seen on that event — including one that failed. So asking again for a conference on an
+ * event that has none must use a fresh id, or "Retry Meet link" can never succeed.
  */
-export function conferenceRequestId(meetingId: string): string {
+export function conferenceRequestId(meetingId: string, attempt?: string | null): string {
   // Google accepts up to 64 characters; Firestore ids are 20, so the prefix is free. Restricted to
   // the characters Google documents as safe rather than trusting an id generator's alphabet.
-  return `officehub-${meetingId}`.replace(/[^A-Za-z0-9\-_]/g, '-').slice(0, 64);
+  const safe = (value: string) => value.replace(/[^A-Za-z0-9\-_]/g, '-');
+  const suffix = attempt ? `-${safe(attempt)}`.slice(0, 16) : '';
+  return `${safe(`officehub-${meetingId}`).slice(0, 64 - suffix.length)}${suffix}`;
 }
 
 export interface GoogleEventInput {
@@ -470,6 +532,8 @@ export interface GoogleEventInput {
   meetingUrl?: string | null;
   /** Omitted when patching an event that already has a conference. */
   requestConference?: boolean;
+  /** Set when re-requesting a conference on an existing event — see `conferenceRequestId`. */
+  conferenceAttempt?: string | null;
   guestsCanInviteOthers?: boolean;
 }
 
@@ -522,7 +586,7 @@ export function buildGoogleEventBody(input: GoogleEventInput): GoogleEventBuildR
   if (input.requestConference !== false) {
     body.conferenceData = {
       createRequest: {
-        requestId: conferenceRequestId(meeting.id),
+        requestId: conferenceRequestId(meeting.id, input.conferenceAttempt),
         conferenceSolutionKey: { type: 'hangoutsMeet' },
       },
     };
@@ -872,6 +936,55 @@ export function describeGoogleApiError(input: {
     gone: false,
     reason,
   };
+}
+
+/**
+ * Google made the calendar event but would not attach a Meet to it (`createRequest` status
+ * `failure`, or success with no link). Not a transient error — retrying unchanged gets the same
+ * answer — so the message names the two things that cause it, with the account to check.
+ */
+export function conferenceRefusedMessage(input: { googleEmail?: string | null; calendarId?: string | null }): string {
+  const account = input.googleEmail ? ` (${input.googleEmail})` : '';
+  const calendar =
+    input.calendarId && input.calendarId !== 'primary' ? ` or the calendar “${input.calendarId}” does not allow Google Meet,` : '';
+  return (
+    `Google created the calendar event but would not add a Google Meet to it. Usually Google Meet is ` +
+    `turned off for the Google account Office Hub used${account},${calendar} or that account cannot create ` +
+    `Meet video calls. Check it in Google (Workspace admin → Apps → Google Meet), then press Retry Meet link.`
+  );
+}
+
+/**
+ * A Meet REST API failure while setting who may join, as one sentence for the organizer.
+ *
+ * Never fatal: the meeting and its link exist either way, and Google's default access applies. The
+ * three causes worth naming have three different fixes — reconnect (the grant predates the scope),
+ * an administrator enabling the API, and a Workspace policy that forbids the chosen access type.
+ */
+export function describeMeetAccessError(
+  input: { status: number; body?: unknown },
+  wanted: GoogleMeetAccessType,
+): string {
+  const reason = googleErrorReason(input.body) ?? '';
+  const detail = googleErrorMessage(input.body) ?? '';
+  const fallback =
+    wanted === 'OPEN'
+      ? 'The meeting is saved, but Google Meet may still ask people outside the invitation to request to join.'
+      : 'The meeting is saved, but Google Meet may still let people who were not invited join.';
+
+  if (input.status === 401 || /insufficient authentication scopes|SCOPE_INSUFFICIENT/i.test(`${reason} ${detail}`)) {
+    return `${fallback} Reconnect Google in Office Hub settings and allow it to manage Meet settings, so Office Hub can set who may join.`;
+  }
+  if (/has not been used|is disabled|SERVICE_DISABLED|accessNotConfigured/i.test(`${reason} ${detail}`)) {
+    return `${fallback} The Google Meet REST API is not enabled for this application's Google Cloud project — an administrator needs to enable it.`;
+  }
+  if (input.status === 404) {
+    return `${fallback} Google could not find the Meet for this link.`;
+  }
+  if (input.status === 400 || input.status === 403) {
+    return `${fallback} Google refused the change${detail ? `: ${detail.replace(/\.?\s*$/, '.')}` : '.'} Your Workspace administrator may not allow this access setting.`;
+  }
+  return `${fallback} Google Meet returned an error (${input.status}).`;
 }
 
 function googleErrorReason(body: unknown): string | null {

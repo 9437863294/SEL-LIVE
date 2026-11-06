@@ -332,8 +332,6 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
         return;
       }
 
-      console.error('Error switching user:', error);
-
       const isAuthError =
         reauthMethod === 'password' &&
         (code === 'auth/wrong-password' ||
@@ -391,6 +389,10 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
           variant: 'destructive',
         });
       } else {
+        // Only a failure nobody anticipated is logged as an error. In development every
+        // console.error opens Next's error overlay, and a rejected password is an outcome the
+        // branches above already explain to the user — not a bug.
+        console.error('Error switching user:', error);
         toast({
           title: 'Switch Failed',
           description: 'An unexpected error occurred. Please try again.',
@@ -679,6 +681,20 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
 
               {reauthMethod === 'password' ? (
                 <div className="space-y-2">
+                  {/* Tells the browser's password manager whose password this is. Without it the
+                      nearest text field is the user search box, so autofill could offer a password
+                      saved for another account on this site — which Firebase then rejects as
+                      `auth/invalid-credential`, reading as a mistyped password. */}
+                  <input
+                    type="text"
+                    name="username"
+                    autoComplete="username"
+                    value={adminEmail}
+                    readOnly
+                    hidden
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
                   <Label htmlFor="admin-password" className="text-xs">
                     Your admin password
                   </Label>

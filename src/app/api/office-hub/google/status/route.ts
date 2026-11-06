@@ -7,6 +7,7 @@ import {
   googleMeetConfigurationProblems,
   googleMeetConfigured,
   googleMeetSettings,
+  sharedGoogleAccount,
 } from '@/lib/office-hub-google-server';
 
 /**
@@ -35,15 +36,27 @@ export async function GET(request: Request) {
     const context = await authenticateAccess(request);
     const configured = googleMeetConfigured();
 
-    const [connection, settings] = await Promise.all([
+    const [connection, settings, shared] = await Promise.all([
       configured ? googleConnectionFor(context.userId) : Promise.resolve(null),
       googleMeetSettings(),
+      configured ? sharedGoogleAccount() : Promise.resolve(null),
     ]);
 
     return NextResponse.json({
       configured,
       settings,
       connection,
+      // The office account that creates links for people who have not connected their own. Its
+      // address is shown to everybody on purpose: it is the account participants will see as the
+      // organizer of the calendar event.
+      sharedAccount: shared
+        ? {
+            available: shared.available,
+            googleEmail: shared.googleEmail,
+            ownerName: shared.ownerName,
+            isMine: shared.ownerUserId === context.userId,
+          }
+        : null,
       ...(configured ? {} : { configurationProblems: googleMeetConfigurationProblems() }),
     });
   } catch (error) {

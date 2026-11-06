@@ -9,7 +9,12 @@ import {
   isMeetingOrganizer,
   resolveOfficeHubCapabilities,
 } from '@/lib/office-hub-permissions';
-import { googleConnectionFor, googleMeetConfigured, syncMeetingToGoogle } from '@/lib/office-hub-google-server';
+import {
+  explainNoGoogleAccount,
+  googleMeetConfigured,
+  resolveGoogleActingUser,
+  syncMeetingToGoogle,
+} from '@/lib/office-hub-google-server';
 
 /**
  * Create, update or withdraw a meeting's Google Meet link.
@@ -28,12 +33,11 @@ import { googleConnectionFor, googleMeetConfigured, syncMeetingToGoogle } from '
  *
  * ── Whose Google account is used ───────────────────────────────────────────────────────────────
  *
- * The meeting's organizer, always — never the caller's, even when an authorised delegate is the one
- * pressing the button. The event has to live on the organizer's calendar for Google's own
- * "organizer" semantics to match Office Hub's, and for a delegate's departure not to orphan the
- * event. The consequence is that a delegate scheduling for someone who has not connected Google
- * gets a clear "the organizer has not connected Google" rather than a Meet link owned by the wrong
- * person, and that is the right failure.
+ * The organizer's own when they have connected one, so the event sits on their calendar. Otherwise
+ * whoever scheduled it for them, and failing that the one office account an administrator shared
+ * (Settings → Google Meet) — so an office does not need every person to connect Google. The account
+ * that created an event keeps owning it, since only it can change or remove that event. See
+ * `resolveGoogleActingUser`. (Changed 2026-11-06: it used to be the organizer's or nothing.)
  */
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -57,8 +61,9 @@ async function handle(request: Request, intent: 'save' | 'cancel') {
       );
     }
 
-    const payload = (await request.json().catch(() => ({}))) as { meetingId?: unknown };
+    const payload = (await request.json().catch(() => ({}))) as { meetingId?: unknown; accessOnly?: unknown };
     const meetingId = typeof payload.meetingId === 'string' ? payload.meetingId.trim() : '';
+    const accessOnly = payload.accessOnly === true;
     if (!meetingId) {
       return NextResponse.json({ error: 'A meetingId is required.' }, { status: 400 });
     }
@@ -114,26 +119,22 @@ async function handle(request: Request, intent: 'save' | 'cancel') {
       }
     }
 
-    // Checked before the sync so the answer distinguishes "the organizer has not connected Google"
-    // from "Google refused", which are the same 4xx to a caller but different things to fix.
+    /**
+     * Whose Google account creates the link: the organizer's, else the scheduler's, else the one
+     * office account an administrator shared — so nobody else has to connect. Checked before the
+     * sync so "no account at all" is told apart from "Google refused", which need different fixes.
+     */
+    let asUserId: string | undefined;
     if (intent === 'save') {
-      const organizerConnection = await googleConnectionFor(meeting.organizerId);
-      if (!organizerConnection.connected) {
-        const own = meeting.organizerId === context.userId;
-        return NextResponse.json(
-          {
-            error: own
-              ? 'Connect your Google account in Office Hub settings to create the Meet link.'
-              : `${meeting.organizerName} has not connected Google, so no Meet link can be created for a meeting they organise.`,
-            needsConnect: own,
-            health: organizerConnection.health,
-          },
-          { status: 409 },
-        );
+      const acting = await resolveGoogleActingUser(meeting);
+      if (!acting) {
+        // `needsConnect` keeps a meeting with a pasted link quiet about it — see `syncGoogleConference`.
+        return NextResponse.json({ error: await explainNoGoogleAccount(meeting), needsConnect: true }, { status: 409 });
       }
+      asUserId = acting.userId;
     }
 
-    const result = await syncMeetingToGoogle({ meetingId, intent });
+    const result = await syncMeetingToGoogle({ meetingId, intent, accessOnly, asUserId });
 
     // A failed sync is a 200 with `ok: false`: the request was understood and handled, and the
     // client needs the reason and the warnings, not an exception.

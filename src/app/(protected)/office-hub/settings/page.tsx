@@ -56,7 +56,7 @@ import {
   OfficeHubSection,
 } from '@/components/office-hub/ui';
 import { DateField, TimeField } from '@/components/office-hub/selectors';
-import { GoogleMeetPanel } from '@/components/office-hub/google-meet-panel';
+import { GoogleMeetPanel, GoogleSharedAccountCard } from '@/components/office-hub/google-meet-panel';
 import { PageHeader } from '@/components/shared/page-header';
 
 /** The switches §35 lists, in its order, with the sentence each one governs. */
@@ -656,6 +656,8 @@ export default function OfficeHubSettingsPage() {
               description="Office-wide behaviour for the Meet links and calendar events Office Hub creates."
             >
               <div className="space-y-2">
+                <GoogleSharedAccountCard canEditSettings={capabilities.canEditSettings} />
+
                 <div className="flex items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2.5">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800">Create Meet links</p>

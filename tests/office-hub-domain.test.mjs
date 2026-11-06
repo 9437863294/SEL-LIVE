@@ -438,6 +438,25 @@ test('the joining link is withheld from anyone who is not a participant', () => 
   assert.match(cancelled.reason, /cancelled/);
 });
 
+test('an open meeting gives its link to everyone who can see it; "invited" keeps it to participants', () => {
+  const now = new Date('2026-09-21T04:20:00Z');
+
+  const open = meetingJoinView({ ...baseMeeting, joinAccess: 'open' }, 'u-stranger', { now });
+  assert.equal(open.canJoin, true);
+  assert.equal(open.url, baseMeeting.meetingUrl);
+
+  const invited = meetingJoinView({ ...baseMeeting, joinAccess: 'invited' }, 'u-stranger', { now });
+  assert.equal(invited.url, null);
+  assert.match(invited.reason, /Only invited participants/);
+
+  // Open does not resurrect a cancelled meeting's link, or invent one for an in-person meeting.
+  assert.equal(meetingJoinView({ ...baseMeeting, joinAccess: 'open', status: 'Cancelled' }, 'u-stranger', { now }).url, null);
+  assert.equal(
+    meetingJoinView({ ...baseMeeting, joinAccess: 'open', mode: 'Offline' }, 'u-stranger', { now }).canJoin,
+    false,
+  );
+});
+
 /* ── agenda ────────────────────────────────────────────────────────────────────────────────────── */
 
 test('reorderAgenda renumbers the whole list so no two items tie', () => {

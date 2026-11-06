@@ -43,26 +43,33 @@ import 'server-only';
  * below possible.
  */
 
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { FieldValue, type DocumentReference } from 'firebase-admin/firestore';
 
 import { getFirebaseAdminFirestore } from './firebase-admin';
 import { OFFICE_HUB_COLLECTIONS, OFFICE_HUB_SETTINGS_DOC_ID } from './office-hub';
-import type { OfficeHubMeeting } from './office-hub-model';
+import type { GoogleMeetAccessType, OfficeHubMeeting } from './office-hub-model';
 import {
   DEFAULT_GOOGLE_MEET_SETTINGS,
   DISCONNECTED_GOOGLE_CONNECTION,
   GOOGLE_CALENDAR_API_BASE,
+  GOOGLE_MEET_API_BASE,
   GOOGLE_MEET_SCOPES,
   GOOGLE_OAUTH_REVOKE_ENDPOINT,
   GOOGLE_OAUTH_TOKEN_ENDPOINT,
   authorizationCodeBody,
   buildGoogleAuthUrl,
   buildGoogleEventBody,
+  conferenceRefusedMessage,
   describeGoogleApiError,
+  describeMeetAccessError,
   googleConnectionHealth,
+  googleMeetAccessFor,
+  googleMeetCode,
   googleOAuthStateExpired,
   googleSyncPlan,
+  grantCoversMeetAccess,
+  meetingSendUpdates,
   normalizeSendUpdates,
   packGoogleOAuthState,
   readGoogleConference,
@@ -198,6 +205,32 @@ interface SealedToken {
   keyVersion: number;
 }
 
+/**
+ * A short, one-way fingerprint of the token key, stored beside each sealed token.
+ *
+ * The local copy of the app and seltech.store share one database but may hold different keys, and
+ * a token sealed by one is unreadable by the other. Without this, "could not be read" cannot say
+ * *why*; with it, a mismatch is named for what it is. Twelve hex characters of a SHA-256 reveal
+ * nothing about the key.
+ */
+function tokenKeyFingerprint(): string | null {
+  const key = tokenEncryptionKey(false);
+  return key ? createHash('sha256').update(key).digest('hex').slice(0, 12) : null;
+}
+
+/** Why a stored token cannot be opened here, in words that point at the fix. */
+function unreadableCredentialMessage(stored: { keyFingerprint?: string | null }): string {
+  const current = tokenKeyFingerprint();
+  const differentKey = stored.keyFingerprint && current && stored.keyFingerprint !== current;
+  return differentKey
+    ? 'This Google connection was made on a copy of Office Hub that uses a different encryption key ' +
+        '(for example on seltech.store, while this is a local copy — or the other way round), so this ' +
+        'server cannot read it. Reconnect Google here, or give both copies the same OFFICE_HUB_GOOGLE_TOKEN_KEY.'
+    : 'The stored Google credential could not be read on this server — most likely it was connected on ' +
+        'another copy of Office Hub (seltech.store or a local one) that uses a different ' +
+        'OFFICE_HUB_GOOGLE_TOKEN_KEY. Reconnect Google here, or give both copies the same key.';
+}
+
 function sealRefreshToken(refreshToken: string): SealedToken {
   const key = tokenEncryptionKey(true);
   // 12 bytes is the GCM standard nonce length and the one Node optimises for. Fresh per seal —
@@ -314,6 +347,8 @@ interface StoredConnection {
   refreshTokenIv: string | null;
   refreshTokenTag: string | null;
   keyVersion?: number | null;
+  /** `tokenKeyFingerprint()` of the key that sealed it; absent on connections made before 11-06. */
+  keyFingerprint?: string | null;
   scopes?: string[];
   reauthReason?: string | null;
   connectedAt?: { toDate?: () => Date } | null;
@@ -337,9 +372,21 @@ export async function googleConnectionFor(userId: string): Promise<GoogleConnect
   if (!stored) return DISCONNECTED_GOOGLE_CONNECTION;
 
   const scopes = stored.scopes ?? [];
+
+  /**
+   * A token this server cannot decrypt is not a connection, whatever the document says.
+   *
+   * Reporting it as "connected" was the worst answer: Settings showed a healthy card, the account
+   * was picked to act for meetings, and every Meet link then failed with "could not be read" — and
+   * the shared office account, which could have made the link, was never tried. Decrypting is a
+   * local AES call, so checking costs nothing.
+   */
+  const unreadable = Boolean(stored.refreshTokenCipher) && openRefreshToken(stored) === null;
+  const reauthReason = unreadable ? unreadableCredentialMessage(stored) : stored.reauthReason ?? null;
+
   const health = googleConnectionHealth({
     refreshTokenPresent: Boolean(stored.refreshTokenCipher),
-    reauthReason: stored.reauthReason ?? null,
+    reauthReason,
     scopes,
   });
 
@@ -349,9 +396,151 @@ export async function googleConnectionFor(userId: string): Promise<GoogleConnect
     googleEmail: stored.googleEmail ?? null,
     connectedAt: timestampToIso(stored.connectedAt),
     lastUsedAt: timestampToIso(stored.lastUsedAt),
-    reauthReason: stored.reauthReason ?? null,
+    reauthReason,
     scopes,
   };
+}
+
+/* ── the shared office account ───────────────────────────────────────────────────────────────── */
+
+/**
+ * The one Google account that creates Meet links for anybody who has not connected their own.
+ *
+ * Marked on the owner's own connection document (`sharedForOffice`), which only the server can
+ * write and only `setSharedGoogleAccount` sets — for the caller's own connection. So an account is
+ * shared only because its owner chose to share it: an administrator cannot volunteer somebody
+ * else's Google account by editing a settings field. Disconnecting deletes the document, which ends
+ * the sharing with it.
+ */
+export interface SharedGoogleAccountView {
+  /** Whether it can create links right now (connected and healthy). */
+  available: boolean;
+  ownerUserId: string;
+  ownerName: string | null;
+  googleEmail: string | null;
+  health: GoogleConnectionView['health'];
+}
+
+export async function sharedGoogleAccount(): Promise<SharedGoogleAccountView | null> {
+  if (!googleMeetConfigured()) return null;
+  const snapshot = await getFirebaseAdminFirestore()
+    .collection(OFFICE_HUB_COLLECTIONS.googleConnections)
+    .where('sharedForOffice', '==', true)
+    .limit(1)
+    .get();
+  const entry = snapshot.docs[0];
+  if (!entry) return null;
+
+  const connection = await googleConnectionFor(entry.id);
+  const data = entry.data() as { sharedByName?: string | null };
+  return {
+    available: connection.connected,
+    ownerUserId: entry.id,
+    ownerName: data.sharedByName ?? null,
+    googleEmail: connection.googleEmail,
+    health: connection.health,
+  };
+}
+
+/**
+ * Share the caller's own connected account with the office, or stop sharing.
+ *
+ * Sharing clears the mark from any previous account, so there is only ever one. The caller's
+ * authority (Settings Edit to share; the owner or Settings Edit to stop) is checked by the route.
+ */
+export async function setSharedGoogleAccount(input: {
+  userId: string;
+  userName: string | null;
+  share: boolean;
+}): Promise<{ ok: boolean; error?: string }> {
+  const firestore = getFirebaseAdminFirestore();
+  const current = await firestore
+    .collection(OFFICE_HUB_COLLECTIONS.googleConnections)
+    .where('sharedForOffice', '==', true)
+    .get();
+
+  if (!input.share) {
+    const batch = firestore.batch();
+    for (const entry of current.docs) {
+      batch.set(entry.ref, { sharedForOffice: false, sharedForOfficeAt: null }, { merge: true });
+    }
+    await batch.commit();
+    return { ok: true };
+  }
+
+  const own = await googleConnectionFor(input.userId);
+  if (!own.connected) {
+    return { ok: false, error: 'Connect your own Google account first — that is the account that will be shared.' };
+  }
+
+  const batch = firestore.batch();
+  for (const entry of current.docs) {
+    if (entry.id !== input.userId) batch.set(entry.ref, { sharedForOffice: false, sharedForOfficeAt: null }, { merge: true });
+  }
+  batch.set(
+    connectionDoc(input.userId),
+    { sharedForOffice: true, sharedForOfficeAt: FieldValue.serverTimestamp(), sharedByName: input.userName ?? null },
+    { merge: true },
+  );
+  await batch.commit();
+  return { ok: true };
+}
+
+/**
+ * Whose Google account acts for a meeting — the first that can, in this order:
+ *
+ *   1. the account that already owns its calendar event (`googleOrganizerUserId`), because only
+ *      that account can change or remove the event — even if it is no longer connected, in which
+ *      case the sync fails with "reconnect" rather than minting a second event elsewhere;
+ *   2. the organizer's own;
+ *   3. whoever scheduled it on the organizer's behalf;
+ *   4. the shared office account.
+ *
+ * Null when none can, which the caller reports as "connect Google, or share an office account".
+ */
+export async function resolveGoogleActingUser(
+  meeting: Pick<OfficeHubMeeting, 'organizerId' | 'scheduledById' | 'googleOrganizerUserId' | 'googleEventId'>,
+): Promise<{ userId: string; via: 'event-owner' | 'organizer' | 'scheduler' | 'shared' } | null> {
+  if (meeting.googleEventId && meeting.googleOrganizerUserId) {
+    return { userId: meeting.googleOrganizerUserId, via: 'event-owner' };
+  }
+
+  const candidates: { userId: string | null | undefined; via: 'organizer' | 'scheduler' }[] = [
+    { userId: meeting.organizerId, via: 'organizer' },
+    { userId: meeting.scheduledById, via: 'scheduler' },
+  ];
+  for (const candidate of candidates) {
+    if (candidate.userId && (await googleConnectionFor(candidate.userId)).connected) {
+      return { userId: candidate.userId, via: candidate.via };
+    }
+  }
+
+  const shared = await sharedGoogleAccount();
+  return shared?.available ? { userId: shared.ownerUserId, via: 'shared' } : null;
+}
+
+/**
+ * Why no account could act, when one was expected to.
+ *
+ * "Nobody has connected Google" is wrong when somebody has, but their connection cannot be used
+ * here — a token sealed with another copy's key, or one Google revoked. That reason is the fix, so
+ * it is returned in preference to the generic sentence.
+ */
+export async function explainNoGoogleAccount(
+  meeting: Pick<OfficeHubMeeting, 'organizerId' | 'scheduledById'>,
+): Promise<string> {
+  const shared = await sharedGoogleAccount();
+  const candidates = [meeting.organizerId, meeting.scheduledById, shared?.ownerUserId].filter(
+    (id, index, all): id is string => Boolean(id) && all.indexOf(id) === index,
+  );
+  for (const userId of candidates) {
+    const connection = await googleConnectionFor(userId);
+    if (connection.health === 'reauth-required' && connection.reauthReason) {
+      const whose = connection.googleEmail ? `The Google connection for ${connection.googleEmail}` : 'A Google connection';
+      return `${whose} cannot be used: ${connection.reauthReason}`;
+    }
+  }
+  return NO_GOOGLE_ACCOUNT_MESSAGE;
 }
 
 function timestampToIso(value: { toDate?: () => Date } | null | undefined): string | null {
@@ -431,6 +620,7 @@ export async function completeGoogleConnection(input: {
       refreshTokenIv: sealed.iv,
       refreshTokenTag: sealed.tag,
       keyVersion: sealed.keyVersion,
+      keyFingerprint: tokenKeyFingerprint(),
       scopes: scopes.length ? scopes : [...GOOGLE_MEET_SCOPES],
       reauthReason: null,
       connectedAt: FieldValue.serverTimestamp(),
@@ -530,9 +720,11 @@ export async function googleAccessTokenFor(userId: string): Promise<string> {
 
   const refreshToken = openRefreshToken(stored);
   if (!refreshToken) {
-    throw new GoogleReauthRequired(
-      'The stored Google credential could not be read. Reconnect Google in Office Hub settings.',
-    );
+    console.error('[office-hub] Google refresh token unreadable for', userId, {
+      storedKey: stored.keyFingerprint ?? 'not recorded',
+      thisServerKey: tokenKeyFingerprint(),
+    });
+    throw new GoogleReauthRequired(unreadableCredentialMessage(stored));
   }
 
   const response = await fetch(GOOGLE_OAUTH_TOKEN_ENDPOINT, {
@@ -583,6 +775,8 @@ export interface GoogleSyncOutcome {
   error?: string;
   needsReconnect?: boolean;
   retryable?: boolean;
+  /** The event no longer exists in Google Calendar (deleted there). */
+  gone?: boolean;
 }
 
 interface CalendarCallOptions {
@@ -650,14 +844,13 @@ export async function createGoogleMeetEvent(
 
     if (!result.ok) return failureOutcome(result, warnings);
 
-    const conference = readGoogleConference(result.body as Parameters<typeof readGoogleConference>[0]);
-    if (!conference.joinUrl && conference.conferenceStatus !== 'pending') {
-      warnings.push(
-        'Google created the calendar event but did not return a Meet link. Retry the Meet link ' +
-          'from the meeting page.',
-      );
-    }
-
+    // A refused or still-missing conference is judged by `syncMeetingToGoogle`, which has to record
+    // the event either way — it exists on Google now, and losing its id would mint a duplicate.
+    const conference = await settleConference(
+      accessToken,
+      calendarId,
+      readGoogleConference(result.body as Parameters<typeof readGoogleConference>[0]),
+    );
     return { ok: true, conference, eventId: conference.eventId, calendarId, warnings };
   } catch (error) {
     return thrownOutcome(error, warnings);
@@ -677,10 +870,31 @@ export async function patchGoogleMeetEvent(
   options: CalendarCallOptions,
 ): Promise<GoogleSyncOutcome> {
   const calendarId = options.calendarId || DEFAULT_GOOGLE_MEET_SETTINGS.calendarId;
-  const { body, warnings } = buildGoogleEventBody({ ...input, requestConference: !input.hasConference });
 
   try {
     const accessToken = await googleAccessTokenFor(options.userId);
+
+    /**
+     * Asking for a conference on an event that has none (as far as Office Hub knows).
+     *
+     * First look: Google may have attached one after all (a create that was still pending when the
+     * link was last read), and asking again would replace a link someone may already hold. If there
+     * is none, ask with a *fresh* request id — Google silently ignores a create request whose id it
+     * has seen on this event before, even one that failed, which is what made a retry useless.
+     */
+    let requestConference = !input.hasConference;
+    let existing: GoogleConferenceResult | null = null;
+    if (requestConference) {
+      existing = await readEventConference(accessToken, calendarId, input.eventId);
+      if (existing?.joinUrl) requestConference = false;
+    }
+
+    const { body, warnings } = buildGoogleEventBody({
+      ...input,
+      requestConference,
+      conferenceAttempt: requestConference ? Date.now().toString(36) : null,
+    });
+
     const result = await calendarFetch(
       accessToken,
       `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(input.eventId)}`,
@@ -696,11 +910,47 @@ export async function patchGoogleMeetEvent(
 
     if (!result.ok) return failureOutcome(result, warnings);
 
-    const conference = readGoogleConference(result.body as Parameters<typeof readGoogleConference>[0]);
+    let conference = readGoogleConference(result.body as Parameters<typeof readGoogleConference>[0]);
+    if (!conference.joinUrl && existing?.joinUrl) conference = existing;
+    conference = await settleConference(accessToken, calendarId, conference);
     return { ok: true, conference, eventId: conference.eventId ?? input.eventId, calendarId, warnings };
   } catch (error) {
-    return thrownOutcome(error, warnings);
+    return thrownOutcome(error, []);
   }
+}
+
+/** The event's conference as Google holds it now, or null when it cannot be read. */
+async function readEventConference(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+): Promise<GoogleConferenceResult | null> {
+  const result = await calendarFetch(
+    accessToken,
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    { method: 'GET' },
+  );
+  return result.ok ? readGoogleConference(result.body as Parameters<typeof readGoogleConference>[0]) : null;
+}
+
+/**
+ * Wait out a `pending` conference.
+ *
+ * Google sometimes returns the event before the Meet is provisioned. Re-reading for a few seconds
+ * turns most of those into a link now, rather than a meeting page saying there is none.
+ */
+async function settleConference(
+  accessToken: string,
+  calendarId: string,
+  conference: GoogleConferenceResult,
+): Promise<GoogleConferenceResult> {
+  let current = conference;
+  for (let attempt = 1; attempt <= 4 && !current.joinUrl && current.conferenceStatus === 'pending' && current.eventId; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 750 * attempt));
+    const reread = await readEventConference(accessToken, calendarId, current.eventId!).catch(() => null);
+    if (reread) current = reread;
+  }
+  return current;
 }
 
 /**
@@ -753,6 +1003,7 @@ function failureOutcome(
     error: failure.message,
     needsReconnect: failure.needsReconnect,
     retryable: failure.retryable,
+    gone: failure.gone,
   };
 }
 
@@ -776,6 +1027,96 @@ function thrownOutcome(error: unknown, warnings: string[]): GoogleSyncOutcome {
 }
 
 /* ── syncing one meeting ─────────────────────────────────────────────────────────────────────── */
+
+export const NO_GOOGLE_ACCOUNT_MESSAGE =
+  'No Google account is available to create the Meet link: the organizer has not connected Google, ' +
+  'and no office Google account is shared. An administrator can share one account for everyone in ' +
+  'Office Hub → Settings → Google Meet.';
+
+/* ── the Meet API: who may join ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Set who may join a Meet that a Calendar event created.
+ *
+ * Two calls rather than one: `spaces.get` accepts the meeting code from the link as an alias and
+ * returns the space's canonical `spaces/{id}` name, which `spaces.patch` is then addressed by. The
+ * read also says what the access already is, so an unchanged setting costs no write.
+ *
+ * Returns a warning instead of throwing. The meeting and its link are already real; a refused
+ * access change leaves Google's default in force, which the organizer is told about and can fix.
+ */
+async function applyGoogleMeetAccess(
+  userId: string,
+  meetUrl: string,
+  wanted: GoogleMeetAccessType,
+): Promise<{ ok: true } | { ok: false; warning: string }> {
+  const code = googleMeetCode(meetUrl);
+  if (!code) {
+    return { ok: false, warning: 'This meeting’s link is not a standard Google Meet link, so who may join could not be set.' };
+  }
+
+  // A grant from before the scope was requested: skip the call that would certainly fail, and say
+  // what fixes it.
+  const connection = await googleConnectionFor(userId);
+  if (!grantCoversMeetAccess(connection.scopes)) {
+    return { ok: false, warning: describeMeetAccessError({ status: 401 }, wanted) };
+  }
+
+  try {
+    const accessToken = await googleAccessTokenFor(userId);
+    const headers = { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+
+    const read = await fetch(`${GOOGLE_MEET_API_BASE}/spaces/${encodeURIComponent(code)}`, { headers });
+    const space = parseJsonOrText(await read.text()) as { name?: string; config?: { accessType?: string } } | string;
+    if (!read.ok || typeof space !== 'object' || !space?.name) {
+      return { ok: false, warning: describeMeetAccessError({ status: read.status, body: space }, wanted) };
+    }
+    if (space.config?.accessType === wanted) return { ok: true };
+
+    const url = new URL(`${GOOGLE_MEET_API_BASE}/${space.name}`);
+    url.searchParams.set('updateMask', 'config.accessType');
+    const patch = await fetch(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ config: { accessType: wanted } }),
+    });
+    if (!patch.ok) {
+      const body = parseJsonOrText(await patch.text());
+      console.error('[office-hub] Meet access change refused', patch.status, body);
+      return { ok: false, warning: describeMeetAccessError({ status: patch.status, body }, wanted) };
+    }
+    return { ok: true };
+  } catch (error) {
+    console.error('[office-hub] Meet access change failed', error);
+    return {
+      ok: false,
+      warning: describeMeetAccessError({ status: error instanceof GoogleReauthRequired ? 401 : 500 }, wanted),
+    };
+  }
+}
+
+/**
+ * Bring the Meet's access in line with the meeting's answer, and record it.
+ *
+ * Skipped when the meeting has no answer (saved before the form asked) or the access recorded for
+ * this link is already the one wanted. Returns the warnings to show the organizer.
+ */
+async function syncMeetAccess(
+  meetingRef: DocumentReference,
+  meeting: Pick<OfficeHubMeeting, 'joinAccess' | 'googleMeetAccess' | 'googleMeetUrl'>,
+  meetUrl: string | null,
+  actingUserId: string,
+): Promise<string[]> {
+  const wanted = googleMeetAccessFor(meeting.joinAccess);
+  if (!wanted || !meetUrl) return [];
+  if (meeting.googleMeetAccess === wanted && meeting.googleMeetUrl === meetUrl) return [];
+
+  const outcome = await applyGoogleMeetAccess(actingUserId, meetUrl, wanted);
+  if (!outcome.ok) return [outcome.warning];
+
+  await meetingRef.set({ googleMeetAccess: wanted }, { merge: true }).catch(() => {});
+  return [];
+}
 
 export interface SyncMeetingResult {
   ok: boolean;
@@ -812,6 +1153,13 @@ export async function syncMeetingToGoogle(input: {
   asUserId?: string;
   intent?: 'save' | 'cancel';
   settings?: GoogleMeetRuntimeSettings;
+  /**
+   * Only "who may join" changed. Set it on the existing Meet without patching the event — a patch
+   * re-sends Google's update email to every guest for a change none of them can see.
+   */
+  accessOnly?: boolean;
+  /** Set when an occurrence asks its series' first meeting for the link; stops the recursion. */
+  fromSeriesChild?: boolean;
 }): Promise<SyncMeetingResult> {
   const firestore = getFirebaseAdminFirestore();
   const meetingRef = firestore.collection(OFFICE_HUB_COLLECTIONS.meetings).doc(input.meetingId);
@@ -836,7 +1184,39 @@ export async function syncMeetingToGoogle(input: {
   }
 
   const plan = googleSyncPlan(meeting, intent);
-  const actingUserId = input.asUserId || meeting.googleOrganizerUserId || meeting.organizerId;
+
+  // Whose account calls Google — resolved only when Google will be called, since each candidate
+  // costs a read. See `resolveGoogleActingUser` for the order, the shared office account last.
+  const callsGoogle =
+    plan.action === 'create' || plan.action === 'update' || plan.action === 'cancel' || Boolean(input.accessOnly);
+  const acting = input.asUserId
+    ? { userId: input.asUserId }
+    : callsGoogle
+      ? await resolveGoogleActingUser(meeting)
+      : null;
+  if (callsGoogle && !acting) {
+    return emptyResult(plan.action, 'No connected Google account can act for this meeting.', {
+      ok: false,
+      error: await explainNoGoogleAccount(meeting),
+    });
+  }
+  const actingUserId = acting?.userId ?? meeting.googleOrganizerUserId ?? meeting.organizerId;
+  // The organizer's answer to "send email invitations?" decides whether Google emails, not only the
+  // organisation-wide setting.
+  const sendUpdates = meetingSendUpdates(meeting, settings.sendUpdates);
+
+  if (input.accessOnly && intent === 'save' && meeting.googleMeetUrl && plan.action !== 'cancel') {
+    const warnings = await syncMeetAccess(meetingRef, meeting, meeting.googleMeetUrl, actingUserId);
+    return {
+      ok: true,
+      action: 'none',
+      reason: 'Only who may join changed.',
+      meetUrl: meeting.googleMeetUrl,
+      eventId: meeting.googleEventId ?? null,
+      htmlLink: meeting.googleEventHtmlLink ?? null,
+      warnings,
+    };
+  }
 
   if (plan.action === 'none') {
     return emptyResult('none', plan.reason, { ok: true });
@@ -852,7 +1232,28 @@ export async function syncMeetingToGoogle(input: {
       return emptyResult('none', 'This occurrence has no series parent to inherit from.', { ok: true });
     }
     const parent = await firestore.collection(OFFICE_HUB_COLLECTIONS.meetings).doc(parentId).get();
-    const parentMeetUrl = (parent.data() as OfficeHubMeeting | undefined)?.googleMeetUrl ?? null;
+    let parentMeetUrl = (parent.data() as OfficeHubMeeting | undefined)?.googleMeetUrl ?? null;
+    const parentWarnings: string[] = [];
+
+    /**
+     * The series has no link yet — typically because its first meeting's sync failed. Pressing
+     * "Create Meet link" on any occurrence should fix the whole series, not answer "the series has
+     * no link", so make the parent's link now (which also pushes it down to every occurrence).
+     * One level only: the parent is the series' own record, never another inheritor.
+     */
+    if (!parentMeetUrl && parent.exists && intent === 'save' && !input.fromSeriesChild) {
+      const parentResult = await syncMeetingToGoogle({ meetingId: parentId, settings, fromSeriesChild: true });
+      if (!parentResult.meetUrl) {
+        return {
+          ...parentResult,
+          ok: false,
+          action: 'inherit',
+          error: parentResult.error ?? `This meeting shares its series’ Meet link, and the series has none: ${parentResult.reason}`,
+        };
+      }
+      parentMeetUrl = parentResult.meetUrl;
+      parentWarnings.push(...parentResult.warnings);
+    }
 
     if (!parentMeetUrl) {
       return emptyResult('inherit', 'The series does not have a Meet link yet.', { ok: true });
@@ -879,14 +1280,14 @@ export async function syncMeetingToGoogle(input: {
       meetUrl: parentMeetUrl,
       eventId: null,
       htmlLink: null,
-      warnings: [],
+      warnings: parentWarnings,
     };
   }
 
   if (plan.action === 'cancel') {
     const outcome = await deleteGoogleMeetEvent(
       { eventId: String(meeting.googleEventId) },
-      { userId: actingUserId, calendarId: meeting.googleCalendarId ?? settings.calendarId, sendUpdates: settings.sendUpdates },
+      { userId: actingUserId, calendarId: meeting.googleCalendarId ?? settings.calendarId, sendUpdates },
     );
 
     if (outcome.ok) {
@@ -945,16 +1346,24 @@ export async function syncMeetingToGoogle(input: {
   const callOptions: CalendarCallOptions = {
     userId: actingUserId,
     calendarId: meeting.googleCalendarId ?? settings.calendarId,
-    sendUpdates: settings.sendUpdates,
+    sendUpdates,
   };
 
-  const outcome =
+  let outcome =
     plan.action === 'update' && meeting.googleEventId
       ? await patchGoogleMeetEvent(
           { ...eventInput, eventId: meeting.googleEventId, hasConference: Boolean(meeting.googleMeetUrl) },
           callOptions,
         )
       : await createGoogleMeetEvent(eventInput, callOptions);
+
+  // Somebody deleted the event in Google Calendar. Patching it can never succeed again, so make a
+  // new one — the meeting is still happening, and it still needs a calendar entry and a link.
+  let recreated = false;
+  if (!outcome.ok && outcome.gone && plan.action === 'update') {
+    outcome = await createGoogleMeetEvent(eventInput, callOptions);
+    recreated = true;
+  }
 
   if (!outcome.ok) {
     await recordSyncFailure(meetingRef, outcome.error);
@@ -973,7 +1382,26 @@ export async function syncMeetingToGoogle(input: {
   }
 
   const conference = outcome.conference;
-  const meetUrl = conference?.joinUrl ?? meeting.googleMeetUrl ?? null;
+  // A recreated event's old link died with the old event, so it is never a fallback.
+  const meetUrl = conference?.joinUrl ?? (recreated ? null : meeting.googleMeetUrl ?? null);
+
+  /**
+   * The event exists but has no Meet: still provisioning after the wait, or refused outright.
+   *
+   * A refusal used to come back as success with no link — the meeting page then said only "Google
+   * did not return a Meet link", and the cron never retried it. It is a failure: recorded with a
+   * reason that names the account to check, and retried. The event id is still stored, so the
+   * retry patches this event rather than putting a second one on everybody's calendar.
+   */
+  const pending = !meetUrl && conference?.conferenceStatus === 'pending';
+  const refusedError =
+    !meetUrl && !pending
+      ? conferenceRefusedMessage({
+          googleEmail: (await googleConnectionFor(actingUserId)).googleEmail,
+          calendarId: outcome.calendarId ?? settings.calendarId,
+        })
+      : null;
+  if (refusedError) console.error('[office-hub] Google made the event but no Meet', meeting.id, conference?.conferenceStatus);
 
   await meetingRef.set(
     {
@@ -992,18 +1420,42 @@ export async function syncMeetingToGoogle(input: {
       // The dial-in PIN, where Google gave one. Written into the existing passcode field rather
       // than a new one, because that is the field the meeting page already shows.
       ...(conference?.phonePin ? { meetingPasscode: conference.phonePin } : {}),
-      googleSyncState: conference?.conferenceStatus === 'pending' ? 'not-synced' : 'synced',
-      googleSyncError: null,
+      ...(recreated && !meetUrl ? { googleMeetUrl: null } : {}),
+      googleSyncState: refusedError ? 'failed' : pending ? 'not-synced' : 'synced',
+      googleSyncError: refusedError,
       googleSyncedAt: new Date().toISOString(),
     },
     { merge: true },
   );
+
+  if (refusedError) {
+    return {
+      ok: false,
+      action: plan.action,
+      reason: plan.reason,
+      meetUrl: null,
+      eventId: outcome.eventId ?? meeting.googleEventId ?? null,
+      htmlLink: conference?.htmlLink ?? null,
+      warnings: outcome.warnings,
+      error: refusedError,
+      retryable: true,
+    };
+  }
+  if (pending) {
+    outcome.warnings.push(
+      'Google is still preparing the Meet link. Press Create Meet link again in a minute to pick it up.',
+    );
+  }
 
   // The instances of a series inherit from the parent, and the parent has only just acquired its
   // link — so push it down now rather than waiting for the nightly sweep to do it.
   if (meetUrl && meeting.isSeriesParent && meeting.seriesId) {
     await propagateSeriesMeetLink(meeting.seriesId, meeting.id, meetUrl, outcome.calendarId ?? settings.calendarId, actingUserId);
   }
+
+  // Who may join, set on the conference Google just made or kept. After the link is stored, so a
+  // refusal here costs the access setting only, never the link.
+  const accessWarnings = await syncMeetAccess(meetingRef, meeting, meetUrl, actingUserId);
 
   return {
     ok: true,
@@ -1012,7 +1464,7 @@ export async function syncMeetingToGoogle(input: {
     meetUrl,
     eventId: outcome.eventId ?? null,
     htmlLink: conference?.htmlLink ?? null,
-    warnings: outcome.warnings,
+    warnings: [...outcome.warnings, ...accessWarnings],
   };
 }
 

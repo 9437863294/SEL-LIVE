@@ -26,6 +26,7 @@ import {
 const STATUS_ENDPOINT = '/api/office-hub/google/status';
 const AUTHORIZE_ENDPOINT = '/api/office-hub/google/authorize';
 const EVENT_ENDPOINT = '/api/office-hub/google/event';
+const SHARED_ACCOUNT_ENDPOINT = '/api/office-hub/google/shared-account';
 
 async function authorizedFetch(
   url: string,
@@ -58,6 +59,11 @@ export interface GoogleMeetStatus {
   /** Which environment variables are missing. Only present when `configured` is false. */
   configurationProblems: string[];
   /**
+   * The office account that creates Meet links for anyone who has not connected their own, or null
+   * when none is shared. `available` is false when it is shared but needs reconnecting.
+   */
+  sharedAccount: SharedGoogleAccountStatus | null;
+  /**
    * Set when the status could not be read at all, with the reason.
    *
    * Distinct from `configured: false`, and the distinction matters: "the server has no Google
@@ -69,13 +75,41 @@ export interface GoogleMeetStatus {
   unavailable: string | null;
 }
 
+export interface SharedGoogleAccountStatus {
+  available: boolean;
+  googleEmail: string | null;
+  ownerName: string | null;
+  /** The caller is the person whose account is shared. */
+  isMine: boolean;
+}
+
 export const UNCONFIGURED_GOOGLE_STATUS: GoogleMeetStatus = {
   configured: false,
   connection: DISCONNECTED_GOOGLE_CONNECTION,
   settings: DEFAULT_GOOGLE_MEET_SETTINGS,
   configurationProblems: [],
+  sharedAccount: null,
   unavailable: null,
 };
+
+/**
+ * Whether a Meet link can be created for a meeting this user saves: their own connection, or the
+ * shared office account. (The organizer's or scheduler's own connection is checked on the server;
+ * from the browser only the caller's and the office's are visible.)
+ */
+export function canCreateMeetLinks(status: GoogleMeetStatus): boolean {
+  return status.configured && (status.connection.connected || Boolean(status.sharedAccount?.available));
+}
+
+/** Share the caller's own connected Google account for everyone's meetings, or stop sharing it. */
+export async function setGoogleAccountShared(share: boolean): Promise<string> {
+  const { ok, data } = await authorizedFetch(SHARED_ACCOUNT_ENDPOINT, {
+    method: 'POST',
+    body: JSON.stringify({ share }),
+  });
+  if (!ok) throw new Error(typeof data.error === 'string' ? data.error : 'The shared Google account could not be changed.');
+  return typeof data.message === 'string' ? data.message : 'Saved.';
+}
 
 /**
  * The caller's own connection state.
@@ -95,7 +129,19 @@ export async function fetchGoogleMeetStatus(): Promise<GoogleMeetStatus> {
     configurationProblems: Array.isArray(data.configurationProblems)
       ? (data.configurationProblems as string[])
       : [],
+    sharedAccount: readSharedAccount(data.sharedAccount),
     unavailable: null,
+  };
+}
+
+function readSharedAccount(value: unknown): SharedGoogleAccountStatus | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  return {
+    available: record.available === true,
+    googleEmail: typeof record.googleEmail === 'string' ? record.googleEmail : null,
+    ownerName: typeof record.ownerName === 'string' ? record.ownerName : null,
+    isMine: record.isMine === true,
   };
 }
 
@@ -191,17 +237,31 @@ export interface GoogleMeetSyncResult {
   action: string;
   warnings: string[];
   error?: string;
+  /**
+   * Why Google was or was not called ("A draft is not on anybody's calendar until it is sent").
+   * The explanation to show when there is no link and no error — never "Google did not return a
+   * Meet link" for a meeting Office Hub deliberately did not ask Google about.
+   */
+  reason?: string;
   /** The organizer has never connected Google: offer "Connect Google" rather than "Retry". */
   needsConnect?: boolean;
   /** The organizer's connection was rejected by Google: offer "Reconnect Google". */
   needsReconnect?: boolean;
 }
 
-/** Create or refresh the Meet link for a saved meeting. */
-export async function syncGoogleMeet(meetingId: string): Promise<GoogleMeetSyncResult> {
+/**
+ * Create or refresh the Meet link for a saved meeting.
+ *
+ * `accessOnly` changes who may join on the existing Meet and leaves the calendar event alone, for an
+ * edit where that is the only thing that changed.
+ */
+export async function syncGoogleMeet(
+  meetingId: string,
+  options: { accessOnly?: boolean } = {},
+): Promise<GoogleMeetSyncResult> {
   const { ok, data } = await authorizedFetch(EVENT_ENDPOINT, {
     method: 'POST',
-    body: JSON.stringify({ meetingId }),
+    body: JSON.stringify({ meetingId, accessOnly: options.accessOnly === true }),
   });
 
   if (!ok) {
@@ -221,6 +281,7 @@ export async function syncGoogleMeet(meetingId: string): Promise<GoogleMeetSyncR
     action: typeof data.action === 'string' ? data.action : 'none',
     warnings: Array.isArray(data.warnings) ? (data.warnings as string[]) : [],
     error: typeof data.error === 'string' ? data.error : undefined,
+    reason: typeof data.reason === 'string' ? data.reason : undefined,
     needsReconnect: data.needsReconnect === true,
   };
 }

@@ -54,6 +54,30 @@ test('normalizeRecurrence fills in what the form left blank from the start date'
   assert.equal(normalizeRecurrence({ frequency: 'Daily', interval: -5, endMode: 'never' }, '2026-09-21').interval, 1);
 });
 
+test('normalizeRecurrence never returns an undefined value — Firestore refuses the whole write', () => {
+  // The rule is stored as it stands, nested in the meeting. The web SDK rejects a nested undefined
+  // ("Unsupported field value: undefined (found in field recurrence.occurrences)"), which failed every
+  // repeating meeting on save.
+  const inputs = [
+    { frequency: 'None' },
+    { frequency: 'Daily', endMode: 'never' },
+    { frequency: 'Weekly', endMode: 'never' },
+    { frequency: 'Weekly', endMode: 'after-occurrences', occurrences: 5, weekdays: [1, 3] },
+    { frequency: 'Monthly', endMode: 'on-date', endDate: '2027-03-31' },
+    { frequency: 'Monthly', monthlyMode: 'weekday-of-month', endMode: 'on-date', endDate: null },
+    { frequency: 'Custom', interval: 3, endMode: 'never', exceptions: ['2026-09-24'] },
+  ];
+  for (const input of inputs) {
+    const rule = normalizeRecurrence(input, '2026-09-21');
+    const missing = Object.entries(rule).filter(([, value]) => value === undefined).map(([key]) => key);
+    assert.deepEqual(missing, [], `${JSON.stringify(input)} → undefined at ${missing.join(', ')}`);
+  }
+  // What each end mode needs is still there.
+  assert.equal(normalizeRecurrence({ frequency: 'Daily', endMode: 'after-occurrences', occurrences: 4 }, '2026-09-21').occurrences, 4);
+  assert.equal(normalizeRecurrence({ frequency: 'Daily', endMode: 'on-date', endDate: '2026-10-01' }, '2026-09-21').endDate, '2026-10-01');
+  assert.deepEqual(normalizeRecurrence({ frequency: 'Daily', endMode: 'never', exceptions: ['2026-09-22', '2026-09-22'] }, '2026-09-21').exceptions, ['2026-09-22']);
+});
+
 test('daily recurrence honours the interval and the occurrence count', () => {
   const rule = { frequency: 'Daily', interval: 2, endMode: 'after-occurrences', occurrences: 4 };
   assert.deepEqual(dates(expandRecurrence(rule, '2026-09-21')), [

@@ -107,6 +107,18 @@ export interface OfficeHubPerson {
 
 export type MeetingMode = 'Online' | 'Offline' | 'Hybrid';
 
+/**
+ * Who may join an online meeting.
+ *
+ * `'invited'`: only participants see the joining link in Office Hub, and Google Meet makes everyone
+ * else ask to be let in. `'open'`: anybody who can see the meeting gets the link, and Google Meet
+ * admits anyone holding it without asking.
+ */
+export type MeetingJoinAccess = 'invited' | 'open';
+
+/** Google Meet's own access setting (Meet REST API `SpaceConfig.accessType`). */
+export type GoogleMeetAccessType = 'OPEN' | 'TRUSTED' | 'RESTRICTED';
+
 export const MEETING_MODES: readonly MeetingMode[] = ['Online', 'Offline', 'Hybrid'] as const;
 
 export type MeetingStatus =
@@ -361,6 +373,23 @@ export interface OfficeHubMeeting extends OfficeHubAuditFields {
   /** Free-text tags, shared with tasks so a subject can be followed across both. */
   tags?: string[];
 
+  /* ── Invitations and access (asked on the form, never assumed) ───────────────────────────────── */
+
+  /**
+   * Whether participants are emailed, as the organizer answered on the form.
+   *
+   * `true`: Google Calendar emails its invitation for a Meet meeting, and Office Hub emails one
+   * itself for a meeting with no Google event. `false`: the in-app notification only, and Google is
+   * told not to email either. Absent on meetings saved before the question existed, which keep the
+   * organisation-wide `googleSendUpdates` setting.
+   */
+  emailInvitations?: boolean | null;
+  /** Who may join. Absent on older meetings, which behave as `'invited'`. */
+  joinAccess?: MeetingJoinAccess | null;
+  /** Participants Office Hub has already emailed an invitation to, so a resend skips them. */
+  emailInvitationsSentTo?: string[];
+  emailInvitationsSentAt?: string | null;
+
   /* ── Google Meet / Google Calendar (see `office-hub-google.ts`) ─────────────────────────────── */
 
   /**
@@ -385,6 +414,8 @@ export interface OfficeHubMeeting extends OfficeHubAuditFields {
   /** Why the last sync failed, shown to the organizer with a retry. Never a raw Google payload. */
   googleSyncError?: string | null;
   googleSyncedAt?: string | null;
+  /** The Meet access type last applied to the conference, so an unchanged one is not re-sent. */
+  googleMeetAccess?: GoogleMeetAccessType | null;
 
   archivedAt?: OfficeHubTimestampLike;
   organizationId?: string | null;

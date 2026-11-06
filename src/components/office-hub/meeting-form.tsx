@@ -25,7 +25,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CalendarPlus, CheckCircle2, Loader2, Save, Send, Video } from 'lucide-react';
+import { BellOff, CalendarPlus, CheckCircle2, Globe, Loader2, Lock, Mail, Save, Send, Video } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -33,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { cn } from '@/lib/utils';
 import {
   MEETING_MODES,
@@ -46,7 +48,9 @@ import {
   googleSyncSummary,
   hasFieldErrors,
   isKnownTimeZone,
+  meetingSendUpdates,
   validateMeetingInput,
+  type MeetingJoinAccess,
   type MeetingMode,
   type MeetingRecurrence,
   type OfficeHubFieldErrors,
@@ -56,6 +60,7 @@ import {
   type ParticipantSelection,
 } from '@/lib/office-hub';
 import { createMeeting, sendMeetingInvitations, updateMeeting } from '@/lib/office-hub-service';
+import { canCreateMeetLinks } from '@/lib/office-hub-google-client';
 import { useGoogleMeetStatus, useOfficeHub, useOfficeHubAction } from './hooks';
 import { ParticipantSelector, DateField, ProjectSelector, TimeField, UserSelector } from './selectors';
 import { RecurrenceEditor, ReminderEditor } from './recurrence-editor';
@@ -84,6 +89,10 @@ export interface MeetingDraft {
   recurrence: MeetingRecurrence;
   projectId: string | null;
   projectName: string | null;
+  /** Null until the organizer answers — scheduling is refused until they do. */
+  emailInvitations: boolean | null;
+  /** Null until answered; only asked for an online or hybrid meeting. */
+  joinAccess: MeetingJoinAccess | null;
 }
 
 /** Zones offered in the picker. Short on purpose — a 400-entry list is not a choice, it is a search. */
@@ -134,6 +143,10 @@ export function emptyMeetingDraft(input: {
     recurrence: { ...NO_RECURRENCE },
     projectId: null,
     projectName: null,
+    // Deliberately unanswered: whether to email and who may join are asked every time, never
+    // defaulted, so nobody emails forty people or opens a meeting to everyone by not looking.
+    emailInvitations: null,
+    joinAccess: null,
   };
 }
 
@@ -161,6 +174,8 @@ export function draftFromMeeting(meeting: OfficeHubMeeting, selection: Participa
     recurrence: meeting.recurrence ?? { ...NO_RECURRENCE },
     projectId: meeting.projectId ?? null,
     projectName: meeting.projectName ?? null,
+    emailInvitations: meeting.emailInvitations ?? null,
+    joinAccess: meeting.joinAccess ?? null,
   };
 }
 
@@ -185,6 +200,7 @@ export function MeetingForm({
 }) {
   const router = useRouter();
   const { actor, capabilities, settings, directory, today } = useOfficeHub();
+  const { user, originalUser, isImpersonating } = useAuth();
   const { toast } = useToast();
   const { isBusy, run } = useOfficeHubAction();
 
@@ -224,10 +240,12 @@ export function MeetingForm({
    */
   const conferenceWillBeCreated =
     isOnline &&
-    googleMeet.status.configured &&
-    googleMeet.status.connection.connected &&
+    // Your own connection, or the one office account an administrator shared for everyone.
+    canCreateMeetLinks(googleMeet.status) &&
     googleMeet.status.settings.enabled &&
     getMeetingProvider(draft.onlinePlatform).supportsCreation;
+  /** The link will come from the shared office account, not the user's own. */
+  const viaSharedAccount = conferenceWillBeCreated && !googleMeet.status.connection.connected;
 
   /**
    * Default the platform the moment the meeting becomes online.
@@ -271,10 +289,19 @@ export function MeetingForm({
         found.timeZone = 'That is not a time zone this browser recognises.';
       }
 
+      // Asked, never assumed — but only once it matters: a draft emails nobody and opens nothing.
+      if (status === 'Scheduled') Object.assign(found, unansweredInvitationQuestions(draft));
+
       return found;
     },
     [draft, settings, mode, conferenceWillBeCreated],
   );
+
+  /** The two answers as they are saved: who may join means nothing for an in-person meeting. */
+  const invitationAnswers = {
+    emailInvitations: draft.emailInvitations,
+    joinAccess: isOnline ? draft.joinAccess : null,
+  };
 
   /**
    * Show what the save could not finish.
@@ -322,6 +349,7 @@ export function MeetingForm({
               location: draft.location || null,
               room: draft.room || null,
               address: draft.address || null,
+              ...invitationAnswers,
               status,
               agendaItems,
               carryActionItemIds,
@@ -358,6 +386,7 @@ export function MeetingForm({
             location: draft.location || null,
             room: draft.room || null,
             address: draft.address || null,
+            ...invitationAnswers,
           },
           { settings, directory, scope: isSeriesMember ? seriesScope : 'occurrence' },
         ),
@@ -375,7 +404,14 @@ export function MeetingForm({
 
   const sendNow = async () => {
     if (!meetingId || !actor) return;
-    const sent = await run(() => sendMeetingInvitations(actor, meetingId, { settings }), {
+    // Sending is the moment the two questions matter, so it asks them as Schedule does.
+    const unanswered = unansweredInvitationQuestions(draft);
+    if (hasFieldErrors(unanswered)) {
+      setErrors((current) => ({ ...current, ...unanswered }));
+      toast({ variant: 'destructive', title: 'Answer before sending', description: firstFieldError(unanswered) ?? '' });
+      return;
+    }
+    const sent = await run(() => sendMeetingInvitations(actor, meetingId, { settings, ...invitationAnswers }), {
       success: 'Invitations sent',
       failure: 'Could not send the invitations',
       describe: 'Send invitations',
@@ -404,6 +440,25 @@ export function MeetingForm({
         void submit('Scheduled');
       }}
     >
+      {/*
+        Said before the form is filled in, not after Save is refused: the database records every
+        change under the person shown, sees the administrator, and refuses the mismatch.
+      */}
+      {isImpersonating && (
+        <Card className="border-amber-200 bg-amber-50/70">
+          <CardContent className="px-4 py-3">
+            <p className="text-sm font-semibold text-amber-900">
+              You are using Switch User{user?.name ? ` as ${user.name}` : ''}
+            </p>
+            <p className="mt-0.5 text-xs text-amber-900/80">
+              Saving here will be refused: the database still sees you as {originalUser?.name ?? 'yourself'} and
+              does not accept changes made in another person’s name. Switch back to your own account to
+              schedule or edit meetings.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <OfficeHubSection title="Basic information" description="What the meeting is and when it happens.">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
@@ -620,15 +675,28 @@ export function MeetingForm({
                       <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
                       A Meet link will be created when you save
                     </p>
+                    {viaSharedAccount && (
+                      <p className="mt-1 text-[11px] text-emerald-800">
+                        {draft.organizerId === actor?.userId
+                          ? 'Created with the office Google account'
+                          : 'Created with the organizer’s Google account if they have connected one, otherwise the office account'}
+                        {googleMeet.status.sharedAccount?.googleEmail
+                          ? ` (${googleMeet.status.sharedAccount.googleEmail})`
+                          : ''}
+                        {draft.organizerId === actor?.userId ? ' — you do not need to connect your own.' : '.'}
+                      </p>
+                    )}
                     <p className="mt-1 text-[11px] leading-relaxed text-emerald-800">
                       {googleSyncSummary({
                         connected: true,
-                        sendUpdates: googleMeet.status.settings.sendUpdates,
+                        sendUpdates: meetingSendUpdates(draft, googleMeet.status.settings.sendUpdates),
                         attendeeCount: draft.selection.userIds.length,
                       })}
                     </p>
                     <p className="mt-1 text-[11px] text-emerald-800">
-                      Only invited participants can see the link in Office Hub.
+                      {draft.joinAccess === 'open'
+                        ? 'Open meeting: anyone who can see it in Office Hub gets the link.'
+                        : 'Only invited participants can see the link in Office Hub.'}
                     </p>
                   </div>
                 ) : (
@@ -827,6 +895,63 @@ export function MeetingForm({
         />
       </OfficeHubSection>
 
+      <OfficeHubSection
+        title="Invitations & who can join"
+        description="Answer both before scheduling. Nothing here is decided for you."
+      >
+        <div className="space-y-4">
+          <ChoiceCards
+            label="Send email invitations?"
+            value={draft.emailInvitations === null ? null : draft.emailInvitations ? 'yes' : 'no'}
+            onChange={(next) => set('emailInvitations', next === 'yes')}
+            error={errors.emailInvitations}
+            options={[
+              {
+                value: 'yes',
+                icon: Mail,
+                title: 'Yes, email the invitation',
+                description: conferenceWillBeCreated
+                  ? 'Google Calendar emails each participant the invitation with the Meet link. They are also notified in SEL Live.'
+                  : 'Each participant gets the invitation by email, and in SEL Live.',
+              },
+              {
+                value: 'no',
+                icon: BellOff,
+                title: 'No, don’t email',
+                description: conferenceWillBeCreated
+                  ? 'Participants are notified in SEL Live only. The meeting still appears on their Google Calendar, without an email.'
+                  : 'Participants are notified in SEL Live only (the bell and the phone app).',
+              },
+            ]}
+          />
+
+          {isOnline && (
+            <ChoiceCards
+              label="Who can join?"
+              value={draft.joinAccess}
+              onChange={(next) => set('joinAccess', next)}
+              error={errors.joinAccess}
+              options={[
+                {
+                  value: 'invited',
+                  icon: Lock,
+                  title: 'Only invited people',
+                  description:
+                    'Only participants see the joining link in Office Hub. In Google Meet, anyone else has to ask to be let in.',
+                },
+                {
+                  value: 'open',
+                  icon: Globe,
+                  title: 'Anyone with the link (open meeting)',
+                  description:
+                    'Everyone who can see this meeting in Office Hub gets the link, and Google Meet lets anyone with the link or meeting code join without asking.',
+                },
+              ]}
+            />
+          )}
+        </div>
+      </OfficeHubSection>
+
       <OfficeHubSection title="Reminders" description="When participants are reminded about this meeting.">
         <ReminderEditor
           value={draft.reminderOffsets}
@@ -914,6 +1039,77 @@ export function MeetingForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** The invitation questions still unanswered, as field errors. */
+function unansweredInvitationQuestions(draft: MeetingDraft): OfficeHubFieldErrors {
+  const errors: OfficeHubFieldErrors = {};
+  if (draft.emailInvitations === null) {
+    errors.emailInvitations = 'Choose whether to send email invitations.';
+  }
+  if ((draft.mode === 'Online' || draft.mode === 'Hybrid') && !draft.joinAccess) {
+    errors.joinAccess = 'Choose who can join: only invited people, or anyone with the link.';
+  }
+  return errors;
+}
+
+/** One question answered by picking a card: a radio group that reads as a choice, not a setting. */
+function ChoiceCards<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  error,
+}: {
+  label: string;
+  value: T | null;
+  onChange: (next: T) => void;
+  options: { value: T; icon: LucideIcon; title: string; description: string }[];
+  error?: string;
+}) {
+  return (
+    <div>
+      <Label className="mb-1.5 block text-xs">
+        {label}
+        <span className="ml-0.5 text-destructive">*</span>
+      </Label>
+      <div role="radiogroup" aria-label={label} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const selected = value === option.value;
+          const Icon = option.icon;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                'flex min-w-0 items-start gap-2.5 rounded-md border px-3 py-2.5 text-left transition-colors',
+                selected
+                  ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
+                  : cn('bg-white hover:bg-slate-50', error ? 'border-destructive' : 'border-input'),
+              )}
+            >
+              <Icon
+                className={cn('mt-0.5 h-4 w-4 shrink-0', selected ? 'text-indigo-700' : 'text-muted-foreground')}
+                aria-hidden
+              />
+              <span className="min-w-0">
+                <span className={cn('block text-sm font-medium', selected ? 'text-indigo-900' : 'text-foreground')}>
+                  {option.title}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                  {option.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <FieldError message={error} />
+    </div>
   );
 }
 

@@ -5,11 +5,17 @@ import {
   DEFAULT_GOOGLE_MEET_SETTINGS,
   GOOGLE_MAX_ATTENDEES,
   GOOGLE_MEET_SCOPES,
+  GOOGLE_MEET_SETTINGS_SCOPE,
   GOOGLE_OAUTH_STATE_TTL_MS,
   buildGoogleAuthUrl,
   buildGoogleEventBody,
+  conferenceRefusedMessage,
   conferenceRequestId,
   describeGoogleApiError,
+  describeMeetAccessError,
+  googleMeetAccessFor,
+  grantCoversMeetAccess,
+  meetingSendUpdates,
   googleAttendeesFrom,
   googleConnectionHealth,
   googleEventDescription,
@@ -268,6 +274,27 @@ test('a request id is sanitised and bounded to what Google accepts', () => {
   const id = conferenceRequestId('a/b c:d#e'.repeat(20));
   assert.ok(id.length <= 64);
   assert.match(id, /^[A-Za-z0-9\-_]+$/);
+});
+
+test('a re-request gets a fresh id, because Google ignores one it has already seen on the event', () => {
+  assert.notEqual(conferenceRequestId('meet1', 'k3x9'), conferenceRequestId('meet1'));
+  assert.equal(conferenceRequestId('meet1', 'k3x9'), 'officehub-meet1-k3x9');
+  // The attempt survives truncation of a long id — otherwise the "fresh" id would be the old one.
+  const long = conferenceRequestId('x'.repeat(80), 'k3x9');
+  assert.ok(long.length <= 64);
+  assert.ok(long.endsWith('-k3x9'));
+  assert.equal(
+    buildGoogleEventBody({ meeting, attendees: participants, conferenceAttempt: 'zz' }).body.conferenceData.createRequest.requestId,
+    'officehub-meet1-zz',
+  );
+});
+
+test('a refused conference names the account to check', () => {
+  const message = conferenceRefusedMessage({ googleEmail: 'office@sel.test', calendarId: 'primary' });
+  assert.match(message, /would not add a Google Meet/);
+  assert.match(message, /office@sel\.test/);
+  assert.doesNotMatch(message, /calendar “primary”/);
+  assert.match(conferenceRefusedMessage({ calendarId: 'team@group.calendar.google.com' }), /calendar “team@group/);
 });
 
 test('the event carries the instant and the zone, because a series needs both', () => {
@@ -605,4 +632,51 @@ test('the summary says what will actually happen to participants', () => {
   const quiet = googleSyncSummary({ connected: true, sendUpdates: 'none', attendeeCount: 1 });
   assert.match(quiet, /Google will not email/);
   assert.match(quiet, /1 participant/);
+});
+
+/* ── the organizer's answers: email, and who may join ─────────────────────────────────────────── */
+
+test("the organizer's email answer overrides the organisation setting, both ways", () => {
+  assert.equal(meetingSendUpdates({ emailInvitations: true }, 'none'), 'all');
+  assert.equal(meetingSendUpdates({ emailInvitations: false }, 'all'), 'none');
+  // A meeting saved before the form asked keeps the setting, so nothing scheduled changes.
+  assert.equal(meetingSendUpdates({}, 'externalOnly'), 'externalOnly');
+  assert.equal(meetingSendUpdates({ emailInvitations: null }, 'all'), 'all');
+});
+
+test('"only invited" is Restricted in Meet, open is Open, and no answer leaves Google alone', () => {
+  assert.equal(googleMeetAccessFor('invited'), 'RESTRICTED', 'Trusted would let the whole organisation in');
+  assert.equal(googleMeetAccessFor('open'), 'OPEN');
+  assert.equal(googleMeetAccessFor(null), null);
+  assert.equal(googleMeetAccessFor(undefined), null);
+});
+
+test('the Meet settings scope is requested, but an older grant without it is still healthy', () => {
+  assert.ok(GOOGLE_MEET_SCOPES.includes(GOOGLE_MEET_SETTINGS_SCOPE));
+  const older = ['https://www.googleapis.com/auth/calendar.events', 'openid', 'email'];
+  assert.equal(googleConnectionHealth({ refreshTokenPresent: true, scopes: older }), 'connected');
+  assert.equal(grantCoversMeetAccess(older), false);
+  assert.equal(grantCoversMeetAccess([...older, GOOGLE_MEET_SETTINGS_SCOPE]), true);
+});
+
+test('a refused access change says which of the three fixes applies', () => {
+  const scope = describeMeetAccessError(
+    { status: 403, body: { error: { status: 'PERMISSION_DENIED', message: 'Request had insufficient authentication scopes.' } } },
+    'RESTRICTED',
+  );
+  assert.match(scope, /Reconnect Google/);
+  assert.match(scope, /may still let people who were not invited join/);
+
+  const disabled = describeMeetAccessError(
+    { status: 403, body: { error: { status: 'PERMISSION_DENIED', message: 'Google Meet REST API has not been used in project 123 before or it is disabled.' } } },
+    'OPEN',
+  );
+  assert.match(disabled, /not enabled/);
+  assert.match(disabled, /may still ask people outside the invitation/);
+
+  const policy = describeMeetAccessError(
+    { status: 400, body: { error: { status: 'INVALID_ARGUMENT', message: 'Access type not allowed by admin' } } },
+    'OPEN',
+  );
+  assert.match(policy, /Google refused the change: Access type not allowed by admin\. Your Workspace administrator/);
 });

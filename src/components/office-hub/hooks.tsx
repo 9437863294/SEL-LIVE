@@ -58,6 +58,7 @@ import {
   disconnectGoogleMeet,
   fetchGoogleMeetStatus,
   googleStatusUnavailable,
+  setGoogleAccountShared,
   startGoogleConnect,
   type GoogleMeetStatus,
 } from '@/lib/office-hub-google-client';
@@ -376,6 +377,46 @@ export function useOfficeHubQuery<T>(
 }
 
 /**
+ * A sentence for a failure nobody wrote a message for — specific enough to act on.
+ *
+ * The old catch-all ("Check your connection and try again") was wrong for almost every real case:
+ * a refused write is not a connection problem, and a meeting that failed on invalid data was not
+ * going to save on a retry. The Firestore error code says which it is, so it decides the sentence,
+ * and the code itself is kept at the end for whoever has to look into it.
+ */
+function describeUnexpectedFailure(
+  caught: unknown,
+  context: { isImpersonating: boolean; viewingAs: string | null; realUser: string | null },
+): string {
+  const code =
+    caught && typeof caught === 'object' && typeof (caught as { code?: unknown }).code === 'string'
+      ? String((caught as { code: string }).code).replace(/^firestore\//, '')
+      : null;
+
+  if (code === 'permission-denied') {
+    // Switch User changes who you are on screen, not who you are to the database: every change is
+    // recorded as the person shown, and the database refuses a record in somebody else's name.
+    if (context.isImpersonating) {
+      return (
+        `You are using Switch User${context.viewingAs ? ` as ${context.viewingAs}` : ''}. The database still ` +
+        `sees you as ${context.realUser ?? 'yourself'}, and refuses changes made in another person’s name, ` +
+        `so nothing was saved. Switch back to your own account to make this change` +
+        `${context.viewingAs ? `, or ask ${context.viewingAs} to make it` : ''}.`
+      );
+    }
+    return (
+      'The database refused this change for your account, so nothing was saved. If your access was just ' +
+      'changed, reload the page and try again; if it keeps happening, ask an administrator to check your ' +
+      'Office Hub role. (permission-denied)'
+    );
+  }
+  if (code === 'unavailable' || code === 'deadline-exceeded') {
+    return 'The database could not be reached. Check your connection and try again. (' + code + ')';
+  }
+  return `This change could not be saved${code ? ` (${code})` : ''}. Try again; if it keeps failing, tell your administrator what you were doing and the code shown.`;
+}
+
+/**
  * Run a write with a busy flag, a success toast and a failure toast (§79, §56).
  *
  * The failure path is the reason this exists: a raw Firestore error message ("Missing or
@@ -392,6 +433,7 @@ export function useOfficeHubAction(): {
   ) => Promise<T | null>;
 } {
   const { toast } = useToast();
+  const { user, originalUser, isImpersonating } = useAuth();
   const [isBusy, setIsBusy] = useState(false);
 
   const run = useCallback(
@@ -416,14 +458,19 @@ export function useOfficeHubAction(): {
           title: messages.failure ?? 'That did not work',
           description:
             written ??
-            'Something went wrong saving your change. Check your connection and try again — nothing was saved.',
+            describeUnexpectedFailure(caught, {
+              isImpersonating,
+              viewingAs: user?.name ?? null,
+              realUser: originalUser?.name ?? null,
+            }),
+          duration: 12_000,
         });
         return null;
       } finally {
         setIsBusy(false);
       }
     },
-    [toast],
+    [toast, isImpersonating, user?.name, originalUser?.name],
   );
 
   return { isBusy, run };
@@ -531,6 +578,8 @@ export function useGoogleMeetStatus(options: { enabled?: boolean } = {}): {
   reload: () => void;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  /** Share your own connected account for everyone's meetings, or stop sharing it. */
+  setShared: (share: boolean) => Promise<void>;
   isBusy: boolean;
 } {
   const { toast } = useToast();
@@ -581,12 +630,33 @@ export function useGoogleMeetStatus(options: { enabled?: boolean } = {}): {
     }
   }, [reload, toast]);
 
+  const setShared = useCallback(
+    async (share: boolean) => {
+      setIsBusy(true);
+      try {
+        const message = await setGoogleAccountShared(share);
+        toast({ title: share ? 'Google account shared' : 'Stopped sharing', description: message });
+        reload();
+      } catch (error) {
+        toast({
+          variant: 'destructive',
+          title: share ? 'Could not share the Google account' : 'Could not stop sharing',
+          description: error instanceof Error ? error.message : 'Try again in a moment.',
+        });
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [reload, toast],
+  );
+
   return {
     status: data ?? UNCONFIGURED_GOOGLE_STATUS,
     isLoading,
     reload,
     connect,
     disconnect,
+    setShared,
     isBusy,
   };
 }
