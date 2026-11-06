@@ -20,6 +20,8 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { TableCard } from '@/components/shared/table-card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -42,7 +44,7 @@ import {
   type DocumentReference,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import type { DailyRequisitionEntry, Department, Project, User, WorkflowStep } from '@/lib/types';
+import type { DailyFlowEvent, DailyRequisitionEntry, Department, Project, User, WorkflowStep } from '@/lib/types';
 import { formatINRCompact } from '@/lib/bill-tracking/money';
 import { cn } from '@/lib/utils';
 import { balanceOf, isPaymentLocked, paidOf, payRequisitionsHref, voucherHref } from '@/lib/requisition-progress';
@@ -79,16 +81,23 @@ import {
   dailySurfaceCardClass,
 } from '@/components/daily-requisition/module-shell';
 import { PageHeader } from '@/components/shared/page-header';
-import { dailyStepSlug } from '@/lib/daily-requisition-settings';
+import { dailyStepSlug, PAYMENT_PAGE_SLUG } from '@/lib/daily-requisition-settings';
 import {
   allowsHandOver,
   assignedStageOf,
   heldStep,
   holdForMove,
   isHeld,
+  PAYMENT_PAGE_NAME,
   placeSteps,
+  planReviseToApproval,
+  resolveStepAssignees,
   stageOfStatus,
+  stagePermissionPage,
+  stepNamesUser,
+  stepWorkLabel,
   takeSourcesOf,
+  verifiesGst,
   type StageRole,
 } from '@/lib/daily-requisition-flow';
 import {
@@ -106,6 +115,22 @@ import {
  * page the menu links to but this function cannot resolve.
  */
 const toSlug = dailyStepSlug;
+
+/**
+ * The payment page, which is no workflow step: always there after the last one, at its own address
+ * (PAYMENT_PAGE_SLUG). It pays — by hand, or through Bank Balance vouchers — for whoever holds the
+ * Processed for Payment permissions; nobody is named on it.
+ */
+const PAYMENT_PAGE_STEP = {
+  id: 'payment',
+  key: 'payment-page',
+  name: PAYMENT_PAGE_NAME,
+  tat: 0,
+  assignmentType: 'User-based',
+  assignedTo: [],
+  actions: ['Mark as Received for Payment'],
+  upload: 'Not Required',
+} as WorkflowStep;
 
 const formatCurrency = (amount: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
@@ -353,7 +378,24 @@ interface StepConfig {
  * Returns the status config for a dynamic step position.
  * `dynamicIndex` is 0-based starting from the **first dynamic step** (Entry Sheet is excluded).
  */
-function getStepConfig(dynamicIndex: number): StepConfig {
+/** A stage's works in their order, as `dynamicIndex` numbers them (0 receiving, 1 GST & TDS, 2 payment). */
+const JOB_ORDER: readonly StageRole[] = ['receiving', 'gst', 'payment'];
+
+function getStepConfig(dynamicIndex: number, options: { verifies?: boolean } = {}): StepConfig {
+  // GST & TDS work on a stage that sends for payment without verifying: it sends what was received.
+  if (dynamicIndex === 1 && options.verifies === false) {
+    return {
+      queryStatuses: ['Received', 'Verified', 'Needs Review'],
+      tabs: [
+        { key: 'verified', label: 'Ready for payment', statuses: ['Received', 'Verified'], showBulkCheckbox: true },
+        { key: 'needs-review', label: 'Needs Review', statuses: ['Needs Review'] },
+      ],
+      bulkAction: { tabKey: 'verified', label: 'Send for Payment', newStatus: 'Received for Payment', shortcut: 's' },
+      doneTodayLabel: 'Sent today',
+      description: 'Send received entries on for payment.',
+      metricHints: ['Ready to be sent for payment', 'Mismatch or follow-up required'],
+    };
+  }
   switch (dynamicIndex) {
     case 0: // e.g., "Receiving at Finance"
       return {
@@ -462,6 +504,8 @@ function DynamicWorkflowStepContent() {
   const [stepIndex, setStepIndex] = useState<number>(-1);
   /** Set when the slug names a Verification step, which has a page of its own. */
   const [verificationIndex, setVerificationIndex] = useState<number | null>(null);
+  /** The built-in works this stage does (its ticked buttons decide), as job positions: 0 receiving, 1 GST & TDS, 2 payment. */
+  const [jobs, setJobs] = useState<number[]>([]);
   const [workflowLoading, setWorkflowLoading] = useState(true);
   const [workflowNotFound, setWorkflowNotFound] = useState(false);
 
@@ -477,6 +521,9 @@ function DynamicWorkflowStepContent() {
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [activeTab, setActiveTab] = useState('');
+  /** A requisition Finance is sending back with Revise (the dialog is open while set), and its note. */
+  const [revising, setRevising] = useState<EnrichedEntry | null>(null);
+  const [reviseNote, setReviseNote] = useState('');
 
   /* ── filters ── */
   const [fyFilter, setFyFilter] = useState('all');
@@ -497,6 +544,8 @@ function DynamicWorkflowStepContent() {
   // A `?q=` in the URL, from a link in another module, fills the search. A later link to this page
   // with a different `?q=` replaces it. This is adjusted during render, not in an effect.
   const urlQuery = searchParams?.get('q') ?? '';
+  /** `?job=receiving|gst|payment`: which of the stage's works to open. */
+  const jobParam = searchParams?.get('job') ?? '';
   const [searchTerm, setSearchTerm] = useState(urlQuery);
   const [appliedUrlQuery, setAppliedUrlQuery] = useState(urlQuery);
   if (appliedUrlQuery !== urlQuery) {
@@ -508,32 +557,62 @@ function DynamicWorkflowStepContent() {
   const [isVerifyDialogOpen, setIsVerifyDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<EnrichedEntry | null>(null);
 
-  const stepConfig = useMemo(() => (dynamicIndex >= 0 ? getStepConfig(dynamicIndex) : null), [dynamicIndex]);
+  // Whether the stage verifies GST & TDS itself, or only sends on what was received (getStepConfig).
+  // Re-verify alone re-checks nothing: without Verify, nothing is verified here.
+  const verifiesHere = verifiesGst(currentStep);
+  const stepConfig = useMemo(
+    () => (dynamicIndex >= 0 ? getStepConfig(dynamicIndex, { verifies: verifiesHere }) : null),
+    [dynamicIndex, verifiesHere],
+  );
 
   /* ── permission scope ── */
-  const permissionScope = currentStep ? `Daily Requisition.${currentStep.name}` : '';
-  const canViewPage = permissionScope ? can('View', permissionScope) : false;
+  // A built-in stage's permissions follow its position, whatever it is named (as the Firestore rules do).
+  const permissionScope = currentStep
+    ? `Daily Requisition.${stagePermissionPage(dynamicIndex >= 0 ? dynamicIndex : null, currentStep.name)}`
+    : '';
+  const canViewByRole = permissionScope ? can('View', permissionScope) : false;
+  /**
+   * Named on this stage in Workflow Configuration, without the stage's permissions: being assigned
+   * is the authority (as at a Verification step, and as the Firestore rules allow through the
+   * workflow's `stageMembers`). They open the stage and do its work, on the requisitions of the
+   * projects and departments the stage names them for.
+   */
+  const isStageAssignee =
+    Boolean(currentStep) && dynamicIndex >= 0 && dynamicIndex <= 2 && stepNamesUser(currentStep as WorkflowStep, user?.id);
+  const viaAssignment = !canViewByRole && isStageAssignee;
+  const canViewPage = canViewByRole || viaAssignment;
 
   /* ──────────── 1 ─ fetch workflow config ──────────── */
   useEffect(() => {
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'workflows', 'daily-requisition-workflow'));
-        if (snap.exists()) {
+        if (stepSlug === PAYMENT_PAGE_SLUG) {
+          // The payment page: always there, after the last step, whatever the workflow holds.
+          setWorkflowSteps(snap.exists() ? (snap.data().steps ?? []) : []);
+          setCurrentStep(PAYMENT_PAGE_STEP);
+          setStepIndex(-1);
+          setJobs([2]);
+          setVerificationIndex(null);
+          setDynamicIndex(2);
+        } else if (snap.exists()) {
           const data = snap.data();
           const steps: WorkflowStep[] = data.steps || [];
           setWorkflowSteps(steps);
 
-          // Find the matching step by slug. A built-in stage works by its position among the
-          // built-in stages, so a Verification step placed before it does not shift its role.
+          // Find the matching step by slug. A stage does the works its buttons claim (placeSteps);
+          // `?job=gst` (a dashboard link) opens one of them, the first otherwise.
           const idx = steps.findIndex((s) => toSlug(s.name) === stepSlug);
           if (idx >= 0) {
             const placed = placeSteps(steps)[idx];
+            const stepJobs = placed.roles.map((role) => JOB_ORDER.indexOf(role));
+            const wanted = JOB_ORDER.indexOf(jobParam as StageRole);
             setCurrentStep(steps[idx]);
             setStepIndex(idx);
+            setJobs(stepJobs);
             // Both set every time, so moving between a stage and a Verification step never keeps the other's.
             setVerificationIndex(placed.role === 'verification' ? idx : null);
-            setDynamicIndex(placed.role === 'verification' ? -1 : (placed.builtinIndex ?? -1));
+            setDynamicIndex(placed.role === 'verification' ? -1 : stepJobs.includes(wanted) ? wanted : (stepJobs[0] ?? -1));
           } else {
             setWorkflowNotFound(true);
           }
@@ -546,7 +625,7 @@ function DynamicWorkflowStepContent() {
       }
       setWorkflowLoading(false);
     })();
-  }, [stepSlug]);
+  }, [stepSlug, jobParam]);
 
   /* ──────────── 2 ─ entries, live ──────────── */
 
@@ -631,9 +710,21 @@ function DynamicWorkflowStepContent() {
 
     const data: EnrichedEntry[] = requisitionDocs
       .filter((d) => queryStatuses.includes((d.data() as any).status))
-      // Held at a Verification step before this stage: it is that step's until verified. (Receiving
-      // at Finance still lists what it received, wherever it went next.)
-      .filter((d) => dynamicIndex < 1 || !isHeld(workflowSteps, d.data() as DailyRequisitionEntry))
+      // Held at a Verification step before this stage: it is that step's until verified — before
+      // Finance too, where it is still Pending. (Receiving at Finance still lists what it received,
+      // wherever it went next.)
+      .filter((d) => {
+        const raw = d.data() as DailyRequisitionEntry;
+        if (!isHeld(workflowSteps, raw)) return true;
+        return dynamicIndex === 0 && (raw.status || 'Pending') !== 'Pending';
+      })
+      // Here by assignment alone: only what the stage names this person for.
+      .filter(
+        (d) =>
+          !viaAssignment ||
+          !currentStep ||
+          resolveStepAssignees(currentStep as WorkflowStep, d.data() as DailyRequisitionEntry).includes(user?.id ?? ''),
+      )
       .map((d) => {
         const raw = d.data() as DailyRequisitionEntry;
         const dateTs = asDate(raw.date) ?? asDate(raw.createdAt);
@@ -672,7 +763,7 @@ function DynamicWorkflowStepContent() {
       (asDate(entry.paidAt) ?? asDate(entry.verifiedAt) ?? asDate(entry.receivedAt) ?? asDate(entry.createdAt))?.getTime() ?? 0;
     data.sort((a, b) => latest(b) - latest(a));
     return data;
-  }, [requisitionDocs, lookups, stepConfig, dynamicIndex, today, workflowSteps, stepIndex, user?.id]);
+  }, [requisitionDocs, lookups, stepConfig, dynamicIndex, today, workflowSteps, stepIndex, user?.id, viaAssignment, currentStep]);
 
   /* ──────────── 3 ─ what each tab shows ──────────── */
 
@@ -782,9 +873,16 @@ function DynamicWorkflowStepContent() {
     const skipped: MoveSkips = { paid: 0, changed: 0, reReceived: 0 };
     const requests = { released: 0, relinked: 0 };
     let failed = false;
+    // Someone working the stage by assignment may not be able to read Expenses: the move still goes
+    // through, leaving the requests as they are, and the toast says so.
+    let requestsUnread = false;
     try {
       const requestsByDepNo = options.expenseLink
-        ? await expenseRequestsFor(targets)
+        ? await expenseRequestsFor(targets).catch((error) => {
+            console.warn('Could not read the expense requests these requisitions came from:', error);
+            requestsUnread = true;
+            return new Map<string, DocumentReference[]>();
+          })
         : new Map<string, DocumentReference[]>();
 
       for (let start = 0; start < targets.length; start += MOVE_CHUNK) {
@@ -816,7 +914,11 @@ function DynamicWorkflowStepContent() {
             const snap = requisitionSnaps[i];
             const current = snap.exists() ? (snap.data() as DailyRequisitionEntry) : null;
             // A Verification step may have taken it since this page loaded; past Receiving it is that step's now.
-            if (!current || current.status !== entry.status || (dynamicIndex >= 1 && isHeld(workflowSteps, current))) {
+            if (
+              !current ||
+              current.status !== entry.status ||
+              (isHeld(workflowSteps, current) && (dynamicIndex >= 1 || (current.status || 'Pending') === 'Pending'))
+            ) {
               out.changed += 1;
               return;
             }
@@ -933,6 +1035,9 @@ function DynamicWorkflowStepContent() {
     }
 
     const done = moveToast(targets, moved.length, to, skipped, failed);
+    if (requestsUnread && moved.length > 0) {
+      done.description = `${done.description} Their expense requests could not be read from here, so they were left as they are.`;
+    }
     // Say where they went when a Verification step now holds them, so nobody looks for them at the next stage.
     const heldNames = [...new Set(movedRecords.map((record) => record.heldAtName).filter(Boolean))];
     const heldCount = movedRecords.filter((record) => record.heldAtName).length;
@@ -982,9 +1087,67 @@ function DynamicWorkflowStepContent() {
   const handleCancelSelected = () =>
     void moveRequisitions(selectedEntries, 'Cancelled', { refusePaid: true, expenseLink: 'release' });
 
-  /** Return to the previous stage. On GST & TDS Verification that also clears the verification. */
+  /**
+   * Revise, on a requisition Finance has not received: back to the last step before Finance that
+   * names someone for it (planReviseToApproval), re-read in a transaction, the note on its trail.
+   */
+  const handleReviseBack = async (entry: EnrichedEntry, note: string) => {
+    if (!user || !currentStep || isUpdating) return;
+    setIsUpdating(true);
+    try {
+      const result = await runTransaction(db, async (tx) => {
+        const ref = doc(db, 'dailyRequisitions', entry.id);
+        const snap = await tx.get(ref);
+        if (!snap.exists()) return { ok: false as const, reason: 'It no longer exists.' };
+        const current = snap.data() as DailyRequisitionEntry;
+        if (isPaymentLocked(current)) return { ok: false as const, reason: 'Payments have been made against it.' };
+        const now = Timestamp.now();
+        const plan = planReviseToApproval(workflowSteps, current, now);
+        if (!plan.ok) return { ok: false as const, reason: plan.reason };
+        const event: DailyFlowEvent = {
+          action: 'Sent back',
+          stepKey: placeSteps(workflowSteps)[stepIndex]?.key ?? '',
+          stepName: currentStep.name,
+          userId: user.id,
+          userName: user.name || user.email || user.id,
+          at: now,
+          toStep: plan.toName,
+          ...(note.trim() ? { comment: note.trim() } : {}),
+        };
+        tx.update(ref, { ...plan.update, flowTrail: [...(current.flowTrail ?? []), event] });
+        return { ok: true as const, toName: plan.toName };
+      });
+      if (result.ok) {
+        void log(
+          'Revise Requisition',
+          {
+            step: currentStep.name,
+            receptionNo: entry.receptionNo ?? null,
+            partyName: entry.partyName ?? null,
+            sentBackTo: result.toName,
+            ...(note.trim() ? { note: note.trim() } : {}),
+          },
+          { recordId: entry.id, recordRef: entry.receptionNo || undefined },
+        );
+        toast({ title: 'Sent back', description: `${entry.receptionNo || 'The requisition'} is back at ${result.toName}.` });
+      } else {
+        toast({ title: 'Not sent back', description: `${entry.receptionNo || entry.id}: ${result.reason}`, variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Error sending the requisition back:', error);
+      toast({ title: 'Not sent back', description: 'It could not be saved.', variant: 'destructive' });
+    }
+    setIsUpdating(false);
+    setRevising(null);
+    setReviseNote('');
+  };
+
+  /**
+   * Return to the previous stage. On GST & TDS Verification that also clears the verification; one
+   * not verified yet (a stage that only sends on what was received) goes back to Finance.
+   */
   const handleReturnToPending = (entry: EnrichedEntry) =>
-    void (dynamicIndex === 1
+    void (dynamicIndex === 1 && entry.status !== 'Received'
       ? moveRequisitions([entry], 'Received', {
           refusePaid: true,
           fields: () => ({
@@ -1011,15 +1174,28 @@ function DynamicWorkflowStepContent() {
 
   const stepActions = useMemo(() => new Set(currentStep?.actions || []), [currentStep]);
 
-  const canMarkAsReceived = stepActions.has('Mark as Received') && can('Mark as Received', permissionScope);
-  const canReturnToPending = stepActions.has('Return to Pending') && can('Return to Pending', permissionScope);
-  const canCancel = stepActions.has('Cancel') && can('Reject', permissionScope);
-  const canVerify = stepActions.has('Verify') && can('Verify', permissionScope);
-  const canReverify = stepActions.has('Re-verify') && can('Re-verify', permissionScope);
+  // Each button the stage offers (Workflow Configuration), for whoever holds its permission — or is
+  // named on the stage, which is the authority to do its work (`isStageAssignee`). Revise is the
+  // stage's Return to Pending under another name, Reject its Cancel; each shows as it was ticked.
+  const may = (action: string, resource: string = permissionScope) => isStageAssignee || can(action, resource);
+  const ticked = (...names: string[]) => names.some((name) => stepActions.has(name));
+  const canMarkAsReceived = ticked('Mark as Received') && may('Mark as Received');
+  const canReturnToPending = ticked('Return to Pending', 'Revise') && may('Return to Pending');
+  const returnLabel = stepActions.has('Return to Pending') ? 'Return to Pending' : 'Revise';
+  const canCancel = ticked('Cancel', 'Reject') && may('Reject');
+  const cancelLabel = stepActions.has('Cancel') ? 'Cancel' : 'Reject';
+  const canVerify = ticked('Verify', 'Verified') && may('Verify');
+  const canReverify = ticked('Re-verify') && may('Re-verify');
+  /** Finance's Revise (or Send Back) on what it has not received: back to the last step before Finance (planReviseToApproval). */
+  const reviseLabel = stepActions.has('Revise') ? 'Revise' : 'Send Back';
+  const canReviseBack =
+    dynamicIndex === 0 &&
+    ticked('Revise', 'Send Back') &&
+    may('Return to Pending') &&
+    placeSteps(workflowSteps).some((p) => p.role === 'verification' && p.segment === 0);
   const canSendForPayment =
-    stepActions.has('Send for Payment') && can('Mark as Received for Payment', 'Daily Requisition.Processed for Payment');
-  const canMarkAsPaid =
-    stepActions.has('Mark as Received for Payment') && can('Mark as Received for Payment', permissionScope);
+    stepActions.has('Send for Payment') && may('Mark as Received for Payment', 'Daily Requisition.Processed for Payment');
+  const canMarkAsPaid = stepActions.has('Mark as Received for Payment') && may('Mark as Received for Payment');
   const canPayViaVoucher = can('Add', 'Bank Balance.Expenses');
   /** Set to take requisitions early (Workflow Configuration), and allowed to (`Take Early` on this stage). */
   const showTakeEarly = useMemo(
@@ -1032,8 +1208,11 @@ function DynamicWorkflowStepContent() {
   const stageRole: StageRole | null = dynamicIndex === 0 ? 'receiving' : dynamicIndex === 1 ? 'gst' : dynamicIndex === 2 ? 'payment' : null;
   /** Workflow Configuration lets this stage hand requisitions to someone. */
   const handOverOn = Boolean(currentStep && stageRole && allowsHandOver(currentStep));
-  /** May hand over anything waiting here; otherwise only what was handed to them. */
-  const canHandOverAll = handOverOn && Boolean(permissionScope) && can('Hand Over', permissionScope);
+  /**
+   * May hand over anything waiting here — holding `Hand Over` on the stage, or named on it in
+   * Workflow Configuration (being assigned is the authority) — otherwise only what was handed to them.
+   */
+  const canHandOverAll = handOverOn && Boolean(permissionScope) && (isStageAssignee || can('Hand Over', permissionScope));
   const canHandOverEntry = (entry: EnrichedEntry) =>
     handOverOn &&
     stageOfStatus(entry.status) === stageRole &&
@@ -1214,7 +1393,7 @@ function DynamicWorkflowStepContent() {
 
     // For the "received" and "cancelled" tabs in step 0 (Receiving at Finance), show actions
     const showRowActions =
-      (dynamicIndex === 0 && (tabKey === 'received' || tabKey === 'cancelled')) ||
+      (dynamicIndex === 0 && (tabKey === 'received' || tabKey === 'cancelled' || (tabKey === 'pending' && canReviseBack))) ||
       (dynamicIndex === 1);
 
     // Who it was handed to, on the tabs that hold what is still at this stage.
@@ -1397,6 +1576,8 @@ function DynamicWorkflowStepContent() {
     // GST & TDS Verification step
     if (dynamicIndex === 1) {
       if (tabKey === 'pending' || tabKey === 'needs-review') {
+        // Only where the stage verifies (its Verify ticked in Workflow Configuration).
+        if (!ticked('Verify', 'Verified')) return null;
         return (
           <Button size="sm" className="h-7" onClick={() => handleOpenVerifyDialog(entry)} disabled={!canVerify}>
             {tabKey === 'pending' ? 'Verify' : 'Review & Verify'}
@@ -1417,7 +1598,15 @@ function DynamicWorkflowStepContent() {
             )}
             {canReturnToPending && (
               <DropdownMenuItem onSelect={() => handleReturnToPending(entry)} className="text-destructive">
-                <RotateCcw className="mr-2 h-4 w-4" /> Return to Pending
+                <RotateCcw className="mr-2 h-4 w-4" /> {returnLabel}
+              </DropdownMenuItem>
+            )}
+            {canCancel && (
+              <DropdownMenuItem
+                onSelect={() => void moveRequisitions([entry], 'Cancelled', { refusePaid: true, expenseLink: 'release' })}
+                className="text-destructive"
+              >
+                <XCircle className="mr-2 h-4 w-4" /> {cancelLabel}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -1425,8 +1614,12 @@ function DynamicWorkflowStepContent() {
       );
     }
 
-    // Receiving at Finance step (received + cancelled tabs)
+    // Receiving at Finance: Revise on the pending tab; return and cancel on the received and cancelled tabs.
     if (dynamicIndex === 0) {
+      const offerRevise = tabKey === 'pending' && canReviseBack;
+      const offerReturn = tabKey !== 'pending' && canReturnToPending;
+      const offerCancel = tabKey === 'received' && canCancel;
+      if (!offerRevise && !offerReturn && !offerCancel) return null;
       return (
         <AlertDialog>
           <DropdownMenu>
@@ -1436,17 +1629,22 @@ function DynamicWorkflowStepContent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {canReturnToPending && (
+              {offerRevise && (
+                <DropdownMenuItem onSelect={() => setRevising(entry)}>
+                  <RotateCcw className="mr-2 h-4 w-4" /> {reviseLabel}
+                </DropdownMenuItem>
+              )}
+              {offerReturn && (
                 <DropdownMenuItem
                   onSelect={() => handleReturnToFinance(entry)}
                 >
-                  <RotateCcw className="mr-2 h-4 w-4" /> Return
+                  <RotateCcw className="mr-2 h-4 w-4" /> {returnLabel === 'Revise' ? 'Revise' : 'Return'}
                 </DropdownMenuItem>
               )}
-              {tabKey === 'received' && canCancel && (
+              {offerCancel && (
                 <AlertDialogTrigger asChild>
                   <DropdownMenuItem className="text-destructive">
-                    <XCircle className="mr-2 h-4 w-4" /> Cancel
+                    <XCircle className="mr-2 h-4 w-4" /> {cancelLabel}
                   </DropdownMenuItem>
                 </AlertDialogTrigger>
               )}
@@ -1488,6 +1686,27 @@ function DynamicWorkflowStepContent() {
   // Loading skeleton
   if (workflowLoading || isAuthLoading || (isLoading && canViewPage && stepConfig)) {
     return <StepPageSkeleton />;
+  }
+
+  // A stage whose buttons claim no work: say so, and how to give it some.
+  if (!workflowNotFound && currentStep && verificationIndex === null && jobs.length === 0) {
+    return (
+      <div className={dailyPageContainerClass}>
+        <PageHeader backHref="/daily-requisition" eyebrow="Daily Requisition" title={currentStep.name} />
+        <Card className={dailySurfaceCardClass}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" /> Nothing to do here yet
+            </CardTitle>
+            <CardDescription>
+              A step does the work its actions give it, and another step already does what &quot;{currentStep.name}&quot; has ticked.
+              Open Settings → Workflow Configuration and save the workflow: it shows what to change, and a step with no finance
+              actions becomes an approval step.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
   }
 
   // Workflow step not found
@@ -1705,6 +1924,29 @@ function DynamicWorkflowStepContent() {
               />
             </div>
 
+            {/* A stage that does more than one work (its ticked buttons decide): one section each. */}
+            {jobs.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3 sm:px-5" role="group" aria-label={`What ${currentStep.name} does`}>
+                {jobs.map((job) => (
+                  <Button
+                    key={job}
+                    size="sm"
+                    variant={job === dynamicIndex ? 'default' : 'outline'}
+                    className="h-8"
+                    aria-pressed={job === dynamicIndex}
+                    onClick={() => {
+                      if (job === dynamicIndex) return;
+                      setDynamicIndex(job);
+                      setActiveTab('');
+                      setSelectedIds(new Set());
+                    }}
+                  >
+                    {stepWorkLabel(currentStep, JOB_ORDER[job])}
+                  </Button>
+                ))}
+              </div>
+            )}
+
             {/* The tabs and today's figures, as one row of cells across the card: the tabs a little
                 wider, for their amounts. On narrower screens the figures take a row of their own. */}
             <div className="grid gap-px border-y bg-border lg:grid-cols-[3fr_2fr]">
@@ -1852,6 +2094,48 @@ function DynamicWorkflowStepContent() {
         </Tabs>
       </div>
 
+      {/* Revise: Finance sends an unreceived requisition back to the last step before it, with a note. */}
+      <AlertDialog
+        open={revising !== null}
+        onOpenChange={(open) => {
+          if (!open && !isUpdating) {
+            setRevising(null);
+            setReviseNote('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{reviseLabel} {revising?.receptionNo}?</AlertDialogTitle>
+            <AlertDialogDescription>It goes back to the last approval step before Finance, which works it again.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="revise-note">What needs fixing</Label>
+            <Textarea
+              id="revise-note"
+              rows={2}
+              value={reviseNote}
+              onChange={(e) => setReviseNote(e.target.value)}
+              placeholder="What the approver should look at"
+              className="resize-none"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isUpdating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isUpdating || !reviseNote.trim()}
+              onClick={(event) => {
+                event.preventDefault();
+                if (revising) void handleReviseBack(revising, reviseNote);
+              }}
+            >
+              {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+              {reviseLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* GST/TDS Verification Dialog (only shown for verification step) */}
       {dynamicIndex === 1 && (
         <GstTdsVerificationDialog
@@ -1860,6 +2144,14 @@ function DynamicWorkflowStepContent() {
           entry={selectedEntry}
           // Nothing to reload: the live list shows the verification as soon as it is saved.
           onSuccess={() => undefined}
+          stepName={currentStep?.name}
+          path={{ done: 'Received', current: 'Verify', next: ['Send for payment', 'Payment'] }}
+          // Not verified yet: it can go back to Finance's Pending list from here.
+          sendBack={
+            selectedEntry && selectedEntry.status === 'Received' && canReturnToPending
+              ? { label: returnLabel, onClick: () => handleReturnToPending(selectedEntry) }
+              : undefined
+          }
         />
       )}
 

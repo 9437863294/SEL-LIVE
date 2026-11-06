@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   Banknote,
   BarChart3,
@@ -19,8 +19,8 @@ import {
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { db } from '@/lib/firebase';
-import { DR_STATIC_SEGMENTS, dailyStepNameProblem, dailyStepSlug } from '@/lib/daily-requisition-settings';
-import { placeSteps, stepNamesUser } from '@/lib/daily-requisition-flow';
+import { DR_STATIC_SEGMENTS, dailyStepNameProblem, dailyStepSlug, PAYMENT_PAGE_SLUG } from '@/lib/daily-requisition-settings';
+import { PAYMENT_PAGE_NAME, placeSteps, ROLE_PERMISSION_PAGE, stepNamesUser, type StageRole } from '@/lib/daily-requisition-flow';
 import type { WorkflowStep } from '@/lib/types';
 
 export const DAILY_REQUISITION_BASE = '/daily-requisition';
@@ -72,7 +72,10 @@ export function dailyRequisitionAccess(can: Can) {
   return {
     entrySheet: view('Entry Sheet'),
     manageDocuments: view('Manage Documents'),
-    /** A workflow stage, by its configured name (`[step]/page.tsx`). */
+    /**
+     * A workflow stage, by its permission page (`stagePermissionPage`): a built-in stage's by its
+     * position, whatever Workflow Configuration names it (`[step]/page.tsx` does the same).
+     */
     stage: view,
     /** Each report page. */
     reports,
@@ -119,6 +122,17 @@ export function useDailyRequisitionWorkflowSteps(): { steps: WorkflowStep[]; isL
   return state;
 }
 
+/**
+ * The workflow's steps as saved right now, for a write that places a requisition: a new one starts
+ * at the first Verification step before Finance (holdForCreate). Read at the moment of saving, and
+ * a failed read fails the save, so a requisition never skips the steps before Finance.
+ */
+export async function readDailyRequisitionWorkflowSteps(): Promise<WorkflowStep[]> {
+  const snap = await getDoc(doc(db, 'workflows', 'daily-requisition-workflow'));
+  const raw = snap.exists() ? snap.data().steps : undefined;
+  return Array.isArray(raw) ? (raw as WorkflowStep[]).filter((step) => typeof step?.name === 'string' && step.name.trim() !== '') : [];
+}
+
 export type DailyRequisitionNavGroup = 'Overview' | 'Workflow' | 'Reports' | 'Settings';
 
 export interface DailyRequisitionNavItem {
@@ -151,11 +165,17 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
     const access = dailyRequisitionAccess(can);
     const base = DAILY_REQUISITION_BASE;
     const placed = placeSteps(steps);
+    /**
+     * A stage's permissions are those of the works its buttons give it (each work's own page,
+     * whatever the stage is named): any of them opens it.
+     */
+    const mayWorkStage = (roles: readonly StageRole[]) => roles.some((role) => access.stage(ROLE_PERMISSION_PAGE[role]));
     // A Verification step has no permission of its own: it opens for the people it assigns, and for
     // anyone who works the module's stages or its workflow (who see what waits there).
-    const worksStages = access.workflowConfiguration || placed.some((p) => p.role !== 'verification' && access.stage(p.step.name));
+    const paysHere = access.stage(ROLE_PERMISSION_PAGE.payment);
+    const worksStages = access.workflowConfiguration || paysHere || placed.some((p) => mayWorkStage(p.roles));
 
-    const stages: Array<DailyRequisitionNavItem & { allowed: boolean }> = placed.map(({ step, role, builtinIndex }) => {
+    const stages: Array<DailyRequisitionNavItem & { allowed: boolean }> = placed.map(({ step, role, roles, builtinIndex }) => {
       const slug = dailyStepSlug(step.name);
       const isVerification = role === 'verification';
       return {
@@ -166,7 +186,12 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
         allowed:
           slug !== '' &&
           !DR_STATIC_SEGMENTS.includes(slug) &&
-          (isVerification ? access.stage(step.name) || stepNamesUser(step, userId) || worksStages : access.stage(step.name)),
+          slug !== PAYMENT_PAGE_SLUG &&
+          // A step's own people always see it (being assigned is the authority to work it); a
+          // Verification step also opens for anyone who works the stages, to see what waits there.
+          (isVerification
+            ? access.stage(step.name) || stepNamesUser(step, userId) || worksStages
+            : roles.length > 0 && (mayWorkStage(roles) || stepNamesUser(step, userId))),
       };
     });
 
@@ -175,6 +200,14 @@ export function useDailyRequisitionNav(): { items: DailyRequisitionNavItem[]; is
 
       { href: `${base}/entry-sheet`, label: 'Entry Sheet', icon: FilePlus, group: 'Workflow', color: 'text-sky-700', bg: 'bg-sky-50', allowed: access.entrySheet },
       ...stages,
+      // Payment: no workflow step, but always the page after the last one.
+      {
+        href: `${base}/${PAYMENT_PAGE_SLUG}`,
+        label: PAYMENT_PAGE_NAME,
+        group: 'Workflow',
+        ...STAGE_LOOKS[2],
+        allowed: paysHere,
+      },
       { href: `${base}/manage-documents`, label: 'Manage Documents', icon: Files, group: 'Workflow', color: 'text-teal-700', bg: 'bg-teal-50', allowed: access.manageDocuments },
 
       { href: `${base}/reports`, label: 'All Reports', icon: FileBarChart, group: 'Reports', color: 'text-indigo-700', bg: 'bg-indigo-50', allowed: access.reportsHub },

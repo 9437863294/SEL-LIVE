@@ -341,7 +341,9 @@ test('a workflow stage name becomes the page it is reached at', () => {
 test('a stage name that could never be opened is rejected', () => {
   // A real stage name is fine.
   assert.equal(dailyStepNameProblem('Receiving at Finance'), null);
-  assert.equal(dailyStepNameProblem('Processed for Payment'), null);
+  // The payment page is always there, after the last step: no step may take its address.
+  assert.match(dailyStepNameProblem('Processed for Payment'), /payment page/);
+  assert.match(dailyStepNameProblem('processed  for payment!'), /payment page/);
 
   // Every static route of the module: the static page wins over [step], so the stage is lost.
   for (const segment of DR_STATIC_SEGMENTS) {

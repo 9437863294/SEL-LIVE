@@ -1013,6 +1013,13 @@ export interface DailyRequisitionEntry {
   tdsSection?: string;
   tdsRate?: number;
   otherDeductionReason?: string;
+  /**
+   * Set by GST & TDS verification: whether the gross already held the GST (worked back out of it)
+   * rather than having it added on top, and the taxable value that came to. Without them the gross
+   * is the taxable value, as an expense request writes it.
+   */
+  gstInclusive?: boolean;
+  taxableValue?: number;
   /** The company GST registration this bill was attributed to; '' lets the chain decide. See src/lib/gst-registrations.ts. */
   gstRegistrationId?: string;
   // Document Status
@@ -1041,6 +1048,12 @@ export interface DailyRequisitionEntry {
   /** When it reached that step, or was handed over. */
   heldSince?: Timestamp | null;
   /**
+   * Handed over at a Verification step with "send it back to me": once the person it was handed to
+   * verifies, it returns to `to` at the same step. Applies only to the hand-over made at `since`
+   * (its `heldSince`). See src/lib/daily-requisition-flow.ts handBackOf.
+   */
+  heldReturn?: { stepKey: string; to: string[]; since: Timestamp } | null;
+  /**
    * Handed to someone at a built-in stage: which stage ('receiving' | 'gst' | 'payment'). The
    * assignment stands only while the requisition is still at that stage.
    */
@@ -1054,7 +1067,7 @@ export interface DailyRequisitionEntry {
 
 /** One event at a Daily Requisition Verification step, or an early take. */
 export interface DailyFlowEvent {
-  action: "Verified" | "Handed over" | "Taken early";
+  action: "Verified" | "Handed over" | "Taken early" | "Sent back" | "Rejected";
   stepKey: string;
   stepName: string;
   userId: string;
@@ -1067,6 +1080,8 @@ export interface DailyFlowEvent {
   /** Taken early: the step it was taken from, and the steps passed over (that one first). */
   fromStep?: string;
   skipped?: string[];
+  /** Sent back: the step or stage it was sent back to. */
+  toStep?: string;
 }
 
 /** ---------- User settings ---------- **/

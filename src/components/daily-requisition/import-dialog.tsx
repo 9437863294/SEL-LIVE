@@ -40,6 +40,8 @@ import {
   Upload,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { holdForCreate } from '@/lib/daily-requisition-flow';
+import { readDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -487,6 +489,11 @@ export function DailyRequisitionImportDialog({
         });
       }
 
+      // Verification steps before Finance: a row still Pending starts at the first that names
+      // someone for it, like any new requisition (history past Pending is left where it is).
+      const workflowSteps = await readDailyRequisitionWorkflowSteps();
+      const importedAt = Timestamp.now();
+
       let batch = writeBatch(db);
       let writes = 0;
       let linked = 0;
@@ -504,7 +511,7 @@ export function DailyRequisitionImportDialog({
 
         const receptionNo = receptionNos[index];
         const requisitionRef = doc(collection(db, 'dailyRequisitions'));
-        batch.set(requisitionRef, {
+        const requisition = {
           receptionNo,
           depNo: draft.depNo,
           date: Timestamp.fromDate(new Date(draft.date)),
@@ -522,7 +529,8 @@ export function DailyRequisitionImportDialog({
           attachments: [],
           // History imported as Paid was paid outside Bank Balance: paid in full, by hand.
           ...importedPaymentFields(draft),
-        });
+        };
+        batch.set(requisitionRef, { ...requisition, ...holdForCreate(workflowSteps, requisition, importedAt) });
         writes += 1;
 
         // Each imported requisition's own "created" line in its history, written with it.

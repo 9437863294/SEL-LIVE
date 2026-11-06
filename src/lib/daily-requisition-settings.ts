@@ -41,6 +41,13 @@ export const DR_STATIC_SEGMENTS: readonly string[] = [
 ];
 
 /**
+ * The payment page's address. Payment is no workflow step's work: the page is always there, after
+ * the last step (src/lib/daily-requisition-flow.ts PAYMENT_PAGE_NAME), and `[step]/page.tsx` serves
+ * it at this slug whatever the workflow holds, so no step may be named into it.
+ */
+export const PAYMENT_PAGE_SLUG = 'processed-for-payment';
+
+/**
  * The URL segment a workflow stage is reached at: `/daily-requisition/<slug of its name>`.
  *
  * One definition, here, because three places need it — the menus (`components/daily-requisition/nav.ts`),
@@ -64,6 +71,9 @@ export function dailyStepNameProblem(name: string): string | null {
   if (!slug) return 'has no letters or digits, so it has no page of its own. Give it a name.';
   if (DR_STATIC_SEGMENTS.includes(slug)) {
     return `is also the address of Daily Requisition's own "${slug}" page, so this stage could never be opened. Choose another name.`;
+  }
+  if (slug === PAYMENT_PAGE_SLUG) {
+    return 'is the payment page\'s, which always comes after the last step, so this step could never be opened. Choose another name.';
   }
   return null;
 }

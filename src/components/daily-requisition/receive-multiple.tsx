@@ -32,6 +32,8 @@ import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import { db } from '@/lib/firebase';
 import { MAX_RECEIVE_AT_ONCE, orderForReception, planReception } from '@/lib/daily-requisition-receive';
+import { holdForCreate } from '@/lib/daily-requisition-flow';
+import { readDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
 import {
   dateKey,
   describeDateWindow,
@@ -212,6 +214,8 @@ export function ReceiveMultiplePanel({
     setIsSaving(true);
     const receptionKey = dateKey(receptionDate);
     try {
+      // Verification steps before Finance: each starts at the first that names someone for it.
+      const workflowSteps = await readDailyRequisitionWorkflowSteps();
       const result = await runTransaction(db, async (tx) => {
         const configRef = doc(db, 'serialNumberConfigs', 'daily-requisition');
         const configSnap = await tx.get(configRef);
@@ -237,7 +241,7 @@ export function ReceiveMultiplePanel({
         const createdBase = Date.now();
         items.forEach(({ request, receptionNo }, index) => {
           const entryRef = doc(collection(db, 'dailyRequisitions'));
-          tx.set(entryRef, {
+          const entry = {
             receptionNo,
             // Every other field here is defaulted, and Firestore rejects the whole write for one
             // `undefined` — a request with no Request No must not fail the rest of the receipt.
@@ -255,7 +259,8 @@ export function ReceiveMultiplePanel({
             attachments: [],
             // GST & TDS captured on the request travel with it, so verification starts filled in.
             ...carriedStatutory(request),
-          });
+          };
+          tx.set(entryRef, { ...entry, ...holdForCreate(workflowSteps, entry, Timestamp.now()) });
           tx.update(doc(db, 'expenseRequests', request.id), { receptionNo, receptionDate: receptionKey });
 
           const created = logEntry(

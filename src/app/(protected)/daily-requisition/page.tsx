@@ -15,6 +15,7 @@ import {
   dailyStepSlug,
   useDailyRequisitionWorkflowSteps,
 } from '@/components/daily-requisition/nav';
+import { PAYMENT_PAGE_SLUG } from '@/lib/daily-requisition-settings';
 import { DashboardPanel, FlowBacklogChart, Legend, useDashboardPalette, type FlowPoint, type PanelAction } from '@/components/daily-requisition/dashboard-charts';
 import {
   BandLegend,
@@ -54,7 +55,7 @@ import {
   describePeriod,
   filterRows,
   previousRange,
-  stageOfStatus,
+  rowStage,
   topWithOther,
   type DashboardFilters,
   type DashboardPeriod,
@@ -65,20 +66,18 @@ import {
 } from '@/lib/daily-requisition-dashboard';
 import { balanceOf, paidOf, requisitionProgress } from '@/lib/requisition-progress';
 import type { DailyRequisitionEntry, Department, Project } from '@/lib/types';
-import { isVerificationStep } from '@/lib/daily-requisition-flow';
+import { pipelineKeyOf, pipelineOf, placeSteps, ROLE_PERMISSION_PAGE, stepWorkLabel, type StageRole } from '@/lib/daily-requisition-flow';
 import { cn } from '@/lib/utils';
 
-/** Stage names when the workflow has fewer than three steps configured. */
-const FALLBACK_STAGE_NAMES: Record<OpenStage, string> = {
-  receiving: 'Receiving at Finance',
-  verification: 'GST & TDS Verification',
-  payment: 'Processed for Payment',
-};
+/** Each pipeline position's chip in the Needs action list, by the work done there. */
+const ROLE_TONE: Record<StageRole | 'verification', TagTone> = { verification: 'blue', receiving: 'blue', gst: 'amber', payment: 'green' };
 
-const STAGE_ORDER: OpenStage[] = ['receiving', 'verification', 'payment'];
-
-/** Each queue's chip in the Needs action list. */
-const STAGE_TONE: Record<OpenStage, TagTone> = { receiving: 'blue', verification: 'amber', payment: 'green' };
+/** The pipeline by status alone, until the workflow is there to place requisitions by. */
+const STATUS_PIPELINE: ReadonlyArray<{ key: OpenStage; name: string; role: StageRole }> = [
+  { key: 'receiving', name: 'Receiving at Finance', role: 'receiving' },
+  { key: 'verification', name: 'GST & TDS Verification', role: 'gst' },
+  { key: 'payment', name: 'Processed for Payment', role: 'payment' },
+];
 
 const OTHER_KEY = '__other__';
 
@@ -157,15 +156,23 @@ export default function DailyRequisitionDashboardPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
   const { steps, isLoading: stepsLoading } = useDailyRequisitionWorkflowSteps();
-  /** The built-in stages alone: the stage cards are receiving, verification and payment, whatever Verification steps sit between. */
-  const stageSteps = useMemo(() => steps.filter((step) => !isVerificationStep(step)), [steps]);
+  const placedSteps = useMemo(() => placeSteps(steps), [steps]);
+  /**
+   * The pipeline: where an open requisition can wait, as Workflow Configuration has it — each approval
+   * step, each finance work (a step doing two is a card for each), then the payment page.
+   */
+  const pipeline = useMemo(() => (steps.length ? pipelineOf(steps) : null), [steps]);
+  const stageKeys = useMemo(() => (pipeline ?? STATUS_PIPELINE).map((position) => position.key), [pipeline]);
   const access = useMemo(() => dailyRequisitionAccess(can), [can]);
   const palette = useDashboardPalette();
 
   // The dashboard shows every requisition's figures, so it opens for whoever may already see them
-  // in bulk: the Entry Sheet, the Reports, or any stage queue.
+  // in bulk: the Entry Sheet, the Reports, or any stage queue (a stage's permissions by its position).
   const canView =
-    access.entrySheet || can('View', 'Daily Requisition.Reports') || steps.some((step) => access.stage(step.name));
+    access.entrySheet ||
+    can('View', 'Daily Requisition.Reports') ||
+    access.stage(ROLE_PERMISSION_PAGE.payment) ||
+    placedSteps.some((p) => p.roles.some((role) => access.stage(ROLE_PERMISSION_PAGE[role])));
   const canExport = can('Export', 'Daily Requisition.Reports') || can('Export', 'Daily Requisition.Entry Sheet');
   const canAdd = can('Add', 'Daily Requisition.Entry Sheet');
   const canLoad = !isAuthLoading && !stepsLoading && canView;
@@ -240,36 +247,67 @@ export default function DailyRequisitionDashboardPage() {
 
   const isLoading = canLoad && (entries === null || lookups === null);
 
-  const rows = useMemo(() => (entries ?? []).map(toRow), [entries]);
+  // Each placed where it waits in the workflow: an approval step holding it, else the work its status is at.
+  const rows = useMemo(
+    () =>
+      (entries ?? []).map((entry) => {
+        const row = toRow(entry);
+        const stage = pipeline ? pipelineKeyOf(placedSteps, entry) : null;
+        return stage ? { ...row, stage } : row;
+      }),
+    [entries, pipeline, placedSteps],
+  );
   const filtered = useMemo(() => filterRows(rows, filters), [rows, filters]);
   const figures = useMemo(
-    () => buildDashboard(filtered, { todayKey, period, custom: customRange }),
-    [filtered, todayKey, period, customRange],
+    () => buildDashboard(filtered, { todayKey, period, custom: customRange, stages: stageKeys }),
+    [filtered, todayKey, period, customRange, stageKeys],
   );
-  const overview = useMemo(() => buildOverview(filtered, { todayKey, range: figures.range }), [filtered, todayKey, figures.range]);
+  const overview = useMemo(
+    () => buildOverview(filtered, { todayKey, range: figures.range, stages: stageKeys }),
+    [filtered, todayKey, figures.range, stageKeys],
+  );
   const priorRange = useMemo(() => previousRange(figures.range), [figures.range]);
   const prior = useMemo(
-    () => (priorRange ? buildDashboard(filtered, { todayKey, period: 'custom', custom: priorRange }) : null),
-    [filtered, todayKey, priorRange],
+    () => (priorRange ? buildDashboard(filtered, { todayKey, period: 'custom', custom: priorRange, stages: stageKeys }) : null),
+    [filtered, todayKey, priorRange, stageKeys],
   );
   const filterCount = activeFilterCount(filters);
   const rangeLabel = describePeriod(figures.range);
   const periodLabel = period === 'custom' ? 'Custom' : (DASHBOARD_PERIODS.find((option) => option.value === period)?.label ?? 'Period');
 
-  const stageNames: Record<OpenStage, string> = {
-    receiving: stageSteps[0]?.name || FALLBACK_STAGE_NAMES.receiving,
-    verification: stageSteps[1]?.name || FALLBACK_STAGE_NAMES.verification,
-    payment: stageSteps[2]?.name || FALLBACK_STAGE_NAMES.payment,
-  };
-  /** Each stage's queue page, where the viewer may open it. */
-  const stageHrefs = useMemo(() => {
-    const hrefs: Partial<Record<OpenStage, string>> = {};
-    STAGE_ORDER.forEach((stage, index) => {
-      const step = stageSteps[index];
-      if (step && !dailyStepNameProblem(step.name) && access.stage(step.name)) hrefs[stage] = `/daily-requisition/${dailyStepSlug(step.name)}`;
-    });
-    return hrefs;
-  }, [stageSteps, access]);
+  /**
+   * Each position's name (a step doing two works is named with the work), the page it is worked on —
+   * that work's section of it — where the viewer may open it, and its chip colour.
+   */
+  const stageInfo = useMemo(() => {
+    const info = new Map<OpenStage, { name: string; href?: string; tone: TagTone }>();
+    const paymentHref = access.stage(ROLE_PERMISSION_PAGE.payment) ? `/daily-requisition/${PAYMENT_PAGE_SLUG}` : undefined;
+    if (!pipeline) {
+      for (const s of STATUS_PIPELINE) info.set(s.key, { name: s.name, tone: ROLE_TONE[s.role], href: s.role === 'payment' ? paymentHref : undefined });
+      return info;
+    }
+    for (const position of pipeline) {
+      const p = position.stepIndex !== null ? placedSteps[position.stepIndex] : null;
+      const both = Boolean(p && p.roles.length > 1);
+      let name = position.stepName;
+      let href: string | undefined;
+      if (position.role === 'payment') href = paymentHref;
+      else if (p) {
+        if (position.role !== 'verification' && both) name = `${p.step.name} · ${stepWorkLabel(p.step, position.role)}`;
+        const slug = dailyStepSlug(p.step.name);
+        // An approval step's page decides for itself what each person sees there; a finance step opens by its work's permissions.
+        if (!dailyStepNameProblem(p.step.name)) {
+          if (position.role === 'verification') href = `/daily-requisition/${slug}`;
+          else if (access.stage(ROLE_PERMISSION_PAGE[position.role])) href = `/daily-requisition/${slug}${both ? `?job=${position.role}` : ''}`;
+        }
+      }
+      info.set(position.key, { name, href, tone: ROLE_TONE[position.role] });
+    }
+    return info;
+  }, [pipeline, placedSteps, access]);
+  const stageName = (stage: OpenStage) => stageInfo.get(stage)?.name ?? stage;
+  /** The payment page's position: the pipeline's last. */
+  const paymentStage = stageKeys[stageKeys.length - 1];
   /** A panel's link to the report its figures come from, for those who may open the reports. */
   const reportLink = (slug: string, label: string): PanelAction | undefined =>
     access.reports ? { href: `/daily-requisition/reports/${slug}`, label } : undefined;
@@ -299,7 +337,7 @@ export default function DailyRequisitionDashboardPage() {
   /** Open requisitions to act on: the oldest, the largest, or those whose documents are missing. */
   const needsAction = useMemo(() => {
     const open = filtered.filter((row) => {
-      const stage = stageOfStatus(row.status);
+      const stage = rowStage(row);
       return stage !== 'paid' && stage !== 'cancelled' && (!stageFocus || stage === stageFocus);
     });
     const age = (row: DashboardRow) => (row.dateKey ? daysBetween(row.dateKey, todayKey) : -1);
@@ -397,8 +435,8 @@ export default function DailyRequisitionDashboardPage() {
   ];
 
   const stageLabel = (row: DashboardRow) => {
-    const stage = stageOfStatus(row.status);
-    return stage === 'paid' ? 'Paid' : stage === 'cancelled' ? 'Cancelled' : stageNames[stage];
+    const stage = rowStage(row);
+    return stage === 'paid' ? 'Paid' : stage === 'cancelled' ? 'Cancelled' : stageName(stage);
   };
 
   /** Every requisition the filters allow, newest first, with where it stands. */
@@ -426,7 +464,7 @@ export default function DailyRequisitionDashboardPage() {
         { header: 'Still due (INR)', key: 'due', width: 16 },
       ];
       for (const row of [...filtered].sort((a, b) => b.dateKey.localeCompare(a.dateKey))) {
-        const stage = stageOfStatus(row.status);
+        const stage = rowStage(row);
         sheet.addRow({
           receptionNo: row.receptionNo,
           depNo: row.depNo,
@@ -480,8 +518,17 @@ export default function DailyRequisitionDashboardPage() {
     );
   }
 
-  const backlogHref = overview.backlog.stage ? stageHrefs[overview.backlog.stage] : undefined;
-  const readyToPay = overview.stages[2];
+  const backlogHref = overview.backlog.stage ? stageInfo.get(overview.backlog.stage)?.href : undefined;
+  /** What waits at the payment page. */
+  const readyToPay = overview.stages.find((profile) => profile.stage === paymentStage) ?? {
+    stage: paymentStage,
+    count: 0,
+    balance: 0,
+    bands: [],
+    medianDays: null,
+    oldestDays: null,
+    overdue: 0,
+  };
 
   return (
     <div className={cn(dailyPageContainerClass, 'space-y-3')}>
@@ -619,7 +666,7 @@ export default function DailyRequisitionDashboardPage() {
                         ? ', at '
                         : ', all of them at '
                       : `, ${overview.backlog.stageCount.toLocaleString('en-IN')} of them at `}
-                    <b className="text-red-700">{stageNames[overview.backlog.stage]}</b>
+                    <b className="text-red-700">{stageName(overview.backlog.stage)}</b>
                   </>
                 ) : null}
                 .
@@ -663,7 +710,7 @@ export default function DailyRequisitionDashboardPage() {
                 value={inrShort(readyToPay.balance)}
                 valueTitle={formatInr(readyToPay.balance)}
                 sub={`${plural(readyToPay.count, 'requisition')}${readyToPay.oldestDays !== null ? ` · oldest ${days(readyToPay.oldestDays)}` : ''}`}
-                href={stageHrefs.payment}
+                href={stageInfo.get(paymentStage)?.href}
               />
             </KpiGroup>
             <KpiGroup
@@ -707,7 +754,7 @@ export default function DailyRequisitionDashboardPage() {
             legend={<BandLegend bands={WAIT_BANDS} />}
           >
             <StageFlow
-              stages={STAGE_ORDER.map((stage, index) => ({ key: stage, name: stageNames[stage], profile: overview.stages[index] }))}
+              stages={overview.stages.map((profile) => ({ key: profile.stage, name: stageName(profile.stage), profile }))}
               selected={stageFocus}
               onSelect={setStageFocus}
               paid={{
@@ -876,13 +923,13 @@ export default function DailyRequisitionDashboardPage() {
               {stageFocus ? (
                 <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-2 text-xs">
                   <span className="text-muted-foreground">Only</span>
-                  <Tag tone={STAGE_TONE[stageFocus]}>{stageNames[stageFocus]}</Tag>
+                  <Tag tone={stageInfo.get(stageFocus)?.tone ?? 'grey'}>{stageName(stageFocus)}</Tag>
                   <button type="button" onClick={() => setStageFocus(null)} className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground">
                     <X className="h-3.5 w-3.5" aria-hidden="true" /> Every stage
                   </button>
-                  {stageHrefs[stageFocus] ? (
-                    <Link href={stageHrefs[stageFocus]!} className="ml-auto font-medium text-emerald-700 hover:underline">
-                      Open {stageNames[stageFocus]} →
+                  {stageInfo.get(stageFocus)?.href ? (
+                    <Link href={stageInfo.get(stageFocus)!.href!} className="ml-auto font-medium text-emerald-700 hover:underline">
+                      Open {stageName(stageFocus)} →
                     </Link>
                   ) : null}
                 </div>
@@ -907,7 +954,7 @@ export default function DailyRequisitionDashboardPage() {
                       {needsAction.rows.map((row) => {
                         const entry = entryById.get(row.id);
                         const age = ageOf(row);
-                        const stage = stageOfStatus(row.status) as OpenStage;
+                        const stage = rowStage(row);
                         return (
                           <TableRow
                             key={row.id}
@@ -929,7 +976,7 @@ export default function DailyRequisitionDashboardPage() {
                               </span>
                             </TableCell>
                             <TableCell className="py-1.5">
-                              <Tag tone={STAGE_TONE[stage] ?? 'grey'}>{stageNames[stage] ?? row.status}</Tag>
+                              <Tag tone={stageInfo.get(stage)?.tone ?? 'grey'}>{stageInfo.get(stage)?.name ?? row.status}</Tag>
                             </TableCell>
                             <TableCell className="py-1.5 text-right">
                               {age === null ? (

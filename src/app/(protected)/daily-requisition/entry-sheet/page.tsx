@@ -87,6 +87,8 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, parseISO, isSameDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import ViewDailyRequisitionDialog from '@/components/daily-requisition/ViewDailyRequisitionDialog';
+import { readDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
+import { holdForCreate } from '@/lib/daily-requisition-flow';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -717,6 +719,8 @@ function EntrySheetPageComponent() {
         // Gross and net stay as entered on this form (verification flags any mismatch).
         ...(selectedExpenseRequest ? carriedStatutory(selectedExpenseRequest) : {}),
       };
+      // Verification steps before Finance: it starts at the first that names someone for it.
+      Object.assign(newEntryData, holdForCreate(await readDailyRequisitionWorkflowSteps(), newEntryData, Timestamp.now()));
 
       const newEntryRef = doc(collection(db, 'dailyRequisitions'));
       const batch = writeBatch(db);

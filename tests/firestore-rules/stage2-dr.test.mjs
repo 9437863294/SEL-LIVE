@@ -227,7 +227,9 @@ test('Receiving at Finance: Mark as Received places it at a Verification step; m
 });
 
 test('GST & TDS Verification: verify or flag, send back, and Send for Payment', async () => {
-  const tax = { verifiedAt: now, igstAmount: 18, tdsAmount: 2, cgstAmount: 0, sgstAmount: 0, retentionAmount: 0, otherDeduction: 0, verificationNotes: '', gstNo: '22AAA', gstType: 'igst', gstRate: 18, gstRegistrationId: 'G1', netAmount: 116 };
+  const tax = { verifiedAt: now, igstAmount: 18, tdsAmount: 2, cgstAmount: 0, sgstAmount: 0, retentionAmount: 0, otherDeduction: 0, verificationNotes: '', gstNo: '22AAA', gstType: 'igst', gstRate: 18, gstRegistrationId: 'G1', netAmount: 116,
+    // What the redesigned form also records: whether the gross held the GST, the taxable value, the TDS section and why anything else was deducted.
+    gstInclusive: false, taxableValue: 100, tdsSection: '194C-OTH', tdsRate: 2, otherDeductionReason: '' };
   await assertSucceeds(move('verifier', 'received', { status: 'Verified', ...tax }));
   await assertSucceeds(move('verifier', 'received', { status: 'Needs Review', ...tax }));
   await assertFails(move('receiving', 'received', { status: 'Verified', ...tax }));
@@ -407,4 +409,165 @@ test('correcting it before it is received: whoever sees it in the register', asy
   for (const uid of ['raiser', 'sfrViewAll', 'assignee']) {
     await assertFails(deleteDoc(doc(db(uid), 'requisitions/r1')));
   }
+});
+
+/* ── The workflow document: who it names may read the register, work a stage, verify, send back, reject ── */
+// drWorkflowMember, drStageMember, drFlowSendBack, drFlowReject; the workflow written only with Edit Workflow.
+
+const WF = 'workflows/daily-requisition-workflow';
+const released = { heldAt: null, heldAssignees: [], heldSince: null };
+const workflowDoc = {
+  steps: [
+    { id: '1', key: 'pre1', name: 'Verification', kind: 'verification', assignmentType: 'User-based', assignedTo: ['uAppr'] },
+    { id: '2', key: 'pre2', name: 'Approval 1', kind: 'verification', assignmentType: 'User-based', assignedTo: ['uTaker'], takeFrom: ['pre1'] },
+    { id: '3', key: 'rec', name: 'Receiving at Finance', assignmentType: 'User-based', assignedTo: ['uStageR'] },
+  ],
+  members: ['uAppr', 'uStageR', 'uTaker'],
+  stageMembers: { receiving: ['uStageR'], gst: [], payment: [] },
+};
+
+async function withWorkflow(docs, body) {
+  await seed(env, {
+    [WF]: workflowDoc,
+    'userPermissions/stageR': perms('uStageR', {}),
+    'userPermissions/appr': perms('uAppr', {}),
+    'userPermissions/taker': perms('uTaker', {}),
+    'userPermissions/wfEditor': perms('uWf', { [`${DR}.Settings`]: ['View', 'View Workflow', 'Edit Workflow'] }),
+    ...docs,
+  });
+  try {
+    await body();
+  } finally {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await Promise.all([WF, ...Object.keys(docs)].map((p) => ctx.firestore().doc(p).delete()));
+    });
+  }
+}
+
+test('the workflow is written only with Edit Workflow; every other workflow document stays open', async () => {
+  await withWorkflow({}, async () => {
+    await assertSucceeds(getDoc(doc(db('stranger'), WF)));
+    await assertFails(setDoc(doc(db('stranger'), WF), { ...workflowDoc, members: ['uX'] }));
+    await assertFails(setDoc(doc(db('receiving'), WF), workflowDoc));
+    await assertSucceeds(setDoc(doc(db('wfEditor'), WF), workflowDoc));
+    await assertSucceeds(setDoc(doc(db('stranger'), 'workflows/other-workflow'), { steps: [] }));
+  });
+  await env.withSecurityRulesDisabled(async (ctx) => { await ctx.firestore().doc('workflows/other-workflow').delete(); });
+});
+
+test("a stage's people read the register and do that stage's work, and only that stage's", async () => {
+  await withWorkflow({ 'dailyRequisitions/smPending': req('Pending') }, async () => {
+    const atReceiving = (uid) => getDocs(query(reqs(db(uid)), where('status', 'in', ['Pending', 'Received', 'Cancelled'])));
+    await assertSucceeds(atReceiving('stageR'));
+    await assertSucceeds(atReceiving('appr'));
+    await assertFails(atReceiving('stranger'));
+    await assertFails(move('appr', 'smPending', { status: 'Received', receivedAt: now, receivedById: 'uAppr' }));
+    await assertSucceeds(move('stageR', 'smPending', { status: 'Received', receivedAt: now, receivedById: 'uStageR' }));
+    // Receiving is not verifying.
+    await assertFails(move('stageR', 'smPending', { status: 'Verified', verifiedAt: now, igstAmount: 18 }));
+  });
+});
+
+test('a Verification step before Finance: entered held; its holder verifies, rejects; nobody else', async () => {
+  const heldBefore = req('Pending', { heldAt: 'pre1', heldAssignees: ['uAppr'], heldSince: now });
+  await withWorkflow(
+    { 'dailyRequisitions/h0': heldBefore, 'dailyRequisitions/h1': heldBefore, 'dailyRequisitions/h2': heldBefore },
+    async () => {
+      const trail = { flowTrail: [{ action: 'Verified', stepKey: 'pre1', userId: 'uAppr' }] };
+      await assertFails(move('stranger', 'h0', { ...released, ...trail }));
+      await assertSucceeds(move('appr', 'h0', { ...released, ...trail }));
+      // Rejected: cancelled, and nobody holds it any more.
+      await assertFails(move('stranger', 'h1', { status: 'Cancelled', ...released }));
+      await assertFails(move('appr', 'h1', { status: 'Cancelled' }));
+      await assertSucceeds(move('appr', 'h1', { status: 'Cancelled', ...released, ...trail }));
+      // Taken early into the next step by its own assignee: still Pending, not received.
+      await assertFails(move('stranger', 'h2', { heldAt: 'pre2', heldAssignees: ['uX'], heldSince: now, ...trail }));
+      await assertSucceeds(move('taker', 'h2', { heldAt: 'pre2', heldAssignees: ['uTaker'], heldSince: now, ...trail }));
+      // Entered held at the first step before Finance.
+      const ref = doc(reqs(db('entry')));
+      await assertSucceeds(setDoc(ref, req('Pending', { heldAt: 'pre1', heldAssignees: ['uAppr'], heldSince: now })));
+      await env.withSecurityRulesDisabled(async (ctx) => { await ctx.firestore().doc(ref.path).delete(); });
+    },
+  );
+});
+
+test('a holder hands over asking for it back; the one it was handed to verifies it back to them', async () => {
+  const held = req('Pending', { heldAt: 'pre1', heldAssignees: ['uAppr'], heldSince: now });
+  await withWorkflow({ 'dailyRequisitions/hb0': held }, async () => {
+    const later = Timestamp.fromDate(new Date('2026-10-02T09:00:00Z'));
+    const trail = { flowTrail: [{ action: 'Handed over', stepKey: 'pre1', userId: 'uAppr' }] };
+    const handOver = { heldAssignees: ['uTaker'], heldSince: later, heldReturn: { stepKey: 'pre1', to: ['uAppr'], since: later }, ...trail };
+    await assertFails(move('stranger', 'hb0', handOver));
+    await assertSucceeds(move('appr', 'hb0', handOver));
+    // Now with uTaker, who verifies it back to uAppr at the same step.
+    await assertSucceeds(move('taker', 'hb0', { heldAssignees: ['uAppr'], heldSince: now, heldReturn: null, ...trail }));
+  });
+});
+
+test("a stage's people hand a requisition over there without the Hand Over permission; nobody else does", async () => {
+  await withWorkflow({ 'dailyRequisitions/hoP': req('Pending') }, async () => {
+    const handOver = { assignedStage: 'receiving', assignedTo: ['uX'], assignedSince: now };
+    await assertFails(move('stranger', 'hoP', handOver));
+    await assertFails(move('appr', 'hoP', handOver), 'named on an approval step only');
+    await assertFails(move('stageR', 'hoP', { ...handOver, assignedStage: 'gst' }), 'only at the stage it is at');
+    await assertSucceeds(move('stageR', 'hoP', handOver));
+  });
+});
+
+test('Verify (GST & TDS) at a step before Finance: its holder records the figures as it goes on; the status and net amount stay', async () => {
+  const heldBefore = req('Pending', { heldAt: 'pre1', heldAssignees: ['uAppr'], heldSince: now });
+  await withWorkflow({ 'dailyRequisitions/g0': heldBefore }, async () => {
+    const trail = { flowTrail: [{ action: 'Verified', stepKey: 'pre1', userId: 'uAppr', comment: 'GST & TDS verified' }] };
+    const figures = {
+      verifiedAt: now, igstAmount: 18, tdsAmount: 2, cgstAmount: 0, sgstAmount: 0, retentionAmount: 0, otherDeduction: 0,
+      verificationNotes: 'ok', gstNo: '21ABCDE1234F1Z5', gstType: 'igst', gstRate: 18, gstRegistrationId: 'reg-1', gstInclusive: true, taxableValue: 84.75, tdsSection: 'none', tdsRate: 0, otherDeductionReason: '',
+    };
+    await assertFails(move('stranger', 'g0', { ...figures, ...released, ...trail }));
+    // Not verified in Finance's sense: the status never moves here, nor the amount payable.
+    await assertFails(move('appr', 'g0', { ...figures, status: 'Verified', ...released, ...trail }));
+    await assertFails(move('appr', 'g0', { ...figures, netAmount: 1, ...released, ...trail }));
+    await assertSucceeds(move('appr', 'g0', { ...figures, ...released, ...trail }));
+  });
+});
+
+test('sent back out of its segment: to Finance (Pending, unreceived) or to GST & TDS Verification (Verified)', async () => {
+  await withWorkflow(
+    {
+      'dailyRequisitions/sbR': req('Received', { receivedAt: now, receivedById: 'uRecv', heldAt: 'v1', heldAssignees: ['uAppr'], heldSince: now }),
+      'dailyRequisitions/sbP': req('Received for Payment', { paidAmount: 0, payments: [], heldAt: 'v2', heldAssignees: ['uAppr'], heldSince: now }),
+    },
+    async () => {
+      await assertFails(move('appr', 'sbR', { status: 'Verified', ...released }));
+      await assertFails(move('stranger', 'sbR', { status: 'Pending', receivedAt: null, receivedById: null, ...released }));
+      await assertSucceeds(move('appr', 'sbR', { status: 'Pending', receivedAt: null, receivedById: null, ...released }));
+      await assertFails(move('appr', 'sbP', { status: 'Pending', ...released }));
+      await assertSucceeds(move('appr', 'sbP', { status: 'Verified', ...released }));
+    },
+  );
+});
+
+test('whoever the workflow names may free an expense request a rejection leaves linked', async () => {
+  await withWorkflow(
+    { 'expenseRequests/eLinked': { requestNo: 'DEP/1', departmentId: 'D1', amount: 100, receptionNo: 'RN-1', receptionDate: '2026-10-01' } },
+    async () => {
+      await assertFails(updateDoc(doc(db('stranger'), 'expenseRequests/eLinked'), { receptionNo: '', receptionDate: '' }));
+      await assertFails(updateDoc(doc(db('appr'), 'expenseRequests/eLinked'), { amount: 1 }));
+      await assertSucceeds(updateDoc(doc(db('appr'), 'expenseRequests/eLinked'), { receptionNo: '', receptionDate: '' }));
+    },
+  );
+});
+
+// drStageRevise: Finance's Revise sends an unreceived requisition back to a step before Finance.
+test('Finance revises what it has not received back to a step before it; nothing it has received', async () => {
+  await withWorkflow(
+    { 'dailyRequisitions/rv1': req('Pending'), 'dailyRequisitions/rv2': req('Pending'), 'dailyRequisitions/rvR': req('Received', { receivedAt: now, receivedById: 'uRecv' }) },
+    async () => {
+      const back = { heldAt: 'pre1', heldAssignees: ['uAppr'], heldSince: now, flowTrail: [{ action: 'Sent back', stepKey: 'rec', userId: 'uStageR' }] };
+      await assertFails(move('stranger', 'rv1', back));
+      await assertFails(move('appr', 'rv1', back));
+      await assertSucceeds(move('stageR', 'rv1', back));
+      await assertSucceeds(move('receiving', 'rv2', back));
+      await assertFails(move('stageR', 'rvR', back));
+    },
+  );
 });

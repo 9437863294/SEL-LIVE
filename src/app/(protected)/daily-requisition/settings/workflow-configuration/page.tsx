@@ -18,6 +18,7 @@ import {
   ArrowDown,
   ArrowRightLeft,
   ArrowUp,
+  Banknote,
   BellRing,
   Building2,
   ClipboardCheck,
@@ -36,6 +37,7 @@ import {
   Trash2,
   UserRound,
   UsersRound,
+  Workflow,
 } from 'lucide-react';
 import { collection, doc, getCountFromServer, getDoc, getDocs, setDoc } from 'firebase/firestore';
 
@@ -47,12 +49,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/shared/page-header';
 import {
-  ActionGroups,
+  ActionPicker,
   AssigneePreview,
   CheckList,
   EditorSection,
   FieldLabel,
   FORWARD_ACTIONS,
+  HAND_OVER_ACTION,
   Hint,
   PeoplePicker,
   Segmented,
@@ -69,15 +72,25 @@ import { diffFields, type FieldChange } from '@/lib/activity-logger';
 import { dailyStepNameProblem, dailyStepSlug } from '@/lib/daily-requisition-settings';
 import {
   allowsHandOver,
+  APPROVAL_BUTTONS,
+  approvalActionsOf,
   assignedPeople,
   canTakeInto,
+  PAYMENT_PAGE_NAME,
   peopleToAssignment,
   placeSteps,
   renumberSteps,
+  ROLE_PERMISSION_PAGE,
+  stageWorkProblems,
+  STEP_ACTIONS,
   stepAfterVerify,
+  stepWorkLabel,
+  upgradeWorkflowSteps,
   verificationPlacementProblem,
   waitingStatusesAt,
+  withDerivedKind,
   withStepKeys,
+  workflowAccessLists,
 } from '@/lib/daily-requisition-flow';
 import { db } from '@/lib/firebase';
 import { withDesignations } from '@/lib/people-directory-client';
@@ -125,23 +138,8 @@ const initialSteps: WorkflowStep[] = [
     actions: ['Verify', 'Re-verify', 'Return to Pending', 'Send for Payment'],
     upload: 'Optional',
   },
-  {
-    id: '3',
-    name: 'Processed for Payment',
-    tat: 8,
-    assignmentType: 'User-based',
-    assignedTo: [],
-    actions: ['Mark as Received for Payment', 'Approve'],
-    upload: 'Optional',
-  },
+  // Processed for Payment is the fixed page after the last step, not a step.
 ];
-
-/** "Start from" sets of buttons: the ones each shipped stage's page acts on. */
-const ACTION_PRESETS: Record<string, string[]> = {
-  'Receiving desk': ['Mark as Received', 'Return to Pending', 'Cancel'],
-  'GST & TDS desk': ['Verify', 'Re-verify', 'Return to Pending', 'Send for Payment'],
-  'Payment desk': ['Mark as Received for Payment', 'Approve'],
-};
 
 /** Turnaround presets, in working hours (a working day is 8). */
 const TAT_PRESETS = [4, 8, 16, 24];
@@ -169,6 +167,8 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [usage, setUsage] = useState<number | null>(null);
+  /** Steps the one list of actions read differently from how they were saved (upgradeWorkflowSteps), until saved. */
+  const [upgradedNames, setUpgradedNames] = useState<string[]>([]);
   const [rowFilter, setRowFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -204,9 +204,12 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
         setRoles(rolesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Role)));
 
         const stored = workflowSnap.exists() ? ((workflowSnap.data().steps || []) as WorkflowStep[]) : [];
-        const editable = normalizeIds(Array.isArray(stored) && stored.length > 0 ? stored : initialSteps);
+        const asSaved = normalizeIds(Array.isArray(stored) && stored.length > 0 ? stored : initialSteps);
+        // Read as one list of actions decides it: what that changes shows as unsaved, to review and save.
+        const editable = normalizeIds(upgradeWorkflowSteps(asSaved));
         setSteps(editable);
-        setBaseline(editable);
+        setBaseline(asSaved);
+        setUpgradedNames(editable.filter((s, i) => JSON.stringify(s) !== JSON.stringify(asSaved[i])).map((s) => s.name));
         setSavedSteps(Array.isArray(stored) ? stored : []);
         setSelectedKey((current) => (editable.some((s) => s.key === current) ? current : (editable[0]?.key ?? '')));
       } catch (error) {
@@ -230,13 +233,15 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
   const userById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const nameOf = useCallback((id: string) => personParts(userById.get(id), id).name, [userById]);
   const problems = useMemo(() => stepProblems(steps), [steps]);
-  const pageInvalidMsg = useMemo(() => {
-    for (const s of normalizeIds(steps)) {
-      const first = problems.get(s.key ?? '')?.[0];
-      if (first) return `Step ${s.id} ("${s.name || 'unnamed'}"): ${first}`;
-    }
-    return '';
+  /** The first thing stopping the save, and the step it is on (the bar at the bottom offers to show it). */
+  const firstInvalid = useMemo(() => {
+    const step = normalizeIds(steps).find((s) => (problems.get(s.key ?? '')?.length ?? 0) > 0);
+    const key = step?.key ?? '';
+    return step ? { key, message: `Step ${step.id} ("${step.name || 'unnamed'}"): ${problems.get(key)?.[0] ?? ''}` } : null;
   }, [steps, problems]);
+  const pageInvalidMsg = firstInvalid?.message ?? '';
+  /** How many steps have something stopping the save. */
+  const invalidCount = problems.size;
   // Compared as they would be saved, so an emptied list that was absent before is not a change.
   const isDirty = useMemo(() => JSON.stringify(normalizeIds(steps)) !== JSON.stringify(baseline), [steps, baseline]);
   const totalTat = steps.reduce((sum, s) => sum + (Number(s.tat) || 0), 0);
@@ -268,11 +273,17 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
       return { ...s, assignedTo: map } as WorkflowStep;
     });
 
+  /**
+   * One list of actions for every step; what is ticked decides the step (withDerivedKind): ticking
+   * Receiving or GST & TDS work makes it a finance step, ticking none an approval step. Hand over is
+   * the step's switch, not a stored button.
+   */
   const toggleAction = (id: string, action: string) =>
     updateStep(id, (s) => {
+      if (action === HAND_OVER_ACTION) return { ...s, allowHandOver: !allowsHandOver(s) };
       const has = s.actions.some((a) => (typeof a === 'string' ? a : a.name) === action);
       const next = has ? s.actions.filter((a) => (typeof a === 'string' ? a : a.name) !== action) : [...s.actions, action];
-      return { ...s, actions: dedupeActionsByName(next) };
+      return withDerivedKind({ ...s, actions: dedupeActionsByName(next) });
     });
 
   const uniqueName = (base: string, list: WorkflowStep[]) => {
@@ -282,46 +293,25 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
     return name;
   };
 
-  function handleAddStep() {
-    const key = newStepKey();
-    setSteps((prev) =>
-      normalizeIds([
-        ...prev,
-        {
-          id: '0',
-          key,
-          name: uniqueName('New Step', prev),
-          tat: 8,
-          assignmentType: 'User-based',
-          assignedTo: [],
-          actions: [],
-          upload: 'Optional',
-        },
-      ]),
-    );
-    setSelectedKey(key);
-  }
-
   /**
-   * A Verification step goes in straight after the first stage (where requisitions enter), the
-   * earliest place it can hold anything. Move it down to verify before payment instead.
+   * A new step goes in after the chosen one, approving (Approve ticked) until finance actions are
+   * ticked on it. Move it to approve before Finance receives, or between Finance's steps.
    */
-  function handleAddVerificationStep() {
+  function handleAddStep() {
     const key = newStepKey();
     setSteps((prev) => {
       const newStep: WorkflowStep = {
         id: '0',
         key,
         kind: 'verification',
-        name: uniqueName('Verification', prev),
+        name: uniqueName('Approval', prev),
         tat: 8,
         assignmentType: 'User-based',
         assignedTo: [],
-        actions: [],
+        actions: ['Approve', 'Send Back', 'Reject'],
         upload: 'Not Required',
-        description: 'Check the requisition. Verify it, or hand it to someone else to verify.',
       };
-      const at = Math.min(1, prev.length);
+      const at = Math.min(prev.findIndex((s) => s.key === selectedKey) + 1 || prev.length, prev.length);
       return normalizeIds([...prev.slice(0, at), newStep, ...prev.slice(at)]);
     });
     setSelectedKey(key);
@@ -362,7 +352,9 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
     setIsSaving(true);
     try {
       const toSave = normalizeIds(steps);
-      await setDoc(doc(db, 'workflows', WORKFLOW_DOC), { steps: toSave });
+      // Who the steps name, beside them, for the Firestore rules: everyone named may read the
+      // register their pages list, and a stage's people may do its work (workflowAccessLists).
+      await setDoc(doc(db, 'workflows', WORKFLOW_DOC), { steps: toSave, ...workflowAccessLists(toSave) });
       const diff = diffWorkflowSteps(savedSteps, toSave, {
         users: new Map(users.map((u) => [u.id, u.name || u.id])),
         projects: new Map(projects.map((p) => [p.id, p.projectName || p.id])),
@@ -382,6 +374,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
       setSteps(toSave);
       setSavedSteps(toSave);
       setBaseline(toSave);
+      setUpgradedNames([]);
       toast({ title: 'Workflow saved', description: 'Applies to requisitions from their next move.' });
     } catch (error) {
       console.error('Error saving workflow: ', error);
@@ -391,9 +384,11 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
     }
   }
 
+  // Back to what is saved, as one list of actions reads it.
   const handleDiscard = () => {
-    setSteps(baseline);
-    if (!baseline.some((s) => s.key === selectedKey)) setSelectedKey(baseline[0]?.key ?? '');
+    const back = normalizeIds(upgradeWorkflowSteps(baseline));
+    setSteps(back);
+    if (!back.some((s) => s.key === selectedKey)) setSelectedKey(back[0]?.key ?? '');
   };
 
   /* ---------------- render ---------------- */
@@ -429,6 +424,9 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
 
   /* ---- the chosen step ---- */
   const role = placed[selIndex]?.role;
+  const selRoles = placed[selIndex]?.roles ?? [];
+  /** The permissions a finance step is opened and worked by: those of the works it does, whatever it is named. */
+  const stagePermissions = selRoles.map((r) => ROLE_PERMISSION_PAGE[r]).join(' and ') || null;
   const isVerification = sel?.kind === 'verification';
   const isFirst = selIndex === 0;
   const selActions = new Set((sel?.actions ?? []).map((a) => (typeof a === 'string' ? a : a.name)));
@@ -440,8 +438,56 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
   const takeSources = sel && canTakeInto(placed, selIndex) ? placed.slice(0, selIndex).filter((q) => waitingStatusesAt(placed, q.index).length > 0) : [];
   const takeChosen = new Set(sel?.takeFrom ?? []);
   const nextName = isVerification ? (stepAfterVerify(steps, selIndex) ?? 'the next step') : (steps[selIndex + 1]?.name ?? 'the end of the workflow');
-  const previewButtons = sel
-    ? [...(isVerification ? ['Verify'] : [...selActions]), ...(handOverOn ? ['Hand over'] : [])]
+  const approval = approvalActionsOf(sel);
+  /** The first Verification step before Finance: nothing comes before it to send a requisition back to. */
+  const sendBackNowhere =
+    isVerification &&
+    placed[selIndex]?.segment === 0 &&
+    !placed.slice(0, selIndex).some((q) => q.role === 'verification' && q.segment === 0);
+  /** Ticked actions that do nothing on this step, with why: shown marked in the picker. */
+  const idleActions = new Map<string, string>();
+  if (sel && isVerification) {
+    // At an approval step one action of each kind shows; the others ticked beside it do the same.
+    const chosen = [approval.forward, approval.sendBack, approval.reject];
+    for (const group of Object.values(APPROVAL_BUTTONS) as ReadonlyArray<readonly string[]>) {
+      const shown = chosen.find((name) => name && group.includes(name));
+      for (const name of group) {
+        if (shown && name !== shown && selActions.has(name)) idleActions.set(name, `does the same as ${shown} at an approval step; the page shows ${shown}.`);
+      }
+    }
+    if (approval.sendBack && sendBackNowhere) {
+      idleActions.set(approval.sendBack, 'this is the first step before Finance, so there is nothing to send it back to; it will not show.');
+    }
+    if (selActions.has('Re-verify')) {
+      idleActions.set('Re-verify', 're-checks figures on the step that sends for payment. Here Verify (GST & TDS) records them.');
+    }
+  } else if (sel) {
+    if (selActions.has('Approve')) {
+      idleActions.set('Approve', 'passes requisitions on at an approval step. Here Mark as Received and Send for Payment move them on.');
+    }
+    if (!selRoles.includes('gst')) {
+      for (const name of ['Verify', 'Re-verify']) {
+        if (selActions.has(name)) {
+          idleActions.set(name, 'checks GST & TDS on the step that sends for payment, or on an approval step. This step only receives.');
+        }
+      }
+    } else if (selActions.has('Re-verify') && !selActions.has('Verify')) {
+      idleActions.set('Re-verify', 're-checks what was verified here; without Verify ticked, this step sends received ones straight for payment.');
+    }
+  }
+  const pickerSelected = new Set([...selActions, ...(handOverOn ? [HAND_OVER_ACTION] : [])]);
+  const previewButtons: string[] = sel
+    ? [
+        ...(isVerification
+          ? [
+              ...(approval.gstVerify ? ['Verify (GST & TDS)'] : []),
+              ...(approval.forward ? [approval.forward] : []),
+              ...(approval.sendBack && !sendBackNowhere ? [approval.sendBack] : []),
+              ...(approval.reject ? [approval.reject] : []),
+            ]
+          : STEP_ACTIONS.filter((a) => selActions.has(a) && !idleActions.has(a))),
+        ...(handOverOn ? [HAND_OVER_ACTION] : []),
+      ]
     : [];
   const selProblems = problems.get(sel?.key ?? '') ?? [];
   const disabled = !canEditPage;
@@ -482,6 +528,28 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
           </Button>
         }
       />
+
+      {upgradedNames.length > 0 && isDirty && (
+        <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 p-3.5 text-[13px] text-sky-900">
+          <p className="flex items-start gap-2 font-semibold">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Every step now has one list of actions. Check these steps and save to apply:</span>
+          </p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-10">
+            {upgradedNames.map((name) => (
+              <li key={name}>
+                <b>{name}</b>
+                {steps.find((s) => s.name === name)?.kind === 'verification'
+                  ? ' — an approval step: its people approve each requisition in turn, with Approve.'
+                  : ' — a finance step, by the actions ticked on it.'}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 pl-6">
+            {PAYMENT_PAGE_NAME} is no longer a step: it is a fixed page, always after the last step.
+          </p>
+        </div>
+      )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[250px_minmax(0,1fr)] xl:grid-cols-[250px_minmax(0,1fr)_320px]">
         {/* ── the steps ── */}
@@ -526,7 +594,11 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                     <span className="min-w-0 flex-1">
                       <b className="flex items-center gap-1 text-[13px] leading-tight">
                         <span className="truncate">{step.name || 'Unnamed step'}</span>
-                        {step.kind === 'verification' && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-sky-600" aria-label="Verification step" />}
+                        {step.kind === 'verification' ? (
+                          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-sky-600" aria-label="Approval step" />
+                        ) : (
+                          <Workflow className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-label="Finance step" />
+                        )}
                       </b>
                       <small className="block truncate text-[11.5px] text-muted-foreground">
                         {whoSummary(step)} · {Number(step.tat) || 0} h
@@ -538,6 +610,17 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
               );
             })}
           </ol>
+          {/* Payment: the fixed page after the last step, not a step. */}
+          <div className="ml-[22px] h-2.5 w-0.5 bg-border" aria-hidden />
+          <div className="flex items-center gap-2.5 px-2.5 pt-1 text-muted-foreground">
+            <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full border border-dashed">
+              <Banknote className="h-3.5 w-3.5" />
+            </span>
+            <span className="text-[12px]">
+              <b className="block text-[12.5px] text-foreground/80">{PAYMENT_PAGE_NAME}</b>
+              Fixed page, after the last step
+            </span>
+          </div>
           {canEditPage && (
             <div className="mt-2.5 space-y-1.5">
               <button
@@ -546,13 +629,6 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                 className="flex w-full items-center justify-center gap-1.5 rounded-[14px] border-[1.5px] border-dashed border-slate-300 p-2.5 text-[13px] font-bold text-muted-foreground transition hover:border-violet-400 hover:bg-violet-50 hover:text-violet-700"
               >
                 <Plus className="h-4 w-4" /> Add a step
-              </button>
-              <button
-                type="button"
-                onClick={handleAddVerificationStep}
-                className="flex w-full items-center justify-center gap-1.5 rounded-[14px] border-[1.5px] border-dashed border-slate-300 p-2.5 text-[13px] font-bold text-muted-foreground transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
-              >
-                <ShieldCheck className="h-4 w-4" /> Add a verification step
               </button>
             </div>
           )}
@@ -572,11 +648,10 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                 disabled={disabled}
                 className="min-w-[160px] flex-1 rounded-lg bg-transparent px-1 py-0.5 text-lg font-extrabold outline-none focus:bg-card focus:ring-2 focus:ring-violet-200"
               />
-              {isVerification && (
-                <Badge variant="secondary" className="gap-1">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Verification step
-                </Badge>
-              )}
+              <Badge variant="secondary" className="gap-1">
+                {isVerification ? <ShieldCheck className="h-3.5 w-3.5" /> : <Workflow className="h-3.5 w-3.5" />}
+                {isVerification ? 'Approval step' : `Finance · ${selRoles.map((r) => stepWorkLabel(sel, r)).join(' + ') || 'no work'}`}
+              </Badge>
               <div className="flex items-center gap-1">
                 <Button variant="outline" size="icon" className="h-8 w-8" title="Move up" onClick={() => moveStep(sel.id, 'up')} disabled={disabled || isFirst}>
                   <ArrowUp className="h-4 w-4" />
@@ -599,6 +674,20 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                 </Button>
               </div>
             </div>
+
+            {/* What stops this step from being saved, where it is being edited. */}
+            {selProblems.length > 0 && (
+              <div className="mx-4 mt-3.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] text-rose-900 sm:mx-5">
+                <p className="flex items-center gap-1.5 font-bold">
+                  <ShieldAlert className="h-4 w-4 shrink-0" /> Fix before saving
+                </p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-6">
+                  {selProblems.map((problem) => (
+                    <li key={problem}>{problem}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Turnaround */}
             <EditorSection icon={Clock3} from="#fcd34d" to="#d97706" title="Turnaround time" description="How long this step may take before it counts as overdue">
@@ -648,7 +737,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
               icon={UsersRound}
               from="#93c5fd"
               to="#1d4ed8"
-              title={isVerification ? 'Who verifies' : 'Who acts on this step'}
+              title={isVerification ? 'Who approves' : 'Who acts on this step'}
               description="Everyone you add can act on it — add as many people as you need"
             >
               <FieldLabel>Assign by</FieldLabel>
@@ -719,75 +808,62 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                 </div>
               )}
 
-              {!isVerification && (
+              {!isVerification && stagePermissions && (
                 <Hint>
-                  At a stage, who may press its buttons follows the stage&apos;s permissions (User Management → Roles); the people here are its owners.
+                  Who may open this step and do its work follows the <b>{stagePermissions}</b> permissions (User Management →
+                  Roles), whatever the step is named; the people here may too.
                 </Hint>
               )}
             </EditorSection>
 
-            {/* Buttons */}
+            {/* Actions: one list for every step; what is ticked decides the step. */}
             <EditorSection
               icon={MousePointerClick}
               from="#86efac"
               to="#15803d"
-              title="Buttons the assignee gets"
-              description={isVerification ? 'A Verification step has buttons of its own' : 'Pick every action allowed at this step'}
+              title="Actions"
+              description="Tick what the assignee can do at this step"
               aside={
-                !isVerification ? (
-                  <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11.5px] font-bold text-violet-700">{selActions.size} selected</span>
-                ) : undefined
+                <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11.5px] font-bold text-violet-700">
+                  {previewButtons.length} on the page
+                </span>
               }
             >
-              {isVerification ? (
-                <div className="space-y-2 text-[13px]">
-                  <p className="flex items-start gap-2">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />
-                    <span>
-                      <b>Verify</b> — sends it straight on to <b>{nextName}</b>.
-                    </span>
-                  </p>
-                  <p className={cn('flex items-start gap-2', !handOverOn && 'text-muted-foreground line-through')}>
-                    <ArrowRightLeft className="mt-0.5 h-4 w-4 shrink-0 text-violet-700" />
-                    <span>
-                      <b>Hand over</b> — passes it to someone else, whose verification then counts for this step.
-                    </span>
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="text-[11.5px] font-bold text-slate-600">Start from:</span>
-                    {Object.entries(ACTION_PRESETS).map(([label, list]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => patchStep(sel.id, { actions: [...list] })}
-                        className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs font-bold text-muted-foreground hover:border-violet-400 hover:text-violet-700"
-                      >
-                        {label}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => patchStep(sel.id, { actions: [] })}
-                      className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs font-bold text-muted-foreground hover:border-violet-400 hover:text-violet-700"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <ActionGroups selected={selActions} onToggle={(a) => toggleAction(sel.id, a)} disabled={disabled} />
-                  {!hasForward && <Hint tone="warn">No button moves the requisition forward. Add Verify, Approve or similar.</Hint>}
-                  <Hint>Each button also needs its permission on this stage.</Hint>
-                </>
-              )}
+              <p className="mb-3 text-[12.5px] text-muted-foreground">
+                {isVerification ? (
+                  <>
+                    An <b>approval step</b>: its people check each requisition in turn, and <b>Approve</b> — or{' '}
+                    <b>Verify (GST &amp; TDS)</b>, which records the GST &amp; TDS figures first — passes it on to {nextName}. Tick{' '}
+                    <b>Mark as Received</b> or <b>Send for Payment</b> and it becomes a finance step.
+                  </>
+                ) : (
+                  <>
+                    A <b>finance step</b>: it {selRoles.includes('receiving') ? 'receives requisitions' : ''}
+                    {selRoles.length > 1 ? ' and ' : ''}
+                    {selRoles.includes('gst') ? (selActions.has('Verify') ? 'verifies GST & TDS, then sends them for payment' : 'sends them for payment') : ''}
+                    {selRoles.length === 0 ? 'does nothing another step does not already do' : ''}. Untick Mark as Received and Send for
+                    Payment and it becomes an approval step.
+                  </>
+                )}
+              </p>
+              <ActionPicker
+                actions={[...STEP_ACTIONS.slice(0, 3), HAND_OVER_ACTION, ...STEP_ACTIONS.slice(3)]}
+                selected={pickerSelected}
+                onToggle={(a) => toggleAction(sel.id, a)}
+                disabled={disabled}
+                idle={idleActions}
+              />
+              {!isVerification && !hasForward && <Hint tone="warn">No action moves the requisition forward. Tick at least one that does.</Hint>}
+              <Hint>
+                The step&apos;s page shows exactly the actions ticked here — {PAYMENT_PAGE_NAME}, after the last step, pays what was
+                sent for payment.
+              </Hint>
             </EditorSection>
 
             {/* Passing work on */}
             {(role !== 'other' || takeSources.length > 0) && (
               <EditorSection icon={ArrowRightLeft} from="#a5b4fc" to="#4338ca" title="Passing work on" description="Handing a requisition to someone else, and taking one before it arrives">
+                {/* Hand over: the same setting as its tick under Actions, switched from either. */}
                 {role !== 'other' && (
                   <div className="rounded-xl border p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -795,11 +871,11 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                         <FieldLabel htmlFor="handover-on">Allow hand over to someone else</FieldLabel>
                         <p className="-mt-1 text-xs text-muted-foreground">
                           {isVerification
-                            ? 'The assignee can verify, or hand it to someone else, whose verification then counts.'
-                            : "A requisition here can be handed to a person, who then does this stage's work on it — even without the stage's permissions."}
+                            ? 'The assignee can approve, or hand it to someone else, whose decision then counts.'
+                            : "A requisition here can be handed to a person, who then does this step's work on it — even without its permissions."}
                         </p>
                       </div>
-                      <Switch id="handover-on" checked={handOverOn} onCheckedChange={(on) => patchStep(sel.id, { allowHandOver: on })} disabled={disabled} />
+                      <Switch id="handover-on" checked={handOverOn} onCheckedChange={() => toggleAction(sel.id, HAND_OVER_ACTION)} disabled={disabled} />
                     </div>
                     {handOverOn && (
                       <div className="mt-3">
@@ -811,13 +887,18 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                           disabled={disabled}
                           placeholder="Anyone — or pick people to limit it"
                         />
-                        {!isVerification && <Hint>To hand over, people need the &quot;Hand Over&quot; permission on this stage — or be the person it was handed to.</Hint>}
+                        {!isVerification && (
+                          <Hint>
+                            The people named on this step can hand over; so can anyone with the &quot;Hand Over&quot; permission on it, and the person a
+                            requisition was handed to.
+                          </Hint>
+                        )}
                       </div>
                     )}
                   </div>
                 )}
                 {takeSources.length > 0 && (
-                  <div className="mt-3 rounded-xl border p-3">
+                  <div className={cn('rounded-xl border p-3', role !== 'other' && 'mt-3')}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <FieldLabel htmlFor="take-on">
@@ -983,7 +1064,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
               <SideBox title="Step summary">
                 <SummaryRows
                   rows={[
-                    ['Type', isVerification ? 'Verification step' : 'Stage'],
+                    ['Type', isVerification ? 'Approval step' : `Finance step · ${selRoles.map((r) => stepWorkLabel(sel, r)).join(' + ') || 'no work'}`],
                     [
                       'Lands with',
                       isUserBased(sel)
@@ -993,7 +1074,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                         : `${mappedCount} ${sel.assignmentType === 'Project-based' ? 'projects' : 'departments'} set`,
                     ],
                     ['Overdue after', `${Number(sel.tat) || 0} working hours`],
-                    ['Buttons', isVerification ? (handOverOn ? 'Verify, Hand over' : 'Verify') : selActions.size],
+                    ['Actions', previewButtons.join(', ') || '—'],
                     ...(!isVerification ? [['Attachment', { Required: 'Required', 'Not Required': 'Not needed', Optional: 'Optional' }[sel.upload] ?? sel.upload] as [string, string]] : []),
                     ['Hand over', handOverOn ? ((sel.handOverUserIds?.length ?? 0) ? `To ${sel.handOverUserIds!.length} people` : 'To anyone') : 'Off'],
                     ['Takes early from', takeChosen.size ? placed.filter((q) => takeChosen.has(q.key)).map((q) => q.step.name).join(', ') : '—'],
@@ -1007,7 +1088,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                   items={[
                     { ok: Boolean(sel.name.trim()), label: 'Step has a name' },
                     ...selProblems.filter((p) => p !== NAME_REQUIRED).map((p) => ({ ok: false, label: p })),
-                    ...(!isVerification ? [{ ok: hasForward, label: 'A button moves it forward' }] : []),
+                    ...(!isVerification ? [{ ok: hasForward, label: 'An action moves it forward' }] : []),
                     {
                       ok: isUserBased(sel) ? people.length > 1 : mappedCount > 0,
                       label: isUserBased(sel) ? 'Someone covers when a person is away' : 'People are set for at least one row',
@@ -1030,10 +1111,25 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
         )}
         role="status"
       >
-        <span>
+        <span className="min-w-0 max-w-[620px]">
           Unsaved changes to <b className="text-violet-300">the workflow</b>
-          {pageInvalidMsg ? <span className="block max-w-[420px] truncate text-xs text-rose-300" title={pageInvalidMsg}>{pageInvalidMsg}</span> : null}
+          {firstInvalid ? (
+            <span className="mt-0.5 block whitespace-normal break-words text-xs leading-snug text-rose-300">
+              {invalidCount > 1 ? `${invalidCount} steps need attention before saving. ` : 'Fix this before saving: '}
+              {firstInvalid.message}
+            </span>
+          ) : null}
         </span>
+        {firstInvalid && firstInvalid.key !== selectedKey && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            onClick={() => setSelectedKey(firstInvalid.key)}
+          >
+            Show step
+          </Button>
+        )}
         <Button variant="outline" size="sm" className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={handleDiscard} disabled={isSaving}>
           Discard
         </Button>
@@ -1058,6 +1154,8 @@ function stepProblems(steps: WorkflowStep[]): Map<string, string[]> {
   const normalized = normalizeIds(steps);
   const out = new Map<string, string[]>();
   const slugOwner = new Map<string, string>();
+  // Each finance work on one stage, in order: received, then GST & TDS, then paid.
+  const workProblems = stageWorkProblems(normalized);
   normalized.forEach((s, index) => {
     const list: string[] = [];
     if (!s.name || !s.name.trim()) {
@@ -1071,7 +1169,8 @@ function stepProblems(steps: WorkflowStep[]): Map<string, string[]> {
       else slugOwner.set(slug, s.name);
     }
     const placementProblem = verificationPlacementProblem(normalized, index);
-    if (placementProblem) list.push(`This Verification step ${placementProblem}`);
+    if (placementProblem) list.push(`This approval step ${placementProblem}`);
+    for (const text of workProblems.get(index) ?? []) list.push(text.startsWith('"') ? text : `This step ${text}`);
     const tatNum = Number(s.tat);
     if (!Number.isFinite(tatNum) || tatNum <= 0) list.push('Turnaround must be a positive number of hours.');
     if (isUserBased(s) && (s.assignedTo ?? []).filter(Boolean).length === 0) list.push('Add at least one person.');
@@ -1168,7 +1267,7 @@ function summarizeStep(step: WorkflowStep, lk: WorkflowLookups): Record<string, 
     notify: (step.notifyUserIds ?? []).map((id) => userName(id)).join(', '),
     escalationUser: userName(step.escalationUserId),
     escalationThreshold: step.escalationThreshold ?? null,
-    kind: step.kind === 'verification' ? 'Verification step' : 'Stage',
+    kind: step.kind === 'verification' ? 'Approval step' : 'Finance step',
     handOver: allowsHandOver(step) ? 'Allowed' : 'Off',
     handOverTo: (step.handOverUserIds ?? []).map((id) => userName(id)).join(', '),
     takeEarlyFrom: (step.takeFrom ?? []).map((key) => lk.steps.get(key) ?? key).join(', '),

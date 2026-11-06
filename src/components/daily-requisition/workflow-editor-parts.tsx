@@ -4,7 +4,7 @@
  * The pieces of Daily Requisition's workflow editor
  * (src/app/(protected)/daily-requisition/settings/workflow-configuration/page.tsx): a person picker
  * that takes any number of people, the editor's section cards, a segmented control, the step's
- * button groups, and the preview of what the assignee sees.
+ * one list of actions, and the preview of what the assignee sees.
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
@@ -273,73 +273,118 @@ export function Segmented<V extends string>({
 
 /* ── the step's buttons ──────────────────────────────────────────────────── */
 
-export interface ActionGroup {
-  name: string;
-  colour: string;
-  actions: string[];
-}
+/** The "action" that is a step's hand-over switch (`allowHandOver`) rather than a stored button. */
+export const HAND_OVER_ACTION = 'Hand over';
 
-/** The workflow's actions, grouped by what they do. */
-export const ACTION_GROUPS: ActionGroup[] = [
-  { name: 'Decide', colour: '#16a34a', actions: ['Approve', 'Reject', 'Revise', 'Return to Pending', 'Cancel'] },
-  { name: 'Verify', colour: '#2563eb', actions: ['Verify', 'Re-verify', 'Verified', 'View Checklist'] },
-  { name: 'Edit data', colour: '#7c3aed', actions: ['Edit', 'Update', 'Add', 'Delete', 'Update Approved Amount'] },
-  {
-    name: 'Payment & close',
-    colour: '#ea580c',
-    actions: ['Mark as Received', 'Send for Payment', 'Mark as Received for Payment', 'Create Expense Request', 'Complete'],
-  },
-];
+/** What each action does, said under it in the picker — and what a few are called there. */
+const ACTION_INFO: Record<string, { label?: string; hint: string }> = {
+  Approve: { hint: 'Passes it on to the next step' },
+  'Send Back': { hint: 'Back to the step before, with a note' },
+  Reject: { hint: 'Cancels it, with a reason' },
+  [HAND_OVER_ACTION]: { hint: 'Gives it to someone else to act on' },
+  'Mark as Received': { hint: 'Finance receives it' },
+  Verify: { label: 'Verify (GST & TDS)', hint: 'Records the GST & TDS figures, then sends it on' },
+  'Re-verify': { label: 'Re-verify (GST & TDS)', hint: 'Checks verified figures again' },
+  'Send for Payment': { hint: 'Sends it on to Processed for Payment' },
+  Revise: { hint: 'Sends it back to be put right' },
+  'Return to Pending': { hint: 'A received one goes back to Pending' },
+  Cancel: { hint: 'Cancels it' },
+};
 
-/** Actions that move a requisition on — a stage needs at least one. */
-export const FORWARD_ACTIONS = ['Approve', 'Verify', 'Verified', 'Send for Payment', 'Complete', 'Mark as Received', 'Mark as Received for Payment'];
+/** Actions that move a requisition on — a step needs at least one. */
+export const FORWARD_ACTIONS = ['Approve', 'Verify', 'Verified', 'Send for Payment', 'Complete', 'Mark as Received'];
 
-export function ActionGroups({
+/**
+ * Every action a step can have, in one list — approval and finance ones alike — each with what it
+ * does. What is ticked decides the step (src/lib/daily-requisition-flow.ts STEP_ACTIONS); ticked
+ * actions that do nothing on this step (`idle`) are marked, with why, and any ticked one the list
+ * no longer has is listed apart, to be taken off.
+ */
+export function ActionPicker({
+  actions,
   selected,
   onToggle,
   disabled,
+  idle,
 }: {
+  actions: readonly string[];
   selected: Set<string>;
   onToggle: (action: string) => void;
   disabled?: boolean;
+  /** Ticked actions that do nothing on this step, with why. */
+  idle?: ReadonlyMap<string, string>;
 }) {
+  const stray = [...selected].filter((action) => !actions.includes(action));
+  const idleNotes = [...(idle ?? new Map<string, string>()).entries()].filter(([action]) => selected.has(action));
   return (
     <div className="space-y-3">
-      {ACTION_GROUPS.map((group) => (
-        <div key={group.name}>
-          <div className="mb-1.5 flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.07em] text-muted-foreground">
-            <i className="h-2 w-2 rounded-[3px]" style={{ background: group.colour }} />
-            {group.name}
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {actions.map((action) => {
+          const on = selected.has(action);
+          const isIdle = on && idle?.has(action);
+          const info = ACTION_INFO[action];
+          return (
+            <button
+              key={action}
+              type="button"
+              disabled={disabled}
+              aria-pressed={on}
+              onClick={() => onToggle(action)}
+              title={isIdle ? idle?.get(action) : info?.hint}
+              className={cn(
+                'flex min-w-0 items-start gap-2 rounded-[11px] border bg-card px-2.5 py-2 text-left transition hover:border-violet-300 disabled:cursor-not-allowed disabled:opacity-60',
+                on && 'border-violet-500 bg-violet-50',
+                isIdle && 'border-dashed border-amber-400 bg-amber-50',
+              )}
+            >
+              <span
+                className={cn(
+                  'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border-2 border-slate-300 text-white',
+                  on && 'border-violet-600 bg-violet-600',
+                  isIdle && 'border-amber-500 bg-amber-500',
+                )}
+              >
+                {on ? <Check className="h-2.5 w-2.5" strokeWidth={3.4} /> : null}
+              </span>
+              <span className="min-w-0">
+                <b className={cn('block text-[12.5px] font-semibold text-muted-foreground', on && 'text-foreground', isIdle && 'line-through')}>
+                  {info?.label ?? action}
+                </b>
+                <span className="block text-[11.5px] leading-snug text-muted-foreground">{info?.hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {idleNotes.length > 0 && (
+        <ul className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+          {idleNotes.map(([action, why]) => (
+            <li key={action}>
+              <b>{ACTION_INFO[action]?.label ?? action}</b> — {why}
+            </li>
+          ))}
+        </ul>
+      )}
+      {stray.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[11px] font-extrabold uppercase tracking-[0.07em] text-amber-700">
+            Ticked, but no step does these any more — click to take off
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {group.actions.map((action) => {
-              const on = selected.has(action);
-              return (
-                <button
-                  key={action}
-                  type="button"
-                  disabled={disabled}
-                  aria-pressed={on}
-                  onClick={() => onToggle(action)}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-[11px] border bg-card py-1.5 pl-2 pr-3 text-[12.5px] font-semibold text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-60',
-                    on && 'text-foreground',
-                  )}
-                  style={on ? { borderColor: group.colour, background: `color-mix(in srgb, ${group.colour} 9%, hsl(var(--card)))` } : undefined}
-                >
-                  <span
-                    className="grid h-4 w-4 place-items-center rounded-[5px] border-2 text-white"
-                    style={on ? { background: group.colour, borderColor: group.colour } : { borderColor: '#cbd5e1' }}
-                  >
-                    {on ? <Check className="h-2.5 w-2.5" strokeWidth={3.4} /> : null}
-                  </span>
-                  {action}
-                </button>
-              );
-            })}
+            {stray.map((action) => (
+              <button
+                key={action}
+                type="button"
+                disabled={disabled}
+                onClick={() => onToggle(action)}
+                className="rounded-[11px] border border-dashed border-amber-300 bg-amber-50 px-3 py-1.5 text-[12.5px] font-semibold text-amber-800 line-through disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {action}
+              </button>
+            ))}
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }

@@ -83,7 +83,11 @@ function trailRows(entry: DailyRequisitionEntry, nameOf: (id: string) => string)
         ? `${event.stepName}: handed to ${(event.toUserNames ?? []).join(', ')}`
         : event.action === 'Taken early'
           ? `Taken early into ${event.stepName}`
-          : `${event.stepName}: verified`;
+          : event.action === 'Sent back'
+            ? `${event.stepName}: sent back to ${event.toStep ?? 'the step before'}`
+            : event.action === 'Rejected'
+              ? `${event.stepName}: rejected`
+              : `${event.stepName}: verified`;
     rows.push({ step: what, by: event.userName, when: event.at });
   }
   if (entry.verifiedAt) rows.push({ step: 'GST & TDS verified', by: '—', when: entry.verifiedAt });

@@ -195,6 +195,61 @@ export function computeStatutory(taxableAmount: number, input: StatutoryInput): 
 }
 
 /**
+ * GST & TDS as Daily Requisition's verification works them out (GstTdsVerificationDialog). An
+ * expense request's amount is always the taxable value; a requisition's gross may instead be the
+ * bill total with the GST inside it (`gstInclusive`), and the taxable value is then worked back out
+ * of it. Under reverse charge the supplier charges no GST, so nothing is inside the gross. TDS and
+ * retention are on the taxable value, by rate, unless an amount was typed.
+ */
+export interface VerificationInput {
+  gross: number;
+  gstType: GstType;
+  gstRate: number;
+  gstInclusive: boolean;
+  reverseCharge: boolean;
+  /** % of the taxable value; 0 for no TDS. */
+  tdsRate: number;
+  tdsOverride: number | null;
+  /** % of the taxable value. */
+  retentionRate: number;
+  retentionOverride: number | null;
+  otherDeduction: number;
+}
+
+export function verificationTotals(input: VerificationInput): StatutoryTotals {
+  const gross = round2(Math.max(0, Number(input.gross) || 0));
+  const rate = input.gstType === 'none' ? 0 : Math.max(0, Number(input.gstRate) || 0);
+  const inclusive = input.gstInclusive && rate > 0 && !input.reverseCharge;
+  const taxable = inclusive ? round2(gross / (1 + rate / 100)) : gross;
+  let igst = 0;
+  let cgst = 0;
+  let sgst = 0;
+  if (inclusive) {
+    // What is inside the gross, split so the halves add back to it exactly.
+    const inside = round2(gross - taxable);
+    if (input.gstType === 'igst') igst = inside;
+    else {
+      cgst = round2(inside / 2);
+      sgst = round2(inside - cgst);
+    }
+  } else if (input.gstType === 'igst') {
+    igst = round2((taxable * rate) / 100);
+  } else if (input.gstType === 'cgst-sgst') {
+    // As computeStatutory does, so a request's figures verify to the same paisa.
+    cgst = round2((taxable * rate) / 200);
+    sgst = cgst;
+  }
+  const gst = round2(igst + cgst + sgst);
+  const invoice = inclusive ? gross : round2(taxable + (input.reverseCharge ? 0 : gst));
+  const positive = (n: number) => Math.max(0, Number(n) || 0);
+  const tds = input.tdsOverride !== null ? round2(positive(input.tdsOverride)) : round2((taxable * positive(input.tdsRate)) / 100);
+  const retention =
+    input.retentionOverride !== null ? round2(positive(input.retentionOverride)) : round2((taxable * positive(input.retentionRate)) / 100);
+  const other = round2(positive(input.otherDeduction));
+  return { taxable, igst, cgst, sgst, gst, invoice, tds, retention, other, net: round2(invoice - tds - retention - other) };
+}
+
+/**
  * Problems that must be fixed before the request is saved. Nothing is required while GST and TDS
  * are both "none" and there are no deductions — the section is then simply not recorded.
  *

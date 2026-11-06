@@ -116,7 +116,8 @@ function toBill(entry: DailyRequisitionEntry): GstBill {
     gstRegistrationId: entry.gstRegistrationId ?? '',
     gstType: entry.gstType,
     reverseCharge: Boolean(entry.reverseCharge),
-    taxable: num(entry.grossAmount),
+    // Verification records the taxable value when the gross held the GST; otherwise the gross is it.
+    taxable: num(entry.taxableValue ?? entry.grossAmount),
     cgst: num(entry.cgstAmount),
     sgst: num(entry.sgstAmount),
     igst: num(entry.igstAmount),

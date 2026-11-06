@@ -37,6 +37,9 @@
   .dark :where(.bg-white\/25:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.25);
   }
+  .dark :where(.hover\:bg-white\/25:not(.keep-light, .keep-light *)):hover {
+    background-color: hsl(var(--dc-100) / 0.25);
+  }
   .dark :where(.bg-white\/30:not(.keep-light, .keep-light *)) {
     background-color: hsl(var(--card) / 0.3);
   }
@@ -1324,6 +1327,9 @@
   }
   .dark :where(.bg-violet-200:not(.keep-light, .keep-light *)) {
     background-color: rgb(139 92 246 / 0.260);
+  }
+  .dark :where(.bg-violet-200\/70:not(.keep-light, .keep-light *)) {
+    background-color: rgb(139 92 246 / 0.182);
   }
   .dark :where(.border-violet-200:not(.keep-light, .keep-light *)),
   .dark :where(.border-violet-200\/60:not(.keep-light, .keep-light *)) {

@@ -11,6 +11,7 @@ import {
   statutoryErrors,
   statutoryInputFrom,
   suggestGstType,
+  verificationTotals,
 } from '../src/lib/statutory.ts';
 
 const withInput = (patch) => ({ ...EMPTY_STATUTORY, ...patch });
@@ -146,4 +147,37 @@ test('a corrected amount reworks the figures that scale with it', () => {
   // A typed TDS amount is kept as typed rather than silently rescaled.
   const typed = buildExpenseStatutory(90000, statutoryInputFrom({ ...raised, tdsOverride: 1500 }));
   assert.equal(typed.tdsAmount, 1500);
+});
+
+/* ── Daily Requisition verification: the gross may hold the GST ── */
+
+const verifying = (patch) => ({
+  gross: 55988, gstType: 'none', gstRate: 0, gstInclusive: true, reverseCharge: false,
+  tdsRate: 0, tdsOverride: null, retentionRate: 0, retentionOverride: null, otherDeduction: 0, ...patch,
+});
+
+test('verification: GST inside the gross is worked back out of it; on top, it is added', () => {
+  // No GST: the gross is the taxable value and, with nothing deducted, the net.
+  assert.deepEqual(verificationTotals(verifying({})), { taxable: 55988, igst: 0, cgst: 0, sgst: 0, gst: 0, invoice: 55988, tds: 0, retention: 0, other: 0, net: 55988 });
+  // 18% inside 1,18,000: taxable 1,00,000, the halves adding back to the gross exactly.
+  const inside = verificationTotals(verifying({ gross: 118000, gstType: 'cgst-sgst', gstRate: 18 }));
+  assert.deepEqual([inside.taxable, inside.cgst, inside.sgst, inside.invoice, inside.net], [100000, 9000, 9000, 118000, 118000]);
+  const odd = verificationTotals(verifying({ gross: 55988, gstType: 'cgst-sgst', gstRate: 18 }));
+  assert.equal(Math.round((odd.taxable + odd.cgst + odd.sgst) * 100) / 100, 55988);
+  // On top: the same as an expense request works it out, to the paisa.
+  const onTop = verificationTotals(verifying({ gross: 100000, gstType: 'igst', gstRate: 18, gstInclusive: false }));
+  assert.deepEqual([onTop.taxable, onTop.igst, onTop.invoice], [100000, 18000, 118000]);
+  const request = computeStatutory(12345.67, withInput({ gstType: 'cgst-sgst', gstRate: 18 }));
+  const verified = verificationTotals(verifying({ gross: 12345.67, gstType: 'cgst-sgst', gstRate: 18, gstInclusive: false }));
+  assert.deepEqual([verified.cgst, verified.sgst, verified.net], [request.cgst, request.sgst, request.net]);
+  // Reverse charge: the supplier charges none, so nothing is inside the gross and nothing is added.
+  const rcm = verificationTotals(verifying({ gross: 100000, gstType: 'igst', gstRate: 18, reverseCharge: true }));
+  assert.deepEqual([rcm.taxable, rcm.igst, rcm.invoice], [100000, 18000, 100000]);
+});
+
+test('verification: TDS and retention on the taxable value, by rate or as typed', () => {
+  const v = verificationTotals(verifying({ gross: 118000, gstType: 'igst', gstRate: 18, tdsRate: 2, retentionRate: 5, otherDeduction: 500 }));
+  assert.deepEqual([v.tds, v.retention, v.other, v.net], [2000, 5000, 500, 110500]);
+  const typed = verificationTotals(verifying({ gross: 118000, gstType: 'igst', gstRate: 18, tdsRate: 2, tdsOverride: 1999, retentionOverride: 0 }));
+  assert.deepEqual([typed.tds, typed.retention, typed.net], [1999, 0, 116001]);
 });

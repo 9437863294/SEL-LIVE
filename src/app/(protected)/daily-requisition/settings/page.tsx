@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Banknote,
   Check,
   ClipboardCheck,
   Database,
@@ -43,7 +44,7 @@ import { Avatar, personParts } from '@/components/daily-requisition/workflow-edi
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
-import { assignedPeople, placeSteps, verificationPlacementProblem } from '@/lib/daily-requisition-flow';
+import { assignedPeople, PAYMENT_PAGE_NAME, placeSteps, verificationPlacementProblem } from '@/lib/daily-requisition-flow';
 import { DR_FIELD_REGISTRY } from '@/lib/daily-requisition-settings';
 import { requireDocumentSeries } from '@/lib/document-numbers';
 import { counterStart, formatReceptionNo, serialDigits } from '@/lib/daily-requisition-import';
@@ -461,7 +462,7 @@ export default function DailyRequisitionSettingsPage() {
                     {index + 1}
                   </span>
                   <b className="pr-10 text-[13px]">{step.name}</b>
-                  {step.kind === 'verification' && <ShieldCheck className="ml-1 inline h-3.5 w-3.5 text-sky-600" aria-label="Verification step" />}
+                  {step.kind === 'verification' && <ShieldCheck className="ml-1 inline h-3.5 w-3.5 text-sky-600" aria-label="Approval step" />}
                   <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold">
                     {people.length === 0 ? (
                       <span className="text-amber-700">No one set</span>
@@ -482,6 +483,18 @@ export default function DailyRequisitionSettingsPage() {
               </div>
             );
           })}
+          {/* Payment: the fixed page after the last step, not a step. */}
+          <div className="flex items-stretch">
+            <span className="hidden w-[26px] place-items-center text-violet-300 sm:grid" aria-hidden>
+              <ArrowRight className="h-4 w-4" />
+            </span>
+            <div className="flex min-w-[130px] flex-col justify-center rounded-[14px] border border-dashed px-3 py-2 text-muted-foreground max-sm:ml-2">
+              <span className="flex items-center gap-1.5 text-[13px] font-bold text-foreground/80">
+                <Banknote className="h-3.5 w-3.5" /> {PAYMENT_PAGE_NAME}
+              </span>
+              <small className="text-[11.5px]">Fixed page, after the last step</small>
+            </div>
+          </div>
         </div>
       ),
     },

@@ -2511,7 +2511,9 @@ service cloud.firestore {
           && (expHoldsFor('Departments', resource.data.get('departmentId', ''), 'Edit')
             || expNamed('edit-request', true, true, resource.data.get('departmentId', ''),
               request.resource.data.get('amount', 0), true)))
-        || (expChanged().hasOnly(['receptionNo', 'receptionDate']) && expInModules('Daily Requisition'));
+        // (Named on a Daily Requisition step is enough: a Verification step's rejection frees its request.)
+        || (expChanged().hasOnly(['receptionNo', 'receptionDate'])
+          && (expInModules('Daily Requisition') || drWorkflowMember()));
       // Requests are never deleted from the browser.
     }
 
@@ -2603,13 +2605,20 @@ service cloud.firestore {
      * writes the impersonated user's id under the administrator's sign-in.
      *
      * Verification steps (src/lib/daily-requisition-flow.ts) are the exception to "names nobody":
-     * Workflow Configuration may put one between two stages, and a requisition it holds names the
-     * step (`heldAt`, the step's key) and who must verify it there (`heldAssignees`). Those people
-     * read it, verify it (passing it to the next Verification step or releasing it) and hand it
-     * over — the hold fields and the trail only, never its status. A stage's move may place it at a
-     * step or release it. A step set to take requisitions early may pull one forward: into a
-     * Verification step by one of that step's assignees in the workflow document, into GST & TDS
-     * Verification or payment with `Take Early` on that stage.
+     * Workflow Configuration may put one before Receiving at Finance (a new requisition starts there,
+     * still Pending) or between two stages, and a requisition it holds names the step (`heldAt`, the
+     * step's key) and who must verify it there (`heldAssignees`). Those people read it, verify it
+     * (passing it to the next Verification step or releasing it), hand it over or send it back to an
+     * earlier step — the hold fields and the trail only. Where the step offers them they may also
+     * send it back out of the segment to the stage before (drFlowSendBack) or reject it
+     * (drFlowReject), which change its status. A stage's move may place it at a step or release it.
+     * A step set to take requisitions early may pull one forward: into a Verification step by one of
+     * that step's assignees in the workflow document, into GST & TDS Verification or payment with
+     * `Take Early` on that stage.
+     *
+     * The people Workflow Configuration names on a built-in stage (`stageMembers` on the workflow
+     * document) do that stage's work as its permissions would, without holding them; anyone named on
+     * any step (`members`) reads the register. Only Edit Workflow writes that document.
      *
      * A stage Workflow Configuration marks for hand-over may assign a requisition to someone there
      * (`assignedStage`, the stage's role, and `assignedTo`), by whoever holds `Hand Over` on the
@@ -2617,9 +2626,9 @@ service cloud.firestore {
      * verify, send for payment, mark paid — as the stage's permissions would let them, and only
      * while it is still at that stage.
      *
-     * Budget: the permissions document (1), for a read Expenses' User Roles document (1), and for
-     * an early take into a Verification step the workflow document (1) — 3 of 10. A voucher's or a
-     * stage's transaction touches the same paths for every requisition.
+     * Budget: the permissions document (1), for a read Expenses' User Roles document (1), and the
+     * workflow document (1) for a member's read, a stage person's move or an early take — 3 of 10. A
+     * voucher's or a stage's transaction touches the same paths for every requisition.
      */
     function drHolds(resource, actions) {
       return hasPermissions() && get(permissionsPath()).data.p.get(resource, []).hasAny(actions);
@@ -2696,6 +2705,38 @@ service cloud.firestore {
         || drExpNamed('import-requests', true, false) || drExpNamed('view-reports', false, false));
     }
 
+    /* ── The workflow document (Workflow Configuration; src/lib/daily-requisition-flow.ts) ── */
+
+    function drWorkflowPath() {
+      return /databases/$(database)/documents/workflows/daily-requisition-workflow;
+    }
+
+    /** The workflow, or {} when none is saved: guarded, so a missing document refuses rather than errors. */
+    function drWorkflow() {
+      return exists(drWorkflowPath()) ? get(drWorkflowPath()).data : {};
+    }
+
+    function drWorkflowSteps() {
+      return drWorkflow().get('steps', []);
+    }
+
+    /**
+     * Named on any step of the workflow (`members`, saved by Workflow Configuration): may read the
+     * register their step pages list, whatever else they hold.
+     */
+    function drWorkflowMember() {
+      return drMe() != '' && drWorkflow().get('members', []).hasAny([drMe()]);
+    }
+
+    /**
+     * Named on the built-in stage `role` (`stageMembers`): may do that stage's work as its
+     * permissions would let them. Being assigned is the authority (as at a Verification step); the
+     * stage page keeps each person to the projects and departments the step names them for.
+     */
+    function drStageMember(role) {
+      return drMe() != '' && drWorkflow().get('stageMembers', {}).get(role, []).hasAny([drMe()]);
+    }
+
     /* ── The requisition's state ── */
 
     /** Money recorded against it (src/lib/requisition-progress.ts isPaymentLocked). */
@@ -2727,15 +2768,17 @@ service cloud.firestore {
      */
     function drMayMoveTo(from, status) {
       return status == 'Pending' ? (drReceiving(['Return to Pending']) || drVerification(['Return to Pending'])
-          || drPayment(['Return to Pending']))
-        : status == 'Received' ? (drReceiving(['Mark as Received'])
-          || (from in ['Verified', 'Needs Review'] && drVerification(['Return to Pending'])))
+          || drPayment(['Return to Pending'])
+          || drStageMember('receiving') || drStageMember('gst') || drStageMember('payment'))
+        : status == 'Received' ? (drReceiving(['Mark as Received']) || drStageMember('receiving')
+          || (from in ['Verified', 'Needs Review'] && (drVerification(['Return to Pending']) || drStageMember('gst'))))
         : status == 'Cancelled' ? (drReceiving(['Reject', 'Cancel']) || drVerification(['Reject', 'Cancel'])
-          || drPayment(['Reject', 'Cancel']))
-        : status in ['Verified', 'Needs Review'] ? drVerification(['Verify', 'Re-verify'])
+          || drPayment(['Reject', 'Cancel'])
+          || drStageMember('receiving') || drStageMember('gst') || drStageMember('payment'))
+        : status in ['Verified', 'Needs Review'] ? (drVerification(['Verify', 'Re-verify']) || drStageMember('gst'))
         : status == 'Received for Payment' ? (drPayment(['Mark as Received for Payment', 'Approve'])
-          || drVerification(['Send for Payment']))
-        : status == 'Paid' ? drPayment(['Mark as Received for Payment', 'Approve'])
+          || drVerification(['Send for Payment']) || drStageMember('payment') || drStageMember('gst'))
+        : status == 'Paid' ? (drPayment(['Mark as Received for Payment', 'Approve']) || drStageMember('payment'))
         : false;
     }
 
@@ -2744,13 +2787,15 @@ service cloud.firestore {
      * Verification step it lands at or leaves (holdForMove).
      */
     function drStageMove() {
-      return !drLocked(resource.data) && drMayMoveTo(resource.data.get('status', ''), drNewStatus())
-        && drChanged().hasOnly([
+      // The fields first: they are cheap to check and rule out every other kind of write (a
+      // Verification step's carries `flowTrail`) before the permission and workflow look-ups.
+      return drChanged().hasOnly([
           'status', 'receivedAt', 'receivedById', 'verifiedAt', 'igstAmount', 'tdsAmount', 'cgstAmount',
-          'sgstAmount', 'retentionAmount', 'otherDeduction', 'verificationNotes', 'gstNo', 'gstType', 'gstRate',
+          'sgstAmount', 'retentionAmount', 'otherDeduction', 'verificationNotes', 'gstNo', 'gstType', 'gstRate', 'gstInclusive', 'taxableValue', 'tdsSection', 'tdsRate', 'otherDeductionReason',
           'gstRegistrationId', 'netAmount', 'paidAt', 'paidAmount', 'manualPaid', 'paidById', 'paidByName',
           'heldAt', 'heldAssignees', 'heldSince', 'assignedStage', 'assignedTo', 'assignedSince'
         ])
+        && !drLocked(resource.data) && drMayMoveTo(resource.data.get('status', ''), drNewStatus())
         && drAssignmentOnlyEnds()
         // Paid by hand only from Processed for Payment, and only then with the paid figures.
         && (drNewStatus() == 'Paid'
@@ -2801,7 +2846,7 @@ service cloud.firestore {
         && drAssigneeMayMove(stage, from, drNewStatus())
         && drChanged().hasOnly([
           'status', 'receivedAt', 'receivedById', 'verifiedAt', 'igstAmount', 'tdsAmount', 'cgstAmount',
-          'sgstAmount', 'retentionAmount', 'otherDeduction', 'verificationNotes', 'gstNo', 'gstType', 'gstRate',
+          'sgstAmount', 'retentionAmount', 'otherDeduction', 'verificationNotes', 'gstNo', 'gstType', 'gstRate', 'gstInclusive', 'taxableValue', 'tdsSection', 'tdsRate', 'otherDeductionReason',
           'gstRegistrationId', 'netAmount', 'paidAt', 'paidAmount', 'manualPaid', 'paidById', 'paidByName',
           'heldAt', 'heldAssignees', 'heldSince', 'assignedStage', 'assignedTo', 'assignedSince'
         ])
@@ -2811,18 +2856,21 @@ service cloud.firestore {
     }
 
     /*
-     * Handed to someone at the stage it is at: by whoever holds `Hand Over` there, or by the person
-     * it is already with. It names one stage — its own — and someone.
+     * Handed to someone at the stage it is at: by whoever holds `Hand Over` there, by the people
+     * Workflow Configuration names on the step doing that work (being assigned is the authority), or
+     * by the person it is already with. It names one stage — its own — and someone.
      */
     function drStageHandOver() {
       let stage = drStageOf(resource.data.get('status', ''));
       let next = request.resource.data;
-      return stage != '' && !drLocked(resource.data)
-        && drChanged().hasOnly(['assignedStage', 'assignedTo', 'assignedSince', 'flowTrail'])
+      // The fields first: cheap, and they rule out every other kind of write (it is checked early).
+      return drChanged().hasOnly(['assignedStage', 'assignedTo', 'assignedSince', 'flowTrail'])
+        && stage != '' && !drLocked(resource.data)
         && next.get('assignedStage', '') == stage
         && next.get('assignedTo', []).size() > 0
         && (drStagePage(stage, ['Hand Over'])
-          || (resource.data.get('assignedStage', '') == stage && drAssignedToMe(resource.data)));
+          || (resource.data.get('assignedStage', '') == stage && drAssignedToMe(resource.data))
+          || drStageMember(stage));
     }
 
     /* ── Verification steps and early takes (src/lib/daily-requisition-flow.ts) ── */
@@ -2835,18 +2883,62 @@ service cloud.firestore {
     /*
      * The holder verifies (it passes to the next Verification step, or is released to the stage
      * after) or hands it over (someone else holds it). Someone holds it exactly while it names a step.
+     * A step whose Verify (GST & TDS) is ticked records the GST & TDS figures as it passes it on —
+     * never the status or the net amount. A hand-over may ask for it back once verified (`heldReturn`).
      */
     function drFlowAct() {
       let next = request.resource.data;
       return drHeldByMe(resource.data) && !drLocked(resource.data)
         && resource.data.get('heldAt', null) is string
-        && drChanged().hasOnly(['heldAt', 'heldAssignees', 'heldSince', 'flowTrail'])
+        && drChanged().hasOnly([
+          'heldAt', 'heldAssignees', 'heldSince', 'heldReturn', 'flowTrail',
+          'verifiedAt', 'igstAmount', 'tdsAmount', 'cgstAmount', 'sgstAmount', 'retentionAmount',
+          'otherDeduction', 'verificationNotes', 'gstNo', 'gstType', 'gstRate', 'gstInclusive', 'taxableValue', 'tdsSection', 'tdsRate', 'otherDeductionReason', 'gstRegistrationId'
+        ])
         && ((next.get('heldAt', null) is string && next.get('heldAt', '') != '')
           == (next.get('heldAssignees', []).size() > 0));
     }
 
-    function drWorkflowSteps() {
-      return get(/databases/$(database)/documents/workflows/daily-requisition-workflow).data.get('steps', []);
+    /*
+     * The holder sends it back out of its segment (planSendBack): to Receiving at Finance from the
+     * first step after it (Pending again, no longer received), or to GST & TDS Verification from the
+     * first step before payment (Verified). Back to an earlier step of the segment is drFlowAct's.
+     * Whether the step offers Send Back is Workflow Configuration's, and the screen's to check.
+     */
+    function drFlowSendBack() {
+      let from = resource.data.get('status', '');
+      return drHeldByMe(resource.data) && !drLocked(resource.data)
+        && resource.data.get('heldAt', null) is string
+        && request.resource.data.get('heldAssignees', []).size() == 0
+        && ((from == 'Received' && drNewStatus() == 'Pending'
+            && drChanged().hasOnly(['status', 'receivedAt', 'receivedById', 'heldAt', 'heldAssignees', 'heldSince', 'flowTrail']))
+          || (from == 'Received for Payment' && drNewStatus() == 'Verified'
+            && drChanged().hasOnly(['status', 'heldAt', 'heldAssignees', 'heldSince', 'flowTrail'])));
+    }
+
+    /*
+     * Finance's Revise on a requisition it has not received (planReviseToApproval): back to a
+     * Verification step before Finance — still Pending, now held there. By whoever may return one
+     * at Receiving at Finance, or works the stage that receives.
+     */
+    function drStageRevise() {
+      let next = request.resource.data;
+      return resource.data.get('status', '') == 'Pending' && drNewStatus() == 'Pending'
+        && drChanged().hasOnly(['heldAt', 'heldAssignees', 'heldSince', 'flowTrail'])
+        && next.get('heldAt', null) is string && next.get('heldAt', '') != ''
+        && next.get('heldAssignees', []).size() > 0
+        && !drLocked(resource.data)
+        && (drReceiving(['Return to Pending']) || drStageMember('receiving'));
+    }
+
+    /** The holder rejects it at their step (planReject): cancelled, the hold released. */
+    function drFlowReject() {
+      return drHeldByMe(resource.data) && !drLocked(resource.data)
+        && resource.data.get('heldAt', null) is string
+        && resource.data.get('status', '') in ['Pending', 'Received', 'Received for Payment']
+        && drNewStatus() == 'Cancelled'
+        && request.resource.data.get('heldAssignees', []).size() == 0
+        && drChanged().hasOnly(['status', 'heldAt', 'heldAssignees', 'heldSince', 'flowTrail']);
     }
 
     /** A project's or department's people on a step: primary, alternative, or any of the additional. */
@@ -2893,7 +2985,11 @@ service cloud.firestore {
       let into = next.get('heldAt', null);
       return drMe() != '' && !drLocked(resource.data)
         && resource.data.get('status', '') in ['Pending', 'Received', 'Needs Review', 'Verified', 'Received for Payment']
-        && drNewStatus() in ['Received', 'Received for Payment']
+        // Into a Verification step before Finance it stays Pending — taken from an earlier such step
+        // that holds it, never pulled back out of Finance's own queue; anywhere else it moves on.
+        && (drNewStatus() in ['Received', 'Received for Payment']
+          || (drNewStatus() == 'Pending' && resource.data.get('status', '') == 'Pending' && into is string && into != ''
+            && resource.data.get('heldAt', null) is string && resource.data.get('heldAt', '') != ''))
         && drChanged().hasOnly(['status', 'receivedAt', 'receivedById', 'heldAt', 'heldAssignees', 'heldSince', 'flowTrail',
           'assignedStage', 'assignedTo', 'assignedSince'])
         && drAssignmentOnlyEnds()
@@ -2942,7 +3038,9 @@ service cloud.firestore {
     match /dailyRequisitions/{requisitionId} {
       // A Verification step's holders read what it holds (`where heldAssignees array-contains me`),
       // and whoever a requisition was handed to at a stage reads it (`where assignedTo array-contains me`).
-      allow read: if drModuleReader() || drExpensesReader() || drHeldByMe(resource.data) || drAssignedToMe(resource.data);
+      // So does anyone the workflow names on a step (`members`), for their step pages' queries.
+      allow read: if drModuleReader() || drExpensesReader() || drHeldByMe(resource.data) || drAssignedToMe(resource.data)
+        || drWorkflowMember();
       // A voucher re-reads by id what it pays or reverses, whatever has happened to it since.
       allow get: if drHolds('Bank Balance.Expenses', ['Add', 'Delete']);
       // New Payment's list: `where status in ['Received for Payment', 'Partially Paid']`.
@@ -2951,8 +3049,12 @@ service cloud.firestore {
 
       // The entry form, Receive Multiple and the import (which may bring paid history with it).
       allow create: if drPage('Entry Sheet', ['Add']);
-      allow update: if drEntryEdit() || drStageMove() || drFlowAct() || drFlowTake() || drAssignedMove()
-        || drStageHandOver() || drDocuments() || drVoucherPays() || drVoucherReversed();
+      // Cheapest and most specific first: Firestore evaluates at most 1,000 expressions a request,
+      // the catch-all's lists included, and a Verification step's checks walk the workflow.
+      // Ordered for the 1,000-expression cap: a hand-over by the stage's people reads the workflow,
+      // so it comes before the costlier moves (it rules itself out at once for any other write).
+      allow update: if drEntryEdit() || drFlowAct() || drFlowSendBack() || drFlowReject() || drStageHandOver() || drStageMove()
+        || drFlowTake() || drStageRevise() || drAssignedMove() || drDocuments() || drVoucherPays() || drVoucherReversed();
       allow delete: if drPage('Entry Sheet', ['Delete']) && !drLocked(resource.data);
     }
 
@@ -2965,6 +3067,17 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create, update: if settingId == 'module-config'
         && (drPage('Field Control', ['Edit']) || drPage('Data Control', ['Edit']));
+    }
+
+    /*
+     * The workflow (Workflow Configuration). Read by every signed-in user — the menus, the stage
+     * pages, Bank Balance's New Payment — and written only with Edit Workflow: its steps name who
+     * verifies, and its `members` and `stageMembers` who may read the register and work each stage,
+     * so a write is a grant. The catch-all leaves this one document of `workflows` alone (ownDocument).
+     */
+    match /workflows/daily-requisition-workflow {
+      allow read: if signedIn();
+      allow write: if drHolds('Daily Requisition.Settings', ['Edit Workflow']);
     }
 
     /* ── Site Fund Requisition (`requisitions`; src/components/site-fund-requisition) ─────────────
@@ -3631,10 +3744,15 @@ service cloud.firestore {
      * 2026-10-13. Stage 2 shrinks this module by module. Keyed on the top-level collection, so a
      * closed collection's subcollections are closed with it.
      */
+    /** One document of a catch-all collection with rules of its own, which the catch-all must not reopen. */
+    function ownDocument() {
+      return request.path == drWorkflowPath();
+    }
+
     match /{collection}/{document=**} {
       allow read: if signedIn() && !serverOnly(collection) && !ownRules(collection);
       allow write: if signedIn() && !serverOnly(collection) && !browserReadOnly(collection)
-        && !ownRules(collection);
+        && !ownRules(collection) && !ownDocument();
     }
   }
 }

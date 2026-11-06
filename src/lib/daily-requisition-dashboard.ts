@@ -10,9 +10,16 @@
 /** Where a requisition is in the workflow, by its status. */
 export type DashboardStage = 'receiving' | 'verification' | 'payment' | 'paid' | 'cancelled';
 
-/** The open stages, in workflow order (the three queues on the module's stage pages). */
-export const OPEN_STAGES = ['receiving', 'verification', 'payment'] as const;
-export type OpenStage = (typeof OPEN_STAGES)[number];
+/**
+ * Where an open requisition waits: one of the pipeline's positions. By status alone these are the
+ * three below; the page passes the workflow's own (each approval step, each finance work, the payment
+ * page — src/lib/daily-requisition-flow.ts) with each row's `stage`, so the pipeline is the workflow
+ * as configured.
+ */
+export type OpenStage = string;
+
+/** The open stages by status alone, in workflow order — what applies without a workflow to place rows by. */
+export const OPEN_STAGES: readonly OpenStage[] = ['receiving', 'verification', 'payment'];
 
 /**
  * Where a requisition's *next* action is, which is how the pipeline reads: Pending waits at
@@ -72,6 +79,28 @@ export interface DashboardRow {
   /** When it was keyed, epoch ms (0 when unknown) — orders "recent". */
   createdMs: number;
   paidEvents: PaidEvent[];
+  /**
+   * Where it waits in the workflow (a pipeline position the page worked out from the steps), while
+   * it is open. Absent, it is placed by its status (`stageOfStatus`).
+   */
+  stage?: OpenStage;
+}
+
+/** Where a row is: paid or cancelled by its status; otherwise its workflow position, else by its status. */
+export function rowStage(row: Pick<DashboardRow, 'status' | 'stage'>): OpenStage | 'paid' | 'cancelled' {
+  const byStatus = stageOfStatus(row.status);
+  if (byStatus === 'paid' || byStatus === 'cancelled') return byStatus;
+  return row.stage || byStatus;
+}
+
+/** The figure for a position, added at the end when the order given did not list it. */
+function slotOf<T>(map: Map<OpenStage, T>, stage: OpenStage, make: (stage: OpenStage) => T): T {
+  let slot = map.get(stage);
+  if (!slot) {
+    slot = make(stage);
+    map.set(stage, slot);
+  }
+  return slot;
 }
 
 export type DashboardPeriod =
@@ -365,7 +394,14 @@ const byBalance = (a: GroupFigure, b: GroupFigure) => b.balance - a.balance || b
 
 export function buildDashboard(
   rows: readonly DashboardRow[],
-  options: { todayKey: string; period: DashboardPeriod; custom?: { from: string; to: string }; months?: number },
+  options: {
+    todayKey: string;
+    period: DashboardPeriod;
+    custom?: { from: string; to: string };
+    months?: number;
+    /** The pipeline positions, in order (the workflow's; else by status). */
+    stages?: readonly OpenStage[];
+  },
 ): DashboardFigures {
   const { todayKey } = options;
   const range = periodRange(options.period, todayKey, options.custom);
@@ -373,9 +409,8 @@ export function buildDashboard(
   const monthIndex = new Map(months.map((month, index) => [month.key, index]));
   const monthly: MonthPoint[] = months.map((month) => ({ ...month, received: 0, receivedCount: 0, paid: 0 }));
 
-  const stages = new Map<OpenStage, StageFigure>(
-    OPEN_STAGES.map((stage) => [stage, { stage, count: 0, balance: 0, oldestDays: null }]),
-  );
+  const newStage = (stage: OpenStage): StageFigure => ({ stage, count: 0, balance: 0, oldestDays: null });
+  const stages = new Map<OpenStage, StageFigure>((options.stages ?? OPEN_STAGES).map((stage) => [stage, newStage(stage)]));
   const ageing: AgeingBucket[] = AGEING_BUCKETS.map((bucket) => ({ ...bucket, count: 0, balance: 0 }));
   const departments = new Map<string, GroupFigure>();
   const parties = new Map<string, GroupFigure>();
@@ -398,7 +433,7 @@ export function buildDashboard(
   };
 
   for (const row of rows) {
-    const stage = stageOfStatus(row.status);
+    const stage = rowStage(row);
     const dated = isKey(row.dateKey);
     const age = dated ? Math.max(0, daysBetween(row.dateKey, todayKey)) : null;
 
@@ -446,7 +481,7 @@ export function buildDashboard(
     figures.open.net = round2(figures.open.net + row.net);
     figures.open.balance = round2(figures.open.balance + row.balance);
 
-    const figure = stages.get(stage)!;
+    const figure = slotOf(stages, stage, newStage);
     figure.count += 1;
     figure.balance = round2(figure.balance + row.balance);
     if (age !== null && (figure.oldestDays === null || age > figure.oldestDays)) figure.oldestDays = age;
@@ -463,7 +498,7 @@ export function buildDashboard(
     addGroup(parties, (row.partyName || '').trim() || '—', row.balance, age);
   }
 
-  figures.stages = OPEN_STAGES.map((stage) => stages.get(stage)!);
+  figures.stages = [...stages.values()];
   figures.paidOut.requisitions = paidRequisitions.size;
   figures.byDepartment = [...departments.values()].sort(byBalance);
   figures.byParty = [...parties.values()].sort(byBalance);
@@ -595,7 +630,12 @@ const addToBand = (bands: BandFigure[], key: WaitBandKey, balance: number) => {
  */
 export function buildOverview(
   rows: readonly DashboardRow[],
-  options: { todayKey: string; range: { from: string; to: string } },
+  options: {
+    todayKey: string;
+    range: { from: string; to: string };
+    /** The pipeline positions, in order (the workflow's; else by status). */
+    stages?: readonly OpenStage[];
+  },
 ): OverviewFigures {
   const { todayKey, range } = options;
 
@@ -617,10 +657,9 @@ export function buildOverview(
   const weekIndex = new Map(weekly.map((week, index) => [week.start, index]));
   const weekCycles = weekly.map(() => ({ sum: 0, count: 0 }));
 
-  const stages = new Map<OpenStage, StageProfile>(
-    OPEN_STAGES.map((stage) => [stage, { stage, count: 0, balance: 0, bands: emptyBands(), medianDays: null, oldestDays: null, overdue: 0 }]),
-  );
-  const stageAges = new Map<OpenStage, number[]>(OPEN_STAGES.map((stage) => [stage, []]));
+  const newProfile = (stage: OpenStage): StageProfile => ({ stage, count: 0, balance: 0, bands: emptyBands(), medianDays: null, oldestDays: null, overdue: 0 });
+  const stages = new Map<OpenStage, StageProfile>((options.stages ?? OPEN_STAGES).map((stage) => [stage, newProfile(stage)]));
+  const stageAges = new Map<OpenStage, number[]>();
   const bands = emptyBands();
   const overdue = { count: 0, balance: 0 };
   const backlog = { count: 0, balance: 0 };
@@ -640,7 +679,7 @@ export function buildOverview(
   const sameBill = new Map<string, string[]>();
 
   for (const row of rows) {
-    const stage = stageOfStatus(row.status);
+    const stage = rowStage(row);
     if (stage === 'cancelled') continue;
     const dated = isKey(row.dateKey);
     const age = dated ? Math.max(0, daysBetween(row.dateKey, todayKey)) : null;
@@ -713,13 +752,13 @@ export function buildOverview(
     if (!dated) quality.undated += 1;
     if (row.gross > 0 && row.net > row.gross + 0.5) quality.netAboveGross += 1;
 
-    const profile = stages.get(stage)!;
+    const profile = slotOf(stages, stage, newProfile);
     profile.count += 1;
     profile.balance = round2(profile.balance + row.balance);
     addGroup(projects, row.projectId || '', row.balance, age);
     if (age === null) continue;
 
-    stageAges.get(stage)!.push(age);
+    slotOf(stageAges, stage, () => []).push(age);
     if (profile.oldestDays === null || age > profile.oldestDays) profile.oldestDays = age;
     const band = bandOf(age).key;
     addToBand(profile.bands, band, row.balance);
@@ -736,7 +775,7 @@ export function buildOverview(
     }
   }
 
-  for (const stage of OPEN_STAGES) stages.get(stage)!.medianDays = medianOf(stageAges.get(stage)!);
+  for (const [stage, profile] of stages) profile.medianDays = medianOf(stageAges.get(stage) ?? []);
   weekly.forEach((week, index) => {
     week.cycleDays = weekCycles[index].count ? Math.round(weekCycles[index].sum / weekCycles[index].count) : null;
   });
@@ -765,7 +804,7 @@ export function buildOverview(
   }
 
   return {
-    stages: OPEN_STAGES.map((stage) => stages.get(stage)!),
+    stages: [...stages.values()],
     bands,
     overdue,
     backlog: { ...backlog, stage: backlogStage, stageCount: backlogStageCount },
