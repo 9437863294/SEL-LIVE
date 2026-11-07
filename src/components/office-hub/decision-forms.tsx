@@ -414,7 +414,8 @@ export function ActionItemDialog({
   onOpenChange,
   draft,
   setDraft,
-  meeting,
+  meeting: fixedMeeting,
+  meetingChoices,
   agenda,
   decisions,
   onSaved,
@@ -424,6 +425,8 @@ export function ActionItemDialog({
   draft: ActionItemDraft;
   setDraft: (next: ActionItemDraft) => void;
   meeting?: Pick<OfficeHubMeeting, 'id' | 'title' | 'date' | 'seriesId'> | null;
+  /** When no meeting is given: recent meetings to raise the item in (the action item register). */
+  meetingChoices?: Pick<OfficeHubMeeting, 'id' | 'title' | 'date' | 'seriesId'>[];
   agenda?: OfficeHubAgendaItem[];
   decisions?: OfficeHubDecision[];
   onSaved: () => void;
@@ -431,6 +434,8 @@ export function ActionItemDialog({
   const { actor, settings } = useOfficeHub();
   const { isBusy, run } = useOfficeHubAction();
   const [errors, setErrors] = useState<OfficeHubFieldErrors>({});
+  const [chosenMeetingId, setChosenMeetingId] = useState<string | null>(null);
+  const meeting = fixedMeeting ?? meetingChoices?.find((entry) => entry.id === chosenMeetingId) ?? null;
 
   const save = async () => {
     const found = validateActionItemInput(draft);
@@ -504,6 +509,25 @@ export function ActionItemDialog({
               className="bg-white"
             />
           </div>
+
+          {!fixedMeeting && meetingChoices && (
+            <div>
+              <Label className="mb-1 block text-xs">Raised in meeting</Label>
+              <Select value={chosenMeetingId ?? '__none__'} onValueChange={(value) => setChosenMeetingId(value === '__none__' ? null : value)}>
+                <SelectTrigger className="bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Not from a meeting</SelectItem>
+                  {meetingChoices.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.title} · {formatIsoDate(entry.date)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <UserSelector

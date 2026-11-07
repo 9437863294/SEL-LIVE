@@ -24,6 +24,7 @@
  *   office-hub-register.ts     register tabs, minutes state, grouping  — imports time + model
  *   office-hub-repeat-builder.ts repeat preview, holiday skips, warnings — imports recurrence
  *   office-hub-task-register.ts quick add, due groups, tag suggestions  — imports time + model
+ *   office-hub-follow-up.ts    decision/action/team register grouping — imports rules + task-register
  *   ─────────────────────────────────────────────────────────────────────────────────────────────
  *   office-hub.ts              this file: collections + re-exports     — imports firebase types
  *   office-hub-service.ts      every Firestore read and write          — imports the browser SDK
@@ -55,6 +56,7 @@ export * from './office-hub-calendar.ts';
 export * from './office-hub-register.ts';
 export * from './office-hub-repeat-builder.ts';
 export * from './office-hub-task-register.ts';
+export * from './office-hub-follow-up.ts';
 
 /**
  * Every Firestore collection Office Hub owns.

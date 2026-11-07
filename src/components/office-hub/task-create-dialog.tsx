@@ -71,21 +71,25 @@ export function NewTaskDialog({
   onOpenChange,
   onCreated,
   knownTasks,
+  initialTeamId = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (taskId: string) => void;
   /** Tasks already loaded, for tag suggestions. */
   knownTasks: readonly Pick<OfficeHubTask, 'tags'>[];
+  /** Opens as a team task for this team (the Teams register's "Assign task"). */
+  initialTeamId?: string | null;
 }) {
   const { actor, viewer, directory, settings, today } = useOfficeHub();
   const { isBusy, run } = useOfficeHubAction();
+  const initialTeam = directory.teams.find((entry) => entry.id === initialTeamId) ?? null;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [mode, setMode] = useState<Mode>('person');
-  const [teamId, setTeamId] = useState<string | null>(null);
-  const [departmentId, setDepartmentId] = useState<string | null>(viewer.departmentId ?? null);
+  const [mode, setMode] = useState<Mode>(initialTeam ? 'team' : 'person');
+  const [teamId, setTeamId] = useState<string | null>(initialTeam?.id ?? null);
+  const [departmentId, setDepartmentId] = useState<string | null>(initialTeam ? initialTeam.departmentId ?? null : viewer.departmentId ?? null);
   const [assigneeId, setAssigneeId] = useState<string | null>(viewer.userId);
   const [peopleSearch, setPeopleSearch] = useState('');
   const [startDate, setStartDate] = useState(today);
@@ -122,8 +126,8 @@ export function NewTaskDialog({
     setTags(keep ? tags : []);
     setErrors({});
     if (!keep) {
-      setMode('person');
-      setTeamId(null);
+      setMode(initialTeam ? 'team' : 'person');
+      setTeamId(initialTeam?.id ?? null);
       setAssigneeId(viewer.userId);
       setDueDate(null);
       setPriority('Medium');

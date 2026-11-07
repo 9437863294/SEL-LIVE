@@ -33,6 +33,7 @@ import {
   collection,
   increment,
   doc,
+  documentId,
   getCountFromServer,
   getDoc,
   getDocs,
@@ -2244,6 +2245,27 @@ export async function updateDecision(
   logOfficeHub(actor, 'Edit Decision', { changes: Object.keys(patch) }, { recordId: decisionId, recordRef: existing?.reference });
 }
 
+/**
+ * The references of a handful of decisions, by id — the action item register names the decision
+ * each item came from. Thirty ids per query (Firestore's `in` limit), read together.
+ */
+export async function listDecisionReferences(decisionIds: readonly string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(decisionIds.filter(Boolean))];
+  const chunks: string[][] = [];
+  for (let index = 0; index < ids.length; index += 30) chunks.push(ids.slice(index, index + 30));
+  const snapshots = await Promise.all(
+    chunks.map((chunk) => getDocs(query(col(OFFICE_HUB_COLLECTIONS.decisions), where(documentId(), 'in', chunk)))),
+  );
+  const references = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    for (const entry of snapshot.docs) {
+      const reference = entry.data().reference;
+      if (typeof reference === 'string') references.set(entry.id, reference);
+    }
+  }
+  return references;
+}
+
 export async function archiveDecision(actor: OfficeHubActor, decisionId: string): Promise<void> {
   await updateDoc(docIn(OFFICE_HUB_COLLECTIONS.decisions, decisionId), withSoftDeleteAudit(auditActorOf(actor)));
   logOfficeHub(actor, 'Archive Decision', {}, { recordId: decisionId });
@@ -2264,6 +2286,18 @@ export async function listActionItems(options: {
   constraints.push(fsLimit(options.limit ?? 300));
 
   const snapshot = await getDocs(query(col(OFFICE_HUB_COLLECTIONS.actionItems), ...constraints));
+  return mapDocs<OfficeHubActionItem>(snapshot).filter((item) => !item.isDeleted);
+}
+
+/**
+ * Every action item raised from a decision, in one query (`decisionId != null`), so the decision
+ * register can say how many of each decision's actions are done — counted over all of them, not
+ * only the ones the viewer is responsible for.
+ */
+export async function listDecisionActionItems(limit = 1000): Promise<OfficeHubActionItem[]> {
+  const snapshot = await getDocs(
+    query(col(OFFICE_HUB_COLLECTIONS.actionItems), where('decisionId', '!=', null), fsLimit(limit)),
+  );
   return mapDocs<OfficeHubActionItem>(snapshot).filter((item) => !item.isDeleted);
 }
 

@@ -1,133 +1,180 @@
 'use client';
 
 /**
- * The Decision Register (§21).
+ * The Decision Register (§21). Redesigned 2026-11-07 from the user's mockup
+ * (`sel-decisions-actions-teams-redesign.html`): a violet band whose figures filter, tabs, filters,
+ * then decisions as cards under month headings, a side drawer, and a record-a-decision window.
  *
  * A decision taken in a meeting is the thing most likely to be forgotten, because unlike a task
- * nobody is assigned to *do* it — somebody is assigned to see it through. So this register exists
- * separately from the meeting it came from, with its own reference number, owner, due date and
- * status, and it is the screen a management review opens.
+ * nobody is assigned to *do* it — somebody is assigned to see it through. So overdue follow-ups are
+ * pinned above the months on every tab: a register sorted only by date reads like a history, and
+ * what a reader needs first is what has been sitting.
  *
- * Overdue open decisions lead the register by default. That ordering is the feature: a decision
- * register sorted by date reads like a history, and what a reader needs is what has been sitting.
+ * Each card shows how many of the decision's action items are done, counted over every action item
+ * raised from it (one `decisionId != null` query), not only the ones the viewer is responsible for.
+ *
+ * Left out from the mockup on purpose: its "Decisions teams usually record" sample suggestions,
+ * and its "Your data / Sample data" preview switch.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AlertTriangle, Download, Gavel, Plus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { AlertTriangle, Circle, CircleCheck, CircleDot, Download, Gavel, Plus, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DECISION_STATUSES,
-  OFFICE_HUB_BASE_PATH,
+  DECISION_TABS,
   OFFICE_HUB_PRIORITIES,
-  activeFilterCount,
+  actionProgressByDecision,
   applyDecisionFilters,
   buildDecisionReport,
-  formatIsoDate,
-  hasActiveFilters,
+  canEditDecision,
+  groupDecisions,
+  inDecisionTab,
   isDecisionOverdue,
   type DecisionFilters,
   type DecisionStatus,
+  type DecisionTab,
   type OfficeHubDecision,
   type OfficeHubPriority,
 } from '@/lib/office-hub';
-import { listDecisions } from '@/lib/office-hub-service';
-import { useDebouncedValue, useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
+import { getMeeting, listDecisionActionItems, listDecisions, updateDecision } from '@/lib/office-hub-service';
+import { useDebouncedValue, useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/components/office-hub/hooks';
+import { OfficeHubAccessDenied } from '@/components/office-hub/ui';
+import { MultiSelect } from '@/components/office-hub/selectors';
+import { ActionItemDialog, actionItemDraftFor } from '@/components/office-hub/decision-forms';
+import { DecisionWindow } from '@/components/office-hub/decision-window';
+import { DecisionDrawer } from '@/components/office-hub/decision-drawer';
+import { DecisionCard } from '@/components/office-hub/follow-up-rows';
 import {
-  HrCellLink,
-  OfficeHubAccessDenied,
-  OfficeHubDataList,
-  OfficeHubEmptyState,
-  OfficeHubKpiCard,
-  PersonChip,
-  PriorityBadge,
-  type OfficeHubListColumn,
-} from '@/components/office-hub/ui';
-import { DateRangePicker, MultiSelect } from '@/components/office-hub/selectors';
-import { DecisionDialog, decisionDraftFor } from '@/components/office-hub/decision-forms';
-import { FilterBar } from '@/components/shared/filter-bar';
-import { PageHeader } from '@/components/shared/page-header';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { TableCard } from '@/components/shared/table-card';
+  EmptyPanel,
+  FilterBox,
+  GroupHeading,
+  HeroButton,
+  RegisterHero,
+  RegisterTabs,
+  SearchBox,
+  type HeroFigureSpec,
+} from '@/components/office-hub/register-parts';
 
-type View = 'open' | 'overdue' | 'all' | 'mine';
+type ActionDraft = ReturnType<typeof actionItemDraftFor>;
+type DraftMeeting = { id: string; title: string; date: string; seriesId?: string | null } | null;
 
 export default function DecisionsPage() {
   const searchParams = useSearchParams();
-  const { viewer, capabilities, directory, today, isLoading } = useOfficeHub();
+  const { actor, viewer, capabilities, settings, directory, today, isLoading } = useOfficeHub();
+  const { isBusy, run } = useOfficeHubAction();
 
-  const [view, setView] = useState<View>('open');
+  const [tab, setTab] = useState<DecisionTab>('open');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [filters, setFilters] = useState<DecisionFilters>({});
-  const [creating, setCreating] = useState(searchParams?.get('new') === '1');
-  const [draft, setDraft] = useState(() => decisionDraftFor({ today, viewer }));
-
-  useEffect(() => {
-    if (viewer.userId) setDraft(decisionDraftFor({ today, viewer }));
-  }, [viewer.userId, viewer.name, today, viewer.departmentId, viewer.departmentName]);
+  const [windowFor, setWindowFor] = useState<{ decision: OfficeHubDecision | null; key: number } | null>(
+    searchParams?.get('new') === '1' ? { decision: null, key: 0 } : null,
+  );
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [actionDraft, setActionDraft] = useState<{ draft: ActionDraft; meeting: DraftMeeting } | null>(null);
 
   const decisionsQuery = useOfficeHubQuery(
     () =>
-      // A viewer without `View All` still gets the register, narrowed to the decisions they own; the
-      // visibility rules then apply per row.
-      capabilities.canViewAllDecisions
-        ? listDecisions({ limit: 400 })
-        : listDecisions({ ownerId: viewer.userId, limit: 400 }),
+      // A viewer without `View All` still gets the register, narrowed to the decisions they own.
+      capabilities.canViewAllDecisions ? listDecisions({ limit: 400 }) : listDecisions({ ownerId: viewer.userId, limit: 400 }),
     [capabilities.canViewAllDecisions, viewer.userId],
     { enabled: capabilities.canViewDecisions, initial: [] },
   );
+  const actionsQuery = useOfficeHubQuery(() => listDecisionActionItems(), [], {
+    enabled: capabilities.canViewDecisions && capabilities.canViewActionItems,
+    initial: [],
+  });
 
-  const all = decisionsQuery.data ?? [];
-
-  const effectiveFilters = useMemo<DecisionFilters>(() => {
-    const base: DecisionFilters = { ...filters, search: debouncedSearch };
-    if (view === 'overdue') return { ...base, overdueOnly: true };
-    if (view === 'open') return { ...base, statuses: base.statuses?.length ? base.statuses : ['Open', 'In Progress'] };
-    if (view === 'mine') return { ...base, ownerIds: [viewer.userId] };
-    return base;
-  }, [filters, debouncedSearch, view, viewer.userId]);
-
-  const filtered = useMemo(
-    () =>
-      applyDecisionFilters(all, effectiveFilters, today).sort((a, b) => {
-        const aLate = isDecisionOverdue(a, today) ? 0 : 1;
-        const bLate = isDecisionOverdue(b, today) ? 0 : 1;
-        if (aLate !== bLate) return aLate - bLate;
-        return b.decisionDate.localeCompare(a.decisionDate);
-      }),
-    [all, effectiveFilters, today],
-  );
-
+  const all = useMemo(() => decisionsQuery.data ?? [], [decisionsQuery.data]);
+  const actionsKnown = capabilities.canViewActionItems && !actionsQuery.error;
+  const progress = useMemo(() => actionProgressByDecision(actionsQuery.data ?? []), [actionsQuery.data]);
+  const context = useMemo(() => ({ today, viewerId: viewer.userId }), [today, viewer.userId]);
+  const filtered = useMemo(() => applyDecisionFilters(all, { ...filters, search: debouncedSearch }, today), [all, filters, debouncedSearch, today]);
+  const inTab = useMemo(() => filtered.filter((decision) => inDecisionTab(decision, tab, context)), [filtered, tab, context]);
+  const groups = useMemo(() => groupDecisions(inTab, today, { pinOverdue: tab !== 'overdue' }), [inTab, today, tab]);
   const report = useMemo(() => buildDecisionReport(all, today), [all, today]);
 
+  const opened = all.find((decision) => decision.id === openId) ?? null;
+  const openedActions = useMemo(() => (actionsQuery.data ?? []).filter((item) => item.decisionId === openId), [actionsQuery.data, openId]);
+
+  const statuses = filters.statuses ?? [];
+  const pickStatus = (status: DecisionStatus) => {
+    setTab('all');
+    setFilters((current) => ({ ...current, statuses: statuses.length === 1 && statuses[0] === status ? [] : [status] }));
+  };
   const clearFilters = () => {
     setFilters({});
     setSearch('');
-    setView('open');
+  };
+  const filterCount =
+    (statuses.length ? 1 : 0) +
+    (filters.ownerIds?.length ? 1 : 0) +
+    (filters.departmentIds?.length ? 1 : 0) +
+    (filters.priorities?.length ? 1 : 0) +
+    (filters.projectIds?.length ? 1 : 0) +
+    (filters.fromDate || filters.toDate ? 1 : 0) +
+    (debouncedSearch.trim() ? 1 : 0);
+
+  const setStatus = async (decision: OfficeHubDecision, status: DecisionStatus) => {
+    if (!actor) return;
+    const label = status === 'Completed' ? 'seen through' : status === 'In Progress' ? 'in progress' : 'reopened';
+    const done = await run(
+      async () => {
+        await updateDecision(actor, decision.id, { status }, { settings });
+        return true;
+      },
+      { success: `${decision.reference} · ${label}`, failure: 'Could not change the decision', describe: 'Change decision status' },
+    );
+    if (done) decisionsQuery.reload();
+  };
+
+  const addAction = async (decision: OfficeHubDecision) => {
+    // The meeting is read for its date and series, so the item carries forward with the series.
+    const meeting = decision.meetingId ? await getMeeting(decision.meetingId).catch(() => null) : null;
+    setOpenId(null);
+    setActionDraft({
+      draft: {
+        ...actionItemDraftFor({ viewer, decisionId: decision.id }),
+        responsibleUserId: decision.ownerId,
+        responsibleUserName: decision.ownerName,
+        departmentId: decision.departmentId ?? null,
+        departmentName: decision.departmentName ?? null,
+        dueDate: decision.dueDate ?? null,
+        priority: decision.priority,
+      },
+      meeting: meeting
+        ? { id: meeting.id, title: meeting.title, date: meeting.date, seriesId: meeting.seriesId ?? null }
+        : decision.meetingId
+          ? { id: decision.meetingId, title: decision.meetingTitle ?? 'Meeting', date: decision.decisionDate, seriesId: null }
+          : null,
+    });
   };
 
   const exportRows = async () => {
     const { exportRowsToExcel } = await import('@/lib/report-excel');
     await exportRowsToExcel(
       'Decisions',
-      filtered.map((decision) => ({
-        Reference: decision.reference,
-        Decision: decision.title,
-        'Decision date': decision.decisionDate,
-        Owner: decision.ownerName,
-        Department: decision.departmentName ?? '',
-        Priority: decision.priority,
-        Status: decision.status,
-        'Due date': decision.dueDate ?? '',
-        Overdue: isDecisionOverdue(decision, today) ? 'Yes' : 'No',
-        Meeting: decision.meetingTitle ?? '',
-        Project: decision.projectName ?? '',
-        Description: decision.description ?? '',
-      })),
+      inTab.map((decision) => {
+        const actions = progress.get(decision.id);
+        return {
+          Reference: decision.reference,
+          Decision: decision.title,
+          'Decision date': decision.decisionDate,
+          Owner: decision.ownerName,
+          Department: decision.departmentName ?? '',
+          Priority: decision.priority,
+          Status: decision.status,
+          'Follow-up due': decision.dueDate ?? '',
+          Overdue: isDecisionOverdue(decision, today) ? 'Yes' : 'No',
+          'Action items done': actions ? `${actions.done}/${actions.total}` : '',
+          Meeting: decision.meetingTitle ?? '',
+          Project: decision.projectName ?? '',
+          Background: decision.description ?? '',
+        };
+      }),
       { filename: `office-hub-decisions-${today}.xlsx` },
     );
   };
@@ -135,259 +182,268 @@ export default function DecisionsPage() {
   if (isLoading) {
     return (
       <div className="space-y-3">
-        <Skeleton className="h-10 w-56" />
-        <Skeleton className="h-20 w-full rounded-xl" />
-        <Skeleton className="h-96 w-full rounded-xl" />
+        <Skeleton className="h-44 w-full rounded-[22px]" />
+        <Skeleton className="h-[28rem] w-full rounded-[18px]" />
       </div>
     );
   }
-
   if (!capabilities.canViewDecisions) return <OfficeHubAccessDenied what="the decision register" />;
 
-  const columns: OfficeHubListColumn<OfficeHubDecision>[] = [
+  const completedShare = report.total ? Math.round((report.completed / report.total) * 100) : 0;
+  const figures: HeroFigureSpec[] = [
+    { key: 'total', label: 'Total', value: report.total, icon: Gavel, tone: ['#e0e7ff', '#6366f1'], on: tab === 'all' && !statuses.length, onPick: () => { setTab('all'); setFilters((current) => ({ ...current, statuses: [] })); } },
+    { key: 'open', label: 'Open', value: report.open, icon: Circle, tone: ['#c4b5fd', '#6d28d9'], on: statuses.length === 1 && statuses[0] === 'Open', onPick: () => pickStatus('Open') },
+    { key: 'ip', label: 'In progress', value: report.inProgress, icon: CircleDot, tone: ['#93c5fd', '#1d4ed8'], on: statuses.length === 1 && statuses[0] === 'In Progress', onPick: () => pickStatus('In Progress') },
     {
-      header: 'Decision',
-      mobile: 'title',
-      cell: (decision) => (
-        <div className="min-w-0">
-          <HrCellLink
-            href={`${OFFICE_HUB_BASE_PATH}/decisions/${decision.id}`}
-            className="block truncate font-medium hover:underline"
-          >
-            {decision.title}
-          </HrCellLink>
-          <p className="truncate text-xs text-muted-foreground">
-            {decision.reference}
-            {decision.meetingTitle ? ` · ${decision.meetingTitle}` : ''}
-          </p>
-        </div>
-      ),
+      key: 'done',
+      label: 'Completed',
+      value: report.completed,
+      icon: CircleCheck,
+      tone: ['#86efac', '#15803d'],
+      on: statuses.length === 1 && statuses[0] === 'Completed',
+      hint: report.total ? `${completedShare}% seen through` : null,
+      onPick: () => pickStatus('Completed'),
     },
     {
-      header: 'Owner',
-      mobile: 'detail',
-      className: 'w-44',
-      cell: (decision) => <PersonChip name={decision.ownerName} subtitle={decision.departmentName} />,
-    },
-    {
-      header: 'Taken',
-      mobile: 'aside',
-      className: 'hidden sm:table-cell w-28',
-      cell: (decision) => <span className="text-xs tabular-nums">{formatIsoDate(decision.decisionDate)}</span>,
-    },
-    {
-      header: 'Due',
-      mobile: 'aside',
-      className: 'w-32',
-      cell: (decision) =>
-        decision.dueDate ? (
-          <span
-            className={
-              isDecisionOverdue(decision, today)
-                ? 'inline-flex items-center gap-1 text-xs font-medium tabular-nums text-rose-700'
-                : 'text-xs tabular-nums text-slate-700'
-            }
-          >
-            {isDecisionOverdue(decision, today) && <AlertTriangle className="h-3.5 w-3.5" />}
-            {formatIsoDate(decision.dueDate)}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">No due date</span>
-        ),
-    },
-    {
-      header: 'Priority',
-      mobile: 'detail',
-      className: 'hidden md:table-cell w-24',
-      cell: (decision) => <PriorityBadge priority={decision.priority} />,
-    },
-    {
-      header: 'Status',
-      mobile: 'detail',
-      className: 'w-32',
-      cell: (decision) => <StatusBadge status={decision.status} />,
+      key: 'late',
+      label: 'Follow-up overdue',
+      value: report.overdue,
+      icon: AlertTriangle,
+      tone: ['#fda4af', '#be123c'],
+      on: tab === 'overdue',
+      alert: report.overdue > 0,
+      onPick: () => { setTab('overdue'); setFilters((current) => ({ ...current, statuses: [] })); },
     },
   ];
 
   return (
-    <div className="space-y-3">
-      <PageHeader
+    <div className="space-y-3.5">
+      <RegisterHero
+        tone="violet"
+        eyebrow="Decisions"
         title="Decision register"
-        description="Every decision taken in a meeting, who owns it, and whether it has been seen through."
+        subtitle="Every decision taken in a meeting, who owns it, and whether it has been seen through."
+        loading={decisionsQuery.isLoading}
+        figures={figures}
         actions={
-          <div className="flex flex-wrap gap-2">
-            {filtered.length > 0 && (
-              <Button variant="outline" onClick={() => void exportRows()} className="gap-2">
-                <Download className="h-4 w-4" />
-                Export
-              </Button>
-            )}
+          <>
+            <HeroButton onClick={() => void exportRows()} disabled={!inTab.length}>
+              <Download className="h-3.5 w-3.5" aria-hidden />
+              Export
+            </HeroButton>
             {capabilities.canCreateDecision && (
-              <Button onClick={() => setCreating(true)} className="gap-2">
-                <Plus className="h-4 w-4" />
+              <HeroButton primary onClick={() => setWindowFor({ decision: null, key: Date.now() })}>
+                <Plus className="h-3.5 w-3.5" aria-hidden />
                 Record a decision
-              </Button>
+              </HeroButton>
             )}
-          </div>
+          </>
         }
       />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <OfficeHubKpiCard label="Total" value={report.total} icon={Gavel} tone="slate" />
-        <OfficeHubKpiCard label="Open" value={report.open} icon={Gavel} tone="blue" />
-        <OfficeHubKpiCard label="In progress" value={report.inProgress} icon={Gavel} tone="indigo" />
-        <OfficeHubKpiCard label="Completed" value={report.completed} icon={Gavel} tone="emerald" />
-        <OfficeHubKpiCard
-          label="Overdue"
-          value={report.overdue}
-          icon={AlertTriangle}
-          tone={report.overdue ? 'rose' : 'slate'}
-        />
-      </div>
+      <section className="overflow-hidden rounded-[18px] border bg-card">
+        <div className="flex flex-wrap items-center gap-2 border-b px-3.5 pt-2.5">
+          <RegisterTabs
+            tone="violet"
+            label="Which decisions"
+            value={tab}
+            onChange={setTab}
+            tabs={DECISION_TABS.map((entry) => ({ ...entry, count: filtered.filter((decision) => inDecisionTab(decision, entry.value, context)).length }))}
+          />
+        </div>
 
-      <Tabs value={view} onValueChange={(next) => setView(next as View)}>
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="open" className="text-xs">
-            Open
-          </TabsTrigger>
-          <TabsTrigger value="overdue" className="text-xs">
-            Overdue{report.overdue ? ` (${report.overdue})` : ''}
-          </TabsTrigger>
-          <TabsTrigger value="mine" className="text-xs">
-            Mine
-          </TabsTrigger>
-          <TabsTrigger value="all" className="text-xs">
-            Everything
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      <TableCard
-        title="Decisions"
-        description={capabilities.canViewAllDecisions ? 'All decisions you can see' : 'Decisions you own'}
-        icon={Gavel}
-        count={filtered.length}
-        total={all.length}
-        noun="decision"
-        toolbar={
-          <FilterBar
-            search={{ value: search, onChange: setSearch, placeholder: 'Reference, decision, owner' }}
-            activeCount={activeFilterCount(filters)}
-            onClear={clearFilters}
-          >
-            <DateRangePicker
-              inline
-              label="Taken between"
-              from={filters.fromDate}
-              to={filters.toDate}
-              onChange={(range) => setFilters((current) => ({ ...current, fromDate: range.from, toDate: range.to }))}
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-3.5 py-3">
+          <SearchBox value={search} onChange={setSearch} placeholder="Reference, decision, owner…" label="Search decisions" />
+          <label className="flex h-9 items-center gap-1.5 rounded-[10px] border px-2.5 text-xs font-semibold text-muted-foreground">
+            Taken
+            <input
+              type="date"
+              value={filters.fromDate ?? ''}
+              max={filters.toDate ?? undefined}
+              onChange={(event) => setFilters((current) => ({ ...current, fromDate: event.target.value || undefined }))}
+              className="bg-transparent font-semibold text-foreground outline-none"
+              aria-label="Taken from"
             />
-
+            to
+            <input
+              type="date"
+              value={filters.toDate ?? ''}
+              min={filters.fromDate ?? undefined}
+              onChange={(event) => setFilters((current) => ({ ...current, toDate: event.target.value || undefined }))}
+              className="bg-transparent font-semibold text-foreground outline-none"
+              aria-label="Taken to"
+            />
+          </label>
+          <FilterBox>
             <MultiSelect
               placeholder="Any status"
               options={DECISION_STATUSES.map((status) => ({ value: status, label: status }))}
-              value={filters.statuses ?? []}
+              value={statuses}
               onChange={(next) => setFilters((current) => ({ ...current, statuses: next as DecisionStatus[] }))}
             />
-
+          </FilterBox>
+          <FilterBox>
             <MultiSelect
               placeholder="Any owner"
-              options={directory.people.map((person) => ({ value: person.userId, label: person.name }))}
+              options={directory.people.map((person) => ({ value: person.userId, label: person.name, hint: person.departmentName ?? undefined }))}
               value={filters.ownerIds ?? []}
               onChange={(next) => setFilters((current) => ({ ...current, ownerIds: next }))}
             />
-
+          </FilterBox>
+          <FilterBox>
             <MultiSelect
               placeholder="Any department"
               options={directory.departments.map((department) => ({ value: department.id, label: department.name }))}
               value={filters.departmentIds ?? []}
               onChange={(next) => setFilters((current) => ({ ...current, departmentIds: next }))}
             />
-
+          </FilterBox>
+          <FilterBox>
             <MultiSelect
               placeholder="Any priority"
               options={OFFICE_HUB_PRIORITIES.map((priority) => ({ value: priority, label: priority }))}
               value={filters.priorities ?? []}
               onChange={(next) => setFilters((current) => ({ ...current, priorities: next as OfficeHubPriority[] }))}
             />
-
+          </FilterBox>
+          <FilterBox>
             <MultiSelect
               placeholder="Any project"
               options={directory.projects.map((project) => ({ value: project.id, label: project.name }))}
               value={filters.projectIds ?? []}
               onChange={(next) => setFilters((current) => ({ ...current, projectIds: next }))}
             />
-          </FilterBar>
-        }
-      >
-        {decisionsQuery.isLoading ? (
-          <Skeleton className="h-96 w-full rounded-xl" />
-        ) : (
-          <OfficeHubDataList
-            rows={filtered}
-            columns={columns}
-            cardHref={(decision) => `${OFFICE_HUB_BASE_PATH}/decisions/${decision.id}`}
-            frameless
-            rowClassName={(decision) => (isDecisionOverdue(decision, today) ? 'bg-rose-50/60' : undefined)}
-            empty={
-              <OfficeHubEmptyState
-                icon={Gavel}
-                title={
-                  view === 'overdue'
-                    ? 'No overdue decisions.'
-                    : hasActiveFilters(effectiveFilters)
-                      ? 'No decisions found.'
-                      : 'No decisions recorded yet.'
-                }
-                description={
-                  view === 'overdue'
-                    ? 'Everything with a follow-up date is on time.'
-                    : hasActiveFilters(effectiveFilters)
-                      ? 'Clear a filter or widen the date range.'
-                      : 'Decisions recorded during a meeting appear here with their own reference number.'
-                }
-                action={
-                  hasActiveFilters(effectiveFilters) ? (
-                    <Button size="sm" variant="outline" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  ) : capabilities.canCreateDecision ? (
-                    <Button size="sm" onClick={() => setCreating(true)}>
-                      Record a decision
-                    </Button>
-                  ) : undefined
-                }
-              />
-            }
-          />
-        )}
-      </TableCard>
-
-      {report.ageing.some((row) => row.count > 0) && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Open decisions by age
-          </span>
-          {report.ageing
-            .filter((row) => row.count > 0)
-            .map((row) => (
-              <Badge key={row.label} variant="neutral">
-                {row.label}: <span className="ml-1 font-semibold tabular-nums">{row.count}</span>
-              </Badge>
-            ))}
+          </FilterBox>
+          <span className="hidden flex-1 lg:block" />
+          {filterCount > 0 && (
+            <Button type="button" variant="ghost" size="sm" className="h-9 gap-1" onClick={clearFilters}>
+              <X className="h-3.5 w-3.5" aria-hidden />
+              Clear
+            </Button>
+          )}
         </div>
+
+        {decisionsQuery.isLoading ? (
+          <div className="space-y-2 p-3.5">
+            {[0, 1, 2, 3].map((index) => (
+              <Skeleton key={index} className="h-[84px] w-full rounded-[15px]" />
+            ))}
+          </div>
+        ) : groups.length === 0 ? (
+          all.length === 0 ? (
+            <EmptyPanel
+              icon={Gavel}
+              tone={['#c4b5fd', '#6d28d9']}
+              title="No decisions recorded yet"
+              body="Record what was agreed in a meeting, who owns it and when to check on it. Six months from now nobody will have to remember why."
+              action={
+                capabilities.canCreateDecision ? (
+                  <Button size="sm" onClick={() => setWindowFor({ decision: null, key: Date.now() })} className="gap-1.5 bg-gradient-to-r from-primary to-indigo-600 text-white">
+                    <Plus className="h-3.5 w-3.5" aria-hidden />
+                    Record the first decision
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <EmptyPanel
+              icon={tab === 'overdue' && !filterCount ? CircleCheck : Search}
+              tone={tab === 'overdue' && !filterCount ? ['#86efac', '#15803d'] : ['#e2e8f0', '#94a3b8']}
+              title={tab === 'overdue' && !filterCount ? 'No follow-up is overdue' : 'No decisions match'}
+              body={tab === 'overdue' && !filterCount ? 'Every decision with a follow-up date is on time.' : 'Try another tab, clear a filter or widen the date range.'}
+              action={
+                filterCount > 0 ? (
+                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          )
+        ) : (
+          <div className="pb-2.5">
+            {groups.map((group) => (
+              <div key={group.key}>
+                <GroupHeading tone={group.overdue ? 'late' : undefined} count={group.overdue ? group.items.length : undefined}>
+                  {group.label}
+                </GroupHeading>
+                <div className="grid gap-2 px-3.5 pb-1.5 pt-1">
+                  {group.items.map((decision) => (
+                    <DecisionCard
+                      key={decision.id}
+                      decision={decision}
+                      today={today}
+                      viewerId={viewer.userId}
+                      actions={actionsKnown ? progress.get(decision.id) ?? null : null}
+                      onOpen={() => setOpenId(decision.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 border-t px-3.5 py-2.5 text-xs text-muted-foreground">
+          <span>
+            {inTab.length} decision{inTab.length === 1 ? '' : 's'}
+            {tab !== 'overdue' && groups.some((group) => group.overdue) ? ' · overdue follow-ups first, then newest' : ' · newest first'}
+          </span>
+          <span className="flex-1" />
+          {report.ageing.some((row) => row.count > 0) && (
+            <span>
+              Open by age:{' '}
+              {report.ageing
+                .filter((row) => row.count > 0)
+                .map((row) => `${row.label} ${row.count}`)
+                .join(' · ')}
+            </span>
+          )}
+        </div>
+      </section>
+
+      <DecisionDrawer
+        decision={opened}
+        actions={openedActions}
+        actionsKnown={actionsKnown}
+        today={today}
+        canEdit={opened ? canEditDecision(opened, viewer, capabilities).allowed : false}
+        canClose={capabilities.canCloseAnyDecision}
+        canAddAction={capabilities.canCreateActionItem}
+        busy={isBusy}
+        onClose={() => setOpenId(null)}
+        onSetStatus={(status) => opened && void setStatus(opened, status)}
+        onEdit={() => {
+          if (!opened) return;
+          setOpenId(null);
+          setWindowFor({ decision: opened, key: Date.now() });
+        }}
+        onAddAction={() => opened && void addAction(opened)}
+      />
+
+      {windowFor && (
+        <DecisionWindow
+          key={windowFor.key}
+          decision={windowFor.decision}
+          open
+          onOpenChange={(open) => !open && setWindowFor(null)}
+          onSaved={() => {
+            decisionsQuery.reload();
+            actionsQuery.reload();
+          }}
+        />
       )}
 
-      <DecisionDialog
-        open={creating}
-        onOpenChange={setCreating}
-        draft={draft}
-        setDraft={setDraft}
-        onSaved={() => {
-          setDraft(decisionDraftFor({ today, viewer }));
-          decisionsQuery.reload();
-        }}
-      />
+      {actionDraft && (
+        <ActionItemDialog
+          open
+          onOpenChange={(open) => !open && setActionDraft(null)}
+          draft={actionDraft.draft}
+          setDraft={(draft) => setActionDraft((current) => (current ? { ...current, draft } : current))}
+          meeting={actionDraft.meeting}
+          onSaved={() => actionsQuery.reload()}
+        />
+      )}
     </div>
   );
 }

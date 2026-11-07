@@ -53,8 +53,11 @@ export default function NewMeetingPage() {
   const followUpId = searchParams?.get('followUp') ?? null;
   const requestedDate = searchParams?.get('date') ?? null;
   const requestedTime = searchParams?.get('time') ?? null;
+  // `?team=` comes from a team card's "Invite": the team is invited as a team.
+  const requestedTeamId = searchParams?.get('team') ?? null;
 
-  const { actor, viewer, capabilities, settings, today, isLoading } = useOfficeHub();
+  const { actor, viewer, capabilities, settings, directory, today, isLoading } = useOfficeHub();
+  const invitedTeamId = requestedTeamId && directory.teams.some((team) => team.id === requestedTeamId) ? requestedTeamId : null;
 
   const templatesQuery = useOfficeHubQuery(() => listMeetingTemplates(), [], {
     enabled: Boolean(templateId),
@@ -169,12 +172,13 @@ export default function NewMeetingPage() {
       };
     }
 
-    return base;
+    return invitedTeamId ? { ...base, selection: { ...base.selection, teamIds: [invitedTeamId] } } : base;
   }, [
     actor,
     today,
     requestedDate,
     requestedTime,
+    invitedTeamId,
     settings,
     viewer.timeZone,
     followUpId,

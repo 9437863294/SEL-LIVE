@@ -734,6 +734,41 @@ main {
 }
 
 /*
+  The Action items band (pink into orange, amber glow) and the Teams band (teal into blue, cyan
+  glow), from the user's decisions / actions / teams mockup (2026-11-07). Fixed colours, so each
+  register is recognisable at a glance; dark mode dims them with an overlay rather than recolouring.
+*/
+.oh-hero.oh-hero--rose {
+  background-color: #db2777;
+  background-image:
+    radial-gradient(520px 230px at 92% 0%, rgb(251 191 36 / 0.63), transparent 65%),
+    radial-gradient(520px 260px at 45% 140%, rgb(244 114 182 / 0.63), transparent 65%),
+    linear-gradient(115deg, #831843 0%, #db2777 50%, #ea580c 100%);
+}
+
+.dark .oh-hero.oh-hero--rose {
+  background-image:
+    radial-gradient(520px 230px at 92% 0%, rgb(251 191 36 / 0.3), transparent 65%),
+    linear-gradient(115deg, rgb(2 6 23 / 0.55) 0%, rgb(2 6 23 / 0.2) 100%),
+    linear-gradient(115deg, #831843 0%, #db2777 50%, #ea580c 100%);
+}
+
+.oh-hero.oh-hero--teal {
+  background-color: #0e7490;
+  background-image:
+    radial-gradient(520px 230px at 92% 0%, rgb(165 243 252 / 0.69), transparent 65%),
+    radial-gradient(520px 260px at 45% 140%, rgb(52 211 153 / 0.63), transparent 65%),
+    linear-gradient(115deg, #134e4a 0%, #0e7490 50%, #2563eb 100%);
+}
+
+.dark .oh-hero.oh-hero--teal {
+  background-image:
+    radial-gradient(520px 230px at 92% 0%, rgb(165 243 252 / 0.3), transparent 65%),
+    linear-gradient(115deg, rgb(2 6 23 / 0.55) 0%, rgb(2 6 23 / 0.2) 100%),
+    linear-gradient(115deg, #134e4a 0%, #0e7490 50%, #2563eb 100%);
+}
+
+/*
   Office Hub dashboard chart colours (2026-11-06). Validated with the dataviz palette checker in
   both modes; dark has its own steps, not a flip. Amber (unsettled / waiting) stays away from green
   in every chart order — protan readers cannot tell those two apart.
