@@ -1,0 +1,877 @@
+/*
+ * The look of an expense request — New Request and the register's Edit dialog: colour-coded fields,
+ * a tinted box per GST / TDS / deduction group, and the gradient totals bar.
+ *
+ * Each field sets its accent as two custom properties, `--a` (light) and `--b` (strong), and every
+ * tint below is mixed from them, so one class serves every colour. Surfaces and lines are the app's
+ * theme tokens; `--xr-deep` is what an accent is darkened towards in light mode and lifted towards in
+ * dark, so tinted text stays readable in both.
+ *
+ * Rules that restyle a shadcn control are written `.scope .x` so they outrank its single-class
+ * utilities whatever order the stylesheets load in. Popovers and select menus are portalled outside
+ * `.scope`, so their contents are styled with utilities instead.
+ */
+
+.scope {
+  --xr-surface: hsl(var(--card));
+  --xr-line: hsl(var(--border));
+  --xr-ink: hsl(var(--foreground));
+  --xr-ink-2: #475569;
+  --xr-ink-3: #94a3b8;
+  --xr-soft: #fafbfd;
+  --xr-deep: #000;
+  --xr-danger: hsl(var(--destructive));
+}
+
+:global(.dark) .scope {
+  --xr-ink-2: hsl(0 0% 80%);
+  --xr-ink-3: hsl(var(--muted-foreground));
+  --xr-soft: hsl(var(--muted) / 0.6);
+  --xr-deep: #fff;
+}
+
+/* ── The card ─────────────────────────────────────────────────────────────────────────────────── */
+
+.card {
+  /* The rows answer to the card's width, not the window's, so the Edit dialog lays out as its own
+     width allows. */
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid var(--xr-line);
+  border-radius: 18px;
+  background: var(--xr-surface);
+  color: var(--xr-ink);
+  box-shadow: 0 18px 40px -30px #312e81;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--xr-line);
+  background: linear-gradient(90deg, #faf5ff, #f0f9ff 50%, #fff7ed);
+}
+
+:global(.dark) .head {
+  background: linear-gradient(90deg, rgb(139 92 246 / 0.14), rgb(14 165 233 / 0.08) 50%, rgb(245 158 11 / 0.08));
+}
+
+.headIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(140deg, #a78bfa, #6d28d9);
+  box-shadow: 0 6px 12px -6px #6d28d9;
+}
+
+.headIcon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.headText {
+  min-width: 0;
+}
+
+.headTitle {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.headNote {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--xr-ink-3);
+}
+
+.headPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pill svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+
+.pillRef {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+  font-variant-numeric: tabular-nums;
+}
+
+.pillPending {
+  color: var(--xr-ink-3);
+  background: var(--xr-surface);
+  border-color: var(--xr-line);
+  font-weight: 600;
+}
+
+.pillDate {
+  color: #0369a1;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+:global(.dark) .pillRef {
+  color: #c4b5fd;
+  background: rgb(139 92 246 / 0.14);
+  border-color: rgb(139 92 246 / 0.35);
+}
+
+:global(.dark) .pillDate {
+  color: #7dd3fc;
+  background: rgb(14 165 233 / 0.12);
+  border-color: rgb(14 165 233 / 0.3);
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────────────────────────── */
+
+.body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+/* One column on a phone, two on a tablet, the "who" row in three on a small laptop, and on a wide
+   card each row on its own proportions (`--xr-cols`, worked out from the fields that are shown). */
+.row {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 540px) {
+  .row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 800px) {
+  .rowWho {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 980px) {
+  .row {
+    grid-template-columns: var(--xr-cols);
+  }
+}
+
+/* ── A field ──────────────────────────────────────────────────────────────────────────────────── */
+
+.field {
+  min-width: 0;
+}
+
+.scope .label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--xr-ink-2);
+  white-space: nowrap;
+}
+
+.scope .field:has([aria-invalid='true']) .label {
+  color: var(--xr-danger);
+}
+
+.labelText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dot {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  background: linear-gradient(140deg, var(--a), var(--b));
+}
+
+.dot svg {
+  width: 11px;
+  height: 11px;
+}
+
+.req {
+  color: #e11d48;
+  font-style: normal;
+}
+
+.opt {
+  color: var(--xr-ink-3);
+  font-style: normal;
+  font-weight: 600;
+}
+
+/* Inputs, select triggers and the party picker alike. */
+.scope .control {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--xr-line);
+  border-left: 3px solid color-mix(in srgb, var(--b) 45%, var(--xr-surface));
+  border-radius: 11px;
+  background: var(--xr-surface);
+  color: var(--xr-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  outline: none;
+  box-shadow: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background-color 0.15s;
+}
+
+.scope .control::placeholder,
+.scope .control[data-placeholder] {
+  color: var(--xr-ink-3);
+  font-weight: 500;
+}
+
+.scope .control:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--b) 35%, var(--xr-surface));
+  border-left-color: var(--b);
+}
+
+.scope .control:focus,
+.scope .control:focus-visible,
+.scope .control[data-state='open'] {
+  border-color: var(--b);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--b) 16%, transparent);
+}
+
+.scope .control:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  background: var(--xr-soft);
+  color: var(--xr-ink-3);
+}
+
+.scope .control.set {
+  border-left-color: var(--b);
+  background: color-mix(in srgb, var(--b) 4%, var(--xr-surface));
+}
+
+.scope .control[data-warn] {
+  border-color: #f59e0b;
+}
+
+.scope .control[aria-invalid='true'] {
+  border-color: var(--xr-danger);
+  border-left-color: var(--xr-danger);
+}
+
+.scope .control[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 3px hsl(var(--destructive) / 0.15);
+}
+
+.scope .control > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mono::placeholder {
+  font-family: var(--font-body);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* A figure the form works out itself, shown where an input would be. */
+.scope .auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px dashed var(--xr-line);
+  border-radius: 11px;
+  background: var(--xr-soft);
+  color: var(--xr-ink-3);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.scope .auto > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scope .auto svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.scope .autoOn {
+  border: 1px solid #a7f3d0;
+  background: linear-gradient(135deg, #ecfdf5, #f0fdfa);
+  color: #047857;
+}
+
+:global(.dark) .scope .autoOn {
+  border-color: rgb(16 185 129 / 0.35);
+  background: rgb(16 185 129 / 0.1);
+  color: #6ee7b7;
+}
+
+/* Shown, not editable (the department of a request being edited). */
+.scope .autoFixed {
+  border-style: solid;
+  border-left: 3px solid var(--b);
+  background: color-mix(in srgb, var(--b) 4%, var(--xr-surface));
+  color: var(--xr-ink);
+}
+
+/* Money: the ₹ inside the box, the figure on the right. */
+.money {
+  position: relative;
+}
+
+.moneySign {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: var(--b);
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.scope .money .control {
+  justify-content: flex-end;
+  padding-left: 26px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.scope .moneyLarge .control {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.scope .figure {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.scope .net {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #6ee7b7;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  color: #047857;
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px #ffffff80;
+}
+
+.scope .net small {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #fff;
+  color: #059669;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+:global(.dark) .scope .net {
+  border-color: rgb(16 185 129 / 0.4);
+  background: rgb(16 185 129 / 0.12);
+  color: #6ee7b7;
+  box-shadow: none;
+}
+
+:global(.dark) .scope .net small {
+  background: rgb(16 185 129 / 0.2);
+  color: #a7f3d0;
+}
+
+.scope .netNegative,
+:global(.dark) .scope .netNegative {
+  border-color: hsl(var(--destructive) / 0.4);
+  background: hsl(var(--destructive) / 0.07);
+  color: var(--xr-danger);
+}
+
+/* The line under a field: an error, the field's help text, or what the form noticed. Always there,
+   so a row of fields keeps one baseline whichever of them has something to say. Spaced with
+   padding, not margin: FormItem's `space-y-*` owns its children's margins. */
+.scope .sub {
+  min-height: 19px;
+  margin: 0;
+  padding-top: 3px;
+  overflow: hidden;
+  color: var(--xr-ink-3);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope .sub b {
+  color: var(--xr-ink-2);
+}
+
+.scope .subAccent {
+  color: color-mix(in srgb, var(--b) 85%, var(--xr-deep));
+  font-weight: 600;
+}
+
+.scope .subOk {
+  color: #059669;
+  font-weight: 700;
+}
+
+:global(.dark) .scope .subOk {
+  color: #34d399;
+}
+
+.scope .subError {
+  color: var(--xr-danger);
+  font-weight: 600;
+  white-space: normal;
+}
+
+/* ── GST, TDS & deductions ────────────────────────────────────────────────────────────────────── */
+
+.tax {
+  padding: 14px 18px 16px;
+  border-top: 1px solid var(--xr-line);
+}
+
+.taxHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.taxTitle {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.taxNote {
+  margin: 0;
+  color: var(--xr-ink-3);
+  font-size: 11.5px;
+}
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.scope .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 13px 5px 6px;
+  border: 1px solid var(--xr-line);
+  border-radius: 999px;
+  background: var(--xr-surface);
+  color: var(--xr-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+
+.toggleDot {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--b) 12%, var(--xr-surface));
+  color: var(--b);
+}
+
+.toggleDot svg {
+  width: 12px;
+  height: 12px;
+}
+
+.scope .toggle:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--b) 40%, var(--xr-surface));
+}
+
+.scope .toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--b) 25%, transparent);
+}
+
+.scope .toggle[aria-pressed='true'] {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--a), var(--b));
+  color: #fff;
+  box-shadow: 0 8px 16px -10px var(--b);
+}
+
+.scope .toggle[aria-pressed='true'] .toggleDot {
+  background: #ffffff33;
+  color: #fff;
+}
+
+.scope .toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.plain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--xr-line);
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--xr-soft), var(--xr-surface));
+  color: var(--xr-ink-2);
+  font-size: 12px;
+}
+
+.plain svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: #059669;
+}
+
+.box {
+  margin-top: 10px;
+  padding: 10px 12px 12px;
+  border: 1px solid color-mix(in srgb, var(--b) 25%, var(--xr-surface));
+  border-left: 4px solid var(--b);
+  border-radius: 14px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--b) 6%, var(--xr-surface)), var(--xr-surface) 70%);
+  animation: boxIn 0.2s ease;
+}
+
+@keyframes boxIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .box {
+    animation: none;
+  }
+}
+
+.boxHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  min-height: 28px;
+}
+
+.boxTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: color-mix(in srgb, var(--b) 85%, var(--xr-deep));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.boxTitle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.boxAside {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--xr-ink-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.boxResult {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--b) 85%, var(--xr-deep));
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.boxResult small {
+  display: block;
+  color: var(--xr-ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.boxGrid {
+  display: grid;
+  gap: 10px 12px;
+  margin-top: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 540px) {
+  .boxGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .span2 {
+    grid-column: span 2;
+  }
+}
+
+@container (min-width: 800px) {
+  .boxGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1080px) {
+  .boxGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.scope .lbl {
+  display: block;
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: var(--xr-ink-2);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  min-height: 19px;
+  padding-top: 3px;
+}
+
+/* The working, as chips: what was added, what was held back, and the result in words. */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--b) 22%, var(--xr-surface));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--b) 9%, var(--xr-surface));
+  color: color-mix(in srgb, var(--b) 85%, var(--xr-deep));
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stripError {
+  width: 100%;
+  margin: 0;
+  color: var(--xr-danger);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── The totals bar under the card ────────────────────────────────────────────────────────────── */
+
+.bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 14px 12px 20px;
+  border-radius: 18px;
+  color: #fff;
+  background:
+    radial-gradient(300px 120px at 95% 0%, #f59e0b80, transparent 70%),
+    radial-gradient(300px 120px at 40% 140%, #ec489980, transparent 70%),
+    linear-gradient(115deg, #4c1d95, #7c3aed 50%, #0e7490);
+  box-shadow: 0 20px 40px -24px #4c1d95;
+}
+
+.figureLabel {
+  display: block;
+  color: #ddd6fe;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.figureValue {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.figureBig .figureValue {
+  font-size: 20px;
+}
+
+.barSep {
+  width: 1px;
+  height: 32px;
+  background: #ffffff33;
+}
+
+.barSpacer {
+  flex: 1;
+}
+
+.barMsg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.barMsg svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.barMsgOk {
+  color: #a7f3d0;
+}
+
+.save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 150px;
+  padding: 9px 16px;
+  border: 1px solid #fff;
+  border-radius: 11px;
+  background: #fff;
+  color: #5b21b6;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px -10px #000;
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
+}
+
+.save:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.save:focus-visible {
+  outline: 2px solid #fde68a;
+  outline-offset: 2px;
+}
+
+.save:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.save svg {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 620px) {
+  .barSep {
+    display: none;
+  }
+
+  .save {
+    width: 100%;
+  }
+}

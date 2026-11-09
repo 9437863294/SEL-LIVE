@@ -8,8 +8,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Save, Loader2, Receipt, Sparkles, ShieldAlert } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Building2, CheckCircle2, Info, Loader2, ReceiptIndianRupee, Send, Sparkles, ShieldAlert } from 'lucide-react';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -19,7 +18,7 @@ import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHe
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormField } from '@/components/ui/form';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,14 +39,15 @@ import type { ActionContext, ActionDecision } from '@/lib/expenses-roles';
 import { findDuplicateRequest, resolveFormField, toIsoStamp } from '@/lib/expenses-settings';
 import { allocateRequestNos } from '@/lib/expenses-import';
 import { PageHeader } from '@/components/shared/page-header';
-import { StatutorySection, FORM_LABEL as LABEL, type StatutoryValue } from '@/components/expenses/statutory-section';
+import { StatutorySection, type StatutoryValue } from '@/components/expenses/statutory-section';
 import {
   ExpenseRequestFields,
-  ExpenseRequestTotals,
   buildExpenseFormSchema,
   findRecordedParty,
   type ExpenseFormValues,
 } from '@/components/expenses/expense-request-fields';
+import { FieldItem, FieldLabel, FieldNote, money, xr } from '@/components/expenses/expense-form-ui';
+import { cn } from '@/lib/utils';
 import { useBillRegistration } from '@/components/expenses/bill-registration';
 import {
   EMPTY_STATUTORY,
@@ -418,12 +418,39 @@ function NewExpenseRequestForm() {
   // banded by amount, so the gate watches the same figure the totals below do.
   const withStatutoryNow = captureStatutory && hasStatutory(statutory);
   const netPayableNow = withStatutoryNow ? computeStatutory(watchedAmount, statutory).net : watchedAmount;
+  /** GST added less TDS and deductions held back — what turns the amount into the net payable. */
+  const adjustment = netPayableNow - watchedAmount;
   const inrText = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n || 0);
+
+  /**
+   * What the bar under the form says is still missing — the same things the save would stop on
+   * (Field Control's required fields, the GST & TDS checks), named before Save is pressed rather
+   * than after. Save itself stays pressable, so pressing it still points at each one.
+   */
+  const watched = form.watch();
+  const missing = (key: Parameters<typeof resolveFormField>[1], value: string | undefined) => {
+    const field = fieldFor(key);
+    return field.visible && field.required && !value?.trim();
+  };
+  const stillNeeded = [
+    !watched.departmentId && 'department',
+    !watched.projectId && 'project',
+    missing('partyName', watched.partyName) && 'party',
+    !watched.subHeadOfAccount && 'sub-head',
+    !(watchedAmount > 0) && 'amount',
+    missing('description', watched.description) && 'description',
+    missing('remarks', watched.remarks) && 'remarks',
+    withStatutoryNow &&
+      Object.keys(statutoryErrors(watchedAmount, statutory, bill.companyStateCode)).length > 0 &&
+      'GST & TDS details',
+  ].filter((entry): entry is string => !!entry);
+  const refused = !!raiseDecision && !raiseDecision.allowed;
 
   return (
     <div className="w-full space-y-4">
       <PageHeader
-        icon={Receipt}
+        icon={ReceiptIndianRupee}
+        iconClassName="bg-gradient-to-br from-violet-500 via-pink-500 to-amber-500 text-white ring-0 shadow-[0_10px_20px_-10px_#db2777]"
         title="New Expense Request"
         description="Raise a payment request. Add GST, TDS or deductions only when the bill has them."
         backHref="/expenses"
@@ -469,11 +496,11 @@ function NewExpenseRequestForm() {
                   control={form.control}
                   name="departmentId"
                   render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className={LABEL}>Department</FormLabel>
+                    <FieldItem accent="violet">
+                      <FieldLabel icon={Building2} required>Department</FieldLabel>
                       <Select onValueChange={field.onChange} value={field.value} disabled={!!departmentIdFromUrl}>
                         <FormControl>
-                          <SelectTrigger className="h-9 text-sm">
+                          <SelectTrigger className={cn(xr.control, field.value && xr.set)}>
                             <SelectValue placeholder="Select department" />
                           </SelectTrigger>
                         </FormControl>
@@ -481,8 +508,8 @@ function NewExpenseRequestForm() {
                           {creatableDepartments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <FormMessage className="text-[11px]" />
-                    </FormItem>
+                      <FieldNote>{departmentIdFromUrl ? 'Set by the link that opened this form' : ''}</FieldNote>
+                    </FieldItem>
                   )}
                 />
               }
@@ -503,22 +530,57 @@ function NewExpenseRequestForm() {
             />
 
             {/* Totals and Save, always in reach */}
-            <div className="sticky bottom-0 z-10 rounded-t-xl border border-b-0 bg-background/95 px-4 py-3 shadow-[0_-8px_24px_-20px_rgba(15,23,42,0.5)] backdrop-blur">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <ExpenseRequestTotals amount={watchedAmount} netPayable={netPayableNow} withStatutory={withStatutoryNow} />
-                {/* A refusal that comes from the assignment rather than the role says so on the
-                    button itself — the department and amount are the two things that can change it,
-                    and neither is obvious from a greyed-out Save. */}
-                <Button
-                  type="submit"
-                  disabled={isSaving || (!!raiseDecision && !raiseDecision.allowed)}
-                  title={raiseDecision && !raiseDecision.allowed ? raiseDecision.reason : undefined}
-                  className="min-w-[150px] gap-2"
-                >
-                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  {isSaving ? 'Saving…' : 'Save Request'}
-                </Button>
+            <div className={xr.bar}>
+              <div>
+                <span className={xr.figureLabel}>Amount</span>
+                <b className={xr.figureValue}>{money(watchedAmount)}</b>
               </div>
+              {withStatutoryNow && (
+                <>
+                  <span className={xr.barSep} aria-hidden="true" />
+                  <div>
+                    <span className={xr.figureLabel}>GST − TDS − deductions</span>
+                    <b className={xr.figureValue}>{adjustment < 0 ? '−' : '+'} {money(Math.abs(adjustment))}</b>
+                  </div>
+                </>
+              )}
+              <span className={xr.barSep} aria-hidden="true" />
+              <div className={xr.figureBig}>
+                <span className={xr.figureLabel}>Net payable</span>
+                <b className={xr.figureValue}>{money(netPayableNow)}</b>
+              </div>
+              <span className={xr.barSpacer} />
+              {/* A refusal that comes from the assignment rather than the role is said here in
+                  words — the department and amount are the two things that can change it, and
+                  neither is obvious from a greyed-out Save. */}
+              <span className={cn(xr.barMsg, !refused && stillNeeded.length === 0 && xr.barMsgOk)} aria-live="polite">
+                {refused ? (
+                  <>
+                    <ShieldAlert aria-hidden="true" />
+                    {raiseDecision?.reason || 'You may not raise this request.'}
+                  </>
+                ) : stillNeeded.length ? (
+                  <>
+                    <Info aria-hidden="true" />
+                    Still needed: {stillNeeded.slice(0, 3).join(', ')}
+                    {stillNeeded.length > 3 && ` +${stillNeeded.length - 3} more`}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 aria-hidden="true" />
+                    Ready to save
+                  </>
+                )}
+              </span>
+              <button
+                type="submit"
+                className={xr.save}
+                disabled={isSaving || refused}
+                title={refused ? raiseDecision?.reason : undefined}
+              >
+                {isSaving ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />}
+                {isSaving ? 'Saving…' : 'Save Request'}
+              </button>
             </div>
           </form>
         </Form>

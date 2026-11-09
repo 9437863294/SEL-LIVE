@@ -95,6 +95,8 @@ export interface PageHeaderProps {
   /** One or two lines on what the page is for. Clamped to two lines on a phone. */
   description?: ReactNode;
   icon?: LucideIcon;
+  /** Recolours the icon tile (a page with its own palette); leave it off to follow the user's accent. */
+  iconClassName?: string;
   /** A small line above the title: the module, or where the page sits. `breadcrumbs` wins. */
   eyebrow?: ReactNode;
   /** Ancestors, nearest last; a `href` makes one a link. Shown above the title from `sm` up. */
@@ -127,6 +129,7 @@ export function PageHeader({
   title,
   description,
   icon,
+  iconClassName,
   eyebrow,
   breadcrumbs,
   backHref,
@@ -163,7 +166,7 @@ export function PageHeader({
             it instead of squeezing it to "Ind…". */}
         <div className="flex min-w-0 flex-1 basis-[18rem] items-start gap-3">
           {backHref && <BackButton href={backHref} label={backLabel} onClick={onBackClick} />}
-          {icon && <IconTile icon={icon} />}
+          {icon && <IconTile icon={icon} className={iconClassName} />}
           <div className="min-w-0 flex-1">
             {lead}
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">

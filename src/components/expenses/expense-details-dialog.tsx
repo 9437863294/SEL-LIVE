@@ -16,11 +16,14 @@
  * three modules cannot disagree about where a request stands.
  */
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { format, isValid, parseISO } from 'date-fns';
-import { ExternalLink, Receipt } from 'lucide-react';
+import { ExternalLink, Pencil, Printer } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -29,12 +32,15 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { RecordActivity } from '@/components/shared/record-history';
+import { useToast } from '@/hooks/use-toast';
 import { formatInr } from '@/lib/bank-balance-ledger';
+import { openPrintWindow } from '@/lib/open-print-window';
 import {
   requisitionHref,
   requisitionProgress,
   voucherHref,
   type ProgressStage,
+  type ProgressTone,
 } from '@/lib/requisition-progress';
 import type { DailyRequisitionEntry, ExpenseRequest } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -300,35 +306,39 @@ export function RequestNoCell({
   );
 }
 
+/* ── test entries ──────────────────────────────────────────────────────────── */
+
+const TEST_WORD = /\btest(ing)?\b/i;
+
+/**
+ * Why a request looks like one raised to try the system out — a description that is only "test" /
+ * "testing", or a project or party with "test" in its name — or null. Only ever a hint: the
+ * registers offer to hide such rows and this dialog says so; nothing is removed.
+ */
+export function testEntryReason(
+  expense: Pick<ExpenseRequest, 'description' | 'partyName'>,
+  projectName: string,
+): string | null {
+  const description = (expense.description || '').trim();
+  if (/^test(ing)?$/i.test(description)) return `Description says “${description}”`;
+  if (TEST_WORD.test(projectName)) return `The project is “${projectName}”`;
+  const party = (expense.partyName || '').trim();
+  if (TEST_WORD.test(party)) return `The party is “${party}”`;
+  return null;
+}
+
 /* ── the dialog ────────────────────────────────────────────────────────────── */
 
-const LABEL = 'text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const LABEL = 'text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground';
 
-function Field({
-  label,
-  value,
-  className,
-  emphasis,
-}: {
-  label: string;
-  value: string | undefined;
-  className?: string;
-  emphasis?: boolean;
-}) {
+function Field({ label, value, className }: { label: string; value: string | undefined; className?: string }) {
   return (
-    <div className={cn('min-w-0 space-y-1', className)}>
-      <p className={LABEL}>{label}</p>
-      {value ? (
-        <p
-          className={cn(
-            'text-sm whitespace-pre-wrap break-words',
-            emphasis && 'font-semibold text-emerald-600 dark:text-emerald-400',
-          )}
-        >
-          {value}
-        </p>
+    <div className={cn('min-w-0', className)}>
+      <p className={cn(LABEL, 'mb-0.5')}>{label}</p>
+      {value?.trim() ? (
+        <p className="whitespace-pre-wrap break-words text-[13px] font-semibold">{value}</p>
       ) : (
-        <p className="text-sm italic text-muted-foreground/60">—</p>
+        <p className="text-[13px] font-semibold text-muted-foreground/60">—</p>
       )}
     </div>
   );
@@ -351,6 +361,99 @@ function Figure({ label, value, tone }: { label: string; value: number; tone?: '
   );
 }
 
+/** The stage's own colour, for the Status line under Daily Requisition. */
+const TONE_TEXT: Record<ProgressTone, string> = {
+  neutral: 'text-slate-600 dark:text-slate-300',
+  info: 'text-sky-700 dark:text-sky-400',
+  progress: 'text-violet-700 dark:text-violet-400',
+  success: 'text-emerald-700 dark:text-emerald-400',
+  warning: 'text-amber-700 dark:text-amber-400',
+  danger: 'text-rose-700 dark:text-rose-400',
+};
+
+/**
+ * The path a request takes, as the step bar shows it. Daily Requisition's own statuses, in order:
+ * Pending is "At finance", Received for Payment is "For payment"; Part paid sits on For payment
+ * with Paid still to come.
+ */
+const STEPS = ['Raised', 'At finance', 'Received', 'Verified', 'For payment', 'Paid'] as const;
+
+/** The last step a request has reached. A cancelled one got no further than being raised. */
+function stepReached(stage: ProgressStage): number {
+  switch (stage) {
+    case 'not-received':
+    case 'cancelled':
+      return 0;
+    case 'pending':
+      return 1;
+    case 'received':
+    case 'needs-review':
+      return 2;
+    case 'verified':
+      return 3;
+    case 'awaiting-payment':
+    case 'part-paid':
+      return 4;
+    case 'paid':
+      return 5;
+  }
+}
+
+function ProgressSteps({ stage }: { stage: ProgressStage }) {
+  const reached = stepReached(stage);
+  // Needs review holds the request where it is, so the step it is waiting on reads red, not amber.
+  const held = stage === 'needs-review';
+  return (
+    <ol aria-label="Progress" className="mx-5 mt-3 flex gap-1">
+      {STEPS.map((label, i) => {
+        const done = i <= reached;
+        const next = i === reached + 1 && stage !== 'cancelled';
+        return (
+          <li
+            key={label}
+            aria-current={i === reached ? 'step' : undefined}
+            className={cn(
+              'min-w-0 flex-1 text-center text-[10.5px] font-bold leading-tight',
+              done
+                ? 'text-slate-600 dark:text-slate-300'
+                : next
+                  ? held
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-amber-700 dark:text-amber-400'
+                  : 'text-muted-foreground/70',
+            )}
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                'mb-1 block h-1 rounded-full',
+                done ? 'bg-emerald-600' : next ? (held ? 'bg-rose-500' : 'bg-amber-500') : 'bg-slate-200 dark:bg-slate-700',
+              )}
+            />
+            {label}
+            <span className="sr-only">{done ? ' (done)' : next ? ' (next)' : ''}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function Note({ tone, children }: { tone: 'amber' | 'rose'; children: ReactNode }) {
+  return (
+    <p
+      className={cn(
+        'mx-5 mt-3 rounded-[10px] border-l-[3px] px-3 py-2 text-xs',
+        tone === 'amber'
+          ? 'border-amber-500 bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200'
+          : 'border-rose-500 bg-rose-50 text-rose-900 dark:bg-rose-500/10 dark:text-rose-200',
+      )}
+    >
+      {children}
+    </p>
+  );
+}
+
 /** GST & TDS recorded when the request was raised (src/lib/statutory.ts). */
 function StatutoryDetails({ statutory }: { statutory: NonNullable<ExpenseRequest['statutory']> }) {
   const gstLabel =
@@ -361,9 +464,9 @@ function StatutoryDetails({ statutory }: { statutory: NonNullable<ExpenseRequest
         : 'No GST';
   const section = TDS_SECTIONS.find((entry) => entry.code === statutory.tdsSection);
   return (
-    <section aria-label="Statutory" className="mt-4 space-y-3 border-t border-border/60 pt-4">
+    <section aria-label="Statutory" className="space-y-3 border-t pt-4">
       <h3 className={LABEL}>Statutory — GST &amp; TDS</h3>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
         <Field label="Invoice" value={[statutory.invoiceNo, statutory.invoiceDate ? formatReceptionDate(statutory.invoiceDate) : ''].filter(Boolean).join(' · ')} />
         <Field label="Supplier GSTIN" value={statutory.gstNo} />
         <Field label="GST" value={gstLabel + (statutory.reverseCharge ? ' · reverse charge' : '')} />
@@ -390,7 +493,7 @@ function ModuleLink({ href, children }: { href: string; children: string }) {
   return (
     <Link
       href={href}
-      className="inline-flex max-w-full items-center gap-1 text-sm font-medium text-primary underline-offset-2 hover:underline"
+      className="inline-flex max-w-full items-center gap-1 text-[13px] font-semibold text-primary underline-offset-2 hover:underline"
     >
       <span className="break-all">{children}</span>
       <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -407,7 +510,8 @@ function paymentDetail(payment: { mode?: string; instrumentNo?: string; instrume
   return parts.length ? parts.join(' · ') : '—';
 }
 
-function ProgressSection({
+/** Where Daily Requisition and Bank Balance have got with it: status, reception, payments. */
+function RequisitionSection({
   expense,
   requisition,
   unavailable,
@@ -423,34 +527,36 @@ function ProgressSection({
   const payments = requisition?.payments ?? [];
 
   return (
-    <section aria-label="Progress" className="mt-4 space-y-3 border-t border-border/60 pt-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className={LABEL}>Progress</h3>
-        {!unavailable && <StatusBadge tone={progress.tone}>{progress.label}</StatusBadge>}
-      </div>
+    <section aria-label="Daily Requisition" className="space-y-3 border-t pt-4">
+      <h3 className={LABEL}>Daily Requisition</h3>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="min-w-0 space-y-1">
-          <p className={LABEL}>Reception No</p>
+      <div className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-3">
+        <div className="min-w-0">
+          <p className={cn(LABEL, 'mb-0.5')}>Status</p>
+          {unavailable ? (
+            <p className="text-[13px] font-semibold text-muted-foreground/60" title={UNAVAILABLE}>—</p>
+          ) : (
+            <p className={cn('text-[13px] font-semibold', TONE_TEXT[progress.tone])}>{progress.label}</p>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className={cn(LABEL, 'mb-0.5')}>Reception no.</p>
           {linkNo ? (
             <ModuleLink href={requisitionHref(linkNo)}>{linkNo}</ModuleLink>
           ) : (
-            <p className="text-sm italic text-muted-foreground/60">—</p>
+            <p className="text-[13px] font-semibold text-muted-foreground/60">—</p>
           )}
         </div>
-        <Field label="Reception Date" value={receptionDate ? formatReceptionDate(receptionDate) : undefined} />
+        <Field label="Reception date" value={receptionDate ? formatReceptionDate(receptionDate) : undefined} />
       </div>
 
-      {unavailable ? (
-        <p className="text-sm text-muted-foreground">
-          {UNAVAILABLE}, so the stage and payments are not shown.
-        </p>
-      ) : !requisition ? (
-        <p className="text-sm text-muted-foreground">
-          {receptionNo
-            ? `Recorded as received (${receptionNo}), but Daily Requisition has no requisition with Dep No ${expense.requestNo || '—'}.`
-            : 'Not yet received in Daily Requisition.'}
-        </p>
+      {unavailable ? null : !requisition ? (
+        receptionNo ? (
+          <p className="text-xs text-muted-foreground">
+            Recorded as received ({receptionNo}), but Daily Requisition has no requisition with Dep No{' '}
+            {expense.requestNo || '—'}.
+          </p>
+        ) : null
       ) : (
         <>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -484,7 +590,7 @@ function ProgressSection({
               </ul>
             </div>
           ) : progress.stage === 'paid' ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Marked paid in Daily Requisition{requisition.manualPaid ? ' (paid outside Bank Balance)' : ''} — no
               payment voucher is recorded against it.
             </p>
@@ -495,6 +601,71 @@ function ProgressSection({
   );
 }
 
+/**
+ * The request on a printable sheet — the app's one print layout (src/lib/print-table-report.ts),
+ * in its own window. False when a pop-up blocker stopped the window.
+ */
+function printExpenseRequest({
+  expense,
+  projectName,
+  requisition,
+  unavailable,
+  raisedBy,
+}: {
+  expense: ExpenseRequest;
+  projectName: string;
+  requisition: DailyRequisitionEntry | undefined;
+  unavailable: boolean;
+  raisedBy: string;
+}): boolean {
+  const progress = requisitionProgress(requisition);
+  const { receptionNo, receptionDate } = receptionOf(expense, requisition);
+  const statutory = expense.statutory;
+  const statutoryLines: Array<[string, string]> = statutory
+    ? [
+        ['Invoice', [statutory.invoiceNo, statutory.invoiceDate ? formatReceptionDate(statutory.invoiceDate) : ''].filter(Boolean).join(' · ')],
+        ['GST', formatInr(statutory.gstAmount)],
+        ['TDS', formatInr(statutory.tdsAmount)],
+        ['Net payable', formatInr(statutory.netPayable)],
+      ]
+    : [];
+  const paymentLines: Array<[string, string]> =
+    requisition && !unavailable
+      ? [
+          ['Paid', formatInr(progress.paid)],
+          ['Balance', formatInr(progress.balance)],
+        ]
+      : [];
+  const lines: Array<[string, string]> = [
+    ['Request no', expense.requestNo],
+    ['Timestamp', expense.createdAt ? formatExpenseTimestamp(expense.createdAt) : ''],
+    ['Department', expense.generatedByDepartment],
+    ['Raised by', expense.generatedByUser],
+    ['Project name', projectName],
+    ['Head of A/c', expense.headOfAccount],
+    ['Sub-head of A/c', expense.subHeadOfAccount],
+    ['Name of the party', expense.partyName],
+    ['Amount', formatInr(expense.amount)],
+    ...statutoryLines,
+    ['Description', expense.description],
+    ['Remarks', expense.remarks],
+    ['Stage', unavailable ? 'Not available' : progress.label],
+    ['Reception no', receptionNo],
+    ['Reception date', receptionDate ? formatReceptionDate(receptionDate) : ''],
+    ...paymentLines,
+  ];
+  return openPrintWindow({
+    title: `Expense request ${expense.requestNo || ''}`.trim(),
+    subtitle: raisedBy,
+    columns: [
+      { key: 'field', label: 'Field' },
+      { key: 'value', label: 'Value' },
+    ],
+    rows: lines.map(([field, value]) => ({ field, value: value?.trim() ? value : '—' })),
+    generatedOn: format(new Date(), 'dd MMM yyyy, HH:mm'),
+  });
+}
+
 export function ExpenseDetailsDialog({
   expense,
   projectName,
@@ -502,6 +673,7 @@ export function ExpenseDetailsDialog({
   onOpenChange,
   requisition,
   requisitionsUnavailable = false,
+  onEdit,
 }: {
   expense: ExpenseRequest | null;
   /** Resolved by the caller, which is the side that holds the project list. */
@@ -512,57 +684,134 @@ export function ExpenseDetailsDialog({
   requisition?: DailyRequisitionEntry;
   /** Daily Requisition could not be read — progress is unknown, which is not "not received". */
   requisitionsUnavailable?: boolean;
+  /**
+   * Adds Edit to the footer. Pass it only where this user may edit this request — the register
+   * that can edit decides, and owns the edit dialog it opens.
+   */
+  onEdit?: (expense: ExpenseRequest) => void;
 }) {
+  const { toast } = useToast();
+  const progress = requisitionProgress(requisition);
+  const raisedBy = expense?.generatedByDepartment
+    ? `Raised by ${expense.generatedByDepartment}${expense.generatedByUser ? ` · ${expense.generatedByUser}` : ''}`
+    : 'Full details of this request.';
+  const testReason = expense ? testEntryReason(expense, projectName) : null;
+
+  const handlePrint = () => {
+    if (!expense) return;
+    const opened = printExpenseRequest({ expense, projectName, requisition, unavailable: requisitionsUnavailable, raisedBy });
+    if (!opened) {
+      toast({
+        title: 'Could not open the print window',
+        description: 'Allow pop-ups for this site, then try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="lg" className="max-h-[90dvh] overflow-y-auto">
-        <DialogHeader className="text-left">
-          <DialogTitle className="flex flex-wrap items-center gap-2 text-base">
-            <Receipt className="h-4 w-4 shrink-0 text-primary" />
-            Expense request
-            <span className="text-primary">{expense?.requestNo || '—'}</span>
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            {expense?.generatedByDepartment
-              ? `Raised by ${expense.generatedByDepartment}${expense.generatedByUser ? ` · ${expense.generatedByUser}` : ''}`
-              : 'Full details of this request.'}
-          </DialogDescription>
+      {/* Edge to edge: the colour strip, header and footer span the dialog and the body between
+          them scrolls. No scrollbar gutter on the shell, which would inset the strip. */}
+      <DialogContent size="lg" className="max-h-[90dvh] gap-0 p-0 sm:rounded-[18px]" style={{ scrollbarGutter: 'auto' }}>
+        <div aria-hidden="true" className="h-1 shrink-0 bg-[linear-gradient(90deg,#7c3aed,#ec4899,#f59e0b,#10b981)]" />
+
+        {/* `pr-24` keeps the title clear of the window controls and the close button. */}
+        <DialogHeader className="shrink-0 flex-row items-start gap-2.5 space-y-0 px-5 pb-3 pr-24 pt-4 text-left">
+          <span
+            aria-hidden="true"
+            className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px] bg-violet-50 text-base font-extrabold text-violet-600 dark:bg-violet-500/15 dark:text-violet-300"
+          >
+            ₹
+          </span>
+          <div className="min-w-0">
+            <DialogTitle className="break-words text-[15px] font-bold leading-snug">
+              Expense request <span className="text-violet-600 dark:text-violet-400">{expense?.requestNo || '—'}</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs">{raisedBy}</DialogDescription>
+          </div>
         </DialogHeader>
 
-        {/* DialogContent is a flex column with no gap, so the body sets its own separation. */}
         {expense && (
           <>
-            <div className="mt-4 grid grid-cols-1 gap-4 border-t border-border/60 pt-4 sm:grid-cols-2">
-              <Field
-                label="Timestamp"
-                value={expense.createdAt ? formatExpenseTimestamp(expense.createdAt) : undefined}
-              />
-              <Field label="Department" value={expense.generatedByDepartment} />
-              <Field label="Project Name" value={projectName} />
-              <Field label="Amount" value={formatInr(expense.amount)} emphasis />
-              <Field label="Head of A/c" value={expense.headOfAccount} />
-              <Field label="Sub-Head of A/c" value={expense.subHeadOfAccount} />
-              <Field label="Name of the party" value={expense.partyName} className="sm:col-span-2" />
-              <Field label="Description" value={expense.description} className="sm:col-span-2" />
-              <Field label="Remarks" value={expense.remarks} className="sm:col-span-2" />
+            <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+              {/* What it is for, and where it has got to. */}
+              <div className="mx-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/40 px-3.5 py-3">
+                <div className="min-w-0">
+                  <p className="text-[22px] font-extrabold leading-tight tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {formatInr(expense.amount)}
+                  </p>
+                  {expense.statutory && (
+                    <p className="text-[11.5px] text-muted-foreground">
+                      Net payable{' '}
+                      <span className="font-semibold tabular-nums text-foreground">{formatInr(expense.statutory.netPayable)}</span>{' '}
+                      after GST &amp; TDS
+                    </p>
+                  )}
+                </div>
+                {!requisitionsUnavailable && <StatusBadge tone={progress.tone}>{progress.label}</StatusBadge>}
+              </div>
+
+              {requisitionsUnavailable ? (
+                <Note tone="amber">{UNAVAILABLE}, so where this request has got to is not shown.</Note>
+              ) : (
+                <ProgressSteps stage={progress.stage} />
+              )}
+              {!requisitionsUnavailable && progress.stage === 'needs-review' && (
+                <Note tone="rose">Daily Requisition has marked this request “Needs review”.</Note>
+              )}
+              {!requisitionsUnavailable && progress.stage === 'cancelled' && (
+                <Note tone="rose">Cancelled in Daily Requisition — nothing more will be paid against it.</Note>
+              )}
+              {testReason && (
+                <Note tone="amber">{testReason}. If this was only a test, it still counts in every total.</Note>
+              )}
+
+              <div className="grid grid-cols-1 gap-x-5 gap-y-3 px-5 pt-4 sm:grid-cols-2">
+                <Field label="Timestamp" value={expense.createdAt ? formatExpenseTimestamp(expense.createdAt) : undefined} />
+                <Field label="Department" value={expense.generatedByDepartment} />
+                <Field label="Project name" value={projectName} className="sm:col-span-2" />
+                <Field label="Head of A/c" value={expense.headOfAccount} />
+                <Field label="Sub-head of A/c" value={expense.subHeadOfAccount} />
+                <Field label="Name of the party" value={expense.partyName} className="sm:col-span-2" />
+                <Field label="Description" value={expense.description} />
+                <Field label="Remarks" value={expense.remarks} />
+              </div>
+
+              <div className="space-y-4 px-5 pt-4">
+                {expense.statutory && <StatutoryDetails statutory={expense.statutory} />}
+
+                <RequisitionSection expense={expense} requisition={requisition} unavailable={requisitionsUnavailable} />
+
+                {/* Who did what to this request. Keyed so another request opens closed. */}
+                <RecordActivity
+                  key={expense.id}
+                  recordId={expense.id}
+                  recordRef={expense.requestNo}
+                  sectionClassName="border-t pt-3"
+                  headingClassName={LABEL}
+                />
+              </div>
             </div>
 
-            {expense.statutory && <StatutoryDetails statutory={expense.statutory} />}
-
-            <ProgressSection
-              expense={expense}
-              requisition={requisition}
-              unavailable={requisitionsUnavailable}
-            />
-
-            {/* Who did what to this request. Keyed so another request opens closed. */}
-            <RecordActivity
-              key={expense.id}
-              recordId={expense.id}
-              recordRef={expense.requestNo}
-              sectionClassName="mt-4 border-t border-border/60 pt-4"
-              headingClassName={LABEL}
-            />
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-t bg-muted/40 px-5 py-3">
+              {onEdit && (
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => onEdit(expense)}>
+                  <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                  Edit
+                </Button>
+              )}
+              <span className="flex-1" />
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={handlePrint}>
+                <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+                Print
+              </Button>
+              <DialogClose asChild>
+                <Button type="button" size="sm">
+                  Close
+                </Button>
+              </DialogClose>
+            </div>
           </>
         )}
       </DialogContent>
