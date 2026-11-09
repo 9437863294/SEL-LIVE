@@ -91,7 +91,6 @@ import {
   type PlacedStep,
 } from '@/lib/daily-requisition-flow';
 import { useDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
-import { BANNER_DIALOG_CLASS } from '@/components/daily-requisition/GstTdsVerificationDialog';
 import { dueText, useStepDeadline } from '@/components/daily-requisition/step-deadline';
 import { FlowTrail } from '@/components/daily-requisition/workflow-flow';
 
@@ -550,10 +549,10 @@ export default function ViewDailyRequisitionDialog({
 
   const statusChip =
     status === 'Paid'
-      ? { text: 'Paid', tone: 'bg-green-200 text-green-900' }
+      ? { text: 'Paid', tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
       : status === 'Cancelled'
-        ? { text: 'Cancelled', tone: 'bg-rose-200 text-rose-900' }
-        : { text: progress.atPayment ? (status === 'Partially Paid' ? 'Part paid' : 'At Payment') : `At ${currentStep?.step.name ?? status}`, tone: 'bg-yellow-300 text-yellow-900', live: true };
+        ? { text: 'Cancelled', tone: 'border-rose-200 bg-rose-50 text-rose-700' }
+        : { text: progress.atPayment ? (status === 'Partially Paid' ? 'Part paid' : 'At Payment') : `At ${currentStep?.step.name ?? status}`, tone: 'border-amber-200 bg-amber-50 text-amber-800', live: true };
 
   const gst = amountOf(entry.igstAmount) + amountOf(entry.cgstAmount) + amountOf(entry.sgstAmount);
   const retentionAndOther = amountOf(entry.retentionAmount) + amountOf(entry.otherDeduction);
@@ -571,30 +570,29 @@ export default function ViewDailyRequisitionDialog({
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
-        className={cn('hr-mobile-dialog max-w-[98vw] gap-0 p-0 sm:max-w-[980px]', BANNER_DIALOG_CLASS)}
+        className="hr-mobile-dialog max-w-[98vw] gap-0 p-0 sm:max-w-[980px]"
         style={{ scrollbarGutter: 'auto' }}
         windowTitle={entry.receptionNo}
       >
         {/* ── header: what it is, and where it is ── */}
-        <header className="hr-dialog-header keep-light no-print relative shrink-0 overflow-hidden bg-gradient-to-r from-teal-700 via-blue-600 to-violet-600 px-5 pb-4 pt-[18px] text-white sm:px-[22px]">
-          <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(420px_200px_at_95%_0%,rgba(245,158,11,0.6),transparent_65%)]" aria-hidden />
+        <header className="hr-dialog-header no-print relative shrink-0 border-b bg-muted/30 px-5 pb-4 pt-[18px] text-foreground sm:px-[22px]">
           <div className="relative flex items-start gap-3.5 pr-24">
-            <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[13px] bg-white/20">
-              <ClipboardCheck className="h-[22px] w-[22px]" />
+            <span className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl border bg-background text-primary">
+              <ClipboardCheck className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <p className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-white/75">Daily requisition</p>
-              <DialogTitle className="my-0.5 flex flex-wrap items-center gap-2.5 text-xl font-extrabold leading-tight text-white">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Daily requisition</p>
+              <DialogTitle className="my-0.5 flex flex-wrap items-center gap-2.5 text-xl font-bold leading-tight text-foreground">
                 <span className="break-all font-mono text-lg">{entry.receptionNo}</span>
-                <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-extrabold', statusChip.tone)}>
-                  {statusChip.live && <i className="h-[7px] w-[7px] animate-pulse rounded-full bg-yellow-700" aria-hidden />}
+                <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold', statusChip.tone)}>
+                  {statusChip.live && <i className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" aria-hidden />}
                   {statusChip.text}
                 </span>
               </DialogTitle>
-              <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-sky-100">
+              <DialogDescription className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-muted-foreground">
                 {entry.depNo ? (
                   <span>
-                    From expense request <span className="font-mono font-bold text-white">{entry.depNo}</span>
+                    From expense request <span className="font-mono font-semibold text-foreground">{entry.depNo}</span>
                   </span>
                 ) : (
                   <span>Entered on the Entry Sheet</span>
@@ -604,7 +602,7 @@ export default function ViewDailyRequisitionDialog({
                 <button
                   type="button"
                   onClick={() => void copyLink()}
-                  className="hr-inline-action inline-flex items-center gap-1 rounded-md bg-white/15 px-1.5 py-0.5 text-[11.5px] font-bold text-white hover:bg-white/25"
+                  className="hr-inline-action inline-flex items-center gap-1 rounded-md border bg-background px-1.5 py-0.5 text-[11.5px] font-semibold text-foreground hover:bg-muted"
                 >
                   <Link2 className="h-3.5 w-3.5" /> Copy link
                 </button>
@@ -622,21 +620,23 @@ export default function ViewDailyRequisitionDialog({
                 {i > 0 && (
                   <span
                     aria-hidden
-                    className={cn('absolute right-1/2 top-[15px] h-[3px] w-full', stop.state === 'next' ? 'bg-white/25' : 'bg-white')}
+                    className={cn('absolute right-1/2 top-[13px] h-0.5 w-full', stop.state === 'next' ? 'bg-border' : 'bg-primary/60')}
                   />
                 )}
                 <span
                   className={cn(
-                    'relative z-[1] grid h-8 w-8 place-items-center rounded-full border-2 text-[11px] font-extrabold',
-                    stop.state === 'done' && 'border-white bg-white text-teal-700',
-                    stop.state === 'current' && 'border-yellow-300 bg-yellow-300 text-yellow-900 shadow-[0_0_0_5px_rgba(253,224,71,0.25)]',
-                    stop.state === 'next' && 'border-white/40 bg-white/15',
+                    'relative z-[1] grid h-7 w-7 place-items-center rounded-full border text-[11px] font-semibold',
+                    stop.state === 'done' && 'border-primary bg-primary text-primary-foreground',
+                    stop.state === 'current' && 'border-2 border-primary bg-background text-primary ring-4 ring-primary/10',
+                    stop.state === 'next' && 'border-border bg-background text-muted-foreground',
                   )}
                 >
-                  {stop.state === 'done' ? <Check className="h-[15px] w-[15px]" strokeWidth={3} /> : i + 1}
+                  {stop.state === 'done' ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : i + 1}
                 </span>
-                <b className="mt-1.5 line-clamp-2 text-[12.5px] leading-tight">{stop.label}</b>
-                <small className="text-blue-100">{stop.note}</small>
+                <b className={cn('mt-1.5 line-clamp-2 text-[12px] font-semibold leading-tight', stop.state === 'next' ? 'text-muted-foreground' : 'text-foreground')}>
+                  {stop.label}
+                </b>
+                <small className="text-muted-foreground">{stop.note}</small>
               </li>
             ))}
           </ol>

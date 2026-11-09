@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Edit, Loader2, Lock, Save } from 'lucide-react';
+import { Building2, Edit, Loader2, Lock, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -28,12 +28,8 @@ import {
 import { Form } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { useBillRegistration } from '@/components/expenses/bill-registration';
-import {
-  StatutorySection,
-  FORM_LABEL as LABEL,
-  FORM_READ_ONLY as READ_ONLY,
-  type StatutoryValue,
-} from '@/components/expenses/statutory-section';
+import { StatutorySection, type StatutoryValue } from '@/components/expenses/statutory-section';
+import { ShownField } from '@/components/expenses/expense-form-ui';
 import {
   ExpenseRequestFields,
   ExpenseRequestTotals,
@@ -265,12 +261,9 @@ function EditExpenseForm({
             locked={locked}
             department={
               // A request stays in the department that numbered it.
-              <div className="min-w-0 space-y-1.5">
-                <p className={LABEL}>Department</p>
-                <div className={cn(READ_ONLY, 'font-medium text-slate-800')}>
-                  <span className="truncate">{departmentName || expense.generatedByDepartment || '—'}</span>
-                </div>
-              </div>
+              <ShownField accent="violet" icon={Building2} label="Department" fixed note="Stays with the department that numbered it">
+                <span>{departmentName || expense.generatedByDepartment || '—'}</span>
+              </ShownField>
             }
             statutory={
               showStatutory && (

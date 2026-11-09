@@ -4,9 +4,10 @@
  * The GST & TDS part of an expense request, shown only as far as the bill needs it.
  *
  * Three toggles say what kind of bill it is — a GST bill, TDS to deduct, retention / other
- * deductions — and only the switched-on groups appear. A plain bill shows one line and nothing else.
- * Every group sits on the same 6-column grid as the request fields above it (FORM_GRID), so the
- * page reads as one aligned form. Every rule lives in src/lib/statutory.ts.
+ * deductions — and only the switched-on groups appear, each a tinted box in its toggle's colour with
+ * what it adds or holds back on the right. A plain bill shows one line and nothing else. Under the
+ * boxes, the working as chips: taxable, + GST, − TDS, − deductions, = net payable, and the net in
+ * words. Every rule lives in src/lib/statutory.ts; the look is expense-form.module.css.
  *
  * The GST group opens with the company GST registration the bill belongs to, when there is more
  * than one to choose from: it is that registration's state that decides CGST + SGST versus IGST
@@ -15,11 +16,13 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { AlertCircle, BadgePercent, Check, CheckCircle2, MinusCircle, Receipt } from 'lucide-react';
-import { Input } from '@/components/ui/input';
+import type { LucideIcon } from 'lucide-react';
+import { AlertCircle, BadgePercent, Check, CheckCircle2, FileText, MinusCircle, Receipt } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RegistrationSelect, treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
+import { accentStyle, money, xr, type Accent } from '@/components/expenses/expense-form-ui';
+import { amountInWords } from '@/lib/daily-requisition-print';
 import {
   GST_RATES,
   TDS_SECTIONS,
@@ -35,7 +38,11 @@ import {
 } from '@/lib/statutory';
 import { cn } from '@/lib/utils';
 
-/** The expense request form's grid: 1 column on a phone, 2 on a tablet, 4 on a laptop, 6 on a wide screen. */
+/*
+ * The plain form classes Daily Requisition's entry sheet and Receive Multiple still lay out with.
+ * The expense request itself is drawn with expense-form.module.css.
+ */
+/** A form grid: 1 column on a phone, 2 on a tablet, 4 on a laptop, 6 on a wide screen. */
 export const FORM_GRID = 'grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6';
 /** A block label with a fixed line box, so labels line up whatever element carries them. */
 export const FORM_LABEL = 'block h-4 truncate text-xs font-medium leading-4 text-slate-600';
@@ -51,15 +58,10 @@ export interface StatutoryValue extends StatutoryInput {
   gstRegistrationId?: string;
 }
 
-const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const money = (n: number) => inr.format(Number(n) || 0);
 const numberOrZero = (value: string) => {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
-
-const CONTROL = 'h-9 text-sm';
-const AMOUNT = 'text-right tabular-nums';
 
 /**
  * A number box that keeps what is being typed.
@@ -76,7 +78,7 @@ function DecimalInput({
   text,
   onChange,
   disabled,
-  className,
+  invalid,
   placeholder,
 }: {
   id: string;
@@ -86,20 +88,21 @@ function DecimalInput({
   text: string;
   onChange: (next: number) => void;
   disabled?: boolean;
-  className?: string;
+  invalid?: boolean;
   placeholder?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const shown = draft !== null && numberOrZero(draft) === (Number(value) || 0) ? draft : text;
   return (
-    <Input
+    <input
       id={id}
       type="number"
       inputMode="decimal"
       min={0}
       step="0.01"
-      className={className}
+      className={cn(xr.control, xr.figure, value > 0 && xr.set)}
       disabled={disabled}
+      aria-invalid={invalid || undefined}
       placeholder={placeholder}
       value={shown}
       onChange={(event) => {
@@ -108,6 +111,15 @@ function DecimalInput({
       }}
       onBlur={() => setDraft(null)}
     />
+  );
+}
+
+function MoneyInput({ id, value, onChange }: { id: string; value: number; onChange: (n: number) => void }) {
+  return (
+    <div className={xr.money}>
+      <span className={xr.moneySign} aria-hidden="true">₹</span>
+      <DecimalInput id={id} placeholder="0.00" value={value} text={value ? String(value) : ''} onChange={onChange} />
+    </div>
   );
 }
 
@@ -129,53 +141,66 @@ function Field({
   className?: string;
 }) {
   return (
-    <div className={cn('min-w-0 space-y-1.5', className)}>
-      <label htmlFor={htmlFor} className={FORM_LABEL}>
+    <div className={cn(xr.field, className)}>
+      <label htmlFor={htmlFor} className={xr.lbl}>
         {label}
-        {required && <span className="text-destructive"> *</span>}
+        {required && <i className={xr.req}> *</i>}
       </label>
       {children}
-      {error ? <p className="text-[11px] font-medium leading-tight text-destructive">{error}</p> : hint}
+      {/* Always there, so a row of fields keeps one baseline whichever of them has a hint. */}
+      {error ? <p className={cn(xr.sub, xr.subError)}>{error}</p> : <div className={xr.hint}>{hint}</div>}
     </div>
   );
 }
 
-const TONES = {
-  indigo: { bar: 'bg-indigo-500', text: 'text-indigo-700', pill: 'border-indigo-300 bg-indigo-50 text-indigo-800' },
-  amber: { bar: 'bg-amber-500', text: 'text-amber-700', pill: 'border-amber-300 bg-amber-50 text-amber-800' },
-  slate: { bar: 'bg-slate-400', text: 'text-slate-700', pill: 'border-slate-400 bg-slate-100 text-slate-800' },
-} as const;
-type Tone = keyof typeof TONES;
-
-/** One group of fields — a white box with a coloured edge, its title, and anything that belongs beside the title. */
-function Group({ title, tone, aside, children }: { title: string; tone: Tone; aside?: ReactNode; children: ReactNode }) {
+/** One group of fields — a box tinted in its toggle's colour, its title, what it adds or takes away. */
+function Box({
+  title,
+  icon: Icon,
+  accent,
+  aside,
+  result,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  accent: Accent;
+  aside?: ReactNode;
+  result?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section className="relative overflow-hidden rounded-lg border bg-white">
-      <span className={cn('absolute inset-y-0 left-0 w-1', TONES[tone].bar)} aria-hidden />
-      <div className="flex min-h-9 items-center justify-between gap-3 border-b border-slate-100 py-1.5 pl-5 pr-3">
-        <h3 className={cn('text-xs font-semibold uppercase tracking-wide', TONES[tone].text)}>{title}</h3>
-        {aside}
+    <section className={xr.box} style={accentStyle(accent)}>
+      <div className={xr.boxHead}>
+        <h3 className={xr.boxTitle}>
+          <Icon aria-hidden="true" />
+          {title}
+        </h3>
+        {aside && <div className={xr.boxAside}>{aside}</div>}
+        {result && <div className={xr.boxResult}>{result}</div>}
       </div>
-      <div className={cn(FORM_GRID, 'py-3 pl-5 pr-4')}>{children}</div>
+      <div className={xr.boxGrid}>{children}</div>
     </section>
   );
 }
 
-/** A "what kind of bill" toggle, as a compact pill. */
-function BillTypeToggle({ on, onToggle, icon: Icon, label, tone }: { on: boolean; onToggle: () => void; icon: typeof Receipt; label: string; tone: Tone }) {
+/** A "what kind of bill" toggle: a pill that fills with its colour when on. */
+function BillTypeToggle({ on, onToggle, icon: Icon, label, accent }: { on: boolean; onToggle: () => void; icon: LucideIcon; label: string; accent: Accent }) {
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onToggle}
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-slate-400/40',
-        on ? TONES[tone].pill : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-      )}
-    >
-      {on ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5 opacity-60" />}
+    <button type="button" aria-pressed={on} onClick={onToggle} className={xr.toggle} style={accentStyle(accent)}>
+      <span className={xr.toggleDot} aria-hidden="true">
+        {on ? <Check /> : <Icon />}
+      </span>
       {label}
     </button>
+  );
+}
+
+function Chip({ accent, children }: { accent: Accent; children: ReactNode }) {
+  return (
+    <span className={xr.chip} style={accentStyle(accent)}>
+      {children}
+    </span>
   );
 }
 
@@ -212,7 +237,9 @@ export function StatutorySection({
   const gstin = normaliseTaxId(value.gstNo);
   const gstinCheck = gstin ? checkGstin(gstin) : null;
   const mismatch = gstOn ? treatmentWarning(bill, value.gstNo, value.gstType) : null;
-  const invalid = (key: keyof typeof errors) => (errors[key] ? 'border-destructive focus-visible:ring-destructive' : undefined);
+  const invalid = (key: keyof typeof errors) => (errors[key] ? true : undefined);
+  /** "194C", for the chip — the section's code without its description. */
+  const sectionCode = tdsOn && value.tdsSection ? tdsSection(value.tdsSection).label.split(' · ')[0] : '';
 
   const toggleGst = () =>
     gstOn
@@ -255,50 +282,78 @@ export function StatutorySection({
   const invoiceFields = (
     <>
       <Field label="Invoice / bill no." required={gstOn} htmlFor="st-invoice-no" error={errors.invoiceNo}>
-        <Input id="st-invoice-no" className={cn(CONTROL, invalid('invoiceNo'))} placeholder="As printed on the bill" value={value.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} />
+        <input
+          id="st-invoice-no"
+          className={cn(xr.control, value.invoiceNo && xr.set)}
+          aria-invalid={invalid('invoiceNo')}
+          placeholder="As printed on the bill"
+          value={value.invoiceNo}
+          onChange={(e) => set({ invoiceNo: e.target.value })}
+        />
       </Field>
       <Field label="Invoice date" required={gstOn} htmlFor="st-invoice-date" error={errors.invoiceDate}>
-        <Input id="st-invoice-date" type="date" className={cn(CONTROL, invalid('invoiceDate'))} value={value.invoiceDate} onChange={(e) => set({ invoiceDate: e.target.value })} />
+        <input
+          id="st-invoice-date"
+          type="date"
+          className={cn(xr.control, value.invoiceDate && xr.set)}
+          aria-invalid={invalid('invoiceDate')}
+          value={value.invoiceDate}
+          onChange={(e) => set({ invoiceDate: e.target.value })}
+        />
       </Field>
     </>
   );
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="mr-2 min-w-0">
-          <h2 className="text-sm font-semibold text-slate-900">GST, TDS &amp; deductions</h2>
-          <p className="text-xs text-muted-foreground">Tick what this bill has — it pre-fills GST &amp; TDS verification in Daily Requisition.</p>
+    <div className={xr.scope}>
+      <div className={xr.taxHead}>
+        <div className="min-w-0">
+          <h2 className={xr.taxTitle}>GST, TDS &amp; deductions</h2>
+          <p className={xr.taxNote}>Tick what this bill has — it pre-fills GST &amp; TDS verification in Daily Requisition.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-          <BillTypeToggle on={gstOn} onToggle={toggleGst} icon={Receipt} tone="indigo" label="GST bill" />
-          <BillTypeToggle on={tdsOn} onToggle={toggleTds} icon={BadgePercent} tone="amber" label="TDS" />
-          <BillTypeToggle on={deductionsOn} onToggle={toggleDeductions} icon={MinusCircle} tone="slate" label="Retention / deductions" />
+        <div className={xr.toggles}>
+          <BillTypeToggle on={gstOn} onToggle={toggleGst} icon={Receipt} accent="cyan" label="GST bill" />
+          <BillTypeToggle on={tdsOn} onToggle={toggleTds} icon={BadgePercent} accent="rose" label="TDS" />
+          <BillTypeToggle on={deductionsOn} onToggle={toggleDeductions} icon={MinusCircle} accent="amber" label="Retention / deductions" />
         </div>
       </div>
 
       {plain ? (
-        <p className="rounded-lg border border-dashed bg-white px-4 py-2.5 text-xs text-muted-foreground">
+        <p className={xr.plain}>
+          <CheckCircle2 aria-hidden="true" />
           A plain bill — no GST, TDS or deductions. The amount above is what gets paid.
         </p>
       ) : (
         <>
           {gstOn && (
-            <Group
-              title="GST invoice"
-              tone="indigo"
+            <Box
+              title="GST bill"
+              icon={Receipt}
+              accent="cyan"
               aside={
-                <label className="flex items-center gap-2 text-xs text-slate-600" title="The company pays this GST to the government; the supplier gets the taxable value only.">
+                <label className="flex cursor-pointer items-center gap-2" title="The company pays this GST to the government; the supplier gets the taxable value only.">
                   <Switch checked={value.reverseCharge} onCheckedChange={(checked) => set({ reverseCharge: checked })} className="scale-90" />
                   Reverse charge (RCM)
                 </label>
+              }
+              result={
+                <>
+                  {value.reverseCharge ? money(totals.gst) : `+ ${money(totals.gst)}`}
+                  <small>
+                    {value.reverseCharge
+                      ? 'Paid by us under RCM, not to the supplier'
+                      : value.gstType === 'igst'
+                        ? `IGST ${value.gstRate}% · inter-state`
+                        : `CGST ${money(totals.cgst)} + SGST ${money(totals.sgst)}`}
+                  </small>
+                </>
               }
             >
               {bill.canChoose && (
                 <Field
                   label="GST registration"
                   htmlFor="st-gst-registration"
-                  className="sm:col-span-2"
+                  className={xr.span2}
                   hint={
                     <p className="truncate text-[11px] leading-tight text-muted-foreground" title={bill.attribution.reason}>
                       {bill.registration ? (
@@ -316,7 +371,7 @@ export function StatutorySection({
                     value={value.gstRegistrationId ?? ''}
                     onValueChange={onRegistrationChange}
                     bill={bill}
-                    className={CONTROL}
+                    className={cn(xr.control, value.gstRegistrationId && xr.set)}
                   />
                 </Field>
               )}
@@ -328,19 +383,20 @@ export function StatutorySection({
                 error={!gstinCheck ? errors.gstNo : undefined}
                 hint={
                   gstinCheck?.valid ? (
-                    <p className="flex items-center gap-1 text-[11px] leading-tight text-emerald-700">
+                    <p className="flex items-center gap-1 text-[11px] leading-tight text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="h-3 w-3 shrink-0" /> {gstinCheck.stateName}
                     </p>
                   ) : gstinCheck ? (
-                    <p className="flex items-start gap-1 text-[11px] leading-tight text-amber-700">
+                    <p className="flex items-start gap-1 text-[11px] leading-tight text-amber-700 dark:text-amber-400">
                       <AlertCircle className="mt-px h-3 w-3 shrink-0" /> {gstinCheck.error}
                     </p>
                   ) : null
                 }
               >
-                <Input
+                <input
                   id="st-gstin"
-                  className={cn(CONTROL, 'font-mono uppercase tracking-wide placeholder:font-sans placeholder:normal-case placeholder:tracking-normal', invalid('gstNo'))}
+                  className={cn(xr.control, xr.mono, gstinCheck?.valid && xr.set)}
+                  aria-invalid={invalid('gstNo')}
                   placeholder="15-character GSTIN"
                   maxLength={15}
                   value={value.gstNo}
@@ -352,7 +408,7 @@ export function StatutorySection({
                 error={errors.gstType}
                 hint={
                   mismatch ? (
-                    <p className="flex items-start gap-1 text-[11px] leading-tight text-amber-700">
+                    <p className="flex items-start gap-1 text-[11px] leading-tight text-amber-700 dark:text-amber-400">
                       <AlertCircle className="mt-px h-3 w-3 shrink-0" />
                       <span>
                         {mismatch.message}{' '}
@@ -369,7 +425,7 @@ export function StatutorySection({
                 }
               >
                 <Select value={value.gstType} onValueChange={(v) => set({ gstType: v as GstType })}>
-                  <SelectTrigger className={cn(CONTROL, mismatch && 'border-amber-400', invalid('gstType'))}>
+                  <SelectTrigger className={cn(xr.control, xr.set)} data-warn={mismatch ? '' : undefined} aria-invalid={invalid('gstType')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -380,7 +436,7 @@ export function StatutorySection({
               </Field>
               <Field label="GST rate" required error={errors.gstRate}>
                 <Select value={String(value.gstRate)} onValueChange={(v) => set({ gstRate: Number(v) })}>
-                  <SelectTrigger className={cn(CONTROL, invalid('gstRate'))}>
+                  <SelectTrigger className={cn(xr.control, value.gstRate > 0 && xr.set)} aria-invalid={invalid('gstRate')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -393,22 +449,39 @@ export function StatutorySection({
                 </Select>
               </Field>
               <Field label="HSN / SAC" htmlFor="st-hsn">
-                <Input id="st-hsn" className={cn(CONTROL, 'font-mono placeholder:font-sans')} placeholder="Optional" maxLength={8} value={value.hsnSac} onChange={(e) => set({ hsnSac: e.target.value })} />
+                <input
+                  id="st-hsn"
+                  className={cn(xr.control, xr.mono, value.hsnSac && xr.set)}
+                  placeholder="Optional"
+                  maxLength={8}
+                  value={value.hsnSac}
+                  onChange={(e) => set({ hsnSac: e.target.value })}
+                />
               </Field>
-            </Group>
+            </Box>
           )}
 
           {!gstOn && tdsOn && (
-            <Group title="Invoice" tone="slate">
+            <Box title="Invoice" icon={FileText} accent="slate">
               {invoiceFields}
-            </Group>
+            </Box>
           )}
 
           {tdsOn && (
-            <Group title="TDS" tone="amber">
-              <Field label="TDS section" required error={errors.tdsSection} className="sm:col-span-2">
+            <Box
+              title="TDS"
+              icon={BadgePercent}
+              accent="rose"
+              result={
+                <>
+                  − {money(totals.tds)}
+                  <small>held back from the party</small>
+                </>
+              }
+            >
+              <Field label="TDS section" required error={errors.tdsSection} className={xr.span2}>
                 <Select value={value.tdsSection} onValueChange={(code) => set({ tdsSection: code, tdsRate: tdsSection(code).rate, tdsOverride: null })}>
-                  <SelectTrigger className={cn(CONTROL, invalid('tdsSection'))}>
+                  <SelectTrigger className={cn(xr.control, value.tdsSection && xr.set)} aria-invalid={invalid('tdsSection')}>
                     <SelectValue placeholder="Choose the section" />
                   </SelectTrigger>
                   <SelectContent>
@@ -423,8 +496,8 @@ export function StatutorySection({
               <Field label="Rate %" htmlFor="st-tds-rate" error={errors.tdsRate}>
                 <DecimalInput
                   id="st-tds-rate"
-                  className={cn(CONTROL, AMOUNT, invalid('tdsRate'))}
                   disabled={!value.tdsSection}
+                  invalid={!!errors.tdsRate}
                   placeholder="—"
                   value={value.tdsRate}
                   text={value.tdsSection ? String(value.tdsRate) : ''}
@@ -436,17 +509,18 @@ export function StatutorySection({
                 htmlFor="st-tds-amount"
                 hint={
                   value.tdsOverride !== null ? (
-                    <button type="button" className="text-[11px] leading-tight text-sky-700 hover:underline" onClick={() => set({ tdsOverride: null })}>
+                    <button type="button" className="text-[11px] leading-tight text-sky-700 hover:underline dark:text-sky-400" onClick={() => set({ tdsOverride: null })}>
                       Use {value.tdsRate}% instead
                     </button>
                   ) : (
-                    <p className="text-[11px] leading-tight text-muted-foreground">On the value before GST</p>
+                    <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                      {value.tdsSection ? `${value.tdsRate}% of ${money(totals.taxable)}, before GST` : 'On the value before GST'}
+                    </p>
                   )
                 }
               >
                 <DecimalInput
                   id="st-tds-amount"
-                  className={cn(CONTROL, AMOUNT)}
                   disabled={!value.tdsSection}
                   placeholder="—"
                   value={value.tdsOverride ?? totals.tds}
@@ -463,85 +537,80 @@ export function StatutorySection({
                 error={errors.panNo}
                 hint={
                   value.panNo && isValidPan(value.panNo) ? (
-                    <p className="flex items-center gap-1 text-[11px] leading-tight text-emerald-700">
+                    <p className="flex items-center gap-1 text-[11px] leading-tight text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="h-3 w-3 shrink-0" /> {gstinCheck?.pan === value.panNo ? 'Taken from the GSTIN' : 'Valid PAN'}
                     </p>
                   ) : null
                 }
               >
-                <Input
+                <input
                   id="st-pan"
-                  className={cn(CONTROL, 'font-mono uppercase tracking-wide placeholder:font-sans placeholder:normal-case placeholder:tracking-normal', invalid('panNo'))}
+                  className={cn(xr.control, xr.mono, value.panNo && isValidPan(value.panNo) && xr.set)}
+                  aria-invalid={invalid('panNo')}
                   placeholder="10-character PAN"
                   maxLength={10}
                   value={value.panNo}
                   onChange={(e) => set({ panNo: normaliseTaxId(e.target.value) })}
                 />
               </Field>
-            </Group>
+            </Box>
           )}
 
           {deductionsOn && (
-            <Group title="Retention & other deductions" tone="slate">
+            <Box
+              title="Retention & other deductions"
+              icon={MinusCircle}
+              accent="amber"
+              result={
+                <>
+                  − {money(totals.retention + totals.other)}
+                  <small>retention &amp; other</small>
+                </>
+              }
+            >
               <Field label="Retention" htmlFor="st-retention">
                 <MoneyInput id="st-retention" value={value.retentionAmount} onChange={(n) => set({ retentionAmount: n })} />
               </Field>
               <Field label="Other deduction" htmlFor="st-other">
                 <MoneyInput id="st-other" value={value.otherDeduction} onChange={(n) => set({ otherDeduction: n })} />
               </Field>
-              <Field label="Reason for other deduction" required={value.otherDeduction > 0} htmlFor="st-other-reason" error={errors.otherDeductionReason} className="sm:col-span-2">
-                <Input
+              <Field label="Reason for other deduction" required={value.otherDeduction > 0} htmlFor="st-other-reason" error={errors.otherDeductionReason} className={xr.span2}>
+                <input
                   id="st-other-reason"
-                  className={cn(CONTROL, invalid('otherDeductionReason'))}
+                  className={cn(xr.control, value.otherDeductionReason && xr.set)}
+                  aria-invalid={invalid('otherDeductionReason')}
                   placeholder="e.g. Advance adjusted"
                   value={value.otherDeductionReason}
                   onChange={(e) => set({ otherDeductionReason: e.target.value })}
                 />
               </Field>
-            </Group>
+            </Box>
           )}
 
-          {/* The working, on one line */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-emerald-200 bg-emerald-50/60 px-4 py-2.5 text-sm">
-            <Step label="Taxable value" value={totals.taxable} />
-            {gstOn && <Step op={value.reverseCharge ? '' : '+'} label={value.reverseCharge ? 'GST (RCM, not paid to supplier)' : value.gstType === 'igst' ? 'IGST' : 'CGST + SGST'} value={totals.gst} muted={value.reverseCharge} />}
-            {tdsOn && <Step op="−" label="TDS" value={totals.tds} />}
-            {totals.retention > 0 && <Step op="−" label="Retention" value={totals.retention} />}
-            {totals.other > 0 && <Step op="−" label="Other" value={totals.other} />}
-            <span className="ml-auto flex items-baseline gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-emerald-800">= Net payable</span>
-              <span className={cn('text-base font-bold tabular-nums', totals.net < 0 ? 'text-destructive' : 'text-emerald-800')}>{money(totals.net)}</span>
-            </span>
-            {errors.net && <p className="w-full text-[11px] font-medium text-destructive">{errors.net}</p>}
+          {/* The working, as chips */}
+          <div className={xr.strip}>
+            <Chip accent="slate">Taxable {money(totals.taxable)}</Chip>
+            {gstOn &&
+              (value.reverseCharge ? (
+                <Chip accent="slate">GST under RCM {money(totals.gst)} · not paid to the supplier</Chip>
+              ) : (
+                <Chip accent="cyan">
+                  {value.gstType === 'igst' ? 'IGST' : 'CGST + SGST'} + {money(totals.gst)}
+                </Chip>
+              ))}
+            {tdsOn && (
+              <Chip accent="rose">
+                TDS{sectionCode && ` ${sectionCode}`} − {money(totals.tds)}
+              </Chip>
+            )}
+            {totals.retention > 0 && <Chip accent="amber">Retention − {money(totals.retention)}</Chip>}
+            {totals.other > 0 && <Chip accent="amber">Other − {money(totals.other)}</Chip>}
+            <Chip accent={totals.net < 0 ? 'rose' : 'green'}>= Net payable {money(totals.net)}</Chip>
+            {totals.net > 0 && <Chip accent="violet">{amountInWords(totals.net)}</Chip>}
+            {errors.net && <p className={xr.stripError}>{errors.net}</p>}
           </div>
         </>
       )}
     </div>
-  );
-}
-
-function MoneyInput({ id, value, onChange }: { id: string; value: number; onChange: (n: number) => void }) {
-  return (
-    <div className="relative">
-      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span>
-      <DecimalInput
-        id={id}
-        className={cn(CONTROL, AMOUNT, 'pl-7')}
-        placeholder="0.00"
-        value={value}
-        text={value ? String(value) : ''}
-        onChange={onChange}
-      />
-    </div>
-  );
-}
-
-function Step({ op, label, value, muted }: { op?: string; label: string; value: number; muted?: boolean }) {
-  return (
-    <span className={cn('inline-flex items-baseline gap-1.5', muted && 'opacity-60')}>
-      {op && <span className="font-medium text-slate-400">{op}</span>}
-      <span className="text-xs text-slate-500">{label}</span>
-      <span className="font-semibold tabular-nums text-slate-800">{money(value)}</span>
-    </span>
   );
 }
