@@ -16,15 +16,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, runTransaction, Timestamp } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { AlertCircle, CalendarIcon, ListOrdered, Loader2, Search } from 'lucide-react';
+import { AlertCircle, CalendarIcon, Check, ListOrdered, Loader2, Search } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FORM_LABEL } from '@/components/expenses/statutory-section';
+import { KeyHint, ef } from '@/components/daily-requisition/entry-form-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -82,6 +80,7 @@ export function ReceiveMultiplePanel({
   settings,
   dateWindow,
   calendarDisabled,
+  onPreview,
   onCancel,
   onDone,
 }: {
@@ -92,6 +91,8 @@ export function ReceiveMultiplePanel({
   settings: DailyRequisitionSettings;
   dateWindow: DRDateWindow;
   calendarDisabled?: Array<{ before: Date } | { after: Date }>;
+  /** The reception numbers the ticked requests will take ("…/0070 – 0072"), or null with none ticked. */
+  onPreview?: (range: string | null) => void;
   onCancel: () => void;
   /** After a save: refresh the sheet and close. `refreshOnly` when nothing was saved but the list is stale. */
   onDone: (refreshOnly?: boolean) => void;
@@ -314,180 +315,219 @@ export function ReceiveMultiplePanel({
   const first = plan.items[0]?.receptionNo;
   const last = plan.items[plan.items.length - 1]?.receptionNo;
 
+  // The block the ticked requests will take, for the reception number in the dialog's header bar:
+  // "SEL/REC/2026-27/0070 – 0072" (the last one's serial only, as the rest is the same).
+  const range = config && first ? (last && last !== first ? `${first} – ${last.split('/').pop()}` : first) : null;
+  useEffect(() => {
+    onPreview?.(range);
+  }, [range, onPreview]);
+  // Nothing ticked once the panel goes: the header then shows the next single number again.
+  useEffect(() => () => onPreview?.(null), [onPreview]);
+
+  const canReceive = !isSaving && chosen.length > 0 && dateCheck.ok;
+
   return (
-    <div className="space-y-3 border-t pt-4">
-      {/* One date for the whole receipt, and what to pick from */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[11rem_13rem_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-1.5">
-          <p className={FORM_LABEL}>Reception date</p>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className={cn('h-9 w-full justify-start px-3 text-left font-normal', !dateCheck.ok && 'border-destructive')}>
-                <CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />
-                {format(receptionDate, 'dd MMM yyyy')}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={receptionDate} onSelect={(date) => date && setReceptionDate(date)} disabled={calendarDisabled} initialFocus />
-            </PopoverContent>
-          </Popover>
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          <p className={FORM_LABEL}>Department</p>
-          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All departments</SelectItem>
-              {departmentsInList.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          <p className={FORM_LABEL}>Find</p>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="DEP No, party, project or description" className="h-9 pl-8 text-sm" />
+    <div
+      className={ef.pane}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          if (canReceive) void handleReceive();
+        }
+      }}
+    >
+      <div className={ef.body}>
+        {/* What to pick from, and one reception date for the whole receipt */}
+        <div className={ef.tools}>
+          <div className={ef.toolSearch}>
+            <Search aria-hidden="true" />
+            <input
+              className={ef.ctl}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search pending expense requests…"
+              aria-label="Search pending expense requests by DEP No, party, project or description"
+              autoComplete="off"
+            />
+          </div>
+          <div className={ef.toolDept}>
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger className={ef.ctl} aria-label="Department">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {departmentsInList.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    {d.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className={ef.toolDate}>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={ef.ctl}
+                  aria-invalid={!dateCheck.ok || undefined}
+                  aria-label={`Reception date for every entry: ${format(receptionDate, 'dd MMM yyyy')}`}
+                  title="Reception date for every entry"
+                >
+                  <CalendarIcon className={ef.ctlIcon} aria-hidden="true" />
+                  <span>{format(receptionDate, 'dd MMM yyyy')}</span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <Calendar mode="single" selected={receptionDate} onSelect={(date) => date && setReceptionDate(date)} disabled={calendarDisabled} initialFocus />
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
-      </div>
-      {!dateCheck.ok ? (
-        <p className="text-[11px] font-medium text-destructive">{dateCheck.reason}</p>
-      ) : windowHint ? (
-        <p className="text-[11px] text-muted-foreground">{windowHint}</p>
-      ) : null}
+        {!dateCheck.ok ? (
+          <p className={cn(ef.err, 'mt-1.5')}>{dateCheck.reason}</p>
+        ) : windowHint ? (
+          <p className={cn(ef.help, 'mt-1.5')}>{windowHint}</p>
+        ) : null}
 
-      {/* The requests, in the order they will be numbered */}
-      <div className="max-h-[46vh] overflow-auto rounded-lg border">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-500">
-            <tr className="border-b">
-              <th className="w-10 px-3 py-2">
-                <Checkbox
-                  checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
-                  onCheckedChange={(checked) => toggleAllVisible(checked === true)}
-                  disabled={selectable.length === 0}
-                  aria-label="Select all listed requests"
-                />
-              </th>
-              <th className="px-2 py-2 font-medium">DEP No</th>
-              <th className="px-2 py-2 font-medium">Raised</th>
-              <th className="px-2 py-2 font-medium">Department</th>
-              <th className="px-2 py-2 font-medium">Party</th>
-              <th className="px-2 py-2 font-medium">Project</th>
-              <th className="px-3 py-2 text-right font-medium">Net payable</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.length === 0 ? (
+        {/* The requests, in the order they will be numbered */}
+        <div className={ef.tableWrap}>
+          <table className={ef.mt}>
+            <thead>
               <tr>
-                <td colSpan={7} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                  {requests.length === 0 ? 'Every expense request has been received.' : 'No request matches.'}
-                </td>
+                <th style={{ width: 40 }}>
+                  <Checkbox
+                    checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                    onCheckedChange={(checked) => toggleAllVisible(checked === true)}
+                    disabled={selectable.length === 0}
+                    aria-label="Select all listed requests"
+                  />
+                </th>
+                <th>DEP No.</th>
+                <th>Party</th>
+                <th>Project</th>
+                <th>Dept.</th>
+                <th>Raised</th>
+                <th className={ef.r}>Net payable</th>
               </tr>
-            ) : (
-              visible.map((req) => {
-                const issue = issueOf(req);
-                const isOn = selected.has(req.id);
-                const position = isOn ? plan.items.findIndex((item) => item.request.id === req.id) : -1;
-                return (
-                  <tr
-                    key={req.id}
-                    className={cn('border-b last:border-b-0', issue ? 'bg-slate-50/60 text-muted-foreground' : 'cursor-pointer hover:bg-slate-50', isOn && 'bg-emerald-50/60 hover:bg-emerald-50')}
-                    onClick={(event) => {
-                      if (issue || (event.target as HTMLElement).closest('button, [role="checkbox"]')) return;
-                      toggle(req.id, !isOn);
-                    }}
-                  >
-                    <td className="px-3 py-2 align-top">
-                      <Checkbox checked={isOn} disabled={Boolean(issue)} onCheckedChange={(checked) => toggle(req.id, checked === true)} aria-label={`Select ${req.requestNo}`} />
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top">
-                      <span className="font-mono text-xs font-medium text-slate-800">{req.requestNo}</span>
-                      {position >= 0 && config && (
-                        <span className="mt-0.5 block font-mono text-[11px] text-emerald-700">→ {plan.items[position].receptionNo}</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-2 align-top text-xs">{raisedOn(req.createdAt)}</td>
-                    <td className="px-2 py-2 align-top text-xs">{departmentName.get(req.departmentId) || '—'}</td>
-                    <td className="max-w-[14rem] px-2 py-2 align-top">
-                      <span className="block truncate" title={req.partyName}>
-                        {req.partyName || '—'}
-                      </span>
-                      {issue && (
-                        <span className="mt-0.5 flex items-start gap-1 text-[11px] font-medium text-amber-700">
-                          <AlertCircle className="mt-px h-3 w-3 shrink-0" />
-                          {issue}
+            </thead>
+            <tbody>
+              {visible.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className={ef.emptyRow}>
+                    {requests.length === 0 ? 'Every expense request has been received.' : 'No pending expense request matches.'}
+                  </td>
+                </tr>
+              ) : (
+                visible.map((req) => {
+                  const issue = issueOf(req);
+                  const isOn = selected.has(req.id);
+                  const position = isOn ? plan.items.findIndex((item) => item.request.id === req.id) : -1;
+                  return (
+                    <tr
+                      key={req.id}
+                      className={cn(issue ? ef.rowOff : ef.rowPick, isOn && ef.rowOn)}
+                      onClick={(event) => {
+                        if (issue || (event.target as HTMLElement).closest('button, [role="checkbox"]')) return;
+                        toggle(req.id, !isOn);
+                      }}
+                    >
+                      <td>
+                        <Checkbox
+                          checked={isOn}
+                          disabled={Boolean(issue)}
+                          onCheckedChange={(checked) => toggle(req.id, checked === true)}
+                          aria-label={`Select ${req.requestNo}`}
+                        />
+                      </td>
+                      <td>
+                        <span className={ef.depNo}>{req.requestNo}</span>
+                        {position >= 0 && config && <span className={ef.depNext}>→ {plan.items[position].receptionNo}</span>}
+                      </td>
+                      <td style={{ maxWidth: '16rem' }}>
+                        <span className={ef.who} title={req.partyName}>
+                          {req.partyName || '—'}
                         </span>
-                      )}
-                    </td>
-                    <td className="max-w-[12rem] truncate px-2 py-2 align-top text-xs" title={projectName.get(req.projectId)}>
-                      {projectName.get(req.projectId) || '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right align-top tabular-nums">{formatInr(netOf(req))}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                        {req.description ? (
+                          <span className={ef.whoNote} title={req.description}>
+                            {req.description}
+                          </span>
+                        ) : null}
+                        {issue && (
+                          <span className={ef.issue}>
+                            <AlertCircle aria-hidden="true" />
+                            {issue}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ maxWidth: '12rem' }}>
+                        <span className={ef.whoNote} title={projectName.get(req.projectId)}>
+                          {projectName.get(req.projectId) || '—'}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap text-xs">{departmentName.get(req.departmentId) || '—'}</td>
+                      <td className="whitespace-nowrap text-xs">{raisedOn(req.createdAt)}</td>
+                      <td className={cn(ef.r, ef.amt)}>{formatInr(netOf(req))}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            {visible.length > 0 ? (
+              <tfoot>
+                <tr>
+                  <td />
+                  <td colSpan={5}>
+                    {chosen.length === 0 ? (
+                      <span className="font-medium text-muted-foreground">Tick the requests to receive — they are numbered in DEP order.</span>
+                    ) : (
+                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>
+                          {chosen.length} selected
+                          {chosen.length >= MAX_RECEIVE_AT_ONCE && <span className="font-medium text-amber-700"> (most at once)</span>}
+                        </span>
+                        <button type="button" className={ef.linkBtn} onClick={() => setShowOrder((v) => !v)}>
+                          <ListOrdered aria-hidden="true" />
+                          {showOrder ? 'Hide order' : 'Show order'}
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                  <td className={cn(ef.r, ef.amt)}>{formatInr(totalNet)}</td>
+                </tr>
+              </tfoot>
+            ) : null}
+          </table>
+        </div>
 
-      {/* What will be created */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-sm">
-        {chosen.length === 0 ? (
-          <span className="text-muted-foreground">Tick the requests to receive. They are numbered in DEP order — the lowest serial takes the first reception number.</span>
-        ) : (
-          <>
-            <span>
-              <span className="font-semibold">{chosen.length}</span> selected
-              {chosen.length >= MAX_RECEIVE_AT_ONCE && <span className="text-amber-700"> (most at once)</span>}
-            </span>
-            <span className="tabular-nums">
-              Net <span className="font-semibold">{formatInr(totalNet)}</span>
-            </span>
-            {config && first && (
-              <span className="font-mono text-xs text-emerald-800">
-                {first}
-                {last && last !== first ? ` → ${last}` : ''}
-              </span>
-            )}
-            <button type="button" className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-emerald-800 hover:underline" onClick={() => setShowOrder((v) => !v)}>
-              <ListOrdered className="h-3.5 w-3.5" />
-              {showOrder ? 'Hide order' : 'Show order'}
-            </button>
-          </>
+        {showOrder && chosen.length > 0 && (
+          <ol className={ef.order}>
+            {plan.items.map((item, index) => (
+              <li key={item.request.id}>
+                <span>
+                  {index + 1}. {item.request.requestNo}
+                </span>
+                <span>{config ? item.receptionNo : '…'}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {config && chosen.length > 0 && (
+          <p className={cn(ef.help, 'mt-2')}>Reception numbers are confirmed when you save — if someone adds an entry first, the block moves up by one.</p>
         )}
       </div>
-      {showOrder && chosen.length > 0 && (
-        <ol className="grid grid-cols-1 gap-x-6 gap-y-1 rounded-lg border bg-white px-3 py-2 text-xs sm:grid-cols-2">
-          {plan.items.map((item, index) => (
-            <li key={item.request.id} className="flex items-center justify-between gap-3 font-mono">
-              <span className="text-slate-500">
-                {index + 1}. {item.request.requestNo}
-              </span>
-              <span className="font-medium text-slate-800">{config ? item.receptionNo : '…'}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {config && chosen.length > 0 && (
-        <p className="text-[11px] text-muted-foreground">Reception numbers are confirmed when you save — if someone adds an entry first, the block moves up by one.</p>
-      )}
 
-      <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSaving}>
+      <div className={ef.foot}>
+        <KeyHint />
+        <span className={ef.footSpacer} />
+        <button type="button" className={ef.btn} onClick={onCancel} disabled={isSaving}>
           Cancel
-        </Button>
-        <Button type="button" onClick={() => void handleReceive()} disabled={isSaving || chosen.length === 0 || !dateCheck.ok}>
-          {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Receive {chosen.length > 0 ? `${chosen.length} request${chosen.length === 1 ? '' : 's'}` : 'requests'}
-        </Button>
+        </button>
+        <button type="button" className={cn(ef.btn, ef.btnPrimary)} onClick={() => void handleReceive()} disabled={!canReceive}>
+          {isSaving ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
+          {chosen.length > 0 ? `Add ${chosen.length} ${chosen.length === 1 ? 'entry' : 'entries'}` : 'Add entries'}
+        </button>
       </div>
     </div>
   );

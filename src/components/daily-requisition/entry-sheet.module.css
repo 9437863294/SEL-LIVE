@@ -1,0 +1,1222 @@
+/*
+ * The Entry Sheet (Daily Requisition): KPI cards, the stage tabs, the filter bar and its chips, the
+ * selection bar, and a register whose header, totals and identity columns stay pinned while it
+ * scrolls. The page's own parts rather than Bill Tracking's shared register, so the Bill Register
+ * and the other registers built on `BtTable` are unaffected.
+ *
+ * Surfaces, lines, text and the accent are the app's theme tokens, so dark mode and the user's
+ * Appearance accent carry through; each status hue has a dark variant. The register answers to its
+ * own width (container queries), not the window's, so the sidebar being open or shut is allowed for.
+ */
+
+.root {
+  --es-surface: hsl(var(--card));
+  --es-surface-2: color-mix(in srgb, hsl(var(--muted)) 55%, hsl(var(--card)));
+  --es-line: hsl(var(--border));
+  --es-line-2: color-mix(in srgb, hsl(var(--border)) 60%, hsl(var(--card)));
+  --es-text: hsl(var(--foreground));
+  --es-text-2: #4b5265;
+  --es-muted: #8a90a2;
+  --es-primary: hsl(var(--primary));
+  --es-on-primary: hsl(var(--primary-foreground));
+  --es-primary-soft: color-mix(in srgb, hsl(var(--primary)) 10%, hsl(var(--card)));
+  --es-primary-ink: color-mix(in srgb, hsl(var(--primary)) 78%, #000);
+  --es-blue: #2563eb;
+  --es-blue-soft: #e8f0ff;
+  --es-amber: #b45309;
+  --es-amber-soft: #fff4e0;
+  --es-violet: #7c3aed;
+  --es-violet-soft: #f3edff;
+  --es-green: #047857;
+  --es-green-soft: #e3f8ef;
+  --es-red: #b91c1c;
+  --es-red-soft: #fdecec;
+  --es-orange: #ea580c;
+  --es-shadow: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  /* A high-value row, solid so the pinned cells still cover what scrolls under them. */
+  --es-high: color-mix(in srgb, #f59e0b 10%, hsl(var(--card)));
+  --es-high-hover: color-mix(in srgb, #f59e0b 18%, hsl(var(--card)));
+  --es-row: 48px;
+
+  container-type: inline-size;
+  min-width: 0;
+  color: var(--es-text);
+}
+
+:global(.dark) .root {
+  --es-text-2: #b5bbcb;
+  --es-muted: #7d8496;
+  --es-primary-soft: color-mix(in srgb, hsl(var(--primary)) 20%, hsl(var(--card)));
+  --es-primary-ink: color-mix(in srgb, hsl(var(--primary)) 50%, #fff);
+  --es-blue: #60a5fa;
+  --es-blue-soft: #14223d;
+  --es-amber: #fbbf24;
+  --es-amber-soft: #2b2210;
+  --es-violet: #a78bfa;
+  --es-violet-soft: #221a38;
+  --es-green: #34d399;
+  --es-green-soft: #0f2a20;
+  --es-red: #f87171;
+  --es-red-soft: #2d1414;
+  --es-orange: #fb923c;
+  --es-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
+}
+
+.compact {
+  --es-row: 36px;
+}
+
+.fy {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--es-primary-soft);
+  color: var(--es-primary-ink);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--es-primary-soft);
+  color: var(--es-primary-ink);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── KPI cards ────────────────────────────────────────────────────────────────────────────────── */
+
+.kpis {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@container (max-width: 1000px) {
+  .kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 620px) {
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpis > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* A column from the top: a card that is a button would otherwise centre its content vertically and
+   sit lower than its neighbours. */
+.kpi {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--es-line);
+  border-radius: 14px;
+  background: var(--es-surface);
+  box-shadow: var(--es-shadow);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.kpiLink {
+  width: 100%;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.kpiLink:hover {
+  border-color: var(--es-primary);
+}
+
+.kpiLink:focus-visible {
+  outline: none;
+  border-color: var(--es-primary);
+  box-shadow: 0 0 0 3px var(--es-primary-soft);
+}
+
+.tonePrimary {
+  --c: var(--es-primary);
+  --c-soft: var(--es-primary-soft);
+}
+
+.toneBlue {
+  --c: var(--es-blue);
+  --c-soft: var(--es-blue-soft);
+}
+
+.toneGreen {
+  --c: var(--es-green);
+  --c-soft: var(--es-green-soft);
+}
+
+.toneOrange {
+  --c: var(--es-orange);
+  --c-soft: var(--es-amber-soft);
+}
+
+.toneViolet {
+  --c: var(--es-violet);
+  --c-soft: var(--es-violet-soft);
+}
+
+.kpiLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--es-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.kpiIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--c-soft);
+  color: var(--c);
+}
+
+.kpiIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.kpiValue {
+  display: block;
+  margin-top: 10px;
+  overflow: hidden;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiValueTone {
+  color: var(--c);
+}
+
+.kpiSub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--es-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.kpiSub > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kpiMore {
+  flex: none;
+  margin-left: auto;
+  color: var(--es-primary-ink);
+  font-weight: 600;
+}
+
+.up {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--es-green-soft);
+  color: var(--es-green);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kpiBar {
+  display: block;
+  height: 6px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--es-line-2);
+}
+
+.kpiBar > span {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--c);
+  transition: width 0.5s;
+}
+
+/* ── The register's panel: tabs, filter bar, chips, selection bar, table, pager ───────────────── */
+
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--es-line);
+  border-radius: 14px;
+  background: var(--es-surface);
+  box-shadow: var(--es-shadow);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--es-line);
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--es-text-2);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--es-surface-2);
+  color: var(--es-text);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--es-primary);
+  outline-offset: -2px;
+}
+
+.tab[aria-pressed='true'] {
+  background: var(--es-primary-soft);
+  color: var(--es-primary-ink);
+}
+
+.tabQuiet {
+  opacity: 0.6;
+}
+
+.tabCount {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: var(--es-line-2);
+  color: var(--es-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab[aria-pressed='true'] .tabCount {
+  background: var(--es-primary);
+  color: var(--es-on-primary);
+}
+
+.tabDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.tabSep {
+  flex: none;
+  width: 1px;
+  margin: 6px 4px;
+  background: var(--es-line);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.toolbarSpacer {
+  flex: 1;
+}
+
+.search {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 340px;
+}
+
+@container (max-width: 620px) {
+  .search {
+    max-width: none;
+    min-width: 100%;
+  }
+}
+
+.search > svg {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--es-muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  height: 36px;
+  padding: 0 34px;
+  border: 1px solid var(--es-line);
+  border-radius: 10px;
+  background: var(--es-surface-2);
+  color: var(--es-text);
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.searchInput::placeholder {
+  color: var(--es-muted);
+}
+
+.searchInput::-webkit-search-cancel-button {
+  display: none;
+}
+
+.searchInput:focus {
+  border-color: var(--es-primary);
+  background: var(--es-surface);
+  box-shadow: 0 0 0 3px var(--es-primary-soft);
+}
+
+.searchKey,
+.searchClear {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+}
+
+.searchKey {
+  padding: 0 5px;
+  border: 1px solid var(--es-line);
+  border-radius: 5px;
+  background: var(--es-surface);
+  color: var(--es-muted);
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.search:focus-within .searchKey {
+  display: none;
+}
+
+.searchClear {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--es-muted);
+  cursor: pointer;
+}
+
+.searchClear:hover {
+  background: var(--es-line-2);
+  color: var(--es-text);
+}
+
+.searchClear svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* A native select laid over a pill that reads "Period: All time". */
+.sel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  max-width: 260px;
+  height: 36px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--es-line);
+  border-radius: 10px;
+  background: var(--es-surface);
+  color: var(--es-text-2);
+  font-size: 13px;
+  white-space: nowrap;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.sel b {
+  margin-left: 4px;
+  overflow: hidden;
+  color: var(--es-text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.sel select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sel::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  width: 6px;
+  height: 6px;
+  border-right: 1.6px solid var(--es-muted);
+  border-bottom: 1.6px solid var(--es-muted);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.sel:focus-within {
+  border-color: var(--es-primary);
+  box-shadow: 0 0 0 3px var(--es-primary-soft);
+}
+
+.selActive {
+  border-color: var(--es-primary);
+  background: var(--es-primary-soft);
+}
+
+.tbtn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--es-line);
+  border-radius: 10px;
+  background: var(--es-surface);
+  color: var(--es-text);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--es-shadow);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.tbtn:hover {
+  background: var(--es-surface-2);
+}
+
+.tbtn:focus-visible {
+  outline: none;
+  border-color: var(--es-primary);
+  box-shadow: 0 0 0 3px var(--es-primary-soft);
+}
+
+.tbtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.seg {
+  display: flex;
+  flex: none;
+  height: 36px;
+  overflow: hidden;
+  border: 1px solid var(--es-line);
+  border-radius: 10px;
+}
+
+.seg button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  border: 0;
+  background: var(--es-surface);
+  color: var(--es-muted);
+  cursor: pointer;
+}
+
+.seg button + button {
+  border-left: 1px solid var(--es-line);
+}
+
+.seg button[aria-pressed='true'] {
+  background: var(--es-surface-2);
+  color: var(--es-text);
+}
+
+.seg button:focus-visible {
+  outline: 2px solid var(--es-primary);
+  outline-offset: -2px;
+}
+
+.seg svg {
+  width: 16px;
+  height: 16px;
+}
+
+@container (max-width: 640px) {
+  .desktopOnly {
+    display: none;
+  }
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 12px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border-radius: 99px;
+  background: var(--es-primary-soft);
+  color: var(--es-primary-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chip button:hover {
+  background: color-mix(in srgb, var(--es-primary) 15%, transparent);
+}
+
+.chip svg {
+  width: 12px;
+  height: 12px;
+}
+
+.chipClear {
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--es-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chipClear:hover {
+  color: var(--es-text);
+  text-decoration: underline;
+}
+
+/* What is ticked, and what can be done with it. Inverted, so it reads as a different layer. */
+.bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 12px 12px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 11px;
+  background: var(--es-text);
+  color: var(--es-surface);
+  font-size: 13px;
+}
+
+.bulk b {
+  font-weight: 700;
+}
+
+.bulkSpacer {
+  flex: 1;
+}
+
+.bulkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bulkBtn:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.bulkBtn:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.bulkBtn svg {
+  width: 15px;
+  height: 15px;
+}
+
+:global(.dark) .bulkBtn {
+  border-color: rgb(0 0 0 / 0.22);
+}
+
+:global(.dark) .bulkBtn:hover {
+  background: rgb(0 0 0 / 0.08);
+}
+
+/* ── The register ─────────────────────────────────────────────────────────────────────────────── */
+
+.scroll {
+  max-height: 70vh;
+  overflow: auto;
+  border-top: 1px solid var(--es-line);
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 40px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--es-line);
+  background: var(--es-surface-2);
+  color: var(--es-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.table th[aria-sort] {
+  color: var(--es-primary-ink);
+}
+
+.sortBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.sortBtn:hover {
+  color: var(--es-text);
+}
+
+.sortBtn:focus-visible {
+  outline: 2px solid var(--es-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sortBtn svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.35;
+}
+
+.table th[aria-sort] .sortBtn svg {
+  opacity: 1;
+}
+
+.table td {
+  height: var(--es-row);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--es-line-2);
+  background: var(--es-surface);
+  color: var(--es-text-2);
+  white-space: nowrap;
+}
+
+.table tbody tr {
+  cursor: pointer;
+}
+
+.table tbody tr:hover td {
+  background: var(--es-surface-2);
+}
+
+.table tbody tr.rowHigh td {
+  background: var(--es-high);
+}
+
+.table tbody tr.rowHigh:hover td {
+  background: var(--es-high-hover);
+}
+
+.table tbody tr.rowPicked td,
+.table tbody tr.rowPicked:hover td {
+  background: var(--es-primary-soft);
+}
+
+.table .right {
+  text-align: right;
+}
+
+.table .right .sortBtn {
+  flex-direction: row-reverse;
+}
+
+/* The tick box and the identity column stay put while the figures scroll sideways. */
+.table .ck {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 44px;
+  padding-right: 0;
+  padding-left: 16px;
+}
+
+.table .pin {
+  position: sticky;
+  left: var(--es-pin-left, 0px);
+  z-index: 1;
+  box-shadow: 1px 0 0 var(--es-line-2);
+}
+
+.table th.ck,
+.table th.pin {
+  z-index: 3;
+}
+
+.table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  height: 46px;
+  border-top: 1px solid var(--es-line);
+  border-bottom: 0;
+  background: var(--es-surface-2);
+  color: var(--es-text);
+  font-weight: 700;
+}
+
+.table tfoot td.ck,
+.table tfoot td.pin {
+  z-index: 3;
+}
+
+.totalNote {
+  color: var(--es-muted);
+  font-weight: 500;
+}
+
+/* Cells */
+.strong {
+  color: var(--es-text);
+  font-weight: 600;
+}
+
+.trunc {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date2 {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.date2 small {
+  color: var(--es-muted);
+  font-size: 11.5px;
+}
+
+.rec {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--es-primary-ink);
+  font-family: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rec:hover {
+  text-decoration: underline;
+}
+
+.rec:focus-visible {
+  outline: 2px solid var(--es-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.highDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  vertical-align: middle;
+}
+
+.dept {
+  display: inline-block;
+  max-width: 160px;
+  padding: 3px 8px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--es-line-2);
+  color: var(--es-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.amt {
+  color: var(--es-text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.due {
+  color: var(--es-orange);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.zero {
+  color: var(--es-muted);
+}
+
+/* Row actions: revealed on hover where there is hover, always there on a touch screen. */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+@media (hover: hover) {
+  .actions {
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .table tbody tr:hover .actions,
+  .table tbody tr:focus-within .actions {
+    opacity: 1;
+  }
+}
+
+.act {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--es-text-2);
+  cursor: pointer;
+}
+
+.act svg {
+  width: 16px;
+  height: 16px;
+}
+
+.act:hover:not(:disabled) {
+  background: var(--es-line);
+  color: var(--es-text);
+}
+
+.act:focus-visible {
+  outline: 2px solid var(--es-primary);
+  outline-offset: -2px;
+}
+
+.act:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.actDanger:hover:not(:disabled) {
+  background: var(--es-red-soft);
+  color: var(--es-red);
+}
+
+/* A phone: the register as cards. */
+.cards {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid var(--es-line);
+}
+
+@container (max-width: 640px) {
+  .scroll {
+    display: none;
+  }
+
+  .cards {
+    display: flex;
+  }
+}
+
+.card {
+  padding: 14px;
+  border: 1px solid var(--es-line);
+  border-radius: 12px;
+  background: var(--es-surface);
+  cursor: pointer;
+}
+
+.cardHigh {
+  background: var(--es-high);
+}
+
+.cardPicked {
+  border-color: var(--es-primary);
+  background: var(--es-primary-soft);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cardTop > :last-child {
+  margin-left: auto;
+}
+
+.cardParty {
+  margin-top: 10px;
+  color: var(--es-text);
+  font-weight: 600;
+}
+
+.cardDesc {
+  overflow: hidden;
+  color: var(--es-muted);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--es-text-2);
+  font-size: 12.5px;
+}
+
+.cardGrid dt {
+  color: var(--es-muted);
+  font-size: 11px;
+}
+
+.cardGrid dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 60px 20px;
+  border-top: 1px solid var(--es-line);
+  color: var(--es-muted);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  border-radius: 16px;
+  background: var(--es-surface-2);
+}
+
+.emptyIcon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.emptyTitle {
+  margin: 0 0 4px;
+  color: var(--es-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.emptyAction {
+  margin-top: 14px;
+}
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--es-line);
+  color: var(--es-text-2);
+  font-size: 13px;
+}
+
+.pager b {
+  color: var(--es-text);
+  font-weight: 600;
+}
+
+.pagerSpacer {
+  flex: 1;
+}
+
+.pager select {
+  height: 32px;
+  margin-left: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--es-line);
+  border-radius: 8px;
+  background: var(--es-surface);
+  color: var(--es-text);
+}
+
+.pages {
+  display: flex;
+  gap: 4px;
+}
+
+.pages button,
+.pages span {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pages button {
+  border: 1px solid var(--es-line);
+  background: var(--es-surface);
+  color: var(--es-text);
+  cursor: pointer;
+}
+
+.pages button:hover:not(:disabled) {
+  background: var(--es-surface-2);
+}
+
+.pages button[aria-current='page'] {
+  border-color: var(--es-primary);
+  background: var(--es-primary);
+  color: var(--es-on-primary);
+}
+
+.pages button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pages button:focus-visible {
+  outline: 2px solid var(--es-primary);
+  outline-offset: 1px;
+}
+
+.pages svg {
+  width: 16px;
+  height: 16px;
+}
+
+.pages span {
+  color: var(--es-muted);
+}

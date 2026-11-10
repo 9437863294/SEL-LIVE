@@ -9,34 +9,69 @@ import { DailyRequisitionImportDialog } from '@/components/daily-requisition/imp
 import { allocateReceptionNos, requisitionFingerprint } from '@/lib/daily-requisition-import';
 import {
   Plus,
-  MoreHorizontal,
   Calendar as CalendarIcon,
   Loader2,
   Eye,
-  FileText,
-  Edit,
+  Pencil,
   Trash2,
   ShieldAlert,
   Printer,
   Upload,
-  File as FileIcon,
+  Download,
   Hash,
-  Paperclip,
   X,
   Lock,
   FilePlus,
   Inbox,
+  Search,
   SlidersHorizontal,
-  Columns,
+  Columns3,
   CheckCheck,
-  EyeOff,
+  ListChecks,
+  IndianRupee,
+  CheckCircle2,
+  Clock,
+  Check,
+  Info,
+  Receipt,
 } from 'lucide-react';
+import {
+  DepPicker,
+  FileDrop,
+  KeyHint,
+  LabelText,
+  ModeSwitch,
+  ReceptionPill,
+  Section,
+  ef,
+  type DepOption,
+} from '@/components/daily-requisition/entry-form-ui';
+import { amountInWords } from '@/lib/daily-requisition-print';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-// Bill Tracking's register parts, so this register reads exactly like the Bill Register.
-import { BtTable, Pager, type BtColumn } from '@/components/bill-tracking/bt-table';
-import { BtToolbar, DrawerInput, DrawerSelect, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
+import { DrawerInput } from '@/components/bill-tracking/bt-toolbar';
+import {
+  BulkBar,
+  BulkButton,
+  DensityToggle,
+  FilterChips,
+  FilterSelect,
+  Kpi,
+  NumberedPager,
+  Register,
+  RegisterEmpty,
+  RowAction,
+  SearchBox,
+  StageTabs,
+  ToolbarButton,
+  TwoLineDate,
+  es,
+  type Density,
+  type FilterChip,
+  type RegisterColumn,
+} from '@/components/daily-requisition/entry-sheet-ui';
+import { exportWorkbook, type ExcelColumn } from '@/lib/report-excel';
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
   DropdownMenu,
@@ -47,6 +82,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
@@ -98,16 +135,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/components/auth/AuthProvider';
-import {
-  DailyStatStrip,
-  dailyPageContainerClass,
-  dailySurfaceCardClass,
-} from '@/components/daily-requisition/module-shell';
+import { dailyPageContainerClass, dailySurfaceCardClass } from '@/components/daily-requisition/module-shell';
 import { formatINRCompact, sumBy } from '@/lib/bill-tracking/money';
 import { diffFields } from '@/lib/activity-logger';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -184,36 +216,65 @@ function CellText({ text, className }: { text?: string | null; className?: strin
   );
 }
 
-/** An amount in a register cell, to the paisa on one line — or a dash, where nothing is better shown as nothing. */
-function Money({ value, dashWhenZero = false }: { value: number; dashWhenZero?: boolean }) {
-  if (dashWhenZero && !value) return <span className="text-muted-foreground">—</span>;
-  return <span className="whitespace-nowrap tabular-nums">{formatCurrency(value)}</span>;
-}
-
-/** The register's empty state, as Bill Tracking draws its own. */
-function RegisterEmpty({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-      <Inbox className="h-9 w-9 text-muted-foreground/60" />
-      <p className="font-medium text-slate-700">{title}</p>
-      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
-      {action ? <div className="mt-2">{action}</div> : null}
-    </div>
-  );
-}
-
 /**
- * A high-value row's tint, solid in both themes: the register's pinned first cell inherits its
- * row's fill and has to cover the columns scrolling under it, and dark-compat.css would turn a
- * pastel `bg-amber-50` see-through. So the amber is mixed into the card colour instead.
+ * An amount in a register cell, to the paisa on one line — or a dash, where nothing is better shown
+ * as nothing. `tone="due"` marks a balance still owed.
  */
-const HIGH_VALUE_ROW =
-  'bg-[color-mix(in_srgb,theme(colors.amber.500)_10%,hsl(var(--card)))] hover:bg-[color-mix(in_srgb,theme(colors.amber.500)_18%,hsl(var(--card)))]';
+function Money({ value, dashWhenZero = false, tone }: { value: number; dashWhenZero?: boolean; tone?: 'due' }) {
+  if (dashWhenZero && !value) return <span className={es.zero}>—</span>;
+  return <span className={cn('whitespace-nowrap', tone === 'due' && value > 0 ? es.due : es.amt)}>{formatCurrency(value)}</span>;
+}
 
-/** The status filter's choices: the stages `requisitionProgress` reads entries as. */
-const STATUS_OPTIONS = REQUISITION_STAGES.map(({ stage, label }) => ({ value: stage, label }));
+/** The stage tabs, in workflow order: the stages `requisitionProgress` reads entries as. */
+const STAGES = REQUISITION_STAGES;
+const stageLabel = (stage: string) => STAGES.find((entry) => entry.stage === stage)?.label ?? stage;
+
+/** More filters › Payment. */
+type PaymentFilter = '' | 'due' | 'paid';
+const PAYMENT_LABELS: Record<Exclude<PaymentFilter, ''>, string> = {
+  due: 'Has a balance due',
+  paid: 'Paid in full',
+};
+
+/** A date for an Excel cell at the wall-clock time the app shows (exceljs writes a Date's UTC fields). */
+const toExcelDate = (value: unknown): Date | null => {
+  const date = toDate(value);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+};
+
+/** "FY 2026-27" for a `yyyy-MM-dd` day: the Indian financial year runs April to March. */
+const financialYear = (dayKey: string) => {
+  const [year, month] = dayKey.split('-').map(Number);
+  const start = month >= 4 ? year : year - 1;
+  return `FY ${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+};
+
+/** Figures for a set of entries: every one the filters match, not only a page of them. */
+function totalsOf(list: DailyRequisitionEntry[]) {
+  const progress = list.map((entry) => requisitionProgress(entry));
+  return {
+    gross: sumBy(list, (entry) => Number(entry.grossAmount) || 0),
+    net: sumBy(progress, (entry) => entry.net),
+    paid: sumBy(progress, (entry) => entry.paid),
+    balance: sumBy(progress, (entry) => entry.balance),
+    paidInFull: progress.filter((entry) => entry.stage === 'paid').length,
+    stillToPay: progress.filter((entry) => entry.balance > 0).length,
+  };
+}
 
 const HIDDEN_COLUMNS_KEY = 'daily-requisition:entry-sheet:hidden-columns';
+const DENSITY_KEY = 'daily-requisition:entry-sheet:density';
+
+/** The row height this browser last chose; comfortable until it chooses. Read once, at first render. */
+function readDensity(): Density {
+  if (typeof window === 'undefined') return 'comfortable';
+  try {
+    return window.localStorage.getItem(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable';
+  } catch {
+    return 'comfortable';
+  }
+}
 
 /**
  * The columns this browser has hidden, remembered across visits — none on the server or in private
@@ -341,8 +402,14 @@ function EntrySheetPageComponent() {
   const [projectFilter, setProjectFilter] = React.useState('');
   const [departmentFilter, setDepartmentFilter] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState('');
-  /** On a phone the filter controls fold behind a "Filters" button. */
+  /** More filters: the net amount between these (either may be blank), and whether anything is still owed. */
+  const [amountMin, setAmountMin] = React.useState('');
+  const [amountMax, setAmountMax] = React.useState('');
+  const [paymentFilter, setPaymentFilter] = React.useState<PaymentFilter>('');
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = React.useState(false);
+  /** Row height, remembered in this browser. */
+  const [density, setDensity] = React.useState<Density>(readDensity);
+  const searchRef = React.useRef<HTMLInputElement>(null);
   /** Field Control decides which columns exist; this browser may hide some of the unlocked ones. */
   const [hiddenColumns, setHiddenColumns] = React.useState<Set<string>>(readHiddenColumns);
 
@@ -395,14 +462,22 @@ function EntrySheetPageComponent() {
   const [selectedEntry, setSelectedEntry] = React.useState<DailyRequisitionEntry | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = React.useState(false);
   
+  /** Ticked rows, across pages — what Print checklists and Export act on. */
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [isSelectionMode, setIsSelectionMode] = React.useState(false);
+  /** The entry whose Delete was pressed, waiting on the confirmation. */
+  const [deleteTarget, setDeleteTarget] = React.useState<EnrichedDailyRequisitionEntry | null>(null);
+  /** Print checklists pressed with nothing ticked, on a long register: confirm before opening hundreds of pages. */
+  const [confirmPrintAll, setConfirmPrintAll] = React.useState(false);
+  const [isExporting, setIsExporting] = React.useState(false);
 
   const canViewPage = can('View', 'Daily Requisition.Entry Sheet');
   const canAdd = can('Add', 'Daily Requisition.Entry Sheet');
   const canEdit = can('Edit', 'Daily Requisition.Entry Sheet');
   const canDelete = can('Delete', 'Daily Requisition.Entry Sheet');
   const canViewChecklist = can('View Checklist', 'Daily Requisition.Entry Sheet');
+  const canExport = can('Export', 'Daily Requisition.Entry Sheet');
+  /** Rows can be ticked when there is something to do with them. */
+  const canSelect = canViewChecklist || canExport;
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -436,6 +511,17 @@ function EntrySheetPageComponent() {
 
   /** Attachments are not a form field, so their Field Control error is held here. */
   const [attachmentError, setAttachmentError] = React.useState<string | null>(null);
+  /** Add New Entry's fields still holding what the chosen expense request filled in — marked AUTO. */
+  const [autoFilled, setAutoFilled] = React.useState<ReadonlySet<string>>(() => new Set());
+  const unmarkAuto = (key: string) =>
+    setAutoFilled((current) => {
+      if (!current.has(key)) return current;
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+  /** Multiple: the reception numbers the ticked requests will take, for the bar under the header. */
+  const [multiPreview, setMultiPreview] = React.useState<string | null>(null);
 
   /** The reception-date picker offers only the Data Control window's days. */
   const calendarDisabled = React.useMemo(() => {
@@ -513,8 +599,13 @@ function EntrySheetPageComponent() {
     [entries],
   );
 
-  const fetchAllData = React.useCallback(async () => {
-    setIsLoading(true);
+  /**
+   * Reloads everything. `quiet` (exactly `true`) keeps the page on screen while it does — after an
+   * Add, so the dialog stays put for "Save & add another" instead of giving way to the skeleton.
+   * Typed `unknown` because it is also handed straight to callbacks that pass arguments of their own.
+   */
+  const fetchAllData = React.useCallback(async (quiet?: unknown) => {
+    if (quiet !== true) setIsLoading(true);
     try {
       const [projectsSnap, deptsSnap, configSnap, expensesSnap, requisitionsSnap] = await Promise.all([
         getDocs(collection(db, 'projects')),
@@ -589,12 +680,11 @@ function EntrySheetPageComponent() {
     return expenseRequests.filter((req) => !req.receptionNo);
   }, [expenseRequests]);
   
+  /** Picking a request fills in its details (marked AUTO until changed); clearing it only unlinks it. */
   const handleDepNoSelect = (value: string) => {
     const selectedRequest = unassignedExpenseRequests.find((req) => req.requestNo === value);
     if (selectedRequest) {
-      form.reset({
-        ...form.getValues(),
-        depNo: selectedRequest.requestNo,
+      const filled = {
         description: selectedRequest.description || '',
         partyName: selectedRequest.partyName || '',
         projectId: selectedRequest.projectId || '',
@@ -602,9 +692,29 @@ function EntrySheetPageComponent() {
         // With GST & TDS captured on the request, gross is its taxable value and net what is payable.
         grossAmount: String(selectedRequest.statutory?.taxableAmount ?? selectedRequest.amount ?? ''),
         netAmount: String(selectedRequest.statutory?.netPayable ?? selectedRequest.amount ?? ''),
-      });
+      };
+      form.reset({ ...form.getValues(), depNo: selectedRequest.requestNo, ...filled });
+      setAutoFilled(new Set(Object.entries(filled).filter(([, text]) => text.trim() !== '').map(([key]) => key)));
     } else {
       form.setValue('depNo', value);
+      setAutoFilled(new Set());
+    }
+  };
+
+  /**
+   * Gross typed by hand carries the net along with it while the two are the same (or net is blank) —
+   * the common bill with nothing deducted. A net that differs, typed or from the request, is left alone.
+   */
+  const handleGrossChange = (value: string) => {
+    const previousGross = form.getValues('grossAmount');
+    const net = form.getValues('netAmount');
+    form.setValue('grossAmount', value, { shouldDirty: true });
+    form.clearErrors('grossAmount');
+    unmarkAuto('grossAmount');
+    if (fields.netAmount.visible && (!String(net).trim() || Number(net) === Number(previousGross))) {
+      form.setValue('netAmount', value, { shouldDirty: true });
+      form.clearErrors('netAmount');
+      unmarkAuto('netAmount');
     }
   };
 
@@ -629,6 +739,8 @@ function EntrySheetPageComponent() {
     });
     setSelectedFiles([]);
     setAttachmentError(null);
+    setAutoFilled(new Set());
+    setMultiPreview(null);
     setAddMode('single');
     setIsAddDialogOpen(true);
   };
@@ -644,14 +756,17 @@ function EntrySheetPageComponent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `openAddDialog` is rebuilt every render; this runs once.
   }, [newParam, isLoading, canAdd]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setAttachmentError(null);
-      setSelectedFiles(Array.from(e.target.files));
-    }
+  /** Files chosen or dropped are added to those already there; the same file twice is kept once. */
+  const addFiles = (files: File[]) => {
+    setAttachmentError(null);
+    setSelectedFiles((current) => {
+      const seen = new Set(current.map((file) => `${file.name}|${file.size}|${file.lastModified}`));
+      return [...current, ...files.filter((file) => !seen.has(`${file.name}|${file.size}|${file.lastModified}`))];
+    });
   };
 
-  const handleAddEntry = async (data: z.infer<typeof formSchema>) => {
+  /** Saves the entry; `keepOpen` ("Save & add another") leaves the dialog open on a fresh form, same date. */
+  const handleAddEntry = async (data: z.infer<typeof formSchema>, keepOpen = false) => {
     if (!user) {
       toast({ title: 'Authentication Error', description: 'User not found.', variant: 'destructive' });
       return;
@@ -748,11 +863,28 @@ function EntrySheetPageComponent() {
         { recordId: newEntryRef.id, recordRef: generatedReceptionNo },
       );
 
-      toast({ title: 'Success', description: 'New entry added to the database.' });
-      setIsAddDialogOpen(false);
-      form.reset();
+      toast({
+        title: 'Entry added',
+        description: `${generatedReceptionNo}${data.partyName ? ` · ${data.partyName}` : ''} · ${formatCurrency(data.netAmount || data.grossAmount)}`,
+      });
+      if (!keepOpen) setIsAddDialogOpen(false);
+      // The next one starts empty — on the same reception date when adding several in a row. The
+      // Reception No is blank until the quiet reload below brings the next one.
+      form.reset({
+        receptionNo: '',
+        depNo: '',
+        date: keepOpen ? data.date : new Date(),
+        description: '',
+        partyName: '',
+        projectId: '',
+        departmentId: '',
+        grossAmount: '',
+        netAmount: '',
+      });
       setSelectedFiles([]);
-      fetchAllData();
+      setAutoFilled(new Set());
+      setAttachmentError(null);
+      void fetchAllData(true);
     } catch (error: any) {
       console.error('Error in transaction:', error);
       toast({
@@ -960,7 +1092,11 @@ function EntrySheetPageComponent() {
     [departments],
   );
 
-  const filteredEntries = React.useMemo(() => {
+  /**
+   * The entries every filter but the stage tab lets through, sorted — what the KPI cards and the
+   * tabs' counts are worked out from, so the tabs break the scope down rather than narrowing it.
+   */
+  const scopedEntries = React.useMemo(() => {
     const valueOf = (entry: EnrichedDailyRequisitionEntry, key: SortKey): unknown => {
       switch (key) {
         case '':
@@ -1017,11 +1153,23 @@ function EntrySheetPageComponent() {
       });
     }
     const range = resolveDatePreset(rangePreset);
+    const bound = (text: string) => {
+      const value = text.trim() === '' ? Number.NaN : Number(text);
+      return Number.isFinite(value) ? value : null;
+    };
+    const min = bound(amountMin);
+    const max = bound(amountMax);
     const inView = (entry: EnrichedDailyRequisitionEntry) => {
       if (projectFilter && entry.projectId !== projectFilter) return false;
       if (departmentFilter && entry.departmentId !== departmentFilter) return false;
-      if (statusFilter && requisitionProgress(entry).stage !== statusFilter) return false;
       if (dateFilter && !isSameDay(new Date(entry.originalDate), dateFilter)) return false;
+      if (min !== null || max !== null) {
+        const net = Number(entry.netAmount) || 0;
+        if (min !== null && net < min) return false;
+        if (max !== null && net > max) return false;
+      }
+      if (paymentFilter === 'due' && !(balanceOf(entry) > 0)) return false;
+      if (paymentFilter === 'paid' && !(paidOf(entry) > 0 && balanceOf(entry) === 0)) return false;
       if (!range) return true;
       const when = entry.originalDate ? new Date(entry.originalDate) : undefined;
       return Boolean(when) && (when as Date) >= range.from && (when as Date) <= range.to;
@@ -1056,15 +1204,33 @@ function EntrySheetPageComponent() {
     rangePreset,
     projectFilter,
     departmentFilter,
-    statusFilter,
+    amountMin,
+    amountMax,
+    paymentFilter,
     projectNameById,
     departmentNameById,
   ]);
 
+  /** What the register lists: the scope, at the stage tab's stage. */
+  const filteredEntries = React.useMemo(
+    () => (statusFilter ? scopedEntries.filter((entry) => requisitionProgress(entry).stage === statusFilter) : scopedEntries),
+    [scopedEntries, statusFilter],
+  );
+
+  /** How many of the scope are at each stage — the tabs' counts. */
+  const stageCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of scopedEntries) {
+      const { stage } = requisitionProgress(entry);
+      counts.set(stage, (counts.get(stage) ?? 0) + 1);
+    }
+    return counts;
+  }, [scopedEntries]);
+
   // A narrower filter, or a longer page, must not leave the table on a page that no longer exists.
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [filterText, dateFilter, rangePreset, projectFilter, departmentFilter, statusFilter, itemsPerPage]);
+  }, [filterText, dateFilter, rangePreset, projectFilter, departmentFilter, statusFilter, amountMin, amountMax, paymentFilter, itemsPerPage]);
 
   const paginatedEntries = React.useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -1073,26 +1239,27 @@ function EntrySheetPageComponent() {
 
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / itemsPerPage));
 
-  /** The header strip's figures: every entry the filters match, not only this page of them. */
-  const totals = React.useMemo(() => {
-    const progress = filteredEntries.map((entry) => requisitionProgress(entry));
-    return {
-      gross: sumBy(filteredEntries, (entry) => Number(entry.grossAmount) || 0),
-      net: sumBy(progress, (entry) => entry.net),
-      paid: sumBy(progress, (entry) => entry.paid),
-      balance: sumBy(progress, (entry) => entry.balance),
-      paidInFull: progress.filter((entry) => entry.stage === 'paid').length,
-      stillToPay: progress.filter((entry) => entry.balance > 0).length,
-    };
-  }, [filteredEntries]);
+  /** The KPI cards: the scope, whichever stage tab is open. */
+  const scopeTotals = React.useMemo(() => totalsOf(scopedEntries), [scopedEntries]);
+  /** The register's totals row: what it lists. */
+  const totals = React.useMemo(() => totalsOf(filteredEntries), [filteredEntries]);
+
+  /** Entries created in the last seven days, today included — the Entries card's "+N this week". */
+  const createdThisWeek = React.useMemo(() => {
+    const [year, month, day] = todayKey.split('-').map(Number);
+    const since = new Date(year, month - 1, day - 6).getTime();
+    return entries.filter((entry) => (toDate(entry.createdAt)?.getTime() ?? 0) >= since).length;
+  }, [entries, todayKey]);
+
   const rangeLabel = DR_DATE_PRESETS.find((preset) => preset.value === rangePreset)?.label ?? 'All time';
-  /** Anything narrowing the period's entries. */
-  const narrowed = Boolean(filterText.trim() || dateFilter || projectFilter || departmentFilter || statusFilter);
+  const amountFilterOn = Boolean(amountMin.trim() || amountMax.trim());
+  /** The filters behind More filters that are set — the count on its button. */
+  const moreFilterCount = [dateFilter, amountFilterOn, paymentFilter].filter(Boolean).length;
   // The search counts, so the toolbar's Clear shows for a search alone too.
   const activeFilterCount =
     [filterText.trim(), projectFilter, departmentFilter, statusFilter].filter(Boolean).length +
-    (dateFilter ? 1 : 0) +
-    (rangePreset !== 'all' ? 1 : 0);
+    (rangePreset !== 'all' ? 1 : 0) +
+    moreFilterCount;
   const clearFilters = () => {
     setFilterText('');
     setDateFilter(undefined);
@@ -1100,6 +1267,17 @@ function EntrySheetPageComponent() {
     setProjectFilter('');
     setDepartmentFilter('');
     setStatusFilter('');
+    setAmountMin('');
+    setAmountMax('');
+    setPaymentFilter('');
+  };
+  const changeDensity = (next: Density) => {
+    setDensity(next);
+    try {
+      window.localStorage.setItem(DENSITY_KEY, next);
+    } catch {
+      // Private mode: the choice lasts for this visit only.
+    }
   };
 
   const saveHiddenColumns = (next: Set<string>) => {
@@ -1137,32 +1315,107 @@ function EntrySheetPageComponent() {
     setIsViewDialogOpen(true);
   };
 
-  /** A click on a row opens its details — or, while picking checklists to print, ticks it. */
-  const handleRowClick = (entry: EnrichedDailyRequisitionEntry) => {
-    if (!isSelectionMode) {
-      handleViewDetails(entry);
-      return;
-    }
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(entry.id)) next.delete(entry.id);
-      else next.add(entry.id);
-      return next;
-    });
-  };
-
   const handleViewChecklist = (entry: DailyRequisitionEntry) => {
     window.open(`/daily-requisition/entry-sheet/${entry.id}/print`, '_blank');
   };
 
-  const handlePrintSelected = () => {
-    window.open(checklistPrintHref(Array.from(selectedIds)), '_blank');
+  /** The ticked entries, newest first — whichever page they are on. */
+  const selectedEntries = React.useMemo(() => entries.filter((entry) => selectedIds.has(entry.id)), [entries, selectedIds]);
+
+  /** Opens the checklists of these entries, in this order, in a new tab. */
+  const printChecklists = (list: Array<{ id: string }>) => {
+    if (list.length) window.open(checklistPrintHref(list.map((entry) => entry.id)), '_blank');
+  };
+
+  /** Above this many, printing everything the filters show asks first. */
+  const PRINT_ALL_CONFIRM = 50;
+  /** The header's Print checklists: the ticked entries, or — with none ticked — every one the filters show. */
+  const handlePrintChecklists = () => {
+    if (selectedEntries.length) return printChecklists(selectedEntries);
+    if (filteredEntries.length > PRINT_ALL_CONFIRM) return setConfirmPrintAll(true);
+    printChecklists(filteredEntries);
   };
 
   /** Ticks every entry the filters show, on every page, keeping any already ticked. */
   const handleSelectAll = () => {
     setSelectedIds((current) => new Set([...current, ...filteredEntries.map((entry) => entry.id)]));
   };
+
+  /**
+   * These entries as an Excel workbook, in the register's columns (Field Control's order and names,
+   * the DEP No beside the Reception No) with real dates and amounts.
+   */
+  const exportEntries = async (list: EnrichedDailyRequisitionEntry[], which: 'filtered' | 'selected') => {
+    if (!canExport || !list.length) return;
+    const MONEY = '#,##0.00';
+    type ExportColumn = { width: number; numFmt?: string; value: (entry: EnrichedDailyRequisitionEntry) => unknown };
+    const spec: Partial<Record<string, ExportColumn>> = {
+      createdAt: { width: 18, numFmt: 'dd-mmm-yyyy hh:mm', value: (entry) => toExcelDate(entry.createdAt) },
+      receptionNo: { width: 24, value: (entry) => entry.receptionNo ?? '' },
+      status: { width: 18, value: (entry) => requisitionProgress(entry).label },
+      date: { width: 14, numFmt: 'dd-mmm-yyyy', value: (entry) => toExcelDate(entry.originalDate) },
+      projectId: { width: 30, value: (entry) => projectNameById.get(entry.projectId) || entry.projectId || '' },
+      departmentId: { width: 20, value: (entry) => departmentNameById.get(entry.departmentId) || entry.departmentId || '' },
+      partyName: { width: 30, value: (entry) => entry.partyName ?? '' },
+      description: { width: 44, value: (entry) => entry.description ?? '' },
+      grossAmount: { width: 16, numFmt: MONEY, value: (entry) => Number(entry.grossAmount) || 0 },
+      netAmount: { width: 16, numFmt: MONEY, value: (entry) => Number(entry.netAmount) || 0 },
+      paid: { width: 16, numFmt: MONEY, value: (entry) => paidOf(entry) },
+      balance: { width: 16, numFmt: MONEY, value: (entry) => balanceOf(entry) },
+    };
+    const picked = columns.flatMap((column): Array<ExportColumn & { key: string; header: string }> => {
+      const def = spec[column.key];
+      if (!def) return [];
+      const own = { key: column.key, header: column.label, ...def };
+      return column.key === 'receptionNo'
+        ? [own, { key: 'depNo', header: fields.depNo.label || 'DEP No', width: 24, value: (entry) => entry.depNo ?? '' }]
+        : [own];
+    });
+    const excelColumns: ExcelColumn[] = picked.map(({ key, header, width, numFmt }) => ({ key, header, width, ...(numFmt ? { numFmt } : {}) }));
+    setIsExporting(true);
+    try {
+      await exportWorkbook(`daily-requisition-${which === 'selected' ? 'selected' : 'entries'}-${todayKey}.xlsx`, [
+        {
+          name: 'Entries',
+          columns: excelColumns,
+          rows: list.map((entry) => Object.fromEntries(picked.map(({ key, value }) => [key, value(entry)]))),
+        },
+      ]);
+      toast({
+        title: 'Exported',
+        description: `${list.length.toLocaleString('en-IN')} ${list.length === 1 ? 'entry' : 'entries'} saved as an Excel workbook.`,
+      });
+    } catch (error) {
+      console.error('Error exporting entries:', error);
+      toast({ title: 'Export failed', description: 'The workbook could not be created.', variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // "/" jumps to the search and "n" starts a new entry — never while something is being typed or a
+  // dialog is open. The ref keeps the listener on the current render's `openAddDialog`.
+  const openAddRef = React.useRef(openAddDialog);
+  React.useEffect(() => {
+    openAddRef.current = openAddDialog;
+  });
+  React.useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="menu"], [role="listbox"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      if (event.key === '/') {
+        event.preventDefault();
+        searchRef.current?.focus();
+      } else if ((event.key === 'n' || event.key === 'N') && canAdd) {
+        event.preventDefault();
+        openAddRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canAdd]);
 
   if (isAuthLoading || isLoading || isSettingsLoading) {
     return <EntrySheetSkeleton />;
@@ -1201,160 +1454,100 @@ function EntrySheetPageComponent() {
     );
   }
   
-  /** A row's ⋯ menu: view, checklist, edit and delete — each disabled, with its reason, where a rule forbids it. */
+  /** A row's quick actions: details, checklist, edit and delete — a blocked one disabled, saying why. */
   const renderActions = (entry: EnrichedDailyRequisitionEntry) => {
     const locked = isPaymentLocked(entry);
     const editBlock = receivedRuleBlock(entry.status, dataControl, 'edit');
     // The payment lock's reason wins over the status rule's.
     const deleteBlock = locked ? paymentLockReason(entry) : receivedRuleBlock(entry.status, dataControl, 'delete');
     return (
-      <AlertDialog>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              aria-label={`Actions for ${entry.receptionNo}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={(e) => {
-                e.stopPropagation();
-                handleViewDetails(entry);
-              }}
-            >
-              <Eye className="mr-2 h-4 w-4" /> View Details
-            </DropdownMenuItem>
-            {canViewChecklist && (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleViewChecklist(entry);
-                }}
-              >
-                <FileText className="mr-2 h-4 w-4" /> View Checklist
-              </DropdownMenuItem>
-            )}
-            {canEdit &&
-              (editBlock ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="block cursor-not-allowed">
-                      <DropdownMenuItem disabled>
-                        <Lock className="mr-2 h-4 w-4" /> Edit
-                      </DropdownMenuItem>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="left" className="max-w-xs text-xs">
-                    {editBlock}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenEditDialog(entry);
-                  }}
-                >
-                  <Edit className="mr-2 h-4 w-4" /> {locked ? 'Edit description' : 'Edit'}
-                </DropdownMenuItem>
-              ))}
-            {canDelete &&
-              (deleteBlock ? (
-                // A disabled item takes no pointer events, so the wrapper carries the reason.
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="block cursor-not-allowed">
-                      <DropdownMenuItem disabled className="text-destructive">
-                        <Lock className="mr-2 h-4 w-4" /> Delete
-                      </DropdownMenuItem>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="left" className="max-w-xs text-xs">
-                    {deleteBlock}
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <AlertDialogTrigger asChild>
-                  <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" /> Delete
-                  </DropdownMenuItem>
-                </AlertDialogTrigger>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {entry.receptionNo}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently deletes the entry.
-              {entry.depNo
-                ? ` Its expense request ${entry.depNo} is released, so it can be received again.`
-                : ''}{' '}
-              This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleDeleteEntry(entry)}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <div className={es.actions}>
+        <RowAction icon={Eye} label="View details" onClick={() => handleViewDetails(entry)} />
+        {canViewChecklist ? <RowAction icon={Printer} label="Print checklist" onClick={() => handleViewChecklist(entry)} /> : null}
+        {canEdit ? (
+          <RowAction icon={Pencil} label={locked ? 'Edit description' : 'Edit'} reason={editBlock} onClick={() => handleOpenEditDialog(entry)} />
+        ) : null}
+        {canDelete ? <RowAction icon={Trash2} label="Delete" danger reason={deleteBlock} onClick={() => setDeleteTarget(entry)} /> : null}
+      </div>
     );
   };
 
-  /** The filters behind "More filters", as removable chips under the filter row. */
-  const moreChips = [
-    ...(departmentFilter
-      ? [{ key: 'department', label: 'Department', value: departmentNameById.get(departmentFilter) || departmentFilter, onRemove: () => setDepartmentFilter('') }]
-      : []),
-    ...(dateFilter ? [{ key: 'date', label: 'Date', value: format(dateFilter, 'dd MMM yyyy'), onRemove: () => setDateFilter(undefined) }] : []),
-  ];
+  /** Every filter in force, as a chip that removes it. */
+  const chips: FilterChip[] = [];
+  if (filterText.trim()) chips.push({ key: 'q', label: `Search: “${filterText.trim()}”`, onRemove: () => setFilterText('') });
+  if (statusFilter) chips.push({ key: 'stage', label: `Stage: ${stageLabel(statusFilter)}`, onRemove: () => setStatusFilter('') });
+  if (rangePreset !== 'all') chips.push({ key: 'period', label: `Period: ${rangeLabel}`, onRemove: () => setRangePreset('all') });
+  if (projectFilter) {
+    chips.push({ key: 'project', label: `Project: ${projectNameById.get(projectFilter) || projectFilter}`, onRemove: () => setProjectFilter('') });
+  }
+  if (departmentFilter) {
+    chips.push({
+      key: 'department',
+      label: `Department: ${departmentNameById.get(departmentFilter) || departmentFilter}`,
+      onRemove: () => setDepartmentFilter(''),
+    });
+  }
+  if (dateFilter) chips.push({ key: 'date', label: `Date: ${format(dateFilter, 'dd MMM yyyy')}`, onRemove: () => setDateFilter(undefined) });
+  if (amountFilterOn) {
+    chips.push({
+      key: 'amount',
+      label: `Net: ${amountMin.trim() ? formatCurrency(amountMin) : '₹0'} – ${amountMax.trim() ? formatCurrency(amountMax) : 'any'}`,
+      onRemove: () => {
+        setAmountMin('');
+        setAmountMax('');
+      },
+    });
+  }
+  if (paymentFilter) chips.push({ key: 'payment', label: PAYMENT_LABELS[paymentFilter], onRemove: () => setPaymentFilter('') });
 
-  // Field Control's layout — which columns, in what order, under what names — drawn the way Bill
-  // Tracking's register draws its own. Every column is `pinned` so the register offers no Columns
-  // menu of its own, which would bring back the bar over the table: the filter row has this page's.
-  // A locked column always shows, even if this browser hid it before it was locked.
+  /** Numbers and dates sort largest / newest first on the first click; words A to Z. */
+  const DESC_FIRST = new Set(['createdAt', 'date', 'grossAmount', 'netAmount', 'paid', 'balance']);
+  const handleSort = (key: string) => {
+    if (sortKey === key) {
+      setSortDirection((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    setSortKey(key as SortKey);
+    setSortDirection(DESC_FIRST.has(key) ? 'desc' : 'asc');
+  };
+
+  const highValue = (entry: EnrichedDailyRequisitionEntry) => isHighValue(entry, dataControl.highValueThreshold);
+  const projectOf = (entry: EnrichedDailyRequisitionEntry) => projectNameById.get(entry.projectId) || entry.projectId;
+  const departmentOf = (entry: EnrichedDailyRequisitionEntry) => departmentNameById.get(entry.departmentId) || entry.departmentId;
+
+  // Field Control's layout — which columns, in what order, under what names. A locked column always
+  // shows, even if this browser hid it before it was locked.
   const hideableColumns = columns.filter((column) => !column.locked);
-  const hiddenList = hideableColumns.filter((column) => hiddenColumns.has(column.key));
+  const hiddenCount = hideableColumns.filter((column) => hiddenColumns.has(column.key)).length;
   const tableColumns = columns
     .filter((column) => column.locked || !hiddenColumns.has(column.key))
-    .map((column): BtColumn<EnrichedDailyRequisitionEntry> => {
+    .map((column): RegisterColumn<EnrichedDailyRequisitionEntry> => {
       const base = {
         key: column.key,
         header: column.label,
-        label: column.label,
-        pinned: true,
         align: column.numeric ? ('right' as const) : undefined,
         sortKey: column.key === 'actions' ? undefined : column.key,
       };
       switch (column.key) {
         case 'createdAt':
-          return { ...base, mobile: 'omit', cell: (entry) => <span className="whitespace-nowrap">{entry.createdAtText}</span> };
+          return {
+            ...base,
+            cell: (entry) => {
+              const created = toDate(entry.createdAt);
+              return <TwoLineDate date={fmt(created)} time={fmt(created, 'h:mm a')} />;
+            },
+          };
         case 'receptionNo':
           return {
             ...base,
-            mobile: 'title',
+            pin: true,
             cell: (entry) => (
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                <button type="button" onClick={() => handleViewDetails(entry)} className="font-medium text-emerald-700 hover:underline">
+              <span className="inline-flex items-center">
+                <button type="button" onClick={() => handleViewDetails(entry)} className={es.rec}>
                   {entry.receptionNo || '—'}
                 </button>
-                {isHighValue(entry, dataControl.highValueThreshold) ? (
-                  <span
-                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-                    title={`High value — ${formatCurrency(dataControl.highValueThreshold)} or more`}
-                  />
+                {highValue(entry) ? (
+                  <span className={es.highDot} title={`High value — ${formatCurrency(dataControl.highValueThreshold)} or more`} />
                 ) : null}
               </span>
             ),
@@ -1365,216 +1558,360 @@ function EntrySheetPageComponent() {
             cell: (entry) => {
               const progress = requisitionProgress(entry);
               return (
-                <StatusBadge tone={progress.tone} title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}>
+                <StatusBadge tone={progress.tone} dot title={entry.manualPaid ? 'Recorded as paid outside Bank Balance' : entry.status}>
                   {progress.label}
                 </StatusBadge>
               );
             },
           };
         case 'date':
-          return { ...base, cell: (entry) => <span className="whitespace-nowrap">{entry.dateText}</span> };
+          return { ...base, cell: (entry) => <span className="whitespace-nowrap">{entry.dateText || '—'}</span> };
         case 'projectId':
-          return { ...base, cell: (entry) => <CellText text={projectNameById.get(entry.projectId) || entry.projectId} className="max-w-[180px]" /> };
+          return { ...base, cell: (entry) => <CellText text={projectOf(entry)} className={cn(es.strong, 'max-w-[180px]')} /> };
         case 'departmentId':
-          return { ...base, cell: (entry) => <CellText text={departmentNameById.get(entry.departmentId) || entry.departmentId} className="max-w-[140px]" /> };
+          return {
+            ...base,
+            cell: (entry) => {
+              const name = departmentOf(entry);
+              return name ? (
+                <span className={es.dept} title={name}>
+                  {name}
+                </span>
+              ) : (
+                <span className={es.zero}>—</span>
+              );
+            },
+          };
         case 'partyName':
-          return { ...base, cell: (entry) => <CellText text={entry.partyName} className="max-w-[200px] font-medium text-slate-800" /> };
+          return {
+            ...base,
+            cell: (entry) => <CellText text={entry.partyName} className={cn(es.strong, 'max-w-[200px]')} />,
+          };
         case 'description':
-          return { ...base, cell: (entry) => <CellText text={entry.description} className="max-w-[260px] text-slate-600" /> };
+          return { ...base, cell: (entry) => <CellText text={entry.description} className="max-w-[260px]" /> };
         case 'grossAmount':
-          return { ...base, mobile: 'aside', cell: (entry) => <Money value={Number(entry.grossAmount) || 0} />, total: <Money value={totals.gross} /> };
+          return { ...base, cell: (entry) => <Money value={Number(entry.grossAmount) || 0} />, total: <Money value={totals.gross} /> };
         case 'netAmount':
           return { ...base, cell: (entry) => <Money value={Number(entry.netAmount) || 0} />, total: <Money value={totals.net} /> };
         case 'paid':
           return { ...base, cell: (entry) => <Money value={paidOf(entry)} dashWhenZero />, total: <Money value={totals.paid} /> };
         case 'balance':
-          return { ...base, cell: (entry) => <Money value={balanceOf(entry)} dashWhenZero />, total: <Money value={totals.balance} /> };
+          return {
+            ...base,
+            cell: (entry) => <Money value={balanceOf(entry)} dashWhenZero tone="due" />,
+            total: <Money value={totals.balance} tone="due" />,
+          };
         case 'actions':
-          return { ...base, header: '', cell: renderActions };
+          return { ...base, header: <span className="sr-only">Actions</span>, cell: renderActions };
         default:
           return { ...base, cell: () => null };
       }
     });
 
+  /** A phone card: the reception number and stage, the party and what for, then where and how much. */
+  const renderCard = (entry: EnrichedDailyRequisitionEntry, select: React.ReactNode) => {
+    const progress = requisitionProgress(entry);
+    return (
+      <>
+        <div className={es.cardTop}>
+          {select}
+          <button type="button" onClick={() => handleViewDetails(entry)} className={es.rec}>
+            {entry.receptionNo || '—'}
+          </button>
+          <StatusBadge tone={progress.tone} dot>
+            {progress.label}
+          </StatusBadge>
+        </div>
+        <div className={es.cardParty}>{entry.partyName || '—'}</div>
+        {entry.description ? <div className={es.cardDesc}>{entry.description}</div> : null}
+        <dl className={es.cardGrid}>
+          <div>
+            <dt>Project</dt>
+            <dd>{projectOf(entry) || '—'}</dd>
+          </div>
+          <div>
+            <dt>Department</dt>
+            <dd>{departmentOf(entry) || '—'}</dd>
+          </div>
+          <div>
+            <dt>Date</dt>
+            <dd>{entry.dateText || '—'}</dd>
+          </div>
+          <div>
+            <dt>Net</dt>
+            <dd>
+              <Money value={progress.net} />
+              {progress.balance > 0 ? (
+                <>
+                  {' · '}
+                  <span className={es.due}>{formatCurrency(progress.balance)} due</span>
+                </>
+              ) : null}
+            </dd>
+          </div>
+        </dl>
+      </>
+    );
+  };
+
+  const paidPercent = scopeTotals.net > 0 ? Math.min(100, Math.round((scopeTotals.paid / scopeTotals.net) * 100)) : 0;
+  const toReceive = unassignedExpenseRequests.length;
+  const selectedNet = sumBy(selectedEntries, (entry) => Number(entry.netAmount) || 0);
+  const entriesWord = (n: number) => `${n.toLocaleString('en-IN')} ${n === 1 ? 'entry' : 'entries'}`;
+
   return (
     <>
-      <div className={`${dailyPageContainerClass} space-y-4 no-print`}>
-        {/* One card: what the page is, its actions, and the totals of what the filters show. */}
-        <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-          {/* A `space-y-*` parent: globals.css then drops the header's own bottom margin. */}
-          <div className="space-y-0 px-4 py-3 sm:px-5 sm:py-4">
-            <PageHeader
-              backHref="/daily-requisition"
-              eyebrow="Daily Requisition"
-              icon={FilePlus}
-              title="Entry Sheet"
-              badge={isSelectionMode ? <StatusBadge tone="info" dot>Selecting to print</StatusBadge> : undefined}
-              actions={
-                isSelectionMode ? (
-                  <>
-                    <Button size="sm" variant="outline" onClick={() => setIsSelectionMode(false)}>
-                      Cancel Selection
-                    </Button>
-                    <Button size="sm" className="gap-1.5" onClick={handlePrintSelected} disabled={selectedIds.size === 0}>
-                      <Printer className="h-4 w-4" />
-                      Confirm & Print ({selectedIds.size})
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setIsSelectionMode(true)} disabled={!canViewChecklist}>
-                      <Printer className="h-4 w-4" /> Print Checklists
-                    </Button>
-                    {/* Gated on Add, the same grant as keying one by hand — importing a register is
-                        creating entries, and there is no separate power to invent for it. */}
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
-                      <Upload className="h-4 w-4" /> Import
-                    </Button>
-                    <Button size="sm" className="gap-1.5" onClick={() => { openAddDialog(); }} disabled={!canAdd}>
-                      <Plus className="h-4 w-4" /> Add Entry
-                    </Button>
-                  </>
-                )
-              }
-            />
-          </div>
-          <DailyStatStrip
-            flush
-            items={[
-              {
-                label: 'Entries',
-                value: filteredEntries.length.toLocaleString('en-IN'),
-                hint: narrowed ? `${rangeLabel} · filtered` : rangeLabel,
-              },
-              {
-                label: 'Gross amount',
-                value: <span title={formatCurrency(totals.gross)}>{formatINRCompact(totals.gross)}</span>,
-                hint: <span title={formatCurrency(totals.net)}>Net {formatINRCompact(totals.net)}</span>,
-              },
-              {
-                label: 'Paid',
-                value: <span title={formatCurrency(totals.paid)}>{formatINRCompact(totals.paid)}</span>,
-                hint: `${totals.paidInFull.toLocaleString('en-IN')} paid in full`,
-                tone: totals.paid > 0 ? 'text-emerald-700' : undefined,
-              },
-              {
-                label: 'Balance due',
-                value: <span title={formatCurrency(totals.balance)}>{formatINRCompact(totals.balance)}</span>,
-                hint: `${totals.stillToPay.toLocaleString('en-IN')} still to pay`,
-                tone: totals.balance > 0 ? 'text-amber-700' : undefined,
-              },
-              {
-                label: 'DEP to receive',
-                value: unassignedExpenseRequests.length.toLocaleString('en-IN'),
-                hint: 'Expense requests not yet received',
-                tone: unassignedExpenseRequests.length > 0 ? 'text-sky-700' : undefined,
-              },
-            ]}
-          />
-        </section>
-
-        {/* Bill Tracking's filter toolbar, as on the Bill Register: search, period, project and
-            status inline; department and date behind More filters, as chips once set. */}
-        <BtToolbar
-          search={
-            <ToolbarSearch
-              className="flex-1 sm:w-72 sm:flex-none"
-              value={filterText}
-              placeholder="Search reception no, party, amount…"
-              onChange={setFilterText}
-            />
-          }
-          controls={
-            <>
-              <ToolbarSelect
-                label="Period"
-                value={rangePreset === 'all' ? '' : rangePreset}
-                onChange={(value) => setRangePreset((value || 'all') as DRDatePreset)}
-                options={DR_DATE_PRESETS.filter((preset) => preset.value !== 'all')}
-                allLabel="All time"
-              />
-              <ToolbarSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={projectOptions} allLabel="All projects" />
-              <ToolbarSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={STATUS_OPTIONS} />
-            </>
-          }
-          chips={moreChips}
-          activeCount={activeFilterCount}
-          onClear={clearFilters}
+      <div className={cn(dailyPageContainerClass, es.root, density === 'compact' && es.compact, 'space-y-4 no-print')}>
+        <PageHeader
+          backHref="/daily-requisition"
+          eyebrow="Daily Requisition"
+          icon={FilePlus}
+          title="Entry Sheet"
+          badge={<span className={es.fy}>{financialYear(todayKey)}</span>}
           actions={
             <>
-              <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5" onClick={() => setIsMoreFiltersOpen(true)}>
-                <SlidersHorizontal className="h-4 w-4" /> More filters
-                {moreChips.length ? (
-                  <span className="rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold leading-4 text-white">{moreChips.length}</span>
-                ) : null}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={handlePrintChecklists}
+                disabled={!canViewChecklist || filteredEntries.length === 0}
+                title={
+                  selectedEntries.length
+                    ? `Print the ${entriesWord(selectedEntries.length)} ticked`
+                    : `Print every entry the filters show (${entriesWord(filteredEntries.length)}) — or tick some first`
+                }
+              >
+                <Printer className="h-4 w-4" /> Print checklists
               </Button>
-            {/* Desktop only, as in Bill Tracking: a phone shows the register as cards. */}
-            {hideableColumns.length ? (
-              <div className="hidden items-center gap-2 sm:flex">
-                {/* Every column, ticked or not. */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-white shadow-sm">
-                      <Columns className="h-4 w-4" /> Columns
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
-                    <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {hideableColumns.map((column) => (
-                      <DropdownMenuCheckboxItem
-                        key={column.key}
-                        checked={!hiddenColumns.has(column.key)}
-                        onCheckedChange={() => toggleColumn(column.key)}
-                        // Keep the menu open, so several columns can be switched in one go.
-                        onSelect={(event) => event.preventDefault()}
-                      >
-                        {column.label}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {/* Only what is hidden, each one a click from coming back. */}
-                {hiddenList.length ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="outline" size="sm" className="h-9 gap-1.5 bg-white shadow-sm">
-                        <EyeOff className="h-4 w-4" /> {hiddenList.length} hidden
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
-                      <DropdownMenuLabel>Hidden columns</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {hiddenList.map((column) => (
-                        <DropdownMenuItem
-                          key={column.key}
-                          // Keep the menu open, so several can be brought back in one go.
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            toggleColumn(column.key);
-                          }}
-                        >
-                          <EyeOff className="mr-2 h-4 w-4 text-muted-foreground" />
-                          {column.label}
-                          <span className="ml-auto text-xs font-medium text-emerald-700">Show</span>
-                        </DropdownMenuItem>
-                      ))}
-                      {hiddenList.length > 1 ? (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onSelect={() => saveHiddenColumns(new Set())}>Show all columns</DropdownMenuItem>
-                        </>
-                      ) : null}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-              </div>
-            ) : null}
+              {/* Gated on Add, the same grant as keying one by hand — importing a register is
+                  creating entries, and there is no separate power to invent for it. */}
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
+                <Upload className="h-4 w-4" /> Import
+              </Button>
+              {canExport ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => void exportEntries(filteredEntries, 'filtered')}
+                  disabled={isExporting || filteredEntries.length === 0}
+                  title={`Every entry the filters show (${entriesWord(filteredEntries.length)}), as an Excel workbook`}
+                >
+                  {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Export
+                </Button>
+              ) : null}
+              <Button size="sm" className="gap-1.5" onClick={openAddDialog} disabled={!canAdd} title="Add entry (N)">
+                <Plus className="h-4 w-4" /> Add entry
+              </Button>
             </>
           }
         />
 
-        {/* More filters, as on the Bill Register: a drawer, its choices shown as chips once set. */}
+        {/* The scope the filters set, whichever stage tab is open. */}
+        <section className={es.kpis} aria-label="Totals">
+          <Kpi
+            tone="primary"
+            icon={ListChecks}
+            label="Entries"
+            value={scopedEntries.length.toLocaleString('en-IN')}
+            sub={
+              createdThisWeek ? (
+                <>
+                  <span className={es.up}>+{createdThisWeek.toLocaleString('en-IN')}</span>
+                  <span>added this week</span>
+                </>
+              ) : (
+                <span>None added this week</span>
+              )
+            }
+          />
+          <Kpi
+            tone="blue"
+            icon={IndianRupee}
+            label="Gross amount"
+            value={formatINRCompact(scopeTotals.gross)}
+            valueTitle={formatCurrency(scopeTotals.gross)}
+            sub={<span title={formatCurrency(scopeTotals.net)}>Net {formatINRCompact(scopeTotals.net)}</span>}
+          />
+          <Kpi
+            tone="green"
+            icon={CheckCircle2}
+            label="Paid"
+            value={formatINRCompact(scopeTotals.paid)}
+            valueTitle={formatCurrency(scopeTotals.paid)}
+            sub={
+              <span>
+                {scopeTotals.paidInFull.toLocaleString('en-IN')} paid in full · {paidPercent}%
+              </span>
+            }
+            progress={paidPercent}
+          />
+          <Kpi
+            tone="orange"
+            icon={Clock}
+            label="Balance due"
+            value={formatINRCompact(scopeTotals.balance)}
+            valueTitle={formatCurrency(scopeTotals.balance)}
+            colourValue={scopeTotals.balance > 0}
+            sub={<span>{scopeTotals.stillToPay.toLocaleString('en-IN')} still to pay</span>}
+            progress={scopeTotals.net > 0 ? 100 - paidPercent : 0}
+          />
+          <Kpi
+            tone="violet"
+            icon={Inbox}
+            label="DEP to receive"
+            value={toReceive.toLocaleString('en-IN')}
+            sub={<span title="Expense requests not yet received into Daily Requisition">Not yet received</span>}
+            onClick={
+              canAdd && toReceive
+                ? () => {
+                    openAddDialog();
+                    setAddMode('multiple');
+                  }
+                : undefined
+            }
+            action={canAdd && toReceive ? 'Receive →' : undefined}
+          />
+        </section>
+
+        <section className={es.panel} aria-label="Entries">
+          <StageTabs
+            value={statusFilter}
+            onChange={setStatusFilter}
+            total={scopedEntries.length}
+            stages={STAGES.map(({ stage, label, tone }) => ({ value: stage, label, tone, count: stageCounts.get(stage) ?? 0 }))}
+          />
+
+          <div className={es.toolbar}>
+            <SearchBox inputRef={searchRef} value={filterText} onChange={setFilterText} placeholder="Search reception no, party, project, amount…" />
+            <FilterSelect
+              label="Period"
+              value={rangePreset === 'all' ? '' : rangePreset}
+              onChange={(value) => setRangePreset((value || 'all') as DRDatePreset)}
+              options={DR_DATE_PRESETS.filter((preset) => preset.value !== 'all')}
+              allLabel="All time"
+            />
+            <FilterSelect label="Project" value={projectFilter} onChange={setProjectFilter} options={projectOptions} allLabel="All projects" />
+            <FilterSelect label="Department" value={departmentFilter} onChange={setDepartmentFilter} options={departmentOptions} allLabel="All departments" />
+            <ToolbarButton icon={SlidersHorizontal} count={moreFilterCount} onClick={() => setIsMoreFiltersOpen(true)}>
+              More filters
+            </ToolbarButton>
+            <span className={es.toolbarSpacer} />
+            <DensityToggle value={density} onChange={changeDensity} />
+            {hideableColumns.length ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <ToolbarButton
+                    icon={Columns3}
+                    count={hiddenCount}
+                    className={es.desktopOnly}
+                    title={hiddenCount ? `${hiddenCount} hidden` : 'Show or hide columns'}
+                  >
+                    Columns
+                  </ToolbarButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="max-h-80 w-56 overflow-y-auto">
+                  <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {hideableColumns.map((column) => (
+                    <DropdownMenuCheckboxItem
+                      key={column.key}
+                      checked={!hiddenColumns.has(column.key)}
+                      onCheckedChange={() => toggleColumn(column.key)}
+                      // Keep the menu open, so several columns can be switched in one go.
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      {column.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  {hiddenCount ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => saveHiddenColumns(new Set())}>Show all columns</DropdownMenuItem>
+                    </>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
+
+          <FilterChips chips={chips} onClearAll={clearFilters} />
+
+          {selectedEntries.length ? (
+            <BulkBar count={selectedEntries.length} amount={`${formatCurrency(selectedNet)} net`}>
+              {/* The header tick box ticks this page; this ticks every page the filters show. */}
+              {filteredEntries.some((entry) => !selectedIds.has(entry.id)) ? (
+                <BulkButton icon={CheckCheck} onClick={handleSelectAll}>
+                  Select all {filteredEntries.length.toLocaleString('en-IN')}
+                </BulkButton>
+              ) : null}
+              {canViewChecklist ? (
+                <BulkButton icon={Printer} onClick={() => printChecklists(selectedEntries)}>
+                  Print checklists
+                </BulkButton>
+              ) : null}
+              {canExport ? (
+                <BulkButton icon={Download} onClick={() => void exportEntries(selectedEntries, 'selected')} disabled={isExporting}>
+                  Export
+                </BulkButton>
+              ) : null}
+              <BulkButton icon={X} onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </BulkButton>
+            </BulkBar>
+          ) : null}
+
+          <TooltipProvider>
+            <Register
+              rows={paginatedEntries}
+              columns={tableColumns}
+              sort={{ key: sortKey, dir: sortDirection }}
+              onSort={handleSort}
+              selectable={canSelect}
+              selected={selectedIds}
+              onSelectedChange={setSelectedIds}
+              onRowClick={handleViewDetails}
+              rowTone={(entry) => (highValue(entry) ? 'high' : undefined)}
+              totalLabel={
+                <>
+                  Total <span className={es.totalNote}>· {entriesWord(filteredEntries.length)}</span>
+                </>
+              }
+              card={renderCard}
+              empty={
+                activeFilterCount ? (
+                  <RegisterEmpty
+                    icon={Search}
+                    title="No entries match your filters"
+                    action={
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
+                        Clear all filters
+                      </Button>
+                    }
+                  >
+                    Try a different search, or clear the filters.
+                  </RegisterEmpty>
+                ) : (
+                  <RegisterEmpty icon={Inbox} title="No entries yet">
+                    {canAdd ? 'Receive an expense request with Add entry, or import a register.' : null}
+                  </RegisterEmpty>
+                )
+              }
+            />
+          </TooltipProvider>
+
+          <NumberedPager
+            page={currentPage}
+            pages={totalPages}
+            total={filteredEntries.length}
+            pageSize={itemsPerPage}
+            onPage={setCurrentPage}
+            onPageSize={setItemsPerPage}
+          />
+        </section>
+
+        {/* More filters: a drawer, its choices shown as chips once set. */}
         <Sheet open={isMoreFiltersOpen} onOpenChange={setIsMoreFiltersOpen}>
           <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
             <SheetHeader className="border-b border-slate-100 px-5 py-4">
@@ -1582,16 +1919,6 @@ function EntrySheetPageComponent() {
               <SheetDescription>Applied to the register, its totals and the checklists you print from it.</SheetDescription>
             </SheetHeader>
             <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
-              <fieldset className="space-y-3">
-                <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Who</legend>
-                <DrawerSelect
-                  label="Department"
-                  value={departmentFilter}
-                  onChange={setDepartmentFilter}
-                  options={departmentOptions}
-                  placeholder="All departments"
-                />
-              </fieldset>
               <fieldset className="space-y-3">
                 <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Date</legend>
                 <DrawerInput
@@ -1601,131 +1928,131 @@ function EntrySheetPageComponent() {
                   onChange={(event) => setDateFilter(event.target.value ? new Date(`${event.target.value}T00:00`) : undefined)}
                 />
               </fieldset>
+              <fieldset className="space-y-3">
+                <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Net amount (₹)</legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <DrawerInput
+                    label="From"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    placeholder="0"
+                    value={amountMin}
+                    onChange={(event) => setAmountMin(event.target.value)}
+                  />
+                  <DrawerInput
+                    label="To"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    placeholder="Any"
+                    value={amountMax}
+                    onChange={(event) => setAmountMax(event.target.value)}
+                  />
+                </div>
+              </fieldset>
+              <fieldset className="space-y-3">
+                <legend className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Payment</legend>
+                <RadioGroup
+                  value={paymentFilter || 'any'}
+                  onValueChange={(value) => setPaymentFilter(value === 'any' ? '' : (value as PaymentFilter))}
+                  className="gap-2.5"
+                >
+                  {(
+                    [
+                      ['any', 'Any'],
+                      ['due', PAYMENT_LABELS.due],
+                      ['paid', PAYMENT_LABELS.paid],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <div key={value} className="flex items-center gap-2">
+                      <RadioGroupItem value={value} id={`payment-${value}`} />
+                      <Label htmlFor={`payment-${value}`} className="font-normal">
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </fieldset>
             </div>
             <SheetFooter className="flex-row justify-end gap-2 border-t border-slate-100 px-5 py-3">
-              <Button variant="outline" onClick={clearFilters}>
-                Reset all
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDateFilter(undefined);
+                  setAmountMin('');
+                  setAmountMax('');
+                  setPaymentFilter('');
+                }}
+              >
+                Reset
               </Button>
               <Button onClick={() => setIsMoreFiltersOpen(false)}>Done</Button>
             </SheetFooter>
           </SheetContent>
         </Sheet>
-
-        <TooltipProvider>
-          <BtTable
-            rows={paginatedEntries}
-            columns={tableColumns}
-            sort={{ key: sortKey, dir: sortDirection }}
-            onSort={(key, dir) => {
-              setSortKey(key as SortKey);
-              setSortDirection(dir);
-            }}
-            selectable={isSelectionMode}
-            selected={selectedIds}
-            onSelectedChange={setSelectedIds}
-            onRowClick={handleRowClick}
-            // A ticked row shows as ticked, high value or not.
-            rowClassName={(entry) =>
-              isHighValue(entry, dataControl.highValueThreshold) && !(isSelectionMode && selectedIds.has(entry.id)) ? HIGH_VALUE_ROW : undefined
-            }
-            showTotals
-            dense
-            // Only while picking checklists to print — the count is in the footer's "Showing 1–25 of N".
-            caption={
-              isSelectionMode ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">{selectedIds.size} selected</span>
-                  {/* The header checkbox ticks this page; this ticks every page the filters show. */}
-                  {filteredEntries.some((entry) => !selectedIds.has(entry.id)) ? (
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={handleSelectAll}>
-                      <CheckCheck className="h-4 w-4" />
-                      Select all {filteredEntries.length.toLocaleString('en-IN')}
-                    </Button>
-                  ) : null}
-                  {selectedIds.size > 0 ? (
-                    <Button size="sm" variant="ghost" className="h-8" onClick={() => setSelectedIds(new Set())}>
-                      Clear
-                    </Button>
-                  ) : null}
-                  <span className="hidden text-xs font-normal text-slate-500 md:inline">Tick the entries to print, then Confirm & Print.</span>
-                </div>
-              ) : undefined
-            }
-            footer={
-              filteredEntries.length > 0 ? (
-                <Pager
-                  page={currentPage}
-                  pages={totalPages}
-                  total={filteredEntries.length}
-                  pageSize={itemsPerPage}
-                  onPage={setCurrentPage}
-                  onPageSize={setItemsPerPage}
-                />
-              ) : undefined
-            }
-            empty={
-              activeFilterCount ? (
-                <RegisterEmpty
-                  title="No entries found for the selected filters."
-                  description="Clear or change the filters to see more."
-                  action={
-                    <Button variant="outline" size="sm" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  }
-                />
-              ) : (
-                <RegisterEmpty
-                  title="No entries yet."
-                  description={canAdd ? 'Receive an expense request with Add Entry, or import a register.' : undefined}
-                />
-              )
-            }
-          />
-        </TooltipProvider>
       </div>
 
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteTarget?.receptionNo || 'this entry'}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the entry.
+              {deleteTarget?.depNo ? ` Its expense request ${deleteTarget.depNo} is released, so it can be received again.` : ''}{' '}
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = deleteTarget;
+                setDeleteTarget(null);
+                if (target) void handleDeleteEntry(target);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmPrintAll} onOpenChange={setConfirmPrintAll}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Print {entriesWord(filteredEntries.length)}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Nothing is ticked, so this prints a checklist for every entry the filters show. To print only some, tick them in
+              the register first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => printChecklists(filteredEntries)}>Print all</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className={cn('max-h-[92vh] overflow-y-auto', addMode === 'multiple' ? 'sm:max-w-5xl' : 'sm:max-w-3xl')}>
-          <DialogHeader className="space-y-1 text-left">
-            <DialogTitleShad>Add New Entry</DialogTitleShad>
-            <DialogDescriptionShad>
-              {addMode === 'single'
-                ? 'Receive an expense request into Daily Requisition.'
-                : 'Receive several expense requests at once — each becomes its own entry, numbered in DEP order.'}
-            </DialogDescriptionShad>
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div role="tablist" aria-label="How many entries" className="inline-flex rounded-lg border bg-slate-50 p-0.5 text-sm">
-                {(
-                  [
-                    ['single', 'Single entry'],
-                    ['multiple', 'Multiple from expense requests'],
-                  ] as const
-                ).map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    role="tab"
-                    aria-selected={addMode === mode}
-                    onClick={() => setAddMode(mode)}
-                    className={cn(
-                      'rounded-md px-3 py-1 font-medium transition-colors',
-                      addMode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800',
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {addMode === 'single' && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Hash className="h-3.5 w-3.5 text-slate-400" />
-                  Reception No
-                  <span className="font-mono font-medium text-slate-800">{form.watch('receptionNo') || '—'}</span>
-                </div>
-              )}
+        <DialogContent className={cn(ef.dlg, 'max-h-[92vh] bg-card p-0', addMode === 'multiple' ? 'sm:max-w-5xl' : 'sm:max-w-3xl')}>
+          <div className={ef.head}>
+            <span className={ef.headIcon} aria-hidden="true">
+              <FilePlus />
+            </span>
+            <div className="min-w-0">
+              <DialogTitleShad className={ef.title}>Add New Entry</DialogTitleShad>
+              <DialogDescriptionShad className={ef.subtitle}>
+                {addMode === 'single'
+                  ? 'Receive an expense request into Daily Requisition.'
+                  : 'Receive several expense requests at once — each becomes its own entry, numbered in DEP order.'}
+              </DialogDescriptionShad>
             </div>
-          </DialogHeader>
+          </div>
+          <div className={ef.bar}>
+            <ModeSwitch value={addMode} onChange={setAddMode} pending={unassignedExpenseRequests.length} />
+            <ReceptionPill value={(addMode === 'multiple' && multiPreview) || form.watch('receptionNo')} />
+          </div>
           {addMode === 'multiple' ? (
             <ReceiveMultiplePanel
               requests={unassignedExpenseRequests}
@@ -1734,6 +2061,7 @@ function EntrySheetPageComponent() {
               settings={moduleSettings}
               dateWindow={dateWindow}
               calendarDisabled={calendarDisabled}
+              onPreview={setMultiPreview}
               onCancel={() => setIsAddDialogOpen(false)}
               onDone={(refreshOnly) => {
                 if (!refreshOnly) setIsAddDialogOpen(false);
@@ -1741,106 +2069,410 @@ function EntrySheetPageComponent() {
               }}
             />
           ) : (
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleAddEntry)}>
-              {/* 4 columns: the request and when it came in · who and where · how much and what for · files */}
-              <div className={cn(ENTRY_GRID, 'border-t pt-4')}>
-                  {fields.depNo.visible && (
-                  <div className="min-w-0 space-y-1.5 sm:col-span-2">
-                    <label htmlFor="dep-no" className={FORM_LABEL}>
-                      {dataControl.requireExpenseRequest ? `${fields.depNo.label} *` : fields.depNo.label}
-                    </label>
-                    <Select
-                      value={form.getValues('depNo')}
-                      onValueChange={(value) => {
-                        form.clearErrors('depNo');
-                        handleDepNoSelect(value);
-                      }}
-                    >
-                      <SelectTrigger id="dep-no" aria-invalid={Boolean(form.formState.errors.depNo)}>
-                        <SelectValue placeholder="Select an expense request" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {unassignedExpenseRequests.map((req) => (
-                          <SelectItem key={req.id} value={req.requestNo}>
-                            {req.requestNo}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {form.formState.errors.depNo?.message ? (
-                      <p className="text-[11px] font-medium text-destructive">{form.formState.errors.depNo.message}</p>
-                    ) : null}
-                  </div>
-                  )}
-                  <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fields.receptionDate.label}</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} className={cn('h-9 w-full justify-start px-3 text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus /></PopoverContent></Popover>{dateWindowHint ? <p className="text-[11px] text-muted-foreground">{dateWindowHint}</p> : null}<FormMessage className="text-[11px]" /></FormItem>)}/>
-                  {fields.departmentId.visible && (<FormField control={form.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.departmentId)}</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select department"/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                  {(() => {
-                    const picked = unassignedExpenseRequests.find((req) => req.requestNo === form.getValues('depNo'));
-                    const st = picked?.statutory;
-                    if (!st) return null;
-                    return (
-                      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 sm:col-span-2 md:col-span-4">
-                        GST &amp; TDS from the request come with it
-                        {st.invoiceNo ? ` · invoice ${st.invoiceNo}` : ''}
-                        {st.gstNo ? ` · GSTIN ${st.gstNo}` : ''}
-                        {st.gstAmount ? ` · GST ${formatCurrency(st.gstAmount)}` : ''}
-                        {st.tdsAmount ? ` · TDS ${formatCurrency(st.tdsAmount)}` : ''} · net payable {formatCurrency(st.netPayable)}.
-                      </div>
-                    );
-                  })()}
-                  {fields.partyName.visible && (<FormField control={form.control} name="partyName" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.partyName)}</FormLabel><FormControl><Input {...field} placeholder="Who is being paid" /></FormControl><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                  {fields.projectId.visible && (<FormField control={form.control} name="projectId" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.projectId)}</FormLabel><Select onValueChange={field.onChange} value={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select project"/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                  {fields.grossAmount.visible && (<FormField control={form.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.grossAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} className="pl-7 text-right tabular-nums" /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                  {fields.netAmount.visible && (<FormField control={form.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.netAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} className="pl-7 text-right font-semibold tabular-nums" /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                  {fields.description.visible && (<FormField control={form.control} name="description" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.description)}</FormLabel><FormControl><Input {...field} placeholder="What the payment is for" /></FormControl><FormMessage className="text-[11px]"/></FormItem>)}/>)}
-                  {fields.attachments.visible && (
-                  <div className="min-w-0 space-y-1.5 sm:col-span-2 md:col-span-4">
-                    <p className={FORM_LABEL}>{fieldLabel(fields.attachments)}</p>
-                    <div className={cn('flex min-h-9 flex-wrap items-center gap-2 rounded-md border border-dashed px-2 py-1.5', attachmentError && 'border-destructive')}>
-                      <label
-                        htmlFor="attachments"
-                        className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        <Paperclip className="h-3.5 w-3.5" /> Choose files
-                      </label>
-                      <input id="attachments" type="file" multiple className="sr-only" onChange={handleFileChange} />
-                      {selectedFiles.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">
-                          Bill, invoice or approval — {fields.attachments.required ? 'at least one file' : 'optional'}
-                        </span>
-                      ) : (
-                        selectedFiles.map((file, i) => (
-                          <span key={i} className="inline-flex max-w-[16rem] items-center gap-1.5 rounded-md bg-slate-100 py-1 pl-2 pr-1 text-xs text-slate-700">
-                            <FileIcon className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                            <span className="truncate">{file.name}</span>
-                            <button
-                              type="button"
-                              aria-label={`Remove ${file.name}`}
-                              className="rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
-                              onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))
+            (() => {
+              // Sections number themselves, so one Field Control has emptied leaves no gap.
+              let section = 0;
+              const grossNow = Number(form.watch('grossAmount')) || 0;
+              const netNow = Number(form.watch('netAmount')) || 0;
+              const inWords = fields.netAmount.visible ? netNow : grossNow;
+              const picked = unassignedExpenseRequests.find((req) => req.requestNo === form.watch('depNo'));
+              const carried = picked?.statutory;
+              const depOptions: DepOption[] = unassignedExpenseRequests.map((req) => ({
+                id: req.id,
+                requestNo: req.requestNo,
+                party: req.partyName ?? '',
+                project: projectNameById.get(req.projectId) ?? '',
+                department: departmentNameById.get(req.departmentId) ?? '',
+                description: req.description ?? '',
+                amount: Number(req.statutory?.netPayable ?? req.amount) || 0,
+              }));
+              const save = (keepOpen: boolean) => form.handleSubmit((data) => handleAddEntry(data, keepOpen));
+              const item = cn(ef.field, 'space-y-0');
+              return (
+                <Form {...form}>
+                  <form
+                    className={ef.pane}
+                    noValidate
+                    onSubmit={save(false)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                        event.preventDefault();
+                        if (!isSaving) void save(false)();
+                      }
+                    }}
+                  >
+                    <div className={ef.body}>
+                      <Section n={++section} title="Expense request">
+                        <div className={cn(ef.grid, fields.depNo.visible ? ef.g3 : ef.g2)}>
+                          {fields.depNo.visible && (
+                            <FormField
+                              control={form.control}
+                              name="depNo"
+                              render={({ field, fieldState }) => (
+                                <FormItem className={item}>
+                                  <FormLabel className={ef.label}>
+                                    <LabelText required={dataControl.requireExpenseRequest || fields.depNo.required}>{fields.depNo.label}</LabelText>
+                                  </FormLabel>
+                                  <FormControl>
+                                    <DepPicker
+                                      options={depOptions}
+                                      value={field.value}
+                                      onChange={(value) => {
+                                        form.clearErrors('depNo');
+                                        handleDepNoSelect(value);
+                                      }}
+                                      placeholder="Select an expense request"
+                                      formatAmount={formatCurrency}
+                                    />
+                                  </FormControl>
+                                  {fieldState.error ? (
+                                    <FormMessage className={ef.err} />
+                                  ) : (
+                                    <p className={ef.help}>{fields.depNo.helpText || 'Choosing a request fills in the details below'}</p>
+                                  )}
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                          <FormField
+                            control={form.control}
+                            name="date"
+                            render={({ field, fieldState }) => (
+                              <FormItem className={item}>
+                                <FormLabel className={ef.label}>
+                                  <LabelText required={fields.receptionDate.required}>{fields.receptionDate.label}</LabelText>
+                                </FormLabel>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <FormControl>
+                                      <button type="button" className={ef.ctl} data-placeholder={field.value ? undefined : ''}>
+                                        <CalendarIcon className={ef.ctlIcon} aria-hidden="true" />
+                                        <span>{field.value ? format(field.value, 'dd MMM yyyy') : 'Pick a date'}</span>
+                                      </button>
+                                    </FormControl>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-auto p-0" align="start">
+                                    <Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus />
+                                  </PopoverContent>
+                                </Popover>
+                                {fieldState.error ? (
+                                  <FormMessage className={ef.err} />
+                                ) : dateWindowHint || fields.receptionDate.helpText ? (
+                                  <p className={ef.help}>{fields.receptionDate.helpText || dateWindowHint}</p>
+                                ) : null}
+                              </FormItem>
+                            )}
+                          />
+                          {fields.departmentId.visible && (
+                            <FormField
+                              control={form.control}
+                              name="departmentId"
+                              render={({ field, fieldState }) => (
+                                <FormItem className={item}>
+                                  <FormLabel className={ef.label}>
+                                    <LabelText required={fields.departmentId.required} auto={autoFilled.has('departmentId')}>
+                                      {fields.departmentId.label}
+                                    </LabelText>
+                                  </FormLabel>
+                                  <Select
+                                    value={field.value}
+                                    onValueChange={(value) => {
+                                      field.onChange(value);
+                                      unmarkAuto('departmentId');
+                                    }}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger className={ef.ctl}>
+                                        <SelectValue placeholder="Select department" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {departments.map((d) => (
+                                        <SelectItem key={d.id} value={d.id}>
+                                          {d.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {fieldState.error ? (
+                                    <FormMessage className={ef.err} />
+                                  ) : fields.departmentId.helpText ? (
+                                    <p className={ef.help}>{fields.departmentId.helpText}</p>
+                                  ) : null}
+                                </FormItem>
+                              )}
+                            />
+                          )}
+                        </div>
+                      </Section>
+
+                      {(fields.partyName.visible || fields.projectId.visible) && (
+                        <Section n={++section} title="Payee & project">
+                          <div className={cn(ef.grid, ef.g2)}>
+                            {fields.partyName.visible && (
+                              <FormField
+                                control={form.control}
+                                name="partyName"
+                                render={({ field, fieldState }) => (
+                                  <FormItem className={item}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={fields.partyName.required} auto={autoFilled.has('partyName')}>
+                                        {fields.partyName.label}
+                                      </LabelText>
+                                    </FormLabel>
+                                    <FormControl>
+                                      <input
+                                        {...field}
+                                        className={ef.ctl}
+                                        placeholder="Who is being paid"
+                                        autoComplete="off"
+                                        onChange={(event) => {
+                                          field.onChange(event);
+                                          unmarkAuto('partyName');
+                                        }}
+                                      />
+                                    </FormControl>
+                                    {fieldState.error ? (
+                                      <FormMessage className={ef.err} />
+                                    ) : fields.partyName.helpText ? (
+                                      <p className={ef.help}>{fields.partyName.helpText}</p>
+                                    ) : null}
+                                  </FormItem>
+                                )}
+                              />
+                            )}
+                            {fields.projectId.visible && (
+                              <FormField
+                                control={form.control}
+                                name="projectId"
+                                render={({ field, fieldState }) => (
+                                  <FormItem className={item}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={fields.projectId.required} auto={autoFilled.has('projectId')}>
+                                        {fields.projectId.label}
+                                      </LabelText>
+                                    </FormLabel>
+                                    <Select
+                                      value={field.value}
+                                      onValueChange={(value) => {
+                                        field.onChange(value);
+                                        unmarkAuto('projectId');
+                                      }}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger className={ef.ctl}>
+                                          <SelectValue placeholder="Select project" />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {projects.map((p) => (
+                                          <SelectItem key={p.id} value={p.id}>
+                                            {p.projectName}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    {fieldState.error ? (
+                                      <FormMessage className={ef.err} />
+                                    ) : fields.projectId.helpText ? (
+                                      <p className={ef.help}>{fields.projectId.helpText}</p>
+                                    ) : null}
+                                  </FormItem>
+                                )}
+                              />
+                            )}
+                          </div>
+                        </Section>
+                      )}
+
+                      {(fields.grossAmount.visible || fields.netAmount.visible || fields.description.visible) && (
+                        <Section n={++section} title="Amount & purpose">
+                          <div className={cn(ef.grid, ef.g2)}>
+                            {fields.grossAmount.visible && (
+                              <FormField
+                                control={form.control}
+                                name="grossAmount"
+                                render={({ field, fieldState }) => (
+                                  <FormItem className={item}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={fields.grossAmount.required} auto={autoFilled.has('grossAmount')}>
+                                        {fields.grossAmount.label}
+                                      </LabelText>
+                                    </FormLabel>
+                                    <div className={ef.money}>
+                                      <span className={ef.moneySign} aria-hidden="true">
+                                        ₹
+                                      </span>
+                                      <FormControl>
+                                        <input
+                                          ref={field.ref}
+                                          name={field.name}
+                                          value={field.value}
+                                          onBlur={field.onBlur}
+                                          onChange={(event) => handleGrossChange(event.target.value)}
+                                          type="number"
+                                          inputMode="decimal"
+                                          min={0}
+                                          step="0.01"
+                                          placeholder="0.00"
+                                          className={ef.ctl}
+                                        />
+                                      </FormControl>
+                                    </div>
+                                    {fieldState.error ? (
+                                      <FormMessage className={ef.err} />
+                                    ) : (
+                                      <p className={ef.help}>{fields.grossAmount.helpText || 'The bill amount, before deductions'}</p>
+                                    )}
+                                  </FormItem>
+                                )}
+                              />
+                            )}
+                            {fields.netAmount.visible && (
+                              <FormField
+                                control={form.control}
+                                name="netAmount"
+                                render={({ field, fieldState }) => (
+                                  <FormItem className={item}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={fields.netAmount.required} auto={autoFilled.has('netAmount')}>
+                                        {fields.netAmount.label}
+                                      </LabelText>
+                                    </FormLabel>
+                                    <div className={ef.money}>
+                                      <span className={ef.moneySign} aria-hidden="true">
+                                        ₹
+                                      </span>
+                                      <FormControl>
+                                        <input
+                                          {...field}
+                                          onChange={(event) => {
+                                            field.onChange(event);
+                                            unmarkAuto('netAmount');
+                                          }}
+                                          type="number"
+                                          inputMode="decimal"
+                                          min={0}
+                                          step="0.01"
+                                          placeholder="0.00"
+                                          className={ef.ctl}
+                                        />
+                                      </FormControl>
+                                    </div>
+                                    {fieldState.error ? (
+                                      <FormMessage className={ef.err} />
+                                    ) : (
+                                      <p className={ef.help}>
+                                        {!grossNow || !netNow || !fields.grossAmount.visible ? (
+                                          fields.netAmount.helpText || 'What the bank pays the party'
+                                        ) : netNow < grossNow ? (
+                                          <span className={ef.helpAmber}>{formatCurrency(grossNow - netNow)} less than gross</span>
+                                        ) : netNow > grossNow ? (
+                                          <span className={ef.helpBlue}>{formatCurrency(netNow - grossNow)} more than gross</span>
+                                        ) : (
+                                          'Same as gross — nothing deducted'
+                                        )}
+                                      </p>
+                                    )}
+                                  </FormItem>
+                                )}
+                              />
+                            )}
+                            {fields.grossAmount.visible || fields.netAmount.visible ? (
+                              <div className={cn(ef.note, ef.full)}>
+                                <Info aria-hidden="true" />
+                                <span>
+                                  {fields.netAmount.visible ? 'Net' : 'Gross'} in words: <b>{inWords > 0 ? amountInWords(inWords) : '—'}</b>
+                                </span>
+                              </div>
+                            ) : null}
+                            {carried ? (
+                              <div className={cn(ef.note, ef.noteGreen, ef.full)}>
+                                <Receipt aria-hidden="true" />
+                                <span>
+                                  GST &amp; TDS from the request come with it
+                                  {carried.invoiceNo ? ` · invoice ${carried.invoiceNo}` : ''}
+                                  {carried.gstNo ? ` · GSTIN ${carried.gstNo}` : ''}
+                                  {carried.gstAmount ? ` · GST ${formatCurrency(carried.gstAmount)}` : ''}
+                                  {carried.tdsAmount ? ` · TDS ${formatCurrency(carried.tdsAmount)}` : ''} · net payable{' '}
+                                  <b>{formatCurrency(carried.netPayable)}</b>
+                                </span>
+                              </div>
+                            ) : null}
+                            {fields.description.visible && (
+                              <FormField
+                                control={form.control}
+                                name="description"
+                                render={({ field, fieldState }) => (
+                                  <FormItem className={cn(item, ef.full)}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={fields.description.required} auto={autoFilled.has('description')}>
+                                        {fields.description.label}
+                                      </LabelText>
+                                    </FormLabel>
+                                    <FormControl>
+                                      <textarea
+                                        {...field}
+                                        rows={2}
+                                        className={ef.ctl}
+                                        placeholder="What the payment is for"
+                                        onChange={(event) => {
+                                          field.onChange(event);
+                                          unmarkAuto('description');
+                                        }}
+                                      />
+                                    </FormControl>
+                                    {fieldState.error ? (
+                                      <FormMessage className={ef.err} />
+                                    ) : fields.description.helpText ? (
+                                      <p className={ef.help}>{fields.description.helpText}</p>
+                                    ) : null}
+                                  </FormItem>
+                                )}
+                              />
+                            )}
+                          </div>
+                        </Section>
+                      )}
+
+                      {fields.attachments.visible && (
+                        <Section n={++section} title={fields.attachments.label} note={fields.attachments.required ? undefined : 'optional'}>
+                          <FileDrop
+                            id="attachments"
+                            files={selectedFiles}
+                            onAdd={addFiles}
+                            onRemove={(index) => setSelectedFiles((current) => current.filter((_, i) => i !== index))}
+                            invalid={Boolean(attachmentError)}
+                            hint={
+                              fields.attachments.helpText ||
+                              `Bill, invoice or approval — drag and drop here${fields.attachments.required ? '. At least one file is needed.' : ''}`
+                            }
+                          />
+                          {attachmentError ? <p className={cn(ef.err, 'mt-2')}>{attachmentError}</p> : null}
+                        </Section>
                       )}
                     </div>
-                    {attachmentError ? <p className="text-[11px] font-medium text-destructive">{attachmentError}</p> : null}
-                  </div>
-                  )}
-              </div>
-              <DialogFooter className="mt-4 gap-2 border-t pt-4">
-                <DialogClose asChild>
-                  <Button type="button" variant="outline" onClick={() => { setSelectedFiles([]); }}>Cancel</Button>
-                </DialogClose>
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Add Entry
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
+
+                    <div className={ef.foot}>
+                      <KeyHint />
+                      <span className={ef.footSpacer} />
+                      <DialogClose asChild>
+                        <button type="button" className={ef.btn}>
+                          Cancel
+                        </button>
+                      </DialogClose>
+                      <button type="button" className={ef.btn} disabled={isSaving} onClick={() => void save(true)()}>
+                        Save &amp; add another
+                      </button>
+                      <button type="submit" className={cn(ef.btn, ef.btnPrimary)} disabled={isSaving}>
+                        {isSaving ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
+                        Add entry
+                      </button>
+                    </div>
+                  </form>
+                </Form>
+              );
+            })()
           )}
         </DialogContent>
       </Dialog>
