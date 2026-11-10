@@ -9,6 +9,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   FolderOpen,
+  GitPullRequestArrow,
   ListPlus,
   ShieldAlert,
   UploadCloud,
@@ -26,6 +27,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
+import { VARIATION_PERMISSION_RESOURCE } from "@/lib/project-management-variations";
 import { cn } from "@/lib/utils";
 
 const MODULE_NAME = "Project Management";
@@ -53,6 +55,7 @@ export default function BoqPage() {
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
   const canImportBoq = can("Import", `${MODULE_NAME}.BOQ`);
   const canAddManualBoq = can("Add Manual", `${MODULE_NAME}.BOQ`);
+  const canViewVariations = can("View", VARIATION_PERMISSION_RESOURCE);
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(Boolean(mappingId));
 
@@ -119,6 +122,19 @@ export default function BoqPage() {
         icon: ClipboardCheck,
         gradient: "from-violet-500 to-purple-600",
       },
+      // Its own permission, not BOQ's: approving a variation rewrites a BOQ quantity, so somebody
+      // who may only read the BOQ should not be shown a card that refuses them.
+      ...(canViewVariations
+        ? [
+            {
+              title: "Variation Orders",
+              description: "Approve BOQ quantities asked to go beyond the surveyed tolerance.",
+              href: `/project-management/boq/variation-orders?${projectQuery}`,
+              icon: GitPullRequestArrow,
+              gradient: "from-amber-500 to-orange-600",
+            },
+          ]
+        : []),
     ];
 
     if (canAddManualBoq) {
@@ -142,7 +158,7 @@ export default function BoqPage() {
     }
 
     return sections;
-  }, [canAddManualBoq, canImportBoq, selectedProject]);
+  }, [canAddManualBoq, canImportBoq, canViewVariations, selectedProject]);
 
   if (isAuthLoading || isLoadingProject) {
     return (

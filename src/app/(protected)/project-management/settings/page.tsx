@@ -6,7 +6,6 @@ import {
   Building2,
   ClipboardList,
   FolderCog,
-  GitPullRequestArrow,
   Settings2,
   ShieldAlert,
   SlidersHorizontal,
@@ -40,13 +39,8 @@ const settingsSections = [
     icon: Building2,
     gradient: "from-indigo-500 to-blue-600",
   },
-  {
-    title: "Variation Orders",
-    description: "Review and approve BOQ quantities that exceed the surveyed tolerance.",
-    href: "/project-management/settings/variation-orders",
-    icon: GitPullRequestArrow,
-    gradient: "from-amber-500 to-orange-600",
-  },
+  // Variation Orders is not here: approving one changes a BOQ quantity, so the register sits under
+  // BOQ (`/project-management/boq/variation-orders`). Only its tolerance is a setting, on General.
   {
     title: "General Settings",
     description: "Configure general defaults for Project Management.",
