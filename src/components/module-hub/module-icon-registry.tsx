@@ -8,6 +8,7 @@ import {
   ChatBubbleIcon,
   ClipboardCheckIcon,
   DocumentIcon,
+  DrawingSheetIcon,
   EnvelopeSealIcon,
   GearIcon,
   HardHatIcon,
@@ -58,6 +59,8 @@ export const moduleIconRegistry: Record<string, ModuleIconEntry> = {
   Coins: { Icon: BanknoteIcon, gradient: "from-orange-500 to-amber-600" },
   RefreshCard: { Icon: RefreshCardIcon, gradient: "from-fuchsia-500 to-pink-600" },
   BillTracking: { Icon: LedgerChartIcon, gradient: "from-emerald-600 to-teal-700" },
+  // Master Drawing List. Sky-to-blue, the engineering accent the drawing registers already carry.
+  DrawingSheet: { Icon: DrawingSheetIcon, gradient: "from-sky-500 to-blue-600" },
   BookOpenCheck: { Icon: EnvelopeSealIcon, gradient: "from-teal-600 to-emerald-700" },
   ShieldCheck: { Icon: ShieldCheckIcon, gradient: "from-blue-500 to-sky-600" },
   Shield: { Icon: ShieldUmbrellaIcon, gradient: "from-green-600 to-emerald-700" },

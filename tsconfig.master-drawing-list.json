@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/env.d.ts",
+    "src/lib/master-drawing-list/**/*.ts",
+    "src/app/api/master-drawing-list/**/*.ts",
+    "src/app/(protected)/master-drawing-list/**/*.ts",
+    "src/app/(protected)/master-drawing-list/**/*.tsx",
+    "src/components/master-drawing-list/**/*.ts",
+    "src/components/master-drawing-list/**/*.tsx",
+    "tools/mdl-import/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

@@ -28,6 +28,7 @@ export const moduleIcons: Record<string, string> = {
   Loan: "Coins",
   "Recurring Payments": "RefreshCard",
   "Bill Tracking": "BillTracking",
+  "Master Drawing List": "DrawingSheet",
   "Letter of Credit Management": "BookOpenCheck",
   "Bank Guarantee Management": "ShieldCheck",
   "Fixed Deposit Management": "Vault",
@@ -83,6 +84,8 @@ export const moduleDescriptions: Record<string, string> = {
     "Manage recurring bills, approvals, due dates, and payments.",
   "Bill Tracking":
     "Track client bills, deductions, collections, retention, ageing and outstanding receivables.",
+  "Master Drawing List":
+    "Drawings submitted to the client for approval: revisions, comments, approvals and what waits with whom.",
   "Letter of Credit Management":
     "Control LC requests, limits, collateral, bills, payments, recoveries, and closure.",
   "Bank Guarantee Management":

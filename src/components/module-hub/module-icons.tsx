@@ -291,6 +291,18 @@ export function LedgerChartIcon(props: ModuleIconProps) {
   );
 }
 
+/** Master Drawing List — a drawing sheet: a tower elevation and the title block in its corner. */
+export function DrawingSheetIcon(props: ModuleIconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M6 16.5 8.5 7.5 11 16.5" />
+      <path d="M6.8 13.5h3.4M7.6 10.5h1.8" />
+      <path d="M13.5 15.5H21M13.5 15.5V20M17 15.5V20" />
+    </Base>
+  );
+}
+
 /** Settings — a gear. */
 export function GearIcon(props: ModuleIconProps) {
   return (

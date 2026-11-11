@@ -234,7 +234,7 @@ export const OTHER_GROUP_ID = 'other';
 export const DEFAULT_MODULE_GROUPS: ModuleGroup[] = [
   { id: 'finance', label: 'Finance & Treasury', color: 'blue', modules: ['Bank Balance', 'Fixed Deposit Management', 'Letter of Credit Management', 'Bank Guarantee Management', 'Loan', 'Recurring Payments', 'Bill Tracking', 'Expenses', 'Insurance'] },
   // Everything addressed to a site or a project, including the money that goes to one.
-  { id: 'projects', label: 'Projects & Sites', color: 'orange', modules: ['Project Management', 'Subcontractors Management', 'Billing Recon', 'Site Account Statement', 'Site Fund Requisition', 'Site Fund Requisition 2', 'Site Fund Request'] },
+  { id: 'projects', label: 'Projects & Sites', color: 'orange', modules: ['Project Management', 'Master Drawing List', 'Subcontractors Management', 'Billing Recon', 'Site Account Statement', 'Site Fund Requisition', 'Site Fund Requisition 2', 'Site Fund Request'] },
   { id: 'procurement', label: 'Procurement & Stores', color: 'teal', modules: ['Daily Requisition', 'Store & Stock Management', 'Vendor Management'] },
   { id: 'people', label: 'People & HR', color: 'violet', modules: ['Employee', 'HR & Recruitment', 'Tour, Travel & Expense'] },
   { id: 'fleet', label: 'Fleet & Logistics', color: 'sky', modules: ['Vehicle Management', 'Driver Management'] },

@@ -35,6 +35,9 @@ before(async () => {
     'fleetUploads/x1': { organizationId: 'default' },
     'fleetJobRuns/x1': { organizationId: 'default' },
     'vehicleManagementTripGeofenceEvents/x1': { organizationId: 'default' },
+    // Master Drawing List: written and read through /api/master-drawing-list only.
+    'mdl_projects/x1': { code: 'x1' },
+    'mdl_items/x1': { projectCode: 'x1' },
   });
 });
 after(async () => env?.cleanup());
@@ -48,6 +51,15 @@ test('server-only collections refuse a signed-in browser, read and write', async
   }
   await assertFails(signedIn().collection('employeeSensitive').get());
   await assertFails(signedIn().collection('mailHubThreads').limit(1).get());
+});
+
+test('Master Drawing List collections refuse a signed-in browser, read and write', async () => {
+  for (const name of ['mdl_projects', 'mdl_items']) {
+    await assertFails(signedIn().doc(`${name}/x1`).get());
+    await assertFails(signedIn().doc(`${name}/x1`).set({ x: 1 }));
+    await assertFails(signedIn().doc(`${name}/x2`).set({ x: 1 }));
+    await assertFails(signedIn().collection(name).limit(1).get());
+  }
 });
 
 test('SEL Fleet collections refuse a signed-in browser, read and write', async () => {
