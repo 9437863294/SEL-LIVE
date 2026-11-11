@@ -28,7 +28,7 @@ import { PageHeader, SectionHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { financialYearMonths, monthLabel, validateAgeingBuckets } from '@/lib/bill-tracking/calculations';
+import { financialYearMonths, isRetentionKind, monthLabel, validateAgeingBuckets } from '@/lib/bill-tracking/calculations';
 import { formatBillNumber } from '@/lib/bill-tracking/defaults';
 import { formatINR } from '@/lib/bill-tracking/money';
 import { cn } from '@/lib/utils';
@@ -38,14 +38,16 @@ import {
   type BillTrackingConfig,
   type DeductionTypeMaster,
   type DeductionTypeOverride,
+  type ValueBasisRule,
 } from '@/lib/bill-tracking/types';
 
-import { validateCategoryConfig } from '@/lib/bill-tracking/categories';
+import { isEnabledForProject, validateCategoryConfig } from '@/lib/bill-tracking/categories';
 import {
   deductionChangeWithDefault as changeWithDefault,
   deductionFieldText,
   describeDeductionChanges,
   differsFromMaster,
+  ownSettingsCount,
   projectDeductionChanges,
   projectDeductionTypes,
   projectOverrides,
@@ -54,10 +56,12 @@ import {
   setOverride,
   type OverridableDeductionField,
 } from '@/lib/bill-tracking/deduction-types';
+import { describeTerms, normaliseValueBasisRules, projectBasisRules, ruleScope, valueBasisRulesProblem, valueHeads } from '@/lib/bill-tracking/value-basis';
 import { normaliseNoteRules, noteRulesProblem } from '@/lib/bill-tracking/note-rules';
 
 import { BillCategoriesEditor } from './bill-categories-settings';
 import { NoteRulesSettings } from './note-rules-settings';
+import { ValueBasisSettings } from './value-basis-ui';
 import { WorkflowSettings } from './workflow-settings';
 import { BtApiError, btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BtError, BtLoading, FySelect, InfoTip, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
@@ -112,6 +116,13 @@ function settingsProblem(config: BillTrackingConfig): string | null {
   for (const profile of config.projectProfiles) {
     const own = profile.deductionTypes?.find((entry) => [entry.defaultPercent, entry.gstRate].some((value) => value !== undefined && value !== null && !(value >= 0 && value <= 100)));
     if (own) return `${config.deductionTypes.find((type) => type.id === own.deductionTypeId)?.name ?? 'A deduction'} (a project’s own setting): its default % and GST % must be between 0 and 100.`;
+  }
+  // Value basis rules, the default ones and each project's own.
+  const basis = valueBasisRulesProblem(normaliseValueBasisRules(settings.valueBasisRules, config.billTypes), ' (all projects)');
+  if (basis) return basis;
+  for (const profile of config.projectProfiles) {
+    const own = valueBasisRulesProblem(normaliseValueBasisRules(profile.valueBasisRules, config.billTypes), ' (a project’s own)');
+    if (own) return own;
   }
   return null;
 }
@@ -175,12 +186,12 @@ function SettingsForm() {
       await btFetch('config', {
         method: 'PUT',
         body: {
-          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, debitNoteCertification: settings.debitNoteCertification, workflowSteps: settings.workflowSteps, noteRules: settings.noteRules ?? [], piMarker: settings.piMarker },
+          settings: { tolerance: settings.tolerance, roundNetToRupee: settings.roundNetToRupee, defaultGstRate: settings.defaultGstRate, roundDeductionsToRupee: settings.roundDeductionsToRupee, defaultCreditDays: settings.defaultCreditDays, defaultAgeingBasis: settings.defaultAgeingBasis, ageingBuckets: settings.ageingBuckets, noFollowUpDays: settings.noFollowUpDays, oldOutstandingDays: settings.oldOutstandingDays, highValueThreshold: settings.highValueThreshold, numbering: settings.numbering, certificationBeforeReceipt: settings.certificationBeforeReceipt, debitNoteCertification: settings.debitNoteCertification, workflowSteps: settings.workflowSteps, noteRules: settings.noteRules ?? [], valueBasisRules: settings.valueBasisRules ?? [], piMarker: settings.piMarker },
           billCategories: config.billCategories,
           billTypes: config.billTypes,
           deductionTypes: config.deductionTypes,
           stages: config.stages,
-          projectProfiles: config.projectProfiles.filter((profile) => profile.dgmOffice || profile.clientId || profile.creditDays !== undefined || profile.deductionTypes?.length),
+          projectProfiles: config.projectProfiles.filter((profile) => profile.dgmOffice || profile.clientId || profile.creditDays !== undefined || profile.deductionTypes?.length || profile.valueBasisRules?.length),
           projectMappings: config.projectMappings,
           // The version this page started from: the server refuses the save if anything was saved since.
           expectedUpdatedAt: lookups.config.settings.updatedAt,
@@ -411,7 +422,8 @@ function SettingsForm() {
                   <tbody>
                     {lookups.projects.map((project) => {
                       const profile = config.projectProfiles.find((entry) => entry.projectId === project.id) ?? { projectId: project.id };
-                      const ownHeads = profile.deductionTypes?.length ?? 0;
+                      const ownCount = { heads: profile.deductionTypes?.length ?? 0, basisRules: profile.valueBasisRules?.length ?? 0 };
+                      const ownHeads = ownCount.heads + ownCount.basisRules;
                       const setProfile = (patch: Partial<typeof profile>) =>
                         setConfig((current) => ({ ...current, projectProfiles: [...current.projectProfiles.filter((entry) => entry.projectId !== project.id), { ...profile, ...patch }] }));
                       return (
@@ -440,8 +452,8 @@ function SettingsForm() {
                           </td>
                           <td className="px-3 py-1.5">
                             {/* Open to view-only users too: it shows what the project uses. */}
-                            <Button type="button" variant="ghost" size="sm" className={cn('h-8 gap-1 px-2', ownHeads ? 'font-medium text-amber-800 hover:text-amber-900' : 'text-slate-500')} onClick={() => openProjectDeductions(project.id)} title={ownHeads ? `${describeDeductionChanges(projectDeductionChanges(config, project.id))} — open` : 'Open this project’s deduction types'}>
-                              {ownHeads ? `Own settings · ${ownHeads} head${ownHeads === 1 ? '' : 's'}` : 'Default'}
+                            <Button type="button" variant="ghost" size="sm" className={cn('h-8 gap-1 px-2', ownHeads ? 'font-medium text-amber-800 hover:text-amber-900' : 'text-slate-500')} onClick={() => openProjectDeductions(project.id)} title={ownHeads ? `${[describeDeductionChanges(projectDeductionChanges(config, project.id)), ...projectBasisRules(config.projectProfiles, project.id).map((rule) => `Value basis: ${describeTerms(rule)}`)].filter(Boolean).join('; ')} — open` : 'Open this project’s deduction types'}>
+                              {ownHeads ? `Own settings · ${ownSettingsCount(ownCount)}` : 'Default'}
                             </Button>
                           </td>
                         </tr>
@@ -520,6 +532,7 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
   const project = scope === 'default' ? null : scope;
   const overrides = projectOverrides(config.projectProfiles, project);
   const changes = projectDeductionChanges(config, project);
+  const ownBasisRules = projectBasisRules(config.projectProfiles, project);
   const masterOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
   const rows = project ? projectDeductionTypes(config, project) : config.deductionTypes;
   // Projects the picker offers: the user's, plus any with settings of their own the list leaves out.
@@ -556,8 +569,27 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
     );
   };
   const fixedText = (text: string) => <span className="block truncate px-1 text-sm text-slate-700">{text}</span>;
+  // Value basis rules of this scope: the default ones, or the project's own (tried first).
+  const defaultBasisRules = config.settings.valueBasisRules ?? [];
+  const basisRules = project ? ownBasisRules : defaultBasisRules;
+  const setBasisRules = (next: ValueBasisRule[]) =>
+    setConfig((current) => {
+      if (!project) return { ...current, settings: { ...current.settings, valueBasisRules: next } };
+      const existing = current.projectProfiles.find((profile) => profile.projectId === project) ?? { projectId: project };
+      const others = current.projectProfiles.filter((profile) => profile.projectId !== project);
+      return { ...current, projectProfiles: [...others, { ...existing, valueBasisRules: next.length ? next : undefined }] };
+    });
+  // On a project, the sub categories enabled for it (and any a rule already names).
+  const ruleBillTypes = project ? config.billTypes.filter((type) => isEnabledForProject(type, project) || basisRules.some((rule) => rule.billTypeIds.includes(type.id))) : config.billTypes;
+  /** Every retention head taken "% of Value" — for this project, or in the default. */
+  const takeRetentionOfValue = () => {
+    const next = rows.map((row) => (isRetentionKind(row.kind) ? { ...row, percentBase: 'value' as const } : row));
+    if (project) fromRows(next);
+    else setConfig((current) => ({ ...current, deductionTypes: next }));
+  };
 
   return (
+    <div className="space-y-4">
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="space-y-3 p-4">
         <SectionHeader
@@ -593,11 +625,11 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
             <SelectContent className="max-h-80">
               <SelectItem value="default">All projects (default)</SelectItem>
               {pickable.map((entry) => {
-                const heads = ownSettings.find((item) => item.projectId === entry.id)?.heads;
+                const counted = ownSettings.find((item) => item.projectId === entry.id);
                 return (
                   <SelectItem key={entry.id} value={entry.id}>
                     {entry.name}
-                    {heads ? ` · own settings (${heads} head${heads === 1 ? '' : 's'})` : ''}
+                    {counted ? ` · own settings (${ownSettingsCount(counted)})` : ''}
                   </SelectItem>
                 );
               })}
@@ -618,11 +650,11 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
 
         {project ? (
           // Which view this is, in words: own settings (and what they are) or the default throughout.
-          changes.length ? (
+          changes.length || ownBasisRules.length ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm">
               <p className="flex items-center gap-2 font-semibold text-amber-900">
                 <Building2 className="h-4 w-4 shrink-0" />
-                {projectName(project)} uses its own settings for {changes.length} head{changes.length === 1 ? '' : 's'}
+                {projectName(project)} uses its own settings for {ownSettingsCount({ heads: changes.length, basisRules: ownBasisRules.length })}
               </p>
               <ul className="mt-1.5 space-y-0.5 pl-6 text-xs text-slate-700">
                 {changes.map((head) => (
@@ -630,11 +662,17 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
                     <span className="font-medium text-slate-900">{head.name}</span>: {head.changes.map(changeWithDefault).join(', ')}
                   </li>
                 ))}
+                {ownBasisRules.map((rule) => (
+                  <li key={rule.id}>
+                    <span className="font-medium text-slate-900">Value basis{rule.name ? ` “${rule.name}”` : ''}</span> ({ruleScope(rule, config.billTypes)}): {describeTerms(rule)}
+                    {rule.active ? '' : ' — switched off'}
+                  </li>
+                ))}
               </ul>
               <p className="mt-1.5 pl-6 text-xs text-slate-600">Everything else follows the default. Marked cells below are this project’s own; Reset sends a head back to the default.</p>
             </div>
           ) : (
-            <Notice tone="blue">{projectName(project)} uses the default for every head. Change a figure below to give it a setting of its own — only that figure differs; the rest keeps following the default.</Notice>
+            <Notice tone="blue">{projectName(project)} uses the default for every head and the default value basis. Change a figure below, or add a value basis rule, to give it a setting of its own — only that differs; the rest keeps following the default.</Notice>
           )
         ) : ownSettings.length ? (
           // On the default: every project that differs from it, and how — so a change to the default
@@ -654,6 +692,12 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
                       {projectDeductionChanges(config, item.projectId).map((head) => (
                         <li key={head.deductionTypeId} className="break-words">
                           <span className="font-medium">{head.name}</span>: {head.changes.map(changeWithDefault).join(', ')}
+                        </li>
+                      ))}
+                      {projectBasisRules(config.projectProfiles, item.projectId).map((rule) => (
+                        <li key={rule.id} className="break-words">
+                          <span className="font-medium">Value basis{rule.name ? ` “${rule.name}”` : ''}</span> ({ruleScope(rule, config.billTypes)}): {describeTerms(rule)}
+                          {rule.active ? '' : ' — switched off'}
                         </li>
                       ))}
                     </ul>
@@ -729,6 +773,8 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
                     <SelectContent>
                       <SelectItem value="taxable">Taxable</SelectItem>
                       <SelectItem value="gross">Gross</SelectItem>
+                      {/* The invoice's value basis (below); the taxable on a bill without one. */}
+                      <SelectItem value="value">Value</SelectItem>
                     </SelectContent>
                   </Select>,
                 ),
@@ -794,12 +840,32 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
         />
         <p className="text-xs text-muted-foreground">
           A percentage deduction is taken of <b>Taxable</b> or <b>Gross</b>, less the deductions ticked under “Less (base)” — e.g. Income TDS = (Taxable − Mobilisation Advance) × rate. “GST on it” adds GST at the given % on top of the deduction (for charges the client recovers with GST).
+          {' '}
+          <b>Value</b> is the invoice’s value basis (below) — the taxable on a bill without one.
           {project
             ? ' Bills of this project work out new and changed deduction lines this way; lines already saved stay as issued until edited. A head switched off in the default and on here is this project’s own.'
             : ' Every project uses these unless it has settings of its own — choose the project above.'}
         </p>
       </CardContent>
     </Card>
+    <ValueBasisSettings
+      title={project ? `Value basis · ${projectName(project)}` : 'Value basis · all projects'}
+      rules={basisRules}
+      onChange={setBasisRules}
+      billCategories={config.billCategories}
+      billTypes={ruleBillTypes}
+      valueHeadNames={valueHeads(rows).map((type) => type.name)}
+      onTakeRetentionOfValue={manage ? takeRetentionOfValue : undefined}
+      scopeNote={
+        project
+          ? basisRules.length
+            ? `${projectName(project)} tries its own rules first; an invoice none of them covers follows the default rules${defaultBasisRules.length ? ` (${defaultBasisRules.length})` : ' (none set)'}.`
+            : `${projectName(project)} has no value basis of its own: its invoices follow the default rules${defaultBasisRules.length ? ` — ${defaultBasisRules.map((rule) => rule.name || describeTerms(rule)).join('; ')}` : ' (none set: the taxable is the value)'}. Add a rule to give it its own.`
+          : undefined
+      }
+      disabled={!manage}
+    />
+    </div>
   );
 }
 
@@ -817,7 +883,7 @@ function BaseLessPicker({ type, types, onChange, disabled }: { type: DeductionTy
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-2">
         <p className="px-2 pb-1 text-xs text-muted-foreground">
-          {type.name || 'This deduction'} = ({type.percentBase === 'gross' ? 'Gross' : 'Taxable'} − ticked) × %
+          {type.name || 'This deduction'} = ({type.percentBase === 'gross' ? 'Gross' : type.percentBase === 'value' ? 'Value' : 'Taxable'} − ticked) × %
         </p>
         <ul className="max-h-64 overflow-y-auto">
           {others.map((entry) => (

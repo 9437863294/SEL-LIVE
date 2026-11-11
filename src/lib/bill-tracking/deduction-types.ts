@@ -106,9 +106,18 @@ export function normaliseDeductionOverrides(overrides: readonly DeductionTypeOve
   return result;
 }
 
-/** Which projects set their own deduction heads, and how many heads each — for the settings summary. */
-export const projectsWithOwnDeductions = (profiles: readonly ProjectProfile[]): { projectId: string; heads: number }[] =>
-  profiles.filter((profile) => profile.deductionTypes?.length).map((profile) => ({ projectId: profile.projectId, heads: profile.deductionTypes?.length ?? 0 }));
+/**
+ * Which projects have deduction settings of their own — heads and value basis rules — and how many of
+ * each, for the settings summary.
+ */
+export const projectsWithOwnDeductions = (profiles: readonly ProjectProfile[]): { projectId: string; heads: number; basisRules: number }[] =>
+  profiles
+    .filter((profile) => profile.deductionTypes?.length || profile.valueBasisRules?.length)
+    .map((profile) => ({ projectId: profile.projectId, heads: profile.deductionTypes?.length ?? 0, basisRules: profile.valueBasisRules?.length ?? 0 }));
+
+/** "2 heads, 1 value basis rule" — what a project sets for itself, counted. */
+export const ownSettingsCount = (entry: { heads: number; basisRules: number }): string =>
+  [entry.heads ? `${entry.heads} head${entry.heads === 1 ? '' : 's'}` : null, entry.basisRules ? `${entry.basisRules} value basis rule${entry.basisRules === 1 ? '' : 's'}` : null].filter(Boolean).join(', ');
 
 /** The column names the settings table gives the fields a project can set. */
 export const DEDUCTION_FIELD_LABELS: Record<OverridableDeductionField, string> = {
@@ -131,7 +140,7 @@ export function deductionFieldText(type: DeductionTypeMaster, field: Overridable
     case 'defaultPercent':
       return type.defaultPercent === undefined ? 'blank' : `${type.defaultPercent}%`;
     case 'percentBase':
-      return type.percentBase === 'gross' ? 'Gross' : 'Taxable';
+      return type.percentBase === 'gross' ? 'Gross' : type.percentBase === 'value' ? 'Value' : 'Taxable';
     case 'baseLessTypeIds':
       return type.baseLessTypeIds?.length ? `− ${type.baseLessTypeIds.map((id) => types.find((entry) => entry.id === id)?.name ?? id).join(', ')}` : '− Nothing';
     case 'gstApplicable':

@@ -20,6 +20,7 @@ import { canBeCertified } from '../certification.ts';
 import { roundMoney, toPaise } from '../money.ts';
 import { projectDeductionTypes } from '../deduction-types.ts';
 import { baseBesidesNote, ruleHeadsOf, withNoteFigures, type BaseBesidesNote } from '../note-rules.ts';
+import { certifiedValueBase } from '../value-basis.ts';
 import type { CertificationInput } from '../schemas';
 import type { Bill, BillCertification, BillTrackingConfig } from '../types';
 import { certificationAdvances, certificationBlocked } from '../workflow.ts';
@@ -102,7 +103,10 @@ export async function recordCertification(context: BtContext, billId: string, in
     // A deduction type retired since stays valid if the bill or the earlier certification used it. A
     // balance debit note's rule heads are taken of the invoice plus its notes, with this note as certified.
     const invoiceBase = ruleBase ? withNoteFigures(ruleBase, { taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount }) : undefined;
-    const deductions = resolveDeductions(input.deductions, config, bill.projectId, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType, invoiceBase }, [...(previous?.deductions ?? []), ...(bill.deductions ?? [])]);
+    // "% of Value" heads take the bill's value basis as certified: its own V when certified as raised,
+    // else in proportion to the certified taxable. Without a basis, the certified taxable.
+    const valueBase = bill.valueBasis ? certifiedValueBase(bill, input.taxableAmount) : undefined;
+    const deductions = resolveDeductions(input.deductions, config, bill.projectId, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), value: valueBase, gstType: gst.gstType, invoiceBase }, [...(previous?.deductions ?? []), ...(bill.deductions ?? [])]);
     const gross = grossAmount(input.taxableAmount, gst.gstAmount);
     const deducted = totalDeduction(deductions);
     revision = (previous?.revision ?? 0) + 1;
@@ -114,6 +118,7 @@ export async function recordCertification(context: BtContext, billId: string, in
       taxableAmount: roundMoney(input.taxableAmount),
       ...gst,
       grossAmount: gross,
+      valueBase,
       deductions,
       totalDeduction: deducted,
       netAmount: netReceivable(gross, deducted, config.settings.roundNetToRupee),

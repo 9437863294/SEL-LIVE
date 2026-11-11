@@ -82,6 +82,42 @@ written and served only by the API.
     tab and the retention bifurcation. A head switched off for a project is refused on its new lines
     ("… is switched off for this project").
   - Bills already saved keep their lines as issued (see above) until an edit changes them.
+- **Value basis (2026-11-11).** For contracts that bill a share of the work's value, or bill after a
+  discount, while retention is taken of another figure (`value-basis.ts`). As the invoice builds it up:
+  value of the work executed A − discount d% = value after discount C; taxable E = C × taxable share
+  t%; heads whose *% of* is **Value** are taken of V = C × deduction share v%. Each figure is taken of
+  the unrounded C and rounded once, as the invoice sheets do.
+  - The three patterns: t = 90, v = 100 (taxable 90%, retention on the 100% value); t = 100, v = 90
+    (taxable 100%, retention against 90%); d = 0.35, t = 90, v = 100 (a discount first, then 90%
+    billed, retention after the discount). Checked to the paisa against the user's sheets: Page 2
+    (A ₹44,65,672.38 → retention ₹8,90,008.51 + ₹4,45,004.25, claim ₹33,90,932) and the 90% format
+    (₹21,02,237.16 → ₹2,10,223.72, claim ₹20,22,352) — with *Round percentage deductions to the
+    rupee* off; on, they read ₹8,90,009 and ₹4,45,004.
+  - **Rules**, Settings → Deduction types → Value basis, under the same *Configure for* picker: the
+    default rules (`settings.valueBasisRules`) and a project's own (`ProjectProfile.valueBasisRules`),
+    tried first. A rule = sub categories (none = every invoice) + d, t, v; within a list, a rule naming
+    the sub category beats one for every invoice. Only invoices take a basis.
+  - **On the bill.** A new invoice starts with the covering rule's terms; a change of project, sub
+    category or kind re-applies it. The form shows the build-up; typing the value executed works out
+    the taxable, typing the taxable works out the value. The bill keeps its own copy
+    (`Bill.valueBasis`, with the derived `valueBase`), editable on the form, so a rule change reaches
+    new invoices only (an older bill is offered "Use the rule's terms"). The server refuses a taxable
+    more than ₹1 off t% of C, drops a basis on anything but an invoice and terms that change nothing,
+    and treats a changed basis as a protected change (`PROTECTED_BILL_FIELDS`).
+  - **Value heads.** Nothing changes until a head's *% of* is Value — globally or for a project (a
+    per-project override like any other). The card warns when none is and offers to take the retention
+    heads of the value. On a bill without a basis, *% of Value* is the taxable, so such a head reads
+    exactly as *% of Taxable* everywhere else.
+  - **Certification.** Certified as raised, the bill's own V; certified for another taxable, in
+    proportion (taxable ÷ t% × v%), stored as `certification.valueBase`.
+  - **Retention slabs** read an amount line of a Value head against the bill's (or certification's)
+    `valueBase`, so ₹2,10,223.72 on a 90% taxable reads as 10%, not 11.11%.
+  - Shown on the bill page (Taxable "90% of ₹…", and the build-up on the Deductions tab), counted in the
+    per-project visibility above, and recorded in the settings audit log. The screens are in
+    `value-basis-ui.tsx`: the Settings card (rules laid out like Note rules, each with an example
+    build-up of ₹10,00,000; *Add rule* starts from the three patterns), the bill form's panel, and
+    `ValueBuildUp`, the invoice-style table all three share. A re-import that changes a
+    basis bill's taxable removes its basis (the sheet carries none).
 - **Credit notes.**
   - **What needs one.** Only a change of the invoice value: the taxable and the GST on it. A change
     of deductions needs no note. Once the client certifies a bill, its certified deductions apply

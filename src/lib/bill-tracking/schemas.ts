@@ -58,6 +58,13 @@ export const deductionLineSchema = z.object({
   deductionDate: optionalDate,
 });
 
+/** The terms of a value basis (`value-basis.ts`): discount, share billed as taxable, share "% of Value" heads take. */
+const valueBasisTerms = {
+  discountPercent: z.coerce.number().min(0).lt(100, 'The discount must be below 100%.'),
+  taxableShare: z.coerce.number().gt(0, 'The share billed as taxable must be above 0%.').max(100),
+  valueShare: z.coerce.number().gt(0, 'The share deductions are taken of must be above 0%.').max(100),
+};
+
 export const billInputSchema = z.object({
   billSerialNumber: optionalText(80),
   /** Generate the next number from the configured pattern instead of typing one. */
@@ -77,6 +84,18 @@ export const billInputSchema = z.object({
   description: optionalText(1000),
   billTypeId: z.string().min(1, 'Choose a sub category.').max(64),
   taxableAmount: money,
+  /**
+   * Invoice only: the value of the work executed and the terms (`value-basis.ts`). The taxable must be
+   * the share of the value it says; "% of Value" deductions are taken of it. Absent = none.
+   */
+  valueBasis: z
+    .object({
+      executedValue: money.refine((value) => value > 0, 'Enter the value of the work executed (100%), above zero.'),
+      ...valueBasisTerms,
+      ruleId: optionalText(64),
+      ruleName: optionalText(80),
+    })
+    .optional(),
   /** Total GST — used only when no GST type is given (the components decide otherwise). */
   gstAmount: money.default(0),
   gstPercent: z.coerce.number().min(0).max(100).optional(),
@@ -290,7 +309,7 @@ export const deductionTypeSchema = z.object({
   code: z.string().trim().max(40),
   kind: z.enum(DEDUCTION_KINDS),
   calculation: z.enum(['fixed', 'percentage']),
-  percentBase: z.enum(['taxable', 'gross']),
+  percentBase: z.enum(['taxable', 'gross', 'value']),
   baseLessTypeIds: z.array(z.string().min(1).max(64)).max(20).default([]),
   defaultPercent: z.coerce.number().min(0).max(100).optional(),
   gstApplicable: z.boolean().default(false),
@@ -305,10 +324,19 @@ const deductionOverrideSchema = z.object({
   active: z.boolean().optional(),
   calculation: z.enum(['fixed', 'percentage']).optional(),
   defaultPercent: z.number().min(0).max(100).nullable().optional(),
-  percentBase: z.enum(['taxable', 'gross']).optional(),
+  percentBase: z.enum(['taxable', 'gross', 'value']).optional(),
   baseLessTypeIds: z.array(z.string().min(1).max(64)).max(20).optional(),
   gstApplicable: z.boolean().optional(),
   gstRate: z.number().min(0).max(100).nullable().optional(),
+});
+
+/** A value basis rule (Settings → Deduction types): the terms invoices of these sub categories start with. */
+const valueBasisRuleSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  name: z.string().trim().max(80),
+  active: z.boolean(),
+  billTypeIds: z.array(z.string().min(1).max(64)).max(1000),
+  ...valueBasisTerms,
 });
 
 export const configInputSchema = z.object({
@@ -369,6 +397,8 @@ export const configInputSchema = z.object({
       )
       .max(50)
       .optional(),
+    /** The default value basis rules (`value-basis.ts`); a project's own come first. */
+    valueBasisRules: z.array(valueBasisRuleSchema).max(50).optional(),
     piMarker: z.string().trim().max(20),
   }),
   billCategories: z.array(billCategorySchema).min(1, 'Keep at least one main category.').max(100),
@@ -385,6 +415,8 @@ export const configInputSchema = z.object({
         creditDays: z.coerce.number().int().min(0).max(730).optional(),
         /** The project’s own settings for deduction heads (`deduction-types.ts`); absent fields follow the master. */
         deductionTypes: z.array(deductionOverrideSchema).max(60).optional(),
+        /** The project’s own value basis rules, tried before the default ones. */
+        valueBasisRules: z.array(valueBasisRuleSchema).max(50).optional(),
       }),
     )
     .max(2000),

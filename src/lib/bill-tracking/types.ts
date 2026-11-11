@@ -262,8 +262,12 @@ export interface DeductionTypeMaster {
   kind: DeductionKind;
   /** `percentage` types offer `defaultPercent` of the base when a row is added on the form. */
   calculation: 'fixed' | 'percentage';
-  /** Base the percentage applies to… */
-  percentBase: 'taxable' | 'gross';
+  /**
+   * Base the percentage applies to… `value`: the bill's value basis (`value-basis.ts`) — the value of
+   * the work after any discount, at the share set for deductions — which is the taxable on a bill
+   * without a basis.
+   */
+  percentBase: 'taxable' | 'gross' | 'value';
   /**
    * …less these other deductions on the same bill. Income TDS defaults to
    * (Taxable − Mobilisation Advance) × rate.
@@ -407,6 +411,11 @@ export interface BillTrackingSettings {
   debitNoteCertification: DebitNoteCertification;
   /** Debit notes whose deductions are taken of the invoice plus its notes (Settings → Note rules). */
   noteRules: NoteRule[];
+  /**
+   * The value basis a new invoice starts with, by sub category (Settings → Deduction types, All
+   * projects). A project's own rules come first (`ProjectProfile.valueBasisRules`). Absent on older docs.
+   */
+  valueBasisRules?: ValueBasisRule[];
   /** Per-stage workflow settings, one per stage after Draft. */
   workflowSteps: WorkflowStepSetting[];
   /** Month keys (`yyyy-MM`) closed for normal editing. */
@@ -446,6 +455,43 @@ export interface ProjectProfile {
    * each overrides the master for this project only. A head without one follows the master.
    */
   deductionTypes?: DeductionTypeOverride[];
+  /** The project's own value basis rules, tried before the default ones (`value-basis.ts`). */
+  valueBasisRules?: ValueBasisRule[];
+}
+
+/**
+ * How a bill's taxable relates to the value of the work, and what "% of Value" deductions are taken
+ * of (`value-basis.ts`):
+ *
+ *   value after the discount  C = value executed × (100 − discountPercent)%
+ *   taxable                   E = C × taxableShare%
+ *   "% of Value" base         V = C × valueShare%
+ */
+export interface ValueBasisTerms {
+  /** Discount % on the value of the work executed; 0 = none. */
+  discountPercent: number;
+  /** The share of the discounted value billed as the taxable: 90 when 10% is held back. */
+  taxableShare: number;
+  /** The share of the discounted value "% of Value" deductions are taken of: 100 = all of it, 90 = against 90%. */
+  valueShare: number;
+}
+
+/** A value basis rule (Settings → Deduction types): the terms an invoice of these sub categories starts with. */
+export interface ValueBasisRule extends ValueBasisTerms {
+  id: string;
+  name: string;
+  active: boolean;
+  /** Sub categories it applies to; empty = every invoice. */
+  billTypeIds: string[];
+}
+
+/** A bill's own value basis: the value of the work executed and the terms, kept as saved. */
+export interface BillValueBasis extends ValueBasisTerms {
+  /** Value of the work executed at 100%, before any discount — the invoice's "Total (A)". */
+  executedValue: number;
+  /** The rule it started from, if any, and its name then. */
+  ruleId?: string;
+  ruleName?: string;
 }
 
 /**
@@ -568,6 +614,11 @@ export interface BillCertification {
   igstAmount?: number;
   gstAmount: number;
   grossAmount: number;
+  /**
+   * What "% of Value" deductions were taken of, from the bill's value basis and the certified taxable
+   * (`certifiedValueBase`). Absent when the bill has no basis — the certified taxable then.
+   */
+  valueBase?: number;
   deductions: BillDeduction[];
   totalDeduction: number;
   /** Gross less deductions, rounded like a bill's net. */
@@ -642,6 +693,13 @@ export interface Bill {
   isRetentionBill: boolean;
 
   taxableAmount: number;
+  /**
+   * Invoice only: how the taxable relates to the value of the work (`value-basis.ts`) — billed at a
+   * share of it, or after a discount — and so what "% of Value" deductions (retention) are taken of.
+   */
+  valueBasis?: BillValueBasis;
+  /** Derived from `valueBasis`: what "% of Value" deductions are taken of. Absent = the taxable. */
+  valueBase?: number;
   /** Total GST: CGST + SGST, or IGST. Imported legacy rows carry only this total. */
   gstAmount: number;
   /** Total GST rate %. */

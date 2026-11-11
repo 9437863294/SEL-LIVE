@@ -84,7 +84,10 @@ test('saved settings keep only known heads, once each, and "less" only of other 
   );
   assert.deepEqual(saved, [{ deductionTypeId: 'dt-itds', baseLessTypeIds: ['dt-bcess'] }]);
   assert.deepEqual(normaliseDeductionOverrides(undefined, types), []);
-  assert.deepEqual(projectsWithOwnDeductions([p1(saved), { projectId: 'p2' }, { projectId: 'p3', deductionTypes: [] }]), [{ projectId: 'p1', heads: 1 }]);
+  assert.deepEqual(projectsWithOwnDeductions([p1(saved), { projectId: 'p2' }, { projectId: 'p3', deductionTypes: [] }, { projectId: 'p4', valueBasisRules: [{ id: 'r' }] }]), [
+    { projectId: 'p1', heads: 1, basisRules: 0 },
+    { projectId: 'p4', heads: 0, basisRules: 1 },
+  ]);
 });
 
 test('what a project sets differently reads head by head, in the master’s order', () => {

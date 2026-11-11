@@ -573,7 +573,9 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
           // as raised, which the raised-vs-certified comparison still needs.
           const lines = bill.certification && sameDeductionAmounts(sheetValues.deductions, bill.certification.deductions ?? []) ? { ...sheetValues, deductions: bill.deductions } : sheetValues;
           const update = { ...lines, ...gstPartsFor(bill, sheetValues.gstAmount) };
-          const merged = { ...bill, ...update };
+          // The sheet carries no value basis: one whose taxable the sheet changes no longer holds, so it goes.
+          const dropsBasis = Boolean(bill.valueBasis) && toPaise(update.taxableAmount ?? bill.taxableAmount) !== toPaise(bill.taxableAmount);
+          const merged = { ...bill, ...update, ...(dropsBasis ? { valueBasis: undefined, valueBase: undefined } : {}) };
           // The same lock as the bill form's: a bill past its amount-lock step changes its figures only
           // with Edit After Approval. Without it the row is left, failed, for someone who holds it.
           const changes = protectedChanges(bill, merged);
@@ -587,6 +589,7 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
             ...update,
             // A "No GST" bill the sheet gives GST becomes one unsplit figure (`gstPartsFor`).
             ...('gstType' in update && update.gstType === undefined ? { gstType: FieldValue.delete() } : {}),
+            ...(dropsBasis ? { valueBasis: FieldValue.delete(), valueBase: FieldValue.delete() } : {}),
             netMismatch: sourceValues.netMismatch ?? FieldValue.delete(),
             ...derivedFields(totals),
             searchTokens: buildSearchTokens(merged),

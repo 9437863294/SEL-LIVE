@@ -32,6 +32,7 @@ import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { withNoteFigures, type BaseBesidesNote } from '@/lib/bill-tracking/note-rules';
+import { certifiedValueBase, describeTerms, valueHeads } from '@/lib/bill-tracking/value-basis';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
@@ -208,7 +209,9 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const inputs = deductionInputs(form.deductions);
   // A balance debit note's rule heads are taken of the invoice plus its notes, with this note as certified — as the server will.
   const ruleBase = detail.certificationRuleBase ? withNoteFigures(detail.certificationRuleBase, { taxableAmount: taxable, gstAmount: gstTotal }) : undefined;
-  const lines = computeDeductions(inputs, deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: ruleBase });
+  // "% of Value" heads take the bill's value basis as certified (`certifiedValueBase`), as the server will.
+  const valueBase = bill.valueBasis ? certifiedValueBase(bill, taxable) : undefined;
+  const lines = computeDeductions(inputs, deductionTypes, { taxable, gross, value: valueBase, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: ruleBase });
   const deducted = totalDeduction(lines);
   const net = netReceivable(gross, deducted, config.settings.roundNetToRupee);
   const raisedByType = useMemo(() => new Map([...deductionsByType(bill.deductions ?? []).entries()].map(([id, entry]) => [id, entry.amount])), [bill.deductions]);
@@ -488,6 +491,12 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             bodyClassName="space-y-3 p-3 sm:p-4"
           >
             <ProjectDeductionsNotice config={config} projectId={bill.projectId} projectName={bill.projectNameSnapshot} />
+            {bill.valueBasis && valueBase !== undefined ? (
+              <Notice tone="blue" title="Value basis">
+                {describeTerms(bill.valueBasis)}. “% of Value” deductions ({valueHeads(deductionTypes).map((type) => type.name).join(', ') || 'none set for this project'}) are taken of {formatINR(valueBase)}
+                {toPaise(taxable) === toPaise(bill.taxableAmount) ? ' — the bill’s value, as raised.' : ` — the certified taxable ÷ ${bill.valueBasis.taxableShare}% × ${bill.valueBasis.valueShare}%.`}
+              </Notice>
+            ) : null}
             <DeductionEditor
               rows={form.deductions}
               setRows={setRows}
@@ -500,7 +509,8 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               emptyText="The client deducts nothing."
               reference={{ label: 'Raised', byType: raisedByType }}
               // Once certified, these are the retention lines the rate slabs hold, read against the certified figures.
-              bases={{ taxable, gross }}
+              bases={{ taxable, gross, value: valueBase }}
+              hasValueBasis={valueBase !== undefined}
               invoiceBase={ruleBase ? { deductionTypeIds: ruleBase.deductionTypeIds, reference: bill.againstBillRef ?? 'the invoice' } : undefined}
             />
           </FormSection>

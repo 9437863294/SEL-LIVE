@@ -134,6 +134,8 @@ export const DEFAULT_SETTINGS: BillTrackingSettings = {
   // None until an administrator names the invoices whose debit notes take deductions of the invoice
   // plus its notes (Settings → Note rules).
   noteRules: [],
+  // None until an administrator sets a value basis (Settings → Deduction types): taxables are the value.
+  valueBasisRules: [],
   // Every stage in use and left to permission holders until people are named in Settings → Workflow.
   workflowSteps: normaliseWorkflowSteps(undefined),
   closedMonths: [],
