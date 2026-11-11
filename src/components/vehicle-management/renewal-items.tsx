@@ -1,22 +1,17 @@
 'use client';
 
 /**
- * What needs renewing, and how it is drawn — shared by the Renewals Hub and the module overview.
+ * What needs renewing — shared by the Renewals Hub and the module overview.
  *
  * The overview already reads every compliance collection for its charts, so it builds these items
  * from the documents it has instead of fetching them again; the Renewals Hub reads them itself. Both
  * go through `toRenewalItem`, so an item that shows on one shows on the other, with the same link.
  */
 
-import Link from 'next/link';
 import { format } from 'date-fns';
-import { AlertTriangle, BadgeCheck, CheckCircle2, FileArchive, History, Landmark, Leaf, RefreshCw, ScrollText, Shield, Timer, User } from 'lucide-react';
+import { BadgeCheck, FileArchive, Landmark, Leaf, ScrollText, Shield, User } from 'lucide-react';
 import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
-import type { ListColumn } from '@/components/shared/data-list';
-import { StatusBadge } from '@/components/shared/status-badge';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { VM_PRIMARY_BUTTON, VM_TONES, type VmTone } from './vm-ui';
+import type { VmTone } from './vm-ui';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -246,91 +241,4 @@ export function sortRenewalItems(items: RenewalItem[]) {
     if (b.kind === 'expired' && a.kind !== 'expired') return 1;
     return a.daysLeft - b.daysLeft;
   });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Drawing
-// ─────────────────────────────────────────────────────────────────────────────
-export function KindBadge({ kind, daysLeft }: { kind: ExpiryKind; daysLeft: number }) {
-  if (kind === 'expired') {
-    return (
-      <StatusBadge status="Expired" tone="danger">
-        <AlertTriangle className="h-3 w-3" />
-        Expired {Math.abs(daysLeft)}d ago
-      </StatusBadge>
-    );
-  }
-  if (kind === 'dueSoon') {
-    return (
-      <StatusBadge status="Due Soon" tone="warning">
-        <Timer className="h-3 w-3" />
-        {daysLeft === 0 ? 'Due Today' : `${daysLeft}d left`}
-      </StatusBadge>
-    );
-  }
-  return (
-    <StatusBadge status="Valid" tone="success">
-      <CheckCircle2 className="h-3 w-3" />
-      Valid ({daysLeft}d)
-    </StatusBadge>
-  );
-}
-
-/** The register's columns — one spec, drawn as a table on a desktop and as cards on a phone. */
-export function renewalColumns(): Array<ListColumn<RenewalItem>> {
-  return [
-    {
-      header: 'Vehicle / Driver',
-      mobile: 'title',
-      cell: (item) => <span className="font-semibold text-slate-900">{item.vehicleOrDriver}</span>,
-    },
-    {
-      header: 'Category',
-      mobile: 'title',
-      cell: (item) => {
-        const Icon = item.categoryIcon;
-        return (
-          <span className="inline-flex items-center gap-1.5 text-slate-600">
-            <Icon className={cn('h-3.5 w-3.5 shrink-0', VM_TONES[item.tone].text)} aria-hidden="true" />
-            {item.category}
-          </span>
-        );
-      },
-    },
-    {
-      header: 'Reference',
-      cell: (item) => <span className="text-slate-600">{item.details}</span>,
-    },
-    {
-      header: 'Expiry Date',
-      cell: (item) => <span className="tabular-nums text-slate-700">{formatExpiry(item.expiryDate)}</span>,
-    },
-    {
-      header: 'Status',
-      mobile: 'aside',
-      cell: (item) => <KindBadge kind={item.kind} daysLeft={item.daysLeft} />,
-    },
-    {
-      header: 'Actions',
-      align: 'right',
-      mobile: 'footer',
-      // On a phone card the links share the footer row at a full 44px tap height.
-      cell: (item) => (
-        <div className="flex w-full items-center justify-end gap-1.5 max-sm:[&>a]:h-11 max-sm:[&>a]:flex-1">
-          <Button asChild size="sm" className={cn('h-8 gap-1.5 px-3 text-xs', VM_PRIMARY_BUTTON)}>
-            <Link href={item.href}>
-              <RefreshCw className="h-3 w-3" />
-              Renew
-            </Link>
-          </Button>
-          <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 px-3 text-xs">
-            <Link href={item.historyHref} title={`${item.category} history`}>
-              <History className="h-3 w-3" />
-              History
-            </Link>
-          </Button>
-        </div>
-      ),
-    },
-  ];
 }
