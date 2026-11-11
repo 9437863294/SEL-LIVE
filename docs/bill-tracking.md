@@ -61,6 +61,27 @@ written and served only by the API.
     since under a note rule, therefore never alters an issued bill behind an unrelated edit.
   - Two lines may not share an id (the API refuses it), and money rounds half a paisa away from
     zero, so a credit note mirrors its invoice to the paisa.
+- **Per-project deduction heads (2026-11-10).** The deduction type master is the default every
+  project uses. In Settings → Deduction types, *Configure for* a project to give it settings of its
+  own: Calculation, Default %, % of, Less (base), GST on it, GST % and Active. Name, code, kind and
+  order stay the master's, so reports, the importer and the retention ledger read every project alike.
+  - Stored as overrides on the project's profile (`ProjectProfile.deductionTypes`); only figures that
+    differ from the master are kept, so setting one back makes the head follow the master again.
+    `null` clears a master's default % or GST % for the project. *Reset* / *Use the default for every
+    head* drop them.
+  - A head switched off in the master and on for one project is that project's own head.
+  - Where it shows (2026-11-11), all worded by `projectDeductionChanges`: the tab's badge ("2 own");
+    on the default, a list of every project with its own settings and what each sets differently
+    (with the default beside it), and a *Projects* column per head; on a project, a line saying it
+    uses its own settings or the default throughout; a *Deduction types* column on Projects & DGM
+    offices; and a notice above the deductions on the bill and certification forms of such a
+    project. `?tab=deductions&project=<id>` opens a project's heads.
+  - Every place that works out or reads back a bill's deductions uses the bill's project's heads
+    (`projectDeductionTypes` in `deduction-types.ts`): the bill and certification forms, the server's
+    save and certification (`resolveDeductions` takes the project), note rules, the bill's Retention
+    tab and the retention bifurcation. A head switched off for a project is refused on its new lines
+    ("… is switched off for this project").
+  - Bills already saved keep their lines as issued (see above) until an edit changes them.
 - **Credit notes.**
   - **What needs one.** Only a change of the invoice value: the taxable and the GST on it. A change
     of deductions needs no note. Once the client certifies a bill, its certified deductions apply

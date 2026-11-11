@@ -30,6 +30,7 @@ import { isNoteType } from '../certification.ts';
 import { actionBlocked, amountsLocked, isPastApproval, isRoleStep, moveTarget, nextStepAfter, stepDoers, stepLabel, workflowStep, type WorkflowActor, type WorkflowMove } from '../workflow.ts';
 import { computeDeductions, keepsIssuedLines, splitGst, suggestGst, totalFromComponents, type DeductionContext, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
+import { projectDeductionTypes } from '../deduction-types.ts';
 import { noteDeductionBase } from '../note-rules.ts';
 import { roundMoney, toPaise } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
@@ -145,16 +146,25 @@ export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, 
  * Deduction lines, recomputed from the bill's own figures with the configured formulas (a % of the
  * taxable or gross less other deductions; GST on GST-applicable deductions) — or, for the heads a note
  * rule covers on a debit note, from the invoice plus its notes (`invoiceBase`). The form's figures are
- * a preview only.
+ * a preview only. The heads are the bill's project's (`projectDeductionTypes`): the master, with any
+ * settings the project has of its own.
  */
-export function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType']; invoiceBase?: DeductionContext['invoiceBase'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
+export function resolveDeductions(
+  lines: BillInput['deductions'],
+  config: BillTrackingConfig,
+  projectId: string | null,
+  context: { taxable: number; gross: number; gstType?: BillInput['gstType']; invoiceBase?: DeductionContext['invoiceBase'] },
+  existing: readonly BillDeduction[] = [],
+): BillDeduction[] {
+  const types = projectDeductionTypes(config, projectId);
   for (const line of lines) {
-    const type = config.deductionTypes.find((entry) => entry.id === line.deductionTypeId);
+    const type = types.find((entry) => entry.id === line.deductionTypeId);
     // A type retired after a bill used it stays valid on that bill; a new line needs an active type.
     const previously = existing.find((entry) => entry.id === line.id && entry.deductionTypeId === line.deductionTypeId);
-    if (!type || (!type.active && !previously)) throw new BtError(`Deduction type ${line.deductionTypeId} is not available.`);
+    if (!type) throw new BtError(`Deduction type ${line.deductionTypeId} is not available.`);
+    if (!type.active && !previously) throw new BtError(`${type.name} is switched off${config.deductionTypes.find((entry) => entry.id === type.id)?.active ? ' for this project' : ''} (Settings → Deduction types).`);
   }
-  return computeDeductions(lines, config.deductionTypes, { ...context, roundToRupee: config.settings.roundDeductionsToRupee }).map((line) => clean(line));
+  return computeDeductions(lines, types, { ...context, roundToRupee: config.settings.roundDeductionsToRupee }).map((line) => clean(line));
 }
 
 /** Due date from the project's (or client's, or the module's) credit days. */
@@ -328,7 +338,7 @@ export function composeBill({ context, input, config, project, client, existing,
         { id: existing?.id, transactionType: input.transactionType, billDate: input.billDate, createdAt: existing?.createdAt, taxableAmount: roundMoney(input.taxableAmount), gstAmount: gst.gstAmount },
         against,
         invoiceNotes,
-        config.deductionTypes,
+        projectDeductionTypes(config, project.id),
       )
     : undefined;
   // An edit that changes neither the lines nor the figures they are worked out from keeps the lines as
@@ -340,7 +350,7 @@ export function composeBill({ context, input, config, project, client, existing,
   const deductions =
     keepLines && existing
       ? (existing.deductions ?? []).map((line, index) => clean({ ...line, remarks: input.deductions[index].remarks, deductionDate: input.deductions[index].deductionDate }))
-      : resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType, invoiceBase: noteBase }, existing?.deductions);
+      : resolveDeductions(input.deductions, config, project.id, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType, invoiceBase: noteBase }, existing?.deductions);
   // Left out of the invoice's certification check only when the note bills the balance under its
   // rule — it carries lines taken of the invoice plus its notes. A note raised to match the client's
   // certification carries none, so it counts there like any other.

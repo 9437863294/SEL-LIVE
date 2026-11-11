@@ -74,6 +74,7 @@ import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { availableActions, certificationBlocked, certificationNotDue, isAfterPayment, isStepEnabled, stepLabel, stepPermissionText, waitingFor, workflowPath, type AvailableMove, type WorkflowMove } from '@/lib/bill-tracking/workflow';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { billRetentionSlabs, formatRate, releaseSlabKey, retentionSource, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
   AGEING_BASIS_LABELS,
@@ -1469,17 +1470,19 @@ function RetentionTab({ bill, releases, invoice, notes = [] }: { bill: BillRow; 
   const { config } = useLookups();
   const can = useBillCan(bill);
   const source = retentionSource(bill);
-  const slabs = billRetentionSlabs(source, config.deductionTypes, invoice);
+  // Read with the heads as this bill’s project uses them (a project may take a head on gross, say).
+  const deductionTypes = projectDeductionTypes(config, bill.projectId);
+  const slabs = billRetentionSlabs(source, deductionTypes, invoice);
   // An invoice also shows what its notes hold — a balance debit note's 20% and 10%, say (a note rule).
   const noteRows = notes.flatMap((note) =>
-    billRetentionSlabs({ deductions: note.deductions ?? [], taxableAmount: note.taxableAmount, grossAmount: note.grossAmount }, config.deductionTypes, source).map((entry) => ({ note, entry })),
+    billRetentionSlabs({ deductions: note.deductions ?? [], taxableAmount: note.taxableAmount, grossAmount: note.grossAmount }, deductionTypes, source).map((entry) => ({ note, entry })),
   );
   const notesHeld = sumMoney(noteRows.map((row) => row.entry.held));
   // Lines a note rule took of the invoice plus its notes are read against that, not this bill's own
   // figures — per head, since other heads (or a line taken of the note alone) keep the note's own base.
   const ofInvoicePlusNotes = (deductionTypeId: string) => source.deductions.some((line) => line.deductionTypeId === deductionTypeId && line.invoiceBase !== undefined);
   const slabList = slabs.map((entry) => entry.slab);
-  const typeOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
+  const typeOf = (id: string) => deductionTypes.find((type) => type.id === id);
   const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
   const released = bill.releasesRetention;
   // The slab a release names: the matching row above, else its head and rate as recorded.

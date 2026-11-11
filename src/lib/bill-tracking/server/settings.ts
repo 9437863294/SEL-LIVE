@@ -8,10 +8,11 @@ import 'server-only';
 import { validateAgeingBuckets } from '../calculations.ts';
 import { validateCategoryConfig } from '../categories.ts';
 import { DEFAULT_CONFIG, withConfigDefaults } from '../defaults.ts';
+import { normaliseDeductionOverrides } from '../deduction-types.ts';
 import { normaliseNoteRules, noteRulesProblem } from '../note-rules.ts';
 import { normaliseWorkflowSteps, workflowProblem } from '../workflow.ts';
 import type { ConfigInput } from '../schemas';
-import type { BillTrackingConfig } from '../types';
+import type { BillTrackingConfig, ProjectProfile } from '../types';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadConfigFresh, logActivity, nowIso } from './store';
 
@@ -83,20 +84,36 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
       billTypes,
       deductionTypes,
       stages: input.stages,
-      projectProfiles: input.projectProfiles,
+      // A project's own deduction settings keep only heads still in the master and figures that differ from it.
+      projectProfiles: input.projectProfiles.map((profile) => {
+        const deductionOverrides = normaliseDeductionOverrides(profile.deductionTypes, deductionTypes);
+        return { ...profile, deductionTypes: deductionOverrides.length ? deductionOverrides : undefined };
+      }),
       projectMappings: input.projectMappings ?? stored.projectMappings,
     });
     transaction.set(ref, next);
   });
   invalidateConfig(context.organizationId);
   const changedSettings = Object.keys(input.settings).filter((key) => JSON.stringify((current.settings as unknown as Record<string, unknown>)[key]) !== JSON.stringify((input.settings as Record<string, unknown>)[key]));
+  // A project's own deduction settings change how its bills are worked out: recorded per project, before and after.
+  const overridesOf = (profiles: readonly ProjectProfile[], projectId: string) => profiles.find((profile) => profile.projectId === projectId)?.deductionTypes ?? [];
+  const deductionProjects = [...new Set([...current.projectProfiles, ...next.projectProfiles].map((profile) => profile.projectId))].filter(
+    (projectId) => JSON.stringify(overridesOf(current.projectProfiles, projectId)) !== JSON.stringify(overridesOf(next.projectProfiles, projectId)),
+  );
+  const changed = [...changedSettings, ...(deductionProjects.length ? [`project deduction types (${deductionProjects.length} project${deductionProjects.length === 1 ? '' : 's'})`] : [])];
   await logActivity(context, {
     entityType: 'settings',
     entityId: context.organizationId,
     action: 'settings_saved',
-    summary: `Bill Tracking settings saved${changedSettings.length ? `: ${changedSettings.join(', ')}` : ''}`,
-    previous: Object.fromEntries(changedSettings.map((key) => [key, (current.settings as unknown as Record<string, unknown>)[key]])),
-    next: Object.fromEntries(changedSettings.map((key) => [key, (input.settings as Record<string, unknown>)[key]])),
+    summary: `Bill Tracking settings saved${changed.length ? `: ${changed.join(', ')}` : ''}`,
+    previous: {
+      ...Object.fromEntries(changedSettings.map((key) => [key, (current.settings as unknown as Record<string, unknown>)[key]])),
+      ...(deductionProjects.length ? { projectDeductionTypes: Object.fromEntries(deductionProjects.map((id) => [id, overridesOf(current.projectProfiles, id)])) } : {}),
+    },
+    next: {
+      ...Object.fromEntries(changedSettings.map((key) => [key, (input.settings as Record<string, unknown>)[key]])),
+      ...(deductionProjects.length ? { projectDeductionTypes: Object.fromEntries(deductionProjects.map((id) => [id, overridesOf(next.projectProfiles, id)])) } : {}),
+    },
   });
   return next;
 }

@@ -275,9 +275,16 @@ const add = (cells: Record<string, number>, key: string, amount: number) => {
  * The bifurcation over a set of bills and the releases of the same scope: per slab, per project and
  * per bill. Deleted bills and cancelled releases are left out. `invoices` are bills a note in `bills`
  * may adjust that are not in `bills` themselves — an invoice outside the filters still decides
- * which slabs its note lands in.
+ * which slabs its note lands in. `typesFor`, given, reads each bill with its project’s own heads
+ * (`deduction-types.ts`); `types`, the master, names the slabs.
  */
-export function retentionBifurcation(bills: readonly Bill[], releases: readonly RetentionRelease[], types: readonly DeductionTypeMaster[], invoices: readonly Bill[] = []): RetentionBifurcation {
+export function retentionBifurcation(
+  bills: readonly Bill[],
+  releases: readonly RetentionRelease[],
+  types: readonly DeductionTypeMaster[],
+  invoices: readonly Bill[] = [],
+  typesFor: (projectId: string) => readonly DeductionTypeMaster[] = () => types,
+): RetentionBifurcation {
   const byId = new Map([...invoices, ...bills].map((bill) => [bill.id, bill]));
   // Retention a debit note adds under a note rule is held on the note, not its invoice; a credit note
   // reversing it must find those rates too, so the invoice's slabs are read with those lines added.
@@ -304,7 +311,7 @@ export function retentionBifurcation(bills: readonly Bill[], releases: readonly 
   for (const bill of bills) {
     if (bill.isDeleted) continue;
     const invoice = bill.againstBillId && isNoteType(bill.transactionType) ? byId.get(bill.againstBillId) : undefined;
-    const slabs = billRetentionSlabs(retentionSource(bill), types, invoice ? invoiceSource(invoice) : undefined);
+    const slabs = billRetentionSlabs(retentionSource(bill), typesFor(bill.projectId), invoice ? invoiceSource(invoice) : undefined);
     if (!slabs.length) continue;
     const row: BifurcationBillRow = {
       id: bill.id,

@@ -75,7 +75,7 @@
     "theme:dark-compat": "node scripts/generate-dark-compat.mjs",
     "test:theme": "node --experimental-strip-types --test tests/appearance-model.test.mjs tests/appearance-admin.test.mjs",
     "typecheck:appearance": "tsc -p tsconfig.appearance.json",
-    "test:bill-tracking": "node --experimental-strip-types --test tests/bill-tracking-domain.test.mjs tests/bill-tracking-import.test.mjs tests/bill-tracking-reports.test.mjs tests/bill-tracking-categories.test.mjs tests/bill-tracking-gst.test.mjs tests/bill-tracking-certification.test.mjs tests/bill-tracking-bank-posting.test.mjs tests/bill-tracking-workflow.test.mjs tests/bill-tracking-workflow-dynamic.test.mjs tests/bill-tracking-retention.test.mjs tests/bill-tracking-note-rules.test.mjs",
+    "test:bill-tracking": "node --experimental-strip-types --test tests/bill-tracking-domain.test.mjs tests/bill-tracking-import.test.mjs tests/bill-tracking-reports.test.mjs tests/bill-tracking-categories.test.mjs tests/bill-tracking-gst.test.mjs tests/bill-tracking-certification.test.mjs tests/bill-tracking-bank-posting.test.mjs tests/bill-tracking-workflow.test.mjs tests/bill-tracking-workflow-dynamic.test.mjs tests/bill-tracking-retention.test.mjs tests/bill-tracking-note-rules.test.mjs tests/bill-tracking-deduction-types.test.mjs",
     "typecheck:bill-tracking": "tsc -p tsconfig.bill-tracking.json",
     "test:billing-recon": "node --experimental-strip-types --test tests/billing-recon-register.test.mjs tests/billing-recon-dashboard.test.mjs tests/billing-recon-ra-bill.test.mjs tests/billing-recon-reconciliation.test.mjs tests/billing-recon-dashboard-detail.test.mjs tests/billing-recon-workflow-steps.test.mjs",
     "typecheck:billing-recon": "tsc -p tsconfig.billing-recon.json",

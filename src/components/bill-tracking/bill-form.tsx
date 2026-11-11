@@ -34,6 +34,7 @@ import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tra
 import type { CertificationComparison, SuggestedNote } from '@/lib/bill-tracking/certification';
 import { computeDeductions, keepsIssuedLines, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { noteDeductionBase, type GroupNote } from '@/lib/bill-tracking/note-rules';
 import { formatRate } from '@/lib/bill-tracking/retention';
 import { GST_RATES } from '@/lib/statutory';
@@ -52,7 +53,7 @@ import { Amount, BtError, BtLoading, FormField, FormSection, Notice, RupeeInput,
 const FORM_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3';
 /** The amounts row: taxable, the GST components, total GST and gross — all on one line when there is room. */
 const AMOUNT_GRID = { 'cgst-sgst': 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5', igst: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', other: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3' } as const;
-import { DeductionEditor, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
+import { DeductionEditor, ProjectDeductionsNotice, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 import { listNames } from './note-rules-settings';
 
 /** `legacy` = a bill imported with a single GST figure, not yet split. */
@@ -182,7 +183,7 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     sgstAmount: str(bill.sgstAmount),
     igstAmount: str(bill.igstAmount),
     legacyGstAmount: String(bill.gstAmount ?? 0),
-    deductions: rowsFromDeductions(bill.deductions ?? [], config.deductionTypes),
+    deductions: rowsFromDeductions(bill.deductions ?? [], projectDeductionTypes(config, bill.projectId)),
     targetWeek: bill.targetWeek ?? '',
     collectionOwnerId: bill.collectionOwnerId ?? '',
     currentStage: bill.currentStage ?? '',
@@ -270,7 +271,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const params = useSearchParams();
   const { toast } = useToast();
   const { config } = lookups;
-  const activeTypes = config.deductionTypes.filter((type) => type.active || existing?.deductions.some((line) => line.deductionTypeId === type.id));
 
   const [form, setForm] = useState<FormState>(() => {
     if (existing) return fromBill(existing, config, lookups);
@@ -328,6 +328,9 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
 
   const project = lookups.projects.find((entry) => entry.id === form.projectId);
+  // The deduction heads as this project uses them: the master, with any settings of the project’s own.
+  const deductionTypes = projectDeductionTypes(config, form.projectId);
+  const activeTypes = deductionTypes.filter((type) => type.active || existing?.deductions.some((line) => line.deductionTypeId === type.id));
   // A sub category already on the bill stays selectable on its own project even if since narrowed.
   const keepTypeFor = (projectId: string) => (existing && existing.projectId === projectId ? existing.billTypeId : undefined);
   const subCategories = subCategoriesFor(config.billTypes, form.categoryId, form.projectId, keepTypeFor(form.projectId));
@@ -402,7 +405,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   // GST on a deduction is split like the bill's own: IGST on an IGST bill, otherwise CGST + SGST.
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   // A debit note under a note rule takes the rule's heads of the invoice plus its notes, as the server will.
-  const noteBase = noteDeductionBase(config.settings.noteRules, { id: existing?.id, transactionType: form.transactionType, billDate: form.billDate, createdAt: existing?.createdAt, taxableAmount: taxable, gstAmount: gstTotal }, againstInvoice, againstInvoice?.notes ?? [], config.deductionTypes);
+  const noteBase = noteDeductionBase(config.settings.noteRules, { id: existing?.id, transactionType: form.transactionType, billDate: form.billDate, createdAt: existing?.createdAt, taxableAmount: taxable, gstAmount: gstTotal }, againstInvoice, againstInvoice?.notes ?? [], deductionTypes);
   // An edit that changes neither the lines nor the figures they were worked out on keeps them as issued,
   // as the server will (`keepsIssuedLines`) — so the preview shows what will actually be saved.
   const keepLines =
@@ -422,8 +425,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       },
       deductionInputs,
     );
-  const deductionLines = keepLines && existing ? existing.deductions : computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: noteBase });
-  const ruleHeadNames = (noteBase?.deductionTypeIds ?? []).flatMap((id) => config.deductionTypes.find((type) => type.id === id)?.name ?? []);
+  const deductionLines = keepLines && existing ? existing.deductions : computeDeductions(deductionInputs, deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: noteBase });
+  const ruleHeadNames = (noteBase?.deductionTypeIds ?? []).flatMap((id) => deductionTypes.find((type) => type.id === id)?.name ?? []);
   const ruleHeads = listNames(ruleHeadNames, Infinity) || 'Its deductions';
 
   // The rows are the deductions as raised. Once the client has certified the bill its certified
@@ -493,8 +496,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const billType = config.billTypes.find((type) => type.id === form.billTypeId);
   const isRetention = form.transactionType === 'retention_bill' || Boolean(billType?.isRetentionBill);
   const savedReleaseTypeId = existing?.releasesRetention?.deductionTypeId;
-  const retentionTypes = config.deductionTypes.filter((type) => isRetentionKind(type.kind) && (type.active || type.id === savedReleaseTypeId)).sort((a, b) => a.sequence - b.sequence);
-  const releaseType = config.deductionTypes.find((type) => type.id === form.releasesTypeId);
+  const retentionTypes = deductionTypes.filter((type) => isRetentionKind(type.kind) && (type.active || type.id === savedReleaseTypeId)).sort((a, b) => a.sequence - b.sequence);
+  const releaseType = deductionTypes.find((type) => type.id === form.releasesTypeId);
   // "30" or "30%"; blank = the head's fixed amounts.
   const releaseRate = form.releasesRate.trim() === '' ? null : Number(form.releasesRate.replace(/[%\s]/g, ''));
   const releaseRateInvalid = isRetention && Boolean(form.releasesTypeId) && releaseRate !== null && !(Number.isFinite(releaseRate) && releaseRate > 0 && releaseRate <= 100);
@@ -1068,12 +1071,13 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 The client’s certified deductions already apply to {againstReference ? `invoice ${againstReference}` : 'the invoice'} — this note adjusts only the taxable value and its GST. Add a deduction here only if the client deducts something on the note itself.
               </Notice>
             ) : null}
+            <ProjectDeductionsNotice config={config} projectId={form.projectId} projectName={project?.name} />
             <DeductionEditor
               rows={form.deductions}
               setRows={setDeductionRows}
               lines={deductionLines}
               activeTypes={activeTypes}
-              deductionTypes={config.deductionTypes}
+              deductionTypes={deductionTypes}
               gstType={deductionGstType}
               totalDeduction={totals.raisedTotalDeduction}
               defaultGstRate={config.settings.defaultGstRate}

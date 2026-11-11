@@ -299,6 +299,18 @@ export const deductionTypeSchema = z.object({
   active: z.boolean(),
 });
 
+/** One deduction head as a project sets it; `null` clears the master’s default % or GST % for the project. */
+const deductionOverrideSchema = z.object({
+  deductionTypeId: z.string().min(1).max(64),
+  active: z.boolean().optional(),
+  calculation: z.enum(['fixed', 'percentage']).optional(),
+  defaultPercent: z.number().min(0).max(100).nullable().optional(),
+  percentBase: z.enum(['taxable', 'gross']).optional(),
+  baseLessTypeIds: z.array(z.string().min(1).max(64)).max(20).optional(),
+  gstApplicable: z.boolean().optional(),
+  gstRate: z.number().min(0).max(100).nullable().optional(),
+});
+
 export const configInputSchema = z.object({
   settings: z.object({
     tolerance: z.coerce.number().min(0).max(1000),
@@ -371,6 +383,8 @@ export const configInputSchema = z.object({
         clientId: optionalText(128),
         clientName: optionalText(200),
         creditDays: z.coerce.number().int().min(0).max(730).optional(),
+        /** The project’s own settings for deduction heads (`deduction-types.ts`); absent fields follow the master. */
+        deductionTypes: z.array(deductionOverrideSchema).max(60).optional(),
       }),
     )
     .max(2000),

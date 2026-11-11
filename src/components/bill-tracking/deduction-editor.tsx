@@ -11,19 +11,22 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { isRetentionKind } from '@/lib/bill-tracking/calculations';
+import { deductionChangeWithDefault, projectDeductionChanges } from '@/lib/bill-tracking/deduction-types';
 import { splitInclusiveTotal, type DeductionLineInput } from '@/lib/bill-tracking/gst';
 import { formatINR, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { formatRate, retentionLineRate } from '@/lib/bill-tracking/retention';
-import type { BillDeduction, DeductionTypeMaster, GstType } from '@/lib/bill-tracking/types';
+import type { BillDeduction, BillTrackingConfig, DeductionTypeMaster, GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
 
-import { Amount } from './bt-ui';
+import { useBt } from './bt-client';
+import { Amount, Notice } from './bt-ui';
 
 export interface DeductionRow {
   id: string;
@@ -411,5 +414,38 @@ export function GstPart({ label, rate, amount, typed, onRate, onAmount }: { labe
         className="ml-auto h-7 min-w-0 flex-1 rounded border border-input bg-white px-1 text-right text-sm"
       />
     </div>
+  );
+}
+
+/**
+ * Above the deductions of a bill or certification whose project has deduction settings of its own
+ * (Settings → Deduction types): which heads differ and how, so a figure that is not the usual one is
+ * expected. Nothing when the project uses the default.
+ */
+export function ProjectDeductionsNotice({ config, projectId, projectName }: { config: Pick<BillTrackingConfig, 'deductionTypes' | 'projectProfiles'>; projectId: string | null | undefined; projectName?: string }) {
+  const { can } = useBt();
+  const heads = projectDeductionChanges(config, projectId);
+  if (!projectId || !heads.length) return null;
+  return (
+    <Notice tone="amber" title={`${projectName || 'This project'} uses its own deduction settings`}>
+      <ul className="space-y-0.5 text-xs">
+        {heads.map((head) => (
+          <li key={head.deductionTypeId}>
+            <span className="font-medium">{head.name}</span>: {head.changes.map(deductionChangeWithDefault).join(', ')}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-xs">
+        Lines here follow these; every other head uses the default.
+        {can('Settings', 'View') ? (
+          <>
+            {' '}
+            <Link href={`/bill-tracking/settings?tab=deductions&project=${encodeURIComponent(projectId)}`} className="font-medium underline underline-offset-2">
+              See them in Settings
+            </Link>
+          </>
+        ) : null}
+      </p>
+    </Notice>
   );
 }

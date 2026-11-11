@@ -441,6 +441,28 @@ export interface ProjectProfile {
   clientName?: string;
   /** Overrides the client's payment terms for this project's due dates. */
   creditDays?: number;
+  /**
+   * The project's own settings for deduction heads (Settings → Deduction types, a project chosen):
+   * each overrides the master for this project only. A head without one follows the master.
+   */
+  deductionTypes?: DeductionTypeOverride[];
+}
+
+/**
+ * One deduction head as a project configures it (`deduction-types.ts`). Only how the deduction is
+ * worked out, and whether it is offered, can differ: the name, code and kind stay the master's, so
+ * reports, the importer and the retention ledger read every project alike. An absent field follows
+ * the master; `null` clears a master's default % or GST % for this project.
+ */
+export interface DeductionTypeOverride {
+  deductionTypeId: string;
+  active?: boolean;
+  calculation?: DeductionTypeMaster['calculation'];
+  defaultPercent?: number | null;
+  percentBase?: DeductionTypeMaster['percentBase'];
+  baseLessTypeIds?: string[];
+  gstApplicable?: boolean;
+  gstRate?: number | null;
 }
 
 export interface BillTrackingConfig {
