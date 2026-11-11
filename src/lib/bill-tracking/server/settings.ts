@@ -8,10 +8,12 @@ import 'server-only';
 import { validateAgeingBuckets } from '../calculations.ts';
 import { validateCategoryConfig } from '../categories.ts';
 import { DEFAULT_CONFIG, withConfigDefaults } from '../defaults.ts';
+import { normaliseDeductionOverrides } from '../deduction-types.ts';
 import { normaliseNoteRules, noteRulesProblem } from '../note-rules.ts';
+import { normaliseValueBasisRules, valueBasisRulesProblem } from '../value-basis.ts';
 import { normaliseWorkflowSteps, workflowProblem } from '../workflow.ts';
 import type { ConfigInput } from '../schemas';
-import type { BillTrackingConfig } from '../types';
+import type { BillTrackingConfig, ProjectProfile } from '../types';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, clean, configRef, invalidateConfig, loadConfigFresh, logActivity, nowIso } from './store';
 
@@ -66,6 +68,12 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
   const noteRules = normaliseNoteRules(input.settings.noteRules ?? current.settings.noteRules ?? [], billTypes, deductionTypes);
   const ruleProblem = noteRulesProblem(noteRules, billTypes);
   if (ruleProblem) throw new BtError(ruleProblem);
+  // Value basis rules, the default ones and each project's own: sub categories still in the master, terms in range.
+  const valueBasisRules = normaliseValueBasisRules(input.settings.valueBasisRules ?? current.settings.valueBasisRules ?? [], billTypes);
+  const basisProblem =
+    valueBasisRulesProblem(valueBasisRules) ??
+    input.projectProfiles.reduce<string | null>((found, profile) => found ?? valueBasisRulesProblem(normaliseValueBasisRules(profile.valueBasisRules, billTypes), ' (a project’s own)'), null);
+  if (basisProblem) throw new BtError(basisProblem);
 
   // Written in a transaction over the stored document: closed months are only ever set by
   // `setMonthClosed`, and a save from a copy older than the stored one is refused.
@@ -78,25 +86,46 @@ export async function saveConfig(context: BtContext, input: ConfigInput): Promis
       throw new BtError('Settings were changed by someone else (or an import) since you opened them — reload and redo your change.', 409);
     }
     next = clean({
-      settings: { ...stored.settings, ...input.settings, workflowSteps: normaliseWorkflowSteps(input.settings.workflowSteps ?? stored.settings.workflowSteps), noteRules, closedMonths: stored.settings.closedMonths, updatedAt: nowIso(), updatedBy: context.userId },
+      settings: { ...stored.settings, ...input.settings, workflowSteps: normaliseWorkflowSteps(input.settings.workflowSteps ?? stored.settings.workflowSteps), noteRules, valueBasisRules, closedMonths: stored.settings.closedMonths, updatedAt: nowIso(), updatedBy: context.userId },
       billCategories,
       billTypes,
       deductionTypes,
       stages: input.stages,
-      projectProfiles: input.projectProfiles,
+      // A project's own deduction settings keep only heads still in the master and figures that differ from it.
+      projectProfiles: input.projectProfiles.map((profile) => {
+        const deductionOverrides = normaliseDeductionOverrides(profile.deductionTypes, deductionTypes);
+        const ownBasis = normaliseValueBasisRules(profile.valueBasisRules, billTypes);
+        return { ...profile, deductionTypes: deductionOverrides.length ? deductionOverrides : undefined, valueBasisRules: ownBasis.length ? ownBasis : undefined };
+      }),
       projectMappings: input.projectMappings ?? stored.projectMappings,
     });
     transaction.set(ref, next);
   });
   invalidateConfig(context.organizationId);
   const changedSettings = Object.keys(input.settings).filter((key) => JSON.stringify((current.settings as unknown as Record<string, unknown>)[key]) !== JSON.stringify((input.settings as Record<string, unknown>)[key]));
+  // A project's own deduction settings — heads and value basis rules — change how its bills are worked
+  // out: recorded per project, before and after.
+  const overridesOf = (profiles: readonly ProjectProfile[], projectId: string) => {
+    const profile = profiles.find((entry) => entry.projectId === projectId);
+    return { heads: profile?.deductionTypes ?? [], valueBasisRules: profile?.valueBasisRules ?? [] };
+  };
+  const deductionProjects = [...new Set([...current.projectProfiles, ...next.projectProfiles].map((profile) => profile.projectId))].filter(
+    (projectId) => JSON.stringify(overridesOf(current.projectProfiles, projectId)) !== JSON.stringify(overridesOf(next.projectProfiles, projectId)),
+  );
+  const changed = [...changedSettings, ...(deductionProjects.length ? [`project deduction types (${deductionProjects.length} project${deductionProjects.length === 1 ? '' : 's'})`] : [])];
   await logActivity(context, {
     entityType: 'settings',
     entityId: context.organizationId,
     action: 'settings_saved',
-    summary: `Bill Tracking settings saved${changedSettings.length ? `: ${changedSettings.join(', ')}` : ''}`,
-    previous: Object.fromEntries(changedSettings.map((key) => [key, (current.settings as unknown as Record<string, unknown>)[key]])),
-    next: Object.fromEntries(changedSettings.map((key) => [key, (input.settings as Record<string, unknown>)[key]])),
+    summary: `Bill Tracking settings saved${changed.length ? `: ${changed.join(', ')}` : ''}`,
+    previous: {
+      ...Object.fromEntries(changedSettings.map((key) => [key, (current.settings as unknown as Record<string, unknown>)[key]])),
+      ...(deductionProjects.length ? { projectDeductionTypes: Object.fromEntries(deductionProjects.map((id) => [id, overridesOf(current.projectProfiles, id)])) } : {}),
+    },
+    next: {
+      ...Object.fromEntries(changedSettings.map((key) => [key, (input.settings as Record<string, unknown>)[key]])),
+      ...(deductionProjects.length ? { projectDeductionTypes: Object.fromEntries(deductionProjects.map((id) => [id, overridesOf(next.projectProfiles, id)])) } : {}),
+    },
   });
   return next;
 }

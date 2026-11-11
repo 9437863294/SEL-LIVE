@@ -63,6 +63,7 @@ import {
   type CollectionTarget,
   type RetentionRelease,
 } from '../types.ts';
+import { deductionTypesByProject, projectDeductionTypes } from '../deduction-types.ts';
 import { certificationRuleBase } from './certification';
 import { BtError, db, type BtContext } from './context';
 import { BT_COLLECTIONS, loadBill, loadBillsById, loadClients, loadConfig, loadGstSetup, loadProjects, loadScopedBills, loadScopedDocs, loadScopedNotes, loadUsers } from './store';
@@ -387,7 +388,7 @@ export async function billDetail(context: BtContext, billId: string) {
   const invoiceRead = bill.againstBillId && isNoteType(bill.transactionType) ? loadBillsById(context, [bill.againstBillId]) : Promise.resolve([]);
   // A balance debit note the client certifies: what its certified rule lines are taken of besides itself.
   const certifiable = canBeCertified(bill, config.settings) || Boolean(bill.certification);
-  const ruleBaseRead = certifiable ? certificationRuleBase(context, bill, config.deductionTypes) : Promise.resolve(undefined);
+  const ruleBaseRead = certifiable ? certificationRuleBase(context, bill, projectDeductionTypes(config, bill.projectId)) : Promise.resolve(undefined);
   const [[collections, followUps, comments, documents, activity, retentionByBill, retentionReleases, notes, settling], [invoice], ruleBase] = await Promise.all([related, invoiceRead, ruleBaseRead]);
   const docs = <T>(snapshot: FirebaseFirestore.QuerySnapshot) => snapshot.docs.map((doc) => ({ ...(doc.data() as T), id: doc.id }));
   const releases = [...docs<RetentionRelease>(retentionByBill), ...docs<RetentionRelease>(retentionReleases)].filter((release, index, all) => all.findIndex((other) => other.id === release.id) === index);
@@ -580,7 +581,7 @@ export async function report(context: BtContext, kind: ReportKind, params: URLSe
       return {
         ...base,
         ...retentionReport(bills, ledger, rc),
-        bifurcation: retentionBifurcation(bills, ledger, config.deductionTypes, [...all, ...earlier]),
+        bifurcation: retentionBifurcation(bills, ledger, config.deductionTypes, [...all, ...earlier], deductionTypesByProject(config)),
         releases: [...ledger].sort((a, b) => b.releaseDate.localeCompare(a.releaseDate)),
       };
     }

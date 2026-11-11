@@ -159,8 +159,11 @@ function ToggleRow({ label, hint, checked, onChange, disabled }: { label: string
   );
 }
 
-/** Pick sub categories by main category: search, tick, and the chosen ones named on the button. */
-function SubCategoryPicker({ value, onChange, billCategories, billTypes, disabled }: { value: string[]; onChange: (ids: string[]) => void; billCategories: readonly BillCategoryMaster[]; billTypes: readonly BillTypeMaster[]; disabled?: boolean }) {
+/**
+ * Pick sub categories by main category: search, tick, and the chosen ones named on the button.
+ * `emptyLabel` is what none ticked means (a value basis rule: every invoice).
+ */
+export function SubCategoryPicker({ value, onChange, billCategories, billTypes, disabled, emptyLabel }: { value: string[]; onChange: (ids: string[]) => void; billCategories: readonly BillCategoryMaster[]; billTypes: readonly BillTypeMaster[]; disabled?: boolean; emptyLabel?: string }) {
   const [query, setQuery] = useState('');
   const needle = query.trim().toLowerCase();
   const chosen = value.flatMap((id) => billTypes.find((type) => type.id === id)?.name ?? []);
@@ -174,16 +177,17 @@ function SubCategoryPicker({ value, onChange, billCategories, billTypes, disable
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" disabled={disabled} className={cn('h-10 w-full justify-between gap-2 font-normal', !chosen.length && 'text-muted-foreground')}>
+        <Button type="button" variant="outline" disabled={disabled} className={cn('h-10 w-full justify-between gap-2 font-normal', !chosen.length && !emptyLabel && 'text-muted-foreground')}>
           <span className="flex min-w-0 items-center gap-2">
             <Tags className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-            <span className="truncate text-left">{chosen.length ? listNames(chosen) : 'Choose sub categories'}</span>
+            <span className="truncate text-left">{chosen.length ? listNames(chosen) : (emptyLabel ?? 'Choose sub categories')}</span>
           </span>
           <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-2">
         <Input className="h-8" placeholder="Find a sub category" value={query} onChange={(event) => setQuery(event.target.value)} />
+        {emptyLabel ? <p className="px-2 pt-2 text-[11px] text-slate-500">None ticked: {emptyLabel.charAt(0).toLowerCase() + emptyLabel.slice(1)}.</p> : null}
         <div className="mt-2 max-h-72 overflow-y-auto">
           {groups.map(({ category, types }) => (
             <div key={category.id} className="pb-1">
@@ -252,7 +256,7 @@ function HeadPicker({ value, onChange, deductionTypes, disabled }: { value: stri
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-slate-800">{type.name}</span>
                   <span className="block text-[11px] text-slate-500">
-                    % of {type.percentBase === 'gross' ? 'gross' : 'taxable'}
+                    % of {type.percentBase === 'gross' ? 'gross' : type.percentBase === 'value' ? 'value (taxable on a note)' : 'taxable'}
                     {isRetentionKind(type.kind) ? ' · retention' : ''}
                     {type.active ? '' : ' · inactive'}
                   </span>

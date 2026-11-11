@@ -74,13 +74,14 @@ export const formatRate = (rate: number): string => String(roundRate(rate));
  * (the default) or gross, which is the base an amount is read against — or, on a debit note under a
  * note rule, the invoice plus its notes the line was taken of (`invoiceBase`).
  */
-export function retentionLineRate(line: Pick<BillDeduction, 'percentage' | 'amount' | 'baseAmount' | 'invoiceBase'>, bill: Pick<Bill, 'taxableAmount' | 'grossAmount'>, type?: Pick<DeductionTypeMaster, 'percentBase'>): LineRate {
+export function retentionLineRate(line: Pick<BillDeduction, 'percentage' | 'amount' | 'baseAmount' | 'invoiceBase'>, bill: Pick<Bill, 'taxableAmount' | 'grossAmount' | 'valueBase'>, type?: Pick<DeductionTypeMaster, 'percentBase'>): LineRate {
   if (typeof line.percentage === 'number' && Number.isFinite(line.percentage)) {
     // Counted as typed — but only a real rate: 0, a negative or over 100 is an adjustment, not a slab.
     const rate = roundRate(line.percentage);
     return { rate: isRate(rate) ? rate : null, basis: 'percent' };
   }
-  const base = line.invoiceBase ?? (type?.percentBase === 'gross' ? bill.grossAmount : bill.taxableAmount);
+  // A head taken "% of Value" reads against the bill's value basis (the taxable without one).
+  const base = line.invoiceBase ?? (type?.percentBase === 'gross' ? bill.grossAmount : type?.percentBase === 'value' ? (bill.valueBase ?? bill.taxableAmount) : bill.taxableAmount);
   if (!base || !Number.isFinite(base)) return { rate: null, basis: 'amount' };
   const implied = ((line.baseAmount ?? line.amount) / base) * 100;
   const half = Math.round(implied * 2) / 2;
@@ -133,15 +134,19 @@ export interface BillSlab {
   lines: number;
 }
 
-type SlabSource = Pick<Bill, 'deductions' | 'taxableAmount' | 'grossAmount'>;
+type SlabSource = Pick<Bill, 'deductions' | 'taxableAmount' | 'grossAmount' | 'valueBase'>;
 
 /**
  * The retention a bill holds, as slabs read it: once the client has certified the bill, its certified
  * deductions — which replace the raised ones (`effectiveDeductions`) — read against the certified
- * taxable and gross they were worked out on; before that, the raised lines and figures.
+ * taxable, gross and value base they were worked out on; before that, the raised lines and figures.
  */
-export const retentionSource = (bill: SlabSource & { certification?: Pick<BillCertification, 'deductions' | 'taxableAmount' | 'grossAmount'> | null }): SlabSource =>
-  bill.certification ? { deductions: bill.certification.deductions ?? [], taxableAmount: bill.certification.taxableAmount, grossAmount: bill.certification.grossAmount } : { deductions: bill.deductions, taxableAmount: bill.taxableAmount, grossAmount: bill.grossAmount };
+export const retentionSource = (bill: SlabSource & { certification?: Pick<BillCertification, 'deductions' | 'taxableAmount' | 'grossAmount' | 'valueBase'> | null }): SlabSource => {
+  const source = bill.certification ?? bill;
+  const figures = { deductions: (bill.certification ? bill.certification.deductions : bill.deductions) ?? [], taxableAmount: source.taxableAmount, grossAmount: source.grossAmount };
+  // A value base only where the bill has a value basis (`value-basis.ts`).
+  return source.valueBase === undefined ? figures : { ...figures, valueBase: source.valueBase };
+};
 
 const BASIS_ORDER: readonly LineBasis[] = ['percent', 'amount', 'invoice'];
 
@@ -275,9 +280,16 @@ const add = (cells: Record<string, number>, key: string, amount: number) => {
  * The bifurcation over a set of bills and the releases of the same scope: per slab, per project and
  * per bill. Deleted bills and cancelled releases are left out. `invoices` are bills a note in `bills`
  * may adjust that are not in `bills` themselves — an invoice outside the filters still decides
- * which slabs its note lands in.
+ * which slabs its note lands in. `typesFor`, given, reads each bill with its project’s own heads
+ * (`deduction-types.ts`); `types`, the master, names the slabs.
  */
-export function retentionBifurcation(bills: readonly Bill[], releases: readonly RetentionRelease[], types: readonly DeductionTypeMaster[], invoices: readonly Bill[] = []): RetentionBifurcation {
+export function retentionBifurcation(
+  bills: readonly Bill[],
+  releases: readonly RetentionRelease[],
+  types: readonly DeductionTypeMaster[],
+  invoices: readonly Bill[] = [],
+  typesFor: (projectId: string) => readonly DeductionTypeMaster[] = () => types,
+): RetentionBifurcation {
   const byId = new Map([...invoices, ...bills].map((bill) => [bill.id, bill]));
   // Retention a debit note adds under a note rule is held on the note, not its invoice; a credit note
   // reversing it must find those rates too, so the invoice's slabs are read with those lines added.
@@ -304,7 +316,7 @@ export function retentionBifurcation(bills: readonly Bill[], releases: readonly 
   for (const bill of bills) {
     if (bill.isDeleted) continue;
     const invoice = bill.againstBillId && isNoteType(bill.transactionType) ? byId.get(bill.againstBillId) : undefined;
-    const slabs = billRetentionSlabs(retentionSource(bill), types, invoice ? invoiceSource(invoice) : undefined);
+    const slabs = billRetentionSlabs(retentionSource(bill), typesFor(bill.projectId), invoice ? invoiceSource(invoice) : undefined);
     if (!slabs.length) continue;
     const row: BifurcationBillRow = {
       id: bill.id,

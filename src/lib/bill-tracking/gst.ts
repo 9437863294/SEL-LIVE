@@ -147,6 +147,8 @@ export function splitInclusiveTotal(total: number, rate: number, billGstType: Gs
 export interface DeductionContext {
   taxable: number;
   gross: number;
+  /** What "% of Value" heads are taken of (`value-basis.ts`); absent = the taxable. */
+  value?: number;
   roundToRupee: boolean;
   /**
    * The bill's GST type: GST on a deduction is split the same way — IGST on an IGST bill, otherwise
@@ -210,6 +212,8 @@ export interface LineFigures {
   cgstAmount?: number;
   sgstAmount?: number;
   igstAmount?: number;
+  /** What "% of Value" heads were taken of; absent = the taxable (`value-basis.ts`). */
+  valueBase?: number;
 }
 
 /**
@@ -231,15 +235,19 @@ export function keepsIssuedLines(existing: LineFigures & { deductions?: readonly
       [existing.cgstAmount ?? 0, next.cgstAmount ?? 0],
       [existing.sgstAmount ?? 0, next.sgstAmount ?? 0],
       [existing.igstAmount ?? 0, next.igstAmount ?? 0],
+      [existing.valueBase ?? existing.taxableAmount, next.valueBase ?? next.taxableAmount],
     ].every(([before, after]) => toPaise(before) === toPaise(after)) &&
     saved.length === sent.length &&
     saved.every((line, index) => savedLineInput(line) === sentLineInput(sent[index]))
   );
 }
 
-/** The base a percentage deduction is taken of: taxable or gross, less the configured deductions. */
-export function deductionBase(type: Pick<DeductionTypeMaster, 'percentBase' | 'baseLessTypeIds'>, context: Pick<DeductionContext, 'taxable' | 'gross'>, lines: readonly Pick<BillDeduction, 'deductionTypeId' | 'baseAmount' | 'amount'>[]): number {
-  const start = type.percentBase === 'gross' ? context.gross : context.taxable;
+/**
+ * The base a percentage deduction is taken of: taxable, gross or the value basis (the taxable when the
+ * bill has none), less the configured deductions.
+ */
+export function deductionBase(type: Pick<DeductionTypeMaster, 'percentBase' | 'baseLessTypeIds'>, context: Pick<DeductionContext, 'taxable' | 'gross' | 'value'>, lines: readonly Pick<BillDeduction, 'deductionTypeId' | 'baseAmount' | 'amount'>[]): number {
+  const start = type.percentBase === 'gross' ? context.gross : type.percentBase === 'value' ? (context.value ?? context.taxable) : context.taxable;
   const less = sumMoney(lines.filter((line) => type.baseLessTypeIds?.includes(line.deductionTypeId)).map((line) => line.baseAmount ?? line.amount));
   return round2(start - less);
 }

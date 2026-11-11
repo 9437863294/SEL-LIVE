@@ -152,7 +152,7 @@ export default function ProjectManagementGeneralSettingsPage() {
           <CardDescription>
             When a surveyed or required quantity exceeds a BOQ item&apos;s stated quantity by more than this
             percentage, it can&apos;t be indented, ordered, or billed until an approved{" "}
-            <Link href="/project-management/settings/variation-orders" className="underline underline-offset-2">
+            <Link href="/project-management/boq/variation-orders" className="underline underline-offset-2">
               variation order
             </Link>{" "}
             covers the excess.

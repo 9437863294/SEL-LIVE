@@ -539,7 +539,7 @@ export const resubmitTarget = (returnedFrom: BillWorkflowStatus | undefined): Bi
 };
 
 /** The bill fields that lock at the amount-lock step: changing one needs Edit After Approval and a reason. */
-export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId', 'adjustsNoteId'] as const;
+export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'valueBasis', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId', 'adjustsNoteId'] as const;
 export type ProtectedBillField = (typeof PROTECTED_BILL_FIELDS)[number];
 
 /** A deduction line as the lock sees it: what it deducts, never its name, remarks or the order of its keys. */
@@ -558,8 +558,11 @@ export function protectedChanges(before: Partial<Pick<Bill, ProtectedBillField>>
   const money = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? toPaise(value) : 0);
   const gstType = (bill: typeof before) => bill.gstType ?? (money(bill.gstAmount) === 0 ? 'none' : '');
   const lines = (value: readonly BillDeduction[] | undefined) => (value ?? []).map(lockedLine).sort().join(';');
+  // A value basis by its figures, never the rule's name.
+  const basis = (value: Bill['valueBasis']) => (value ? [toPaise(value.executedValue), value.discountPercent, value.taxableShare, value.valueShare].join('|') : '');
   return PROTECTED_BILL_FIELDS.filter((key) => {
     if (key === 'deductions') return lines(before.deductions) !== lines(after.deductions);
+    if (key === 'valueBasis') return basis(before.valueBasis) !== basis(after.valueBasis);
     if (key === 'gstType') return gstType(before) !== gstType(after);
     if (key === 'taxableAmount' || key === 'gstAmount' || key === 'cgstAmount' || key === 'sgstAmount' || key === 'igstAmount') return money(before[key]) !== money(after[key]);
     return text(before[key]) !== text(after[key]);

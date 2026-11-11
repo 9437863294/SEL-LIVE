@@ -397,7 +397,7 @@ export default function RecordSurveyPage() {
   const goToRaiseVariation = (row: SurveyRow) => {
     const params = new URLSearchParams({ project: mappingId, boqItemId: row.boqItem.id });
     if (row.surveyedQty != null) params.set("surveyedQty", String(row.surveyedQty));
-    router.push(`/project-management/settings/variation-orders?${params.toString()}`);
+    router.push(`/project-management/boq/variation-orders?${params.toString()}`);
   };
 
   const columns: PmListColumn<SurveyListRow>[] = [

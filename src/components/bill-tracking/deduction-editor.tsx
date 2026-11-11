@@ -11,19 +11,22 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { isRetentionKind } from '@/lib/bill-tracking/calculations';
+import { deductionChangeWithDefault, projectDeductionChanges } from '@/lib/bill-tracking/deduction-types';
 import { splitInclusiveTotal, type DeductionLineInput } from '@/lib/bill-tracking/gst';
 import { formatINR, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { formatRate, retentionLineRate } from '@/lib/bill-tracking/retention';
-import type { BillDeduction, DeductionTypeMaster, GstType } from '@/lib/bill-tracking/types';
+import type { BillDeduction, BillTrackingConfig, DeductionTypeMaster, GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
 
-import { Amount } from './bt-ui';
+import { useBt } from './bt-client';
+import { Amount, Notice } from './bt-ui';
 
 export interface DeductionRow {
   id: string;
@@ -111,17 +114,21 @@ export function patchDeductionRow(row: DeductionRow, patch: Partial<DeductionRow
   return next;
 }
 
+/** What a head's % is taken of, in a word: "taxable", "gross", or "the value" (the taxable without a value basis). */
+const baseWordOf = (type: Pick<DeductionTypeMaster, 'percentBase'>, hasValueBasis: boolean) =>
+  type.percentBase === 'gross' ? 'gross' : type.percentBase === 'value' && hasValueBasis ? 'the value' : 'taxable';
+
 /**
  * The retention slab a row counts in, in a few words — so whoever types 30% (or ₹30,000 on a
  * ₹1,00,000 taxable) sees it land in the 30% slab before saving. Null without `bases`, for other
  * heads, and for a row of ₹0 (it holds nothing). A line taken of the invoice plus its notes (a note
  * rule) is read against that base, so it always has a hint.
  */
-function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, bases?: { taxable: number; gross: number }, invoiceReference?: string): string | null {
+function retentionSlabNote(line: BillDeduction | undefined, type: DeductionTypeMaster, bases?: { taxable: number; gross: number; value?: number }, invoiceReference?: string): string | null {
   const ofInvoice = line?.invoiceBase !== undefined;
   if (!line || (!bases && !ofInvoice) || !isRetentionKind(type.kind) || line.amount === 0) return null;
-  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases?.taxable ?? 0, grossAmount: bases?.gross ?? 0 }, type);
-  const baseWord = ofInvoice ? `${invoiceReference ?? 'the invoice'} + its notes` : type.percentBase === 'gross' ? 'gross' : 'taxable';
+  const { rate, basis } = retentionLineRate(line, { taxableAmount: bases?.taxable ?? 0, grossAmount: bases?.gross ?? 0, valueBase: bases?.value }, type);
+  const baseWord = ofInvoice ? `${invoiceReference ?? 'the invoice'} + its notes` : baseWordOf(type, bases?.value !== undefined);
   if (rate === null) return basis === 'percent' ? 'a fixed amount (a rate must be above 0 and at most 100%)' : `a fixed amount (no clean rate of ${baseWord})`;
   return basis === 'percent' ? `counts as ${type.name} @ ${formatRate(rate)}%` : `reads as ${formatRate(rate)}% of ${baseWord} — counts in the ${formatRate(rate)}% slab`;
 }
@@ -138,6 +145,7 @@ export function DeductionEditor({
   emptyText = 'No deductions on this bill.',
   reference,
   bases,
+  hasValueBasis = false,
   invoiceBase,
 }: {
   rows: readonly DeductionRow[];
@@ -162,7 +170,9 @@ export function DeductionEditor({
    * bill's raised lines (once certified, its certified deductions count in the slabs instead, read
    * against the certified taxable and gross — `retentionSource`).
    */
-  bases?: { taxable: number; gross: number };
+  bases?: { taxable: number; gross: number; value?: number };
+  /** The bill has a value basis: "% of Value" rows say they are taken of the value (`value-basis.ts`). */
+  hasValueBasis?: boolean;
   /**
    * A debit note under a note rule: the heads it covers are taken of the invoice plus its notes
    * (`reference` names the invoice). Such a row says so, and can be taken of the note alone instead.
@@ -215,7 +225,8 @@ export function DeductionEditor({
           // Under a note rule: this head is taken of the invoice plus its notes, unless the row opts out.
           const covered = Boolean(invoiceBase?.deductionTypeIds.includes(row.deductionTypeId));
           const ofInvoice = computed?.invoiceBase !== undefined;
-          const baseName = type?.percentBase === 'gross' ? 'Gross' : 'Taxable';
+          const baseWord = type ? baseWordOf(type, hasValueBasis) : 'taxable';
+          const baseName = baseWord === 'the value' ? 'Value' : baseWord.charAt(0).toUpperCase() + baseWord.slice(1);
           // What the invoice and earlier notes already hold at this head and rate, taken off the line.
           const held = computed?.heldBefore ?? 0;
           // A blank rate box falls back to the head's rate — show the rate actually used, not 0.
@@ -411,5 +422,38 @@ export function GstPart({ label, rate, amount, typed, onRate, onAmount }: { labe
         className="ml-auto h-7 min-w-0 flex-1 rounded border border-input bg-white px-1 text-right text-sm"
       />
     </div>
+  );
+}
+
+/**
+ * Above the deductions of a bill or certification whose project has deduction settings of its own
+ * (Settings → Deduction types): which heads differ and how, so a figure that is not the usual one is
+ * expected. Nothing when the project uses the default.
+ */
+export function ProjectDeductionsNotice({ config, projectId, projectName }: { config: Pick<BillTrackingConfig, 'deductionTypes' | 'projectProfiles'>; projectId: string | null | undefined; projectName?: string }) {
+  const { can } = useBt();
+  const heads = projectDeductionChanges(config, projectId);
+  if (!projectId || !heads.length) return null;
+  return (
+    <Notice tone="amber" title={`${projectName || 'This project'} uses its own deduction settings`}>
+      <ul className="space-y-0.5 text-xs">
+        {heads.map((head) => (
+          <li key={head.deductionTypeId}>
+            <span className="font-medium">{head.name}</span>: {head.changes.map(deductionChangeWithDefault).join(', ')}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-xs">
+        Lines here follow these; every other head uses the default.
+        {can('Settings', 'View') ? (
+          <>
+            {' '}
+            <Link href={`/bill-tracking/settings?tab=deductions&project=${encodeURIComponent(projectId)}`} className="font-medium underline underline-offset-2">
+              See them in Settings
+            </Link>
+          </>
+        ) : null}
+      </p>
+    </Notice>
   );
 }

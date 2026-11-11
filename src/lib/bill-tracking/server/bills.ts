@@ -30,7 +30,9 @@ import { isNoteType } from '../certification.ts';
 import { actionBlocked, amountsLocked, isPastApproval, isRoleStep, moveTarget, nextStepAfter, stepDoers, stepLabel, workflowStep, type WorkflowActor, type WorkflowMove } from '../workflow.ts';
 import { computeDeductions, keepsIssuedLines, splitGst, suggestGst, totalFromComponents, type DeductionContext, type RegistrationSetup } from '../gst.ts';
 import { formatBillNumber } from '../defaults.ts';
+import { projectDeductionTypes } from '../deduction-types.ts';
 import { noteDeductionBase } from '../note-rules.ts';
+import { billValueBase, isAsIs, takesValueBasis, valueBasisProblem } from '../value-basis.ts';
 import { roundMoney, toPaise } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { BillInput, WorkflowAction } from '../schemas';
@@ -145,16 +147,25 @@ export function assertMonthOpen(context: BtContext, config: BillTrackingConfig, 
  * Deduction lines, recomputed from the bill's own figures with the configured formulas (a % of the
  * taxable or gross less other deductions; GST on GST-applicable deductions) — or, for the heads a note
  * rule covers on a debit note, from the invoice plus its notes (`invoiceBase`). The form's figures are
- * a preview only.
+ * a preview only. The heads are the bill's project's (`projectDeductionTypes`): the master, with any
+ * settings the project has of its own.
  */
-export function resolveDeductions(lines: BillInput['deductions'], config: BillTrackingConfig, context: { taxable: number; gross: number; gstType?: BillInput['gstType']; invoiceBase?: DeductionContext['invoiceBase'] }, existing: readonly BillDeduction[] = []): BillDeduction[] {
+export function resolveDeductions(
+  lines: BillInput['deductions'],
+  config: BillTrackingConfig,
+  projectId: string | null,
+  context: { taxable: number; gross: number; value?: number; gstType?: BillInput['gstType']; invoiceBase?: DeductionContext['invoiceBase'] },
+  existing: readonly BillDeduction[] = [],
+): BillDeduction[] {
+  const types = projectDeductionTypes(config, projectId);
   for (const line of lines) {
-    const type = config.deductionTypes.find((entry) => entry.id === line.deductionTypeId);
+    const type = types.find((entry) => entry.id === line.deductionTypeId);
     // A type retired after a bill used it stays valid on that bill; a new line needs an active type.
     const previously = existing.find((entry) => entry.id === line.id && entry.deductionTypeId === line.deductionTypeId);
-    if (!type || (!type.active && !previously)) throw new BtError(`Deduction type ${line.deductionTypeId} is not available.`);
+    if (!type) throw new BtError(`Deduction type ${line.deductionTypeId} is not available.`);
+    if (!type.active && !previously) throw new BtError(`${type.name} is switched off${config.deductionTypes.find((entry) => entry.id === type.id)?.active ? ' for this project' : ''} (Settings → Deduction types).`);
   }
-  return computeDeductions(lines, config.deductionTypes, { ...context, roundToRupee: config.settings.roundDeductionsToRupee }).map((line) => clean(line));
+  return computeDeductions(lines, types, { ...context, roundToRupee: config.settings.roundDeductionsToRupee }).map((line) => clean(line));
 }
 
 /** Due date from the project's (or client's, or the module's) credit days. */
@@ -300,6 +311,14 @@ export function composeBill({ context, input, config, project, client, existing,
   if (input.transactionType === 'debit_note' && figures.some((value) => value < 0)) {
     throw new BtError('A debit note carries positive figures: enter its taxable value and GST above zero. To reduce an invoice, raise a credit note.');
   }
+  // An invoice's value basis (`value-basis.ts`): its taxable must be the share of the value it says, and
+  // "% of Value" heads are taken of its V. Any other bill, or terms that change nothing, carry none.
+  const valueBasis = input.valueBasis && takesValueBasis(input.transactionType) && !isAsIs(input.valueBasis) ? clean({ ...input.valueBasis }) : undefined;
+  if (valueBasis) {
+    const problem = valueBasisProblem(valueBasis, input.taxableAmount);
+    if (problem) throw new BtError(problem);
+  }
+  const valueBase = valueBasis ? billValueBase({ taxableAmount: input.taxableAmount, valueBasis }) : undefined;
   const suggestion = suggestGst(gstSetup, { projectId: project.id, chosenRegistrationId: input.gstRegistrationId, clientGstin: client?.gstin });
   if (input.gstRegistrationId && !gstSetup?.registrations.some((entry) => entry.id === input.gstRegistrationId)) {
     throw new BtError('That GST registration is not in Expenses → GST registrations.');
@@ -328,7 +347,7 @@ export function composeBill({ context, input, config, project, client, existing,
         { id: existing?.id, transactionType: input.transactionType, billDate: input.billDate, createdAt: existing?.createdAt, taxableAmount: roundMoney(input.taxableAmount), gstAmount: gst.gstAmount },
         against,
         invoiceNotes,
-        config.deductionTypes,
+        projectDeductionTypes(config, project.id),
       )
     : undefined;
   // An edit that changes neither the lines nor the figures they are worked out from keeps the lines as
@@ -336,11 +355,11 @@ export function composeBill({ context, input, config, project, client, existing,
   // issued bill behind an unrelated edit (a remark, the stage, the owner).
   const keepLines =
     existing !== undefined &&
-    keepsIssuedLines(existing, { transactionType: input.transactionType, billDate: input.billDate, againstBillId: note.againstBillId, gstType: gst.gstType, taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount, cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount }, input.deductions);
+    keepsIssuedLines(existing, { transactionType: input.transactionType, billDate: input.billDate, againstBillId: note.againstBillId, gstType: gst.gstType, taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount, cgstAmount: gst.cgstAmount, sgstAmount: gst.sgstAmount, igstAmount: gst.igstAmount, valueBase }, input.deductions);
   const deductions =
     keepLines && existing
       ? (existing.deductions ?? []).map((line, index) => clean({ ...line, remarks: input.deductions[index].remarks, deductionDate: input.deductions[index].deductionDate }))
-      : resolveDeductions(input.deductions, config, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), gstType: gst.gstType, invoiceBase: noteBase }, existing?.deductions);
+      : resolveDeductions(input.deductions, config, project.id, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), value: valueBase, gstType: gst.gstType, invoiceBase: noteBase }, existing?.deductions);
   // Left out of the invoice's certification check only when the note bills the balance under its
   // rule — it carries lines taken of the invoice plus its notes. A note raised to match the client's
   // certification carries none, so it counts there like any other.
@@ -398,6 +417,9 @@ export function composeBill({ context, input, config, project, client, existing,
     billCategoryName: category?.name ?? existing?.billCategoryName,
     isRetentionBill,
     taxableAmount: roundMoney(input.taxableAmount),
+    // Always present (possibly undefined): `updateBill` rewrites the whole document, so a removed basis goes.
+    valueBasis,
+    valueBase,
     ...gst,
     gstRegistrationId: registration?.id,
     gstRegistrationLabel: registration ? registration.label || registration.stateName : undefined,

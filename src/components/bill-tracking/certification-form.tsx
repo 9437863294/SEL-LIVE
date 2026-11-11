@@ -30,7 +30,9 @@ import { grossAmount, netReceivable, totalDeduction } from '@/lib/bill-tracking/
 import { deductionsByType, raisedFigures, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { computeDeductions, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { withNoteFigures, type BaseBesidesNote } from '@/lib/bill-tracking/note-rules';
+import { certifiedValueBase, describeTerms, valueHeads } from '@/lib/bill-tracking/value-basis';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
@@ -38,7 +40,7 @@ import { cn } from '@/lib/utils';
 import { btFetch, useBtQuery, useLookups, useWorkflowActor } from './bt-client';
 import { certificationBlocked, certificationNotDue } from '@/lib/bill-tracking/workflow';
 import { Amount, BtError, BtLoading, FormField, FormSection, Notice, RupeeInput, Term, WorkflowStatusBadge, dateText, FIELD_ROW } from './bt-ui';
-import { DeductionEditor, deductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
+import { DeductionEditor, ProjectDeductionsNotice, deductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
 
 interface Detail {
   bill: Bill;
@@ -113,7 +115,7 @@ function fromRaised(bill: Bill, config: BillTrackingConfig, today: string, sugge
     legacyGstAmount: String(bill.gstAmount),
     // Same row ids as the bill's lines, so a deduction type retired since the bill was raised is
     // still accepted on the certification (the server allows a retired type on a line it knows).
-    deductions: rowsFromDeductions(bill.deductions ?? [], config.deductionTypes),
+    deductions: rowsFromDeductions(bill.deductions ?? [], projectDeductionTypes(config, bill.projectId)),
   };
 }
 
@@ -134,7 +136,7 @@ function fromCertification(bill: Bill, config: BillTrackingConfig): FormState {
     sgstAmount: str(certification.sgstAmount),
     igstAmount: str(certification.igstAmount),
     legacyGstAmount: String(certification.gstAmount),
-    deductions: rowsFromDeductions(certification.deductions ?? [], config.deductionTypes),
+    deductions: rowsFromDeductions(certification.deductions ?? [], projectDeductionTypes(config, bill.projectId)),
   };
 }
 
@@ -164,7 +166,9 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const back = useBackNavigation(`/bill-tracking/bills/${bill.id}?tab=certification`, { replace: true, fallbackLabel: 'Back to the bill' });
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
   const usedTypeIds = new Set([...(bill.deductions ?? []), ...(existing?.deductions ?? [])].map((line) => line.deductionTypeId));
-  const activeTypes = config.deductionTypes.filter((type) => type.active || usedTypeIds.has(type.id));
+  // The deduction heads as the bill’s project uses them: the master, with any settings of its own.
+  const deductionTypes = projectDeductionTypes(config, bill.projectId);
+  const activeTypes = deductionTypes.filter((type) => type.active || usedTypeIds.has(type.id));
 
   /* ── GST: type, rate and components, as on the bill form ─────────────── */
   const gstChoice = form.gstType;
@@ -205,7 +209,9 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const inputs = deductionInputs(form.deductions);
   // A balance debit note's rule heads are taken of the invoice plus its notes, with this note as certified — as the server will.
   const ruleBase = detail.certificationRuleBase ? withNoteFigures(detail.certificationRuleBase, { taxableAmount: taxable, gstAmount: gstTotal }) : undefined;
-  const lines = computeDeductions(inputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: ruleBase });
+  // "% of Value" heads take the bill's value basis as certified (`certifiedValueBase`), as the server will.
+  const valueBase = bill.valueBasis ? certifiedValueBase(bill, taxable) : undefined;
+  const lines = computeDeductions(inputs, deductionTypes, { taxable, gross, value: valueBase, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: ruleBase });
   const deducted = totalDeduction(lines);
   const net = netReceivable(gross, deducted, config.settings.roundNetToRupee);
   const raisedByType = useMemo(() => new Map([...deductionsByType(bill.deductions ?? []).entries()].map(([id, entry]) => [id, entry.amount])), [bill.deductions]);
@@ -484,19 +490,27 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             }
             bodyClassName="space-y-3 p-3 sm:p-4"
           >
+            <ProjectDeductionsNotice config={config} projectId={bill.projectId} projectName={bill.projectNameSnapshot} />
+            {bill.valueBasis && valueBase !== undefined ? (
+              <Notice tone="blue" title="Value basis">
+                {describeTerms(bill.valueBasis)}. “% of Value” deductions ({valueHeads(deductionTypes).map((type) => type.name).join(', ') || 'none set for this project'}) are taken of {formatINR(valueBase)}
+                {toPaise(taxable) === toPaise(bill.taxableAmount) ? ' — the bill’s value, as raised.' : ` — the certified taxable ÷ ${bill.valueBasis.taxableShare}% × ${bill.valueBasis.valueShare}%.`}
+              </Notice>
+            ) : null}
             <DeductionEditor
               rows={form.deductions}
               setRows={setRows}
               lines={lines}
               activeTypes={activeTypes}
-              deductionTypes={config.deductionTypes}
+              deductionTypes={deductionTypes}
               gstType={deductionGstType}
               totalDeduction={deducted}
               defaultGstRate={config.settings.defaultGstRate}
               emptyText="The client deducts nothing."
               reference={{ label: 'Raised', byType: raisedByType }}
               // Once certified, these are the retention lines the rate slabs hold, read against the certified figures.
-              bases={{ taxable, gross }}
+              bases={{ taxable, gross, value: valueBase }}
+              hasValueBasis={valueBase !== undefined}
               invoiceBase={ruleBase ? { deductionTypeIds: ruleBase.deductionTypeIds, reference: bill.againstBillRef ?? 'the invoice' } : undefined}
             />
           </FormSection>

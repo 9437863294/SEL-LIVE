@@ -74,6 +74,9 @@ import { categoryName } from '@/lib/bill-tracking/categories';
 import { receiptBlockReason, type CertificationComparison } from '@/lib/bill-tracking/certification';
 import { availableActions, certificationBlocked, certificationNotDue, isAfterPayment, isStepEnabled, stepLabel, stepPermissionText, waitingFor, workflowPath, type AvailableMove, type WorkflowMove } from '@/lib/bill-tracking/workflow';
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
+import { describeTerms, valueFigures } from '@/lib/bill-tracking/value-basis';
+import { ValueBuildUp } from './value-basis-ui';
 import { billRetentionSlabs, formatRate, releaseSlabKey, retentionSource, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
   AGEING_BASIS_LABELS,
@@ -582,7 +585,12 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
 
       <StatStrip
         items={[
-          { label: 'Taxable', value: <Amount value={bill.taxableAmount} signed /> },
+          {
+            label: 'Taxable',
+            value: <Amount value={bill.taxableAmount} signed />,
+            // A value basis: the share of the value billed (the build-up is on the Deductions tab).
+            hint: bill.valueBasis ? <span title={describeTerms(bill.valueBasis)}>{`${bill.valueBasis.taxableShare}% of ${formatINR(valueFigures(bill.valueBasis).discountedValue)}`}</span> : undefined,
+          },
           { label: 'GST', value: <Amount value={bill.gstAmount} signed />, hint: bill.gstType === 'cgst-sgst' ? 'CGST + SGST' : bill.gstType === 'igst' ? 'IGST' : undefined },
           { label: 'Gross', value: <Amount value={bill.grossAmount} signed /> },
           {
@@ -1206,14 +1214,19 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
   const certification = bill.certification;
   if (!certification) {
     return (
-      <Card className="border-slate-200 bg-white shadow-sm">
-        <CardContent className="p-0">
-          <DeductionLines lines={bill.deductions} emptyText="No deductions on this bill." />
-        </CardContent>
-      </Card>
+      <div className="space-y-3">
+        {bill.valueBasis ? <ValueBasisBuildUp bill={bill} /> : null}
+        <Card className="border-slate-200 bg-white shadow-sm">
+          <CardContent className="p-0">
+            <DeductionLines lines={bill.deductions} emptyText="No deductions on this bill." />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
   return (
+    <div className="space-y-3">
+    {bill.valueBasis ? <ValueBasisBuildUp bill={bill} /> : null}
     <Card className="border-slate-200 bg-white shadow-sm">
       <CardContent className="p-0">
         <Tabs value={shown} onValueChange={(next) => setShown(next === 'raised' ? 'raised' : 'certified')}>
@@ -1241,6 +1254,42 @@ function DeductionsTab({ bill }: { bill: BillRow }) {
             <DeductionLines lines={bill.deductions} emptyText="No deductions were raised on this bill." />
           </TabsContent>
         </Tabs>
+      </CardContent>
+    </Card>
+    </div>
+  );
+}
+
+/**
+ * An invoice's value basis as the invoice builds it up (`value-basis.ts`): the value of the work
+ * executed, the discount, what is held back, the taxable — and what "% of Value" deductions were
+ * taken of, as raised and (once certified) as certified.
+ */
+function ValueBasisBuildUp({ bill }: { bill: BillRow }) {
+  const basis = bill.valueBasis;
+  if (!basis) return null;
+  const raisedBase = bill.valueBase ?? valueFigures(basis).valueBase;
+  const certifiedBase = bill.certification?.valueBase;
+  return (
+    <Card className="border-slate-200 bg-white shadow-sm">
+      <CardContent className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+        <SectionHeader
+          descriptionAs="info"
+          as="h3"
+          title="Value basis"
+          description={`${describeTerms(basis)}${basis.ruleName ? ` — from rule “${basis.ruleName}”` : basis.ruleId ? ' — from a Settings rule' : ' — set on this bill'}. Deduction heads taken “% of Value” are worked out on the last figure.`}
+        />
+        <ValueBuildUp
+          terms={basis}
+          executedValue={basis.executedValue}
+          taxable={bill.taxableAmount}
+          valueBase={raisedBase}
+          footer={
+            certifiedBase !== undefined && toPaise(certifiedBase) !== toPaise(raisedBase) ? (
+              <p className="mt-0.5 text-xs text-emerald-900/80">As certified: {formatINR(certifiedBase)} — the certified taxable in proportion.</p>
+            ) : null
+          }
+        />
       </CardContent>
     </Card>
   );
@@ -1469,17 +1518,19 @@ function RetentionTab({ bill, releases, invoice, notes = [] }: { bill: BillRow; 
   const { config } = useLookups();
   const can = useBillCan(bill);
   const source = retentionSource(bill);
-  const slabs = billRetentionSlabs(source, config.deductionTypes, invoice);
+  // Read with the heads as this bill’s project uses them (a project may take a head on gross, say).
+  const deductionTypes = projectDeductionTypes(config, bill.projectId);
+  const slabs = billRetentionSlabs(source, deductionTypes, invoice);
   // An invoice also shows what its notes hold — a balance debit note's 20% and 10%, say (a note rule).
   const noteRows = notes.flatMap((note) =>
-    billRetentionSlabs({ deductions: note.deductions ?? [], taxableAmount: note.taxableAmount, grossAmount: note.grossAmount }, config.deductionTypes, source).map((entry) => ({ note, entry })),
+    billRetentionSlabs({ deductions: note.deductions ?? [], taxableAmount: note.taxableAmount, grossAmount: note.grossAmount }, deductionTypes, source).map((entry) => ({ note, entry })),
   );
   const notesHeld = sumMoney(noteRows.map((row) => row.entry.held));
   // Lines a note rule took of the invoice plus its notes are read against that, not this bill's own
   // figures — per head, since other heads (or a line taken of the note alone) keep the note's own base.
   const ofInvoicePlusNotes = (deductionTypeId: string) => source.deductions.some((line) => line.deductionTypeId === deductionTypeId && line.invoiceBase !== undefined);
   const slabList = slabs.map((entry) => entry.slab);
-  const typeOf = (id: string) => config.deductionTypes.find((type) => type.id === id);
+  const typeOf = (id: string) => deductionTypes.find((type) => type.id === id);
   const isRetentionBill = bill.isRetentionBill || bill.transactionType === 'retention_bill';
   const released = bill.releasesRetention;
   // The slab a release names: the matching row above, else its head and rate as recorded.
@@ -1493,10 +1544,12 @@ function RetentionTab({ bill, releases, invoice, notes = [] }: { bill: BillRow; 
     return release.rate === null ? 'Fixed amount' : `${formatRate(release.rate)}%`;
   };
   const basisTip = (entry: BillSlab) => {
-    const base = typeOf(entry.slab.deductionTypeId)?.percentBase === 'gross' ? 'gross' : 'taxable';
+    const percentBase = typeOf(entry.slab.deductionTypeId)?.percentBase;
+    const base = percentBase === 'gross' ? 'gross' : percentBase === 'value' && source.valueBase !== undefined ? 'value' : 'taxable';
+    const baseAmount = base === 'gross' ? source.grossAmount : base === 'value' ? (source.valueBase ?? source.taxableAmount) : source.taxableAmount;
     const fromAmount = ofInvoicePlusNotes(entry.slab.deductionTypeId)
       ? `Worked out from the amount: read against the invoice plus its notes this note’s deductions are taken of (a note rule, Settings → Note rules), and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`
-      : `Worked out from the amount: read against the ${bill.certification ? 'client’s certified' : 'bill’s'} ${base} of ${formatINR(base === 'gross' ? source.grossAmount : source.taxableAmount)} (${base === 'gross' ? 'this head is taken on gross' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
+      : `Worked out from the amount: read against the ${bill.certification ? 'client’s certified' : 'bill’s'} ${base} of ${formatINR(baseAmount)} (${base === 'gross' ? 'this head is taken on gross' : base === 'value' ? 'this head is taken “% of Value”, from the bill’s value basis' : 'gross only for a head taken on gross'}) and counted at a rate when it lands on a half-percent; anything else stays a fixed amount.`;
     const tips: Record<LineBasis, string> = {
       percent: 'The percentage typed on the deduction line (0, a negative or over 100 counts as a fixed amount).',
       amount: fromAmount,

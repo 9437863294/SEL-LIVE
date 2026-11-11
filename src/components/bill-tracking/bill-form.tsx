@@ -33,12 +33,14 @@ import { amountsLocked, stepLabel } from '@/lib/bill-tracking/workflow';
 import { categoryName, sortedCategories, subCategoriesFor } from '@/lib/bill-tracking/categories';
 import type { CertificationComparison, SuggestedNote } from '@/lib/bill-tracking/certification';
 import { computeDeductions, keepsIssuedLines, splitGst, suggestGst, totalFromComponents } from '@/lib/bill-tracking/gst';
-import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { formatINR, roundMoney, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
+import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
+import { VALUE_BASIS_AS_IS, billValueBase, isAsIs, takesValueBasis, taxableFromValue, termsProblem, valueBasisRuleFor, valueFromTaxable, valueHeads } from '@/lib/bill-tracking/value-basis';
 import { noteDeductionBase, type GroupNote } from '@/lib/bill-tracking/note-rules';
 import { formatRate } from '@/lib/bill-tracking/retention';
 import { GST_RATES } from '@/lib/statutory';
 import { cn } from '@/lib/utils';
-import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillDeduction, type BillTrackingConfig, type BillTransactionType, type GstType } from '@/lib/bill-tracking/types';
+import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillDeduction, type BillTrackingConfig, type BillTransactionType, type BillValueBasis, type GstType, type ValueBasisTerms } from '@/lib/bill-tracking/types';
 
 import { btFetch, useBt, useBtQuery, useLookups, type Lookups } from './bt-client';
 import { Amount, BtError, BtLoading, FormField, FormSection, Notice, RupeeInput, Term, dateText, type FieldWidth } from './bt-ui';
@@ -52,7 +54,8 @@ import { Amount, BtError, BtLoading, FormField, FormSection, Notice, RupeeInput,
 const FORM_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3';
 /** The amounts row: taxable, the GST components, total GST and gross — all on one line when there is room. */
 const AMOUNT_GRID = { 'cgst-sgst': 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5', igst: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', other: 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3' } as const;
-import { DeductionEditor, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
+import { DeductionEditor, ProjectDeductionsNotice, deductionInputs as toDeductionInputs, emptyDeductionRow, num, rowsFromDeductions, str, type DeductionRow } from './deduction-editor';
+import { ValueBasisPanel, type ValueBasisFields } from './value-basis-ui';
 import { listNames } from './note-rules-settings';
 
 /** `legacy` = a bill imported with a single GST figure, not yet split. */
@@ -83,6 +86,20 @@ interface FormState {
   categoryId: string;
   billTypeId: string;
   taxableAmount: string;
+  /**
+   * Invoice only: the value basis (`value-basis.ts`) — on, the value of the work executed, the
+   * discount, the share billed as taxable and the share "% of Value" heads take, as typed. A change of
+   * project, sub category or kind starts it from the rule covering the bill (`ruleId`).
+   */
+  basisOn: boolean;
+  basisExecuted: string;
+  basisDiscount: string;
+  basisTaxableShare: string;
+  basisValueShare: string;
+  basisRuleId: string;
+  basisRuleName: string;
+  /** Which was typed last: the value executed (the taxable follows it) or the taxable (the value follows). */
+  basisDriver: 'value' | 'taxable';
   /** '' = follow the suggestion. */
   gstType: GstChoice | '';
   gstRate: string;
@@ -144,6 +161,67 @@ interface CertifiedInvoice {
 
 const isNote = (type: BillTransactionType) => type === 'credit_note' || type === 'debit_note';
 
+type BasisFields = ValueBasisFields;
+
+/** A saved (or no) value basis as the form holds it. */
+const basisFields = (basis: BillValueBasis | undefined): BasisFields => ({
+  basisOn: Boolean(basis),
+  basisExecuted: str(basis?.executedValue),
+  basisDiscount: str(basis?.discountPercent ?? VALUE_BASIS_AS_IS.discountPercent),
+  basisTaxableShare: str(basis?.taxableShare ?? VALUE_BASIS_AS_IS.taxableShare),
+  basisValueShare: str(basis?.valueShare ?? VALUE_BASIS_AS_IS.valueShare),
+  basisRuleId: basis?.ruleId ?? '',
+  basisRuleName: basis?.ruleName ?? '',
+  basisDriver: 'taxable',
+});
+
+/** The terms as typed. */
+const basisTerms = (state: Pick<FormState, 'basisDiscount' | 'basisTaxableShare' | 'basisValueShare'>): ValueBasisTerms => ({
+  discountPercent: num(state.basisDiscount),
+  taxableShare: num(state.basisTaxableShare),
+  valueShare: num(state.basisValueShare),
+});
+
+/**
+ * Keeps the value executed and the taxable in step after either, or a term, changes: the one typed
+ * last stays and the other follows (`basisDriver`). Nothing moves while the terms do not hold.
+ */
+function syncBasis(state: FormState): FormState {
+  if (!state.basisOn) return state;
+  const terms = basisTerms(state);
+  if (termsProblem(terms)) return state;
+  if (state.basisDriver === 'value') {
+    const executed = num(state.basisExecuted);
+    return executed > 0 ? { ...state, taxableAmount: String(taxableFromValue(executed, terms)), gstManual: false } : state;
+  }
+  const taxable = num(state.taxableAmount);
+  return { ...state, basisExecuted: taxable > 0 ? String(valueFromTaxable(taxable, terms)) : '' };
+}
+
+/**
+ * After a change of project, sub category or kind (and on a new bill): the value basis of the rule
+ * covering the bill (`valueBasisRuleFor`), the value following the taxable already typed. No rule
+ * drops a basis that came from one; a basis set by hand stays while the bill is an invoice.
+ */
+function withBasisRule(state: FormState, config: BillTrackingConfig): FormState {
+  if (!takesValueBasis(state.transactionType)) return state.basisOn ? { ...state, ...basisFields(undefined) } : state;
+  const found = valueBasisRuleFor(config, state.projectId, state.billTypeId, state.transactionType);
+  if (!found) return state.basisRuleId ? { ...state, ...basisFields(undefined) } : state;
+  if (state.basisOn && state.basisRuleId === found.rule.id) return state;
+  const { rule } = found;
+  return syncBasis({
+    ...state,
+    basisOn: true,
+    basisDiscount: str(rule.discountPercent),
+    basisTaxableShare: str(rule.taxableShare),
+    basisValueShare: str(rule.valueShare),
+    basisRuleId: rule.id,
+    basisRuleName: rule.name,
+    // A value already typed keeps driving; otherwise the taxable typed (if any) gives the value.
+    basisDriver: state.basisOn && state.basisDriver === 'value' && num(state.basisExecuted) > 0 ? 'value' : 'taxable',
+  });
+}
+
 function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups, 'projects' | 'gstSetup'>): FormState {
   const project = lookups.projects.find((entry) => entry.id === bill.projectId);
   return {
@@ -170,6 +248,8 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     categoryId: config.billTypes.find((type) => type.id === bill.billTypeId)?.categoryId ?? bill.billCategory ?? '',
     billTypeId: bill.billTypeId ?? '',
     taxableAmount: String(bill.taxableAmount ?? ''),
+    // The basis as saved — never the rule's terms now, so an edit leaves the bill's figures as issued.
+    ...basisFields(bill.valueBasis),
     // A bill saved without a GST type keeps its single figure (none, for a non-GST row): never the
     // suggested type and rate, which would change it on a save that only meant to edit remarks.
     gstType: bill.gstType ?? 'legacy',
@@ -182,7 +262,7 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     sgstAmount: str(bill.sgstAmount),
     igstAmount: str(bill.igstAmount),
     legacyGstAmount: String(bill.gstAmount ?? 0),
-    deductions: rowsFromDeductions(bill.deductions ?? [], config.deductionTypes),
+    deductions: rowsFromDeductions(bill.deductions ?? [], projectDeductionTypes(config, bill.projectId)),
     targetWeek: bill.targetWeek ?? '',
     collectionOwnerId: bill.collectionOwnerId ?? '',
     currentStage: bill.currentStage ?? '',
@@ -270,7 +350,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const params = useSearchParams();
   const { toast } = useToast();
   const { config } = lookups;
-  const activeTypes = config.deductionTypes.filter((type) => type.active || existing?.deductions.some((line) => line.deductionTypeId === type.id));
 
   const [form, setForm] = useState<FormState>(() => {
     if (existing) return fromBill(existing, config, lookups);
@@ -296,6 +375,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           categoryId: '',
           billTypeId: '',
           taxableAmount: '',
+          ...basisFields(undefined),
           gstType: '',
           gstRate: String(config.settings.defaultGstRate),
           gstRegistrationId: '',
@@ -316,7 +396,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           taxableOrAdvance: '',
           changeReason: '',
         };
-    return prefill ? withSuggestedNote(blank, prefill.note, prefill.invoice, config) : blank;
+    return prefill ? withSuggestedNote(blank, prefill.note, prefill.invoice, config) : withBasisRule(blank, config);
   });
   /** Set when the figures came from a client certification — said so above the form. */
   const [matchedFrom, setMatchedFrom] = useState<string | null>(() => (prefill ? prefill.invoice.gstInvoiceNumber || prefill.invoice.billSerialNumber || 'the invoice' : null));
@@ -327,7 +407,14 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const [saveError, setSaveError] = useState<string | null>(null);
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }));
 
+  const withRuleBasis = (state: FormState) => withBasisRule(state, config);
+  /** A change of one basis field, the value executed and the taxable kept in step. */
+  const setBasis = (patch: Partial<BasisFields>) => setForm((current) => syncBasis({ ...current, ...patch }));
+
   const project = lookups.projects.find((entry) => entry.id === form.projectId);
+  // The deduction heads as this project uses them: the master, with any settings of the project’s own.
+  const deductionTypes = projectDeductionTypes(config, form.projectId);
+  const activeTypes = deductionTypes.filter((type) => type.active || existing?.deductions.some((line) => line.deductionTypeId === type.id));
   // A sub category already on the bill stays selectable on its own project even if since narrowed.
   const keepTypeFor = (projectId: string) => (existing && existing.projectId === projectId ? existing.billTypeId : undefined);
   const subCategories = subCategoriesFor(config.billTypes, form.categoryId, form.projectId, keepTypeFor(form.projectId));
@@ -337,7 +424,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const changeProject = (projectId: string) =>
     setForm((current) => {
       const next = lookups.projects.find((entry) => entry.id === projectId);
-      return {
+      return withRuleBasis({
         ...current,
         projectId,
         // The client and DGM office follow the project unless picked by hand; blank = the project's.
@@ -346,11 +433,23 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
         billTypeId: subCategoriesFor(config.billTypes, current.categoryId, projectId, keepTypeFor(projectId)).some((type) => type.id === current.billTypeId) ? current.billTypeId : '',
         againstBillId: '',
         adjustsNoteId: '',
-      };
+      });
     });
 
-  /* ── GST ──────────────────────────────────────────────────────────────── */
+  /* ── value basis (invoices) ───────────────────────────────────────────── */
   const taxable = num(form.taxableAmount);
+  const basisAllowed = takesValueBasis(form.transactionType);
+  const termsNow = basisTerms(form);
+  const termsWrong = termsProblem(termsNow);
+  const basisProblemText = form.basisOn && basisAllowed ? (termsWrong ? `Value basis: ${termsWrong}` : num(form.basisExecuted) > 0 ? null : 'Value basis: enter the value of the work executed (100%), or the taxable.') : null;
+  // What is sent and stored: terms that change nothing are no basis at all (the server drops them too).
+  const valueBasis: BillValueBasis | undefined =
+    form.basisOn && basisAllowed && !basisProblemText && !isAsIs(termsNow) ? { executedValue: roundMoney(num(form.basisExecuted)), ...termsNow, ruleId: form.basisRuleId || undefined, ruleName: form.basisRuleName || undefined } : undefined;
+  const valueBase = valueBasis ? billValueBase({ taxableAmount: taxable, valueBasis }) : undefined;
+  // The rule that covers this bill now — offered on a bill whose basis differs from it (an older bill).
+  const coveringRule = basisAllowed ? valueBasisRuleFor(config, form.projectId, form.billTypeId, form.transactionType) : undefined;
+
+  /* ── GST ──────────────────────────────────────────────────────────────── */
   const suggestion = suggestGst(lookups.gstSetup, { projectId: form.projectId || undefined, chosenRegistrationId: form.gstRegistrationId || undefined, clientGstin: client?.gstin });
   const gstChoice: GstChoice = form.gstType || suggestion.gstType;
   const rate = gstChoice === 'none' || gstChoice === 'legacy' ? 0 : num(form.gstRate);
@@ -402,7 +501,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   // GST on a deduction is split like the bill's own: IGST on an IGST bill, otherwise CGST + SGST.
   const deductionGstType: GstType = gstChoice === 'igst' ? 'igst' : 'cgst-sgst';
   // A debit note under a note rule takes the rule's heads of the invoice plus its notes, as the server will.
-  const noteBase = noteDeductionBase(config.settings.noteRules, { id: existing?.id, transactionType: form.transactionType, billDate: form.billDate, createdAt: existing?.createdAt, taxableAmount: taxable, gstAmount: gstTotal }, againstInvoice, againstInvoice?.notes ?? [], config.deductionTypes);
+  const noteBase = noteDeductionBase(config.settings.noteRules, { id: existing?.id, transactionType: form.transactionType, billDate: form.billDate, createdAt: existing?.createdAt, taxableAmount: taxable, gstAmount: gstTotal }, againstInvoice, againstInvoice?.notes ?? [], deductionTypes);
   // An edit that changes neither the lines nor the figures they were worked out on keeps them as issued,
   // as the server will (`keepsIssuedLines`) — so the preview shows what will actually be saved.
   const keepLines =
@@ -419,11 +518,12 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
         cgstAmount: components.cgstAmount,
         sgstAmount: components.sgstAmount,
         igstAmount: components.igstAmount,
+        valueBase,
       },
       deductionInputs,
     );
-  const deductionLines = keepLines && existing ? existing.deductions : computeDeductions(deductionInputs, config.deductionTypes, { taxable, gross, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: noteBase });
-  const ruleHeadNames = (noteBase?.deductionTypeIds ?? []).flatMap((id) => config.deductionTypes.find((type) => type.id === id)?.name ?? []);
+  const deductionLines = keepLines && existing ? existing.deductions : computeDeductions(deductionInputs, deductionTypes, { taxable, gross, value: valueBase, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: noteBase });
+  const ruleHeadNames = (noteBase?.deductionTypeIds ?? []).flatMap((id) => deductionTypes.find((type) => type.id === id)?.name ?? []);
   const ruleHeads = listNames(ruleHeadNames, Infinity) || 'Its deductions';
 
   // The rows are the deductions as raised. Once the client has certified the bill its certified
@@ -493,8 +593,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const billType = config.billTypes.find((type) => type.id === form.billTypeId);
   const isRetention = form.transactionType === 'retention_bill' || Boolean(billType?.isRetentionBill);
   const savedReleaseTypeId = existing?.releasesRetention?.deductionTypeId;
-  const retentionTypes = config.deductionTypes.filter((type) => isRetentionKind(type.kind) && (type.active || type.id === savedReleaseTypeId)).sort((a, b) => a.sequence - b.sequence);
-  const releaseType = config.deductionTypes.find((type) => type.id === form.releasesTypeId);
+  const retentionTypes = deductionTypes.filter((type) => isRetentionKind(type.kind) && (type.active || type.id === savedReleaseTypeId)).sort((a, b) => a.sequence - b.sequence);
+  const releaseType = deductionTypes.find((type) => type.id === form.releasesTypeId);
   // "30" or "30%"; blank = the head's fixed amounts.
   const releaseRate = form.releasesRate.trim() === '' ? null : Number(form.releasesRate.replace(/[%\s]/g, ''));
   const releaseRateInvalid = isRetention && Boolean(form.releasesTypeId) && releaseRate !== null && !(Number.isFinite(releaseRate) && releaseRate > 0 && releaseRate <= 100);
@@ -515,6 +615,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const locked = Boolean(existing && amountsLocked(existing, config.settings));
   const preview = {
     taxableAmount: taxable,
+    valueBasis,
     gstType: gstChoice === 'legacy' ? undefined : gstChoice,
     gstAmount: gstTotal,
     cgstAmount: gstChoice === 'cgst-sgst' ? components.cgstAmount : 0,
@@ -539,6 +640,10 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       setSaveError('The retention rate this bill releases must be above 0 and up to 100 — or blank for the head’s fixed amounts.');
       return;
     }
+    if (basisProblemText) {
+      setSaveError(basisProblemText);
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     const body = {
@@ -561,6 +666,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       description: form.description,
       billTypeId: form.billTypeId,
       taxableAmount: taxable,
+      valueBasis,
       gstType: gstChoice === 'legacy' ? undefined : gstChoice,
       gstPercent: gstChoice === 'legacy' ? undefined : rate,
       gstAmount: gstTotal,
@@ -685,7 +791,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 {field('Bill date *', <Input id="bill-date" type="date" required value={form.billDate} onChange={(event) => set('billDate', event.target.value)} />, derivedFy ? `FY ${derivedFy}` : undefined, 'bill-date', 'date')}
                 {field(
                   'Transaction type',
-                  <Select value={form.transactionType} onValueChange={(value) => setForm((current) => ({ ...current, transactionType: value as BillTransactionType, againstBillId: isNote(value as BillTransactionType) ? current.againstBillId : '' }))}>
+                  <Select value={form.transactionType} onValueChange={(value) => setForm((current) => withRuleBasis({ ...current, transactionType: value as BillTransactionType, againstBillId: isNote(value as BillTransactionType) ? current.againstBillId : '' }))}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -737,7 +843,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 )}
                 {field(
                   'Main category *',
-                  <Select value={form.categoryId} onValueChange={(value) => setForm((current) => ({ ...current, categoryId: value, billTypeId: '' }))}>
+                  <Select value={form.categoryId} onValueChange={(value) => setForm((current) => withRuleBasis({ ...current, categoryId: value, billTypeId: '' }))}>
                     <SelectTrigger aria-label="Main category">
                       <SelectValue placeholder="Choose main category" />
                     </SelectTrigger>
@@ -757,7 +863,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 )}
                 {field(
                   'Sub category *',
-                  <Select value={form.billTypeId} onValueChange={(value) => set('billTypeId', value)} disabled={!form.categoryId || !form.projectId}>
+                  <Select value={form.billTypeId} onValueChange={(value) => setForm((current) => withRuleBasis({ ...current, billTypeId: value }))} disabled={!form.categoryId || !form.projectId}>
                     <SelectTrigger aria-label="Sub category">
                       <SelectValue placeholder={!form.projectId ? 'Choose the project first' : !form.categoryId ? 'Choose the main category first' : subCategories.length ? 'Choose sub category' : 'None for this project'} />
                     </SelectTrigger>
@@ -983,13 +1089,30 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               </div>
               <p className="-mt-1 text-xs text-slate-500">{suggestion.reason}</p>
 
+              {basisAllowed ? (
+                <ValueBasisPanel
+                  fields={form}
+                  onChange={setBasis}
+                  onRemove={() => setForm((current) => ({ ...current, ...basisFields(undefined) }))}
+                  onApplyRule={() => setForm((current) => withBasisRule({ ...current, basisOn: false, basisRuleId: '' }, config))}
+                  onStart={() => setBasis({ basisOn: true, basisDiscount: '0', basisTaxableShare: '90', basisValueShare: '100', basisRuleId: '', basisRuleName: '', basisDriver: 'taxable' })}
+                  terms={termsNow}
+                  taxable={taxable}
+                  valueBase={valueBase}
+                  problem={basisProblemText}
+                  coveringRule={coveringRule}
+                  valueHeadNames={valueHeads(deductionTypes).map((type) => type.name)}
+                />
+              ) : null}
+
               <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
                 <div className={gstChoice === 'cgst-sgst' ? AMOUNT_GRID['cgst-sgst'] : gstChoice === 'igst' ? AMOUNT_GRID.igst : AMOUNT_GRID.other}>
                   {field(
                     <Term tip="Pre-GST value of the work or supply billed. Negative for a credit note.">Taxable amount *</Term>,
                     // A new taxable recomputes the GST components, as the certification form does: typed ones
                     // would otherwise stay at the old figure.
-                    <RupeeInput required aria-label="Taxable amount" value={form.taxableAmount} onChange={(value) => setForm((current) => ({ ...current, taxableAmount: value, gstManual: false }))} />,
+                    // With a value basis, the value executed follows a typed taxable.
+                    <RupeeInput required aria-label="Taxable amount" value={form.taxableAmount} onChange={(value) => setForm((current) => syncBasis({ ...current, taxableAmount: value, gstManual: false, basisDriver: 'taxable' }))} />,
                     form.transactionType === 'credit_note' && taxable > 0 ? (
                       <button
                         type="button"
@@ -1068,19 +1191,21 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                 The client’s certified deductions already apply to {againstReference ? `invoice ${againstReference}` : 'the invoice'} — this note adjusts only the taxable value and its GST. Add a deduction here only if the client deducts something on the note itself.
               </Notice>
             ) : null}
+            <ProjectDeductionsNotice config={config} projectId={form.projectId} projectName={project?.name} />
             <DeductionEditor
               rows={form.deductions}
               setRows={setDeductionRows}
               lines={deductionLines}
               activeTypes={activeTypes}
-              deductionTypes={config.deductionTypes}
+              deductionTypes={deductionTypes}
               gstType={deductionGstType}
               totalDeduction={totals.raisedTotalDeduction}
               defaultGstRate={config.settings.defaultGstRate}
               // No slab hint where it would mislead: a note follows its invoice's slabs, and a certified
               // bill's raised lines no longer count in the slabs (its certified ones do). A line a note
               // rule takes of the invoice plus its notes counts at its own rate, so it has a hint.
-              bases={note || certification ? undefined : { taxable, gross }}
+              bases={note || certification ? undefined : { taxable, gross, value: valueBase }}
+              hasValueBasis={valueBase !== undefined}
               invoiceBase={noteBase ? { deductionTypeIds: noteBase.deductionTypeIds, reference: againstReference ?? 'the invoice' } : undefined}
             />
           </FormSection>
