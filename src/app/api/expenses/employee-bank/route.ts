@@ -28,6 +28,7 @@ import {
 } from '@/lib/expenses-bank';
 import { isEmployeeMasterRecord, type EmployeeSensitiveDetail } from '@/lib/greythr';
 import { fetchEmployeeBankDetail, isGreytHRConfigured } from '@/lib/greythr-client';
+import { lookupBranchNames, normaliseIfsc } from '@/lib/ifsc-directory';
 
 /**
  * An employee's bank account, for an expense request that pays them.
@@ -273,6 +274,12 @@ async function bankFor(
   const merged = cleanBank(
     fillBlanks(fromGreytHR, fromStore, hasBank({ ...fromGreytHR, ...fromStore }) ? { accountHolderName: employee.name } : {}),
   );
+  // greytHR sends the branch as a bare code (207) — no use on a payment. Name it from the IFSC, or
+  // leave it blank for the person paying to fill in (see ifsc-directory.ts).
+  if (/^\d+$/.test(merged.branchName)) {
+    const ifsc = normaliseIfsc(merged.ifscCode);
+    merged.branchName = (ifsc && (await lookupBranchNames([ifsc]))[ifsc]) || '';
+  }
   if (!hasBank(merged)) {
     return {
       bank: null,

@@ -7,6 +7,7 @@ import {
   authenticateAccess,
 } from '@/lib/access-control-server';
 import { canViewEmployeeProfile, checkerFor, hasPermission } from '@/lib/access-control';
+import { lookupBranchNames } from '@/lib/ifsc-directory';
 import {
   buildCategoryIdMaps,
   buildOperationalDetail,
@@ -217,7 +218,10 @@ async function fetchLiveEmployee(
         pf: detail.pf,
         passport: detail.passport,
         visa: detail.visa,
-        labels,
+        labels: {
+          ...labels,
+          branchByIfsc: await lookupBranchNames([detail.bank?.branchCode, detail.identities?.BANKACCNO?.ifscCode]),
+        },
         syncedAt: new Date().toISOString(),
       })
     : null;

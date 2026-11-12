@@ -1538,6 +1538,23 @@ export interface BankExpense {
   payerName?: string;
   /** Receipts: the payer's `clients` id, when it was picked from the client list. */
   payerClientId?: string;
+  /** Bank charges: marks a Debit entered on Bank Charges (its `paymentMethod` is "Bank Charges"). */
+  entryKind?: "bankCharge";
+  /** Bank charges: RTGS, NEFT, Cheque book… (`Other` with `chargeName` typed in). */
+  chargeType?: string;
+  chargeName?: string;
+  /** Bank charges: the charge before GST and other levies; `amount` is the whole debit. */
+  chargeAmount?: number;
+  gstRate?: number;
+  gstAmount?: number;
+  /** Bank charges: "CGST + SGST" or "IGST", with the amounts split to match. */
+  gstSplit?: string;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  /** Bank charges: stamp duty, cess or any other levy debited with the charge. */
+  otherChargeAmount?: number;
+  otherChargeLabel?: string;
   createdAt: Timestamp;
 }
 

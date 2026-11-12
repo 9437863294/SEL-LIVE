@@ -194,6 +194,11 @@ export const GREYTHR_DETAIL_LOV_KEYS = [
   'lov::nationality',
   'lov::religion',
   'lov::bank',
+  // `qualDescription` on /qualifications (8 → "10TH", 10 → "+2"). Found 2026-11-12: the earlier
+  // probe asked for lov::qualification, ::degree, ::course… and every one is empty.
+  'lov::qualdescription',
+  // `countryOfOrigin` on /statutory/india (1 → "India").
+  'lov::country',
 ] as const;
 
 /* ------------------------------------------------------------------------------------------------
@@ -869,6 +874,13 @@ export interface BuildDetailInput {
     nationality?: Record<string, string>;
     religion?: Record<string, string>;
     bank?: Record<string, string>;
+    qualification?: Record<string, string>;
+    country?: Record<string, string>;
+    /**
+     * Canonical IFSC → branch name, looked up by the caller (`lookupBranchNames` in
+     * `ifsc-directory.ts`): greytHR sends `bankBranch` as a bare code and publishes no list for it.
+     */
+    branchByIfsc?: Record<string, string>;
   };
 }
 
@@ -947,17 +959,21 @@ export function buildOperationalDetail(input: BuildDetailInput): EmployeeOperati
         /*
           `qualDescription` is a numeric code, not a description.
 
-          greytHR sends `qualDescription: 8` / `10` / `5` — an id into a qualification master it
-          does not publish. `lov::qualification`, `lov::qualificationtype`, `lov::degree`,
-          `lov::course` and `lov::institute` were all probed against a live tenant and every one
-          answers 200 with an empty array, so there is nothing to look the code up in.
+          greytHR sends `qualDescription: 8` / `10` / `5` — an id into its qualification master,
+          which it publishes as `lov::qualdescription` (8 → "10TH", 10 → "+2"; 24 entries on this
+          tenant). `lov::qualification`, `lov::qualificationtype`, `lov::degree`, `lov::course`
+          and `lov::institute` all answer 200 with an empty array, which is why this once showed
+          the code.
 
-          Printed raw, the profile rendered a qualification called "8" above "Panchasakha High
-          School · 2012". Labelled, it reads as the unresolved code it is — the same fallback
-          `buildLeaveBalance` uses for a leave type with no name, and for the same reason: an id a
-          reader can go and look up beats a bare number that looks like a mistake.
+          A code the list does not hold still reads as the unresolved code it is ("Qualification
+          8") rather than a bare "8" — the same fallback `buildLeaveBalance` uses for a leave type
+          with no name.
         */
-        description: qualificationLabel(row.qualDescription) ?? text(row.qualArea) ?? '',
+        description:
+          input.labels?.qualification?.[String(row.qualDescription ?? '').trim()] ||
+          qualificationLabel(row.qualDescription) ||
+          text(row.qualArea) ||
+          '',
         level: text(row.qualLevel),
         institute: text(row.institute),
         university: text(row.university),
@@ -1056,7 +1072,7 @@ export function buildSensitiveDetail(input: BuildSensitiveInput): EmployeeSensit
           disabilityType: text(input.statutory.disabilityType),
           expatriate: flag(input.statutory.expatriate),
           residentialStatus: text(input.statutory.residentialStatus),
-          countryOfOrigin: text(input.statutory.countryOfOrigin),
+          countryOfOrigin: label(input.labels?.country, input.statutory.countryOfOrigin),
           isDirector: flag(input.statutory.isDirector),
         }
       : undefined,
@@ -1066,7 +1082,12 @@ export function buildSensitiveDetail(input: BuildSensitiveInput): EmployeeSensit
           accountNumber: text(input.bank.bankAccountNumber),
           accountType: text(input.bank.accountType),
           bankName: label(input.labels?.bank, input.bank.bankName),
-          bankBranch: text(input.bank.bankBranch),
+          // greytHR's `bankBranch` is a code (207) into a list it does not publish; the IFSC on the
+          // same record names the branch. A branch the caller could not name keeps the code.
+          bankBranch:
+            input.labels?.branchByIfsc?.[String(input.bank.branchCode ?? '').trim().toUpperCase()] ??
+            input.labels?.branchByIfsc?.[String(input.identities?.BANKACCNO?.ifscCode ?? '').trim().toUpperCase()] ??
+            text(input.bank.bankBranch),
           branchCode: text(input.bank.branchCode),
           nameAsPerBank: text(input.bank.nameAsPerBank),
           salaryPaymentMode: text(input.bank.salaryPaymentMode),
@@ -1706,6 +1727,8 @@ export function detailLabels(lov: GreytHRLovResponse | null | undefined) {
     nationality: asMap('lov::nationality'),
     religion: asMap('lov::religion'),
     bank: asMap('lov::bank'),
+    qualification: asMap('lov::qualdescription'),
+    country: asMap('lov::country'),
   };
 }
 
@@ -3351,9 +3374,8 @@ export const currentLeaveYear = (now: Date = new Date()): string => String(now.g
  * A qualification's display text, given greytHR's `qualDescription`.
  *
  * Returns the value unchanged when greytHR sent words, and `Qualification 8` when it sent a bare
- * code — which is what it sends on this tenant, with no list published that would name it. Exported
- * so the label is defined once and can be tested; see the note at the call site in
- * `buildOperationalDetail`.
+ * code that `lov::qualdescription` does not name (normally it does: 8 is "10TH"). Exported so the
+ * label is defined once and can be tested; see the note at the call site in `buildOperationalDetail`.
  */
 export function qualificationLabel(value: string | number | null | undefined): string | undefined {
   const text = String(value ?? '').trim();

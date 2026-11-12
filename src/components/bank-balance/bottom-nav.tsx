@@ -21,6 +21,7 @@ export default function BankBalanceBottomNav() {
     { href: '/bank-balance/expenses/new', label: 'New Payment', allowed: can('Add', 'Bank Balance.Expenses') },
     { href: '/bank-balance/receipts/new', label: 'New Receipt', allowed: can('Add', 'Bank Balance.Receipts') },
     { href: '/bank-balance/internal-transaction/new', label: 'New Transfer', allowed: can('Add', 'Bank Balance.Internal Transaction') },
+    { href: '/bank-balance/charges/new', label: 'Bank Charges', allowed: can('Add', 'Bank Balance.Expenses') },
   ].filter(entry => entry.allowed);
   const [newEntry, ...otherEntries] = entries;
 

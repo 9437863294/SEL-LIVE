@@ -63,6 +63,7 @@ import { db } from '@/lib/firebase';
 import { compactInr, dayKey, formatDay, formatInr, parseDay, txnDate } from '@/lib/bank-balance-ledger';
 import type { DateRangePreset } from '@/lib/date-range-presets';
 import { exportRowsToExcel } from '@/lib/report-excel';
+import { BANK_CHARGES_METHOD } from '@/lib/bank-balance-charges';
 import { requisitionHref, voucherHref } from '@/lib/requisition-progress';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -225,6 +226,24 @@ function ClearedChip({ day }: { day: string }) {
 }
 
 /** An entry dated after today: on the books, not yet through the bank. */
+/** A bank charge's GST, split as it was entered — for the accounts team claiming it back. */
+function ChargeGst({ entry }: { entry: BankExpense }) {
+  if (!entry.gstAmount) return <div className="text-muted-foreground">No GST</div>;
+  const split =
+    entry.gstSplit === 'IGST'
+      ? `IGST ${formatInr(entry.igstAmount ?? entry.gstAmount)}`
+      : entry.cgstAmount || entry.sgstAmount
+        ? `CGST ${formatInr(entry.cgstAmount ?? 0)} · SGST ${formatInr(entry.sgstAmount ?? 0)}`
+        : '';
+  return (
+    <div className="text-muted-foreground">
+      GST {formatInr(entry.gstAmount)}
+      {entry.gstRate ? ` (${entry.gstRate}%)` : ''}
+      {split ? ` · ${split}` : ''}
+    </div>
+  );
+}
+
 function PostDatedBadge() {
   return (
     <StatusBadge tone="info" className="shrink-0" title="Dated after today — not yet through the bank">
@@ -319,7 +338,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
       if (to && at > to) return false;
       if (bankFilter !== 'all' && entry.accountId !== bankFilter) return false;
       if (!term) return true;
-      return [entry.description, entry.paymentRequestRefNo, entry.utrNumber, entry.paymentRefNo, entry.voucherNo].some((value) =>
+      return [entry.description, entry.paymentRequestRefNo, entry.utrNumber, entry.paymentRefNo, entry.voucherNo, entry.paymentMethod].some((value) =>
         (value || '').toLowerCase().includes(term),
       );
     });
@@ -519,6 +538,15 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
         base['Instrument No.'] = entry.paymentRefNo || '';
         base['Voucher No.'] = entry.voucherNo || '';
         base['Cleared on'] = entry.clearedDate ? formatDay(entry.clearedDate) : '';
+        // A bank charge's parts, so the GST can be claimed from the workbook.
+        const charge = entry.entryKind === 'bankCharge';
+        base.Charge = charge ? entry.chargeAmount ?? '' : '';
+        base['GST %'] = charge ? entry.gstRate ?? '' : '';
+        base.GST = charge ? entry.gstAmount ?? '' : '';
+        base.CGST = charge ? entry.cgstAmount ?? '' : '';
+        base.SGST = charge ? entry.sgstAmount ?? '' : '';
+        base.IGST = charge ? entry.igstAmount ?? '' : '';
+        base['Other charges'] = charge ? entry.otherChargeAmount ?? '' : '';
       }
       base['Post-dated'] = isPostDated(entry) ? 'Yes' : '';
       base.Amount = amountOf(entry);
@@ -617,6 +645,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
           return (
             <div className="space-y-1 text-xs">
               {method && <div className="truncate">{method}</div>}
+              {entry.entryKind === 'bankCharge' && <ChargeGst entry={entry} />}
               {hasVoucher && (
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   {entry.bankPaymentId && <VoucherLink bankPaymentId={entry.bankPaymentId} voucherNo={entry.voucherNo} />}
@@ -692,12 +721,23 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
           backLabel="Back to dashboard"
           actions={
             canAdd ? (
-              <Button asChild>
-                <Link href={config.newHref}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  {config.newLabel}
-                </Link>
-              </Button>
+              <>
+                {/* What the bank debits on its own is a payment too, entered on its own form. */}
+                {kind === 'payment' && (
+                  <Button asChild variant="outline">
+                    <Link href="/bank-balance/charges/new">
+                      <Receipt className="mr-2 h-4 w-4" />
+                      Bank charges
+                    </Link>
+                  </Button>
+                )}
+                <Button asChild>
+                  <Link href={config.newHref}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {config.newLabel}
+                  </Link>
+                </Button>
+              </>
             ) : undefined
           }
         />
@@ -915,7 +955,7 @@ export function BankTransactionLog({ kind }: { kind: TransactionLogKind }) {
                                               <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
                                                 <span className="font-semibold uppercase tracking-wide text-foreground">{methodGroup.method}</span>
                                                 {methodGroup.instrumentNo && <span className="font-mono text-muted-foreground">{methodGroup.instrumentNo}</span>}
-                                                <span className="text-muted-foreground">· {plural(methodGroup.entries.length, 'payee')}</span>
+                                                <span className="text-muted-foreground">· {plural(methodGroup.entries.length, methodGroup.method === BANK_CHARGES_METHOD ? 'charge' : 'payee')}</span>
                                                 {methodGroup.vouchers.map((voucher, index) => (
                                                   <VoucherLink key={voucher.id} bankPaymentId={voucher.id} voucherNo={voucher.no} label={voucherNames[index]} />
                                                 ))}

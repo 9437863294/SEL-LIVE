@@ -11,6 +11,7 @@ import {
   Gauge,
   LayoutDashboard,
   LayoutGrid,
+  Receipt,
   Settings,
   Sigma,
   type LucideIcon,
@@ -60,6 +61,7 @@ export function useBankBalanceNav(): { items: BankBalanceNavItem[]; isLoading: b
     { href: '/bank-balance', label: 'Dashboard', icon: LayoutDashboard, group: 'Overview', color: 'text-violet-700', bg: 'bg-violet-50', allowed: true },
 
     { href: '/bank-balance/expenses', label: 'Payments', icon: ArrowDown, group: 'Entries', color: 'text-red-700', bg: 'bg-red-50', allowed: can('View', 'Bank Balance.Expenses') },
+    { href: '/bank-balance/charges/new', label: 'Bank Charges', icon: Receipt, group: 'Entries', color: 'text-orange-700', bg: 'bg-orange-50', allowed: can('Add', 'Bank Balance.Expenses') },
     { href: '/bank-balance/receipts', label: 'Receipts', icon: ArrowUp, group: 'Entries', color: 'text-green-700', bg: 'bg-green-50', allowed: can('View', 'Bank Balance.Receipts') },
     { href: '/bank-balance/internal-transaction', label: 'Transfers', icon: ArrowRightLeft, group: 'Entries', color: 'text-blue-700', bg: 'bg-blue-50', allowed: can('View', 'Bank Balance.Internal Transaction') || canViewReports },
     { href: '/bank-balance/cheques', label: 'Cheque Register', icon: BookOpenCheck, group: 'Entries', color: 'text-indigo-700', bg: 'bg-indigo-50', allowed: can('View', 'Bank Balance.Expenses') },

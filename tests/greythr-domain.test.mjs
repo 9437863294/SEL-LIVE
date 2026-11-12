@@ -1665,6 +1665,9 @@ const LIVE_LOV = {
   'lov::religion': [[1, 'HINDUISM'], [2, 'CHRISTIANITY']],
   'lov::nationality': [[1, 'Indian'], [2, 'Others']],
   'lov::bank': [[4, 'AXIS Bank'], [13, 'Bank of Baroda']],
+  // Verbatim from the live tenant, 2026-11-12.
+  'lov::qualdescription': [[10, '+2'], [8, '10TH'], [11, 'B.A'], [6, 'B.E'], [12, 'B.SC'], [3, 'B.Tech']],
+  'lov::country': [[1, 'India']],
 };
 
 test('GREYTHR_DETAIL_LOV_KEYS covers every list the detail endpoints answer in codes', () => {
@@ -1721,6 +1724,46 @@ test('buildOperationalDetail names a coded marital status when it can', () => {
   });
   assert.equal(named.maritalStatus, 'Married');
   assert.equal(named.bloodGroup, 'A +ve');
+});
+
+test('qualifications and country of origin are named from greytHR\'s own lists', () => {
+  // Employee 70: `qualDescription` 8 and 10, `countryOfOrigin` 1 — once shown as
+  // "Qualification 8", "Qualification 10" and "1".
+  const labels = detailLabels(LIVE_LOV);
+  const detail = buildOperationalDetail({
+    qualifications: [
+      { employeeId: 70, qualDescription: 8, institute: 'Panchasakha High School', qualCompletionYear: 2012 },
+      { employeeId: 70, qualDescription: 10, institute: 'Balanga Junior Collage', qualCompletionYear: 2014 },
+      { employeeId: 70, qualDescription: 99, institute: 'Not in the list' },
+    ],
+    labels,
+  });
+  assert.deepEqual(
+    detail.qualifications.map((row) => row.description),
+    ['10TH', '+2', 'Qualification 99'],
+    'a code the list does not hold keeps its labelled fallback',
+  );
+  const sensitive = buildSensitiveDetail({ employeeId: '70', statutory: { employeeId: 70, countryOfOrigin: 1, nationality: 1 }, labels });
+  assert.equal(sensitive.statutory.countryOfOrigin, 'India');
+  assert.equal(sensitive.statutory.nationality, 'Indian');
+});
+
+test('the bank branch is named from its IFSC when the caller could look it up', () => {
+  // Employee 70's bank record: `bankBranch: 207`, `branchCode: "FDRL0007777"` (the IFSC).
+  const bank = { employeeId: 70, bankName: 32, bankBranch: 207, branchCode: 'fdrl0007777 ', salaryPaymentMode: 2 };
+  const named = buildSensitiveDetail({ employeeId: '70', bank, labels: { branchByIfsc: { FDRL0007777: 'NEO BANKING - JUPITER, ERNAKULAM' } } });
+  assert.equal(named.bank.bankBranch, 'NEO BANKING - JUPITER, ERNAKULAM');
+  assert.equal(named.bank.branchCode, 'fdrl0007777', 'the IFSC itself is kept as sent');
+  // The IFSC can also sit on the bank-account identity instead.
+  const viaIdentity = buildSensitiveDetail({
+    employeeId: '70',
+    bank: { ...bank, branchCode: null },
+    identities: { BANKACCNO: { employeeId: 70, idType: 'BANKACCNO', documentNo: 'x', ifscCode: 'FDRL0007777' } },
+    labels: { branchByIfsc: { FDRL0007777: 'NEO BANKING - JUPITER, ERNAKULAM' } },
+  });
+  assert.equal(viaIdentity.bank.bankBranch, 'NEO BANKING - JUPITER, ERNAKULAM');
+  // No name to be had: the code greytHR sent, as before.
+  assert.equal(buildSensitiveDetail({ employeeId: '70', bank }).bank.bankBranch, '207');
 });
 
 test('buildOperationalDetail keeps the raw code when no label is available', () => {
@@ -2598,9 +2641,9 @@ test('isSinglePunchDay recognises an in with no out', () => {
  * ---------------------------------------------------------------------------------------------- */
 
 test('qualificationLabel labels a bare code rather than printing it', () => {
-  // greytHR sends `qualDescription: 8`, an id into a master it does not publish: lov::qualification,
-  // lov::qualificationtype, lov::degree, lov::course and lov::institute all answer 200 with [].
-  // Printed raw, the profile showed a qualification called "8".
+  // greytHR sends `qualDescription: 8`, an id into its qualification master. That master is
+  // `lov::qualdescription` (8 → "10TH"); this fallback is for a code it does not hold. Printed raw,
+  // the profile showed a qualification called "8".
   assert.equal(qualificationLabel(8), 'Qualification 8');
   assert.equal(qualificationLabel('10'), 'Qualification 10');
   // Words are left exactly as sent — a tenant that fills this in properly must not be relabelled.

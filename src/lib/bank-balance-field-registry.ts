@@ -25,7 +25,7 @@
 
 import { compareBy, type SASSortDirection, type SASSortField, type SASSortSetting } from './site-account-statement-sort-registry.ts';
 
-export type BBFormKey = 'payment' | 'receipt' | 'transfer' | 'account';
+export type BBFormKey = 'payment' | 'receipt' | 'transfer' | 'charge' | 'account';
 
 export interface BBFieldDef {
   key: string;
@@ -100,6 +100,20 @@ export const BB_FORM_REGISTRY: Record<BBFormKey, BBFormDef> = {
       { key: 'mode', defaultLabel: 'Mode', defaultRequired: false, hint: 'Internal, NEFT, RTGS, IMPS or Cheque. Always has a value while shown.' },
       { key: 'ref', defaultLabel: 'UTR / Ref no.', defaultRequired: false, followsForm: true, hint: 'Shown as "Cheque no." for a cheque.' },
       { key: 'narration', defaultLabel: 'Narration', defaultRequired: false, hint: 'Added to the description of both entries.' },
+    ],
+  },
+  charge: {
+    title: 'Bank Charges',
+    description: 'Charges the bank debits on its own (RTGS/NEFT, cheque books, alerts, fees), with GST and any other levy. Each is a payment out of the account.',
+    fields: [
+      { key: 'date', defaultLabel: 'Debit date', defaultRequired: true, locked: true },
+      { key: 'accountId', defaultLabel: 'Bank account', defaultRequired: true, locked: true },
+      { key: 'chargeType', defaultLabel: 'Charge type', defaultRequired: true, locked: true },
+      { key: 'amount', defaultLabel: 'Charge amount', defaultRequired: true, locked: true, hint: 'Before GST and other levies.' },
+      { key: 'gst', defaultLabel: 'GST', defaultRequired: false, hint: 'Rate, CGST + SGST or IGST, and the amount. Always has a value while shown; hidden records no GST.' },
+      { key: 'other', defaultLabel: 'Other charges', defaultRequired: false, hint: 'Stamp duty, cess or any other levy debited with the charge.' },
+      { key: 'ref', defaultLabel: 'UTR / Ref no.', defaultRequired: false, hint: 'The bank’s reference, or the transaction the charge was for.' },
+      { key: 'note', defaultLabel: 'Narration', defaultRequired: false, hint: 'Added to the description.' },
     ],
   },
   account: {

@@ -99,6 +99,7 @@ import {
   type SyncedEmployee,
 } from './greythr';
 import { assertNoProtectedFields, pickGreytHRFields } from './greythr-linking';
+import { lookupBranchNames } from './ifsc-directory';
 import { syncUserPermissions } from './access-permissions-server';
 import { bulkLink } from './greythr-link-service';
 import { fetchCurrentEmployeeRoster } from './greythr-live-roster';
@@ -522,7 +523,14 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
 
     /* ── Reconcile ── */
 
-    const labels = detailLabels(reference);
+    // Branch names for the IFSCs on file: greytHR sends the branch as a bare code (ifsc-directory.ts).
+    const branchByIfsc = detail.sensitiveFetched
+      ? await lookupBranchNames([
+          ...[...detail.bank.values()].map((row) => row?.branchCode),
+          ...[...detail.identities.values()].map((entry) => entry?.BANKACCNO?.ifscCode),
+        ])
+      : {};
+    const labels = { ...detailLabels(reference), branchByIfsc };
     const created = new Set<string>();
     const outcomes: SyncEmployeeOutcome[] = [];
     const employeeWrites: Array<{ id: string; record: SyncedEmployee & EmployeeOperationalDetail }> = [];

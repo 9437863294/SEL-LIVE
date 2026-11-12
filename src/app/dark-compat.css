@@ -487,6 +487,10 @@
   .dark :where(.bg-orange-50:not(.keep-light, .keep-light *)) {
     background-color: rgb(249 115 22 / 0.120);
   }
+  .dark :where(.hover\:bg-orange-50:not(.keep-light, .keep-light *)):hover,
+  .dark :where(.bg-orange-100:not(.keep-light, .keep-light *)) {
+    background-color: rgb(249 115 22 / 0.180);
+  }
   .dark :where(.bg-orange-50\/60:not(.keep-light, .keep-light *)) {
     background-color: rgb(249 115 22 / 0.072);
   }
@@ -498,9 +502,6 @@
   }
   .dark :where(.ring-orange-50:not(.keep-light, .keep-light *)) {
     --tw-ring-color: rgb(249 115 22 / 0.260);
-  }
-  .dark :where(.bg-orange-100:not(.keep-light, .keep-light *)) {
-    background-color: rgb(249 115 22 / 0.180);
   }
   .dark :where(.border-orange-100:not(.keep-light, .keep-light *)) {
     border-color: rgb(249 115 22 / 0.320);
@@ -549,6 +550,9 @@
   }
   .dark :where(.text-orange-600:not(.keep-light, .keep-light *):not([class*="bg-"][class*="-300"], [class*="bg-"][class*="-400"], [class*="bg-"][class*="-500"])) {
     color: rgb(251 146 60);
+  }
+  .dark :where(.hover\:text-orange-800:not(.keep-light, .keep-light *)):hover {
+    color: rgb(254 215 170);
   }
   .dark :where(.bg-amber-50:not(.keep-light, .keep-light *)) {
     background-color: rgb(245 158 11 / 0.120);
