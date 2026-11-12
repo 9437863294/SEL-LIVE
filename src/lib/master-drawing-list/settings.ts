@@ -59,6 +59,34 @@ export function resolveMasterData(stored: unknown): MasterData {
 
 export const activeNames = (values: MasterValue[]) => values.filter((value) => value.active).map((value) => value.name);
 export const allNames = (values: MasterValue[]) => values.map((value) => value.name);
+/** Scope and schedule names in their configured order — the order the register groups them in. */
+export const listOrder = (data: MasterData) => ({ scopes: allNames(data.scopes), schedules: allNames(data.schedules) });
+
+const FILLER_WORDS = new Set(['schedule', 'works', 'work', 'and', 'the', 'of', 'for']);
+const plainWords = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const distinctive = (text: string) =>
+  plainWords(text)
+    .split(' ')
+    .filter((word) => word && !FILLER_WORDS.has(word) && !/^(i{1,3}|iv|v|vi{0,3}|ix|x|\d+)$/.test(word))
+    .sort()
+    .join(' ');
+
+/**
+ * The configured name a typed value means: the same name ignoring case and punctuation
+ * ("Transmission line" → "Transmission Line"), else the one with the same distinctive words, fillers
+ * and schedule numerals aside ("Civil Works" → "Civil", "Supply" → "Schedule I Supply"). Null when
+ * none matches, or when two would.
+ */
+export function matchListName(names: readonly string[], value: string | null | undefined): string | null {
+  const text = (value ?? '').trim();
+  if (!text) return null;
+  const same = names.filter((name) => plainWords(name) === plainWords(text));
+  if (same.length === 1) return same[0];
+  const key = distinctive(text);
+  if (!key) return null;
+  const alike = names.filter((name) => distinctive(name) === key);
+  return alike.length === 1 ? alike[0] : null;
+}
 
 /** Why a list cannot be saved, or null: a name each, no repeats, at least one value switched on. */
 export function masterValuesError(kind: MasterKind, values: MasterValue[]): string | null {

@@ -2,12 +2,12 @@
 
 /**
  * Pending Tasks — Project Management's MDL queue on its own: every item not yet approved, in the
- * register's groups (Schedule › Scope › Group, where PM groups by purchase order), overdue first
+ * register's groups (Scope › Schedule › Group, where PM groups by purchase order), overdue first
  * then by planned end date, with its sub-drawings beneath. Update opens the Drawing Details dialog.
  */
 
-import { Fragment, useMemo, useState, type KeyboardEvent } from 'react';
-import { CheckCircle2, ChevronRight, Layers, ListTodo } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CheckCircle2, ListTodo } from 'lucide-react';
 
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { TableCard } from '@/components/shared/table-card';
@@ -15,9 +15,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cycleAgeDays, formatMdlDate, isApproved, isOverdue, outlineNo, rollup, type DrawingItem, type Rollup, type SubDrawing } from '@/lib/master-drawing-list/drawings';
-import { courtCounts, groupItems, groupTitle, inCourt, pendingItems, type CourtFilter, type RegisterGroup } from '@/lib/master-drawing-list/register';
+import { courtCounts, groupItems, inCourt, pendingItems, type CourtFilter } from '@/lib/master-drawing-list/register';
+import { listOrder } from '@/lib/master-drawing-list/settings';
 import { cn } from '@/lib/utils';
 
+import { TreeButtons, TreeStrips, TreeTableRows, useGroupTree } from './group-tree';
+import { useMdlSettings } from './mdl-client';
 import { CourtBadge, CourtChips, MdlEmpty, MdlStatus } from './mdl-ui';
 
 type PendingCardRow = { id: string; item: DrawingItem; rollup: Rollup; outline: number[] };
@@ -26,31 +29,17 @@ type PendingSubCardRow = { id: string; item: DrawingItem; sub: SubDrawing; outli
 const NESTED_CARD_CLASS = 'border-border bg-muted/30 p-2.5 shadow-none';
 const COLUMN_COUNT = 10;
 
-const onStripKey = (event: KeyboardEvent, action: () => void) => {
-  if (event.target !== event.currentTarget) return;
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    action();
-  }
-};
-
 const CycleAge = ({ days }: { days: number | null }) => (days != null ? <span className={days > 30 ? 'font-medium text-amber-600' : ''}>{days}d</span> : <>—</>);
 
 export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; today: string; onSelect: (item: DrawingItem, sub: SubDrawing | null) => void }) {
   const [court, setCourt] = useState<CourtFilter | null>(null);
   const open = useMemo(() => pendingItems(items, today), [items, today]);
   const counts = useMemo(() => courtCounts(open, today), [open, today]);
-  const groups = useMemo(() => groupItems(court ? open.filter((item) => inCourt(item, court, today)) : open), [open, court, today]);
+  const { masterData } = useMdlSettings();
+  const order = useMemo(() => listOrder(masterData), [masterData]);
+  const groups = useMemo(() => groupItems(court ? open.filter((item) => inCourt(item, court, today)) : open, order), [open, court, today, order]);
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const allGroupKeys = groups.map((group) => group.key);
-  const toggleGroup = (key: string) =>
-    setExpandedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const strips = useGroupTree(groups);
 
   /** Outstanding drawings and how many are already past their planned end date. */
   const groupStats = (rows: DrawingItem[]) => {
@@ -153,24 +142,14 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
       }),
     ]);
 
-  const heading = (group: RegisterGroup<DrawingItem>, groupIndex: number, isOpen: boolean) => {
-    const { outstanding, overdue } = groupStats(group.items);
+  /** A strip's figures: outstanding drawings, and how many are past their planned end date. */
+  const pendingAside = (rows: DrawingItem[]) => {
+    const { outstanding, overdue } = groupStats(rows);
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <ChevronRight aria-hidden className={cn('h-4 w-4 shrink-0 transition-transform', isOpen && 'rotate-90')} />
-        <span className="text-xs font-medium tabular-nums text-muted-foreground">{outlineNo(groupIndex)}.</span>
-        <Layers className="h-4 w-4 shrink-0 text-sky-600" />
-        <span className="font-semibold">{groupTitle(group)}</span>
-        {group.group && (
-          <span className="text-sm text-muted-foreground">
-            {group.schedule} · {group.scope}
-          </span>
-        )}
-        <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-          {outstanding} outstanding
-          {overdue > 0 && <MdlStatus status="Overdue">{overdue} overdue</MdlStatus>}
-        </span>
-      </div>
+      <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+        {outstanding} outstanding
+        {overdue > 0 && <MdlStatus status="Overdue">{overdue} overdue</MdlStatus>}
+      </span>
     );
   };
 
@@ -270,18 +249,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
       count={total}
       noun="item"
       toolbar={<CourtChips counts={counts} total={open.length} value={court} onChange={setCourt} filters={['sel', 'client', 'not_started', 'overdue']} />}
-      actions={
-        groups.length ? (
-          <>
-            <Button variant="ghost" size="sm" className="h-9 px-2 text-xs sm:h-7" onClick={() => setExpandedGroups(new Set(allGroupKeys))} disabled={allGroupKeys.every((key) => expandedGroups.has(key))}>
-              Expand all
-            </Button>
-            <Button variant="ghost" size="sm" className="h-9 px-2 text-xs sm:h-7" onClick={() => setExpandedGroups(new Set())} disabled={expandedGroups.size === 0}>
-              Collapse all
-            </Button>
-          </>
-        ) : undefined
-      }
+      actions={groups.length ? <TreeButtons state={strips} /> : undefined}
     >
       {!groups.length ? (
         <MdlEmpty title={court ? 'Nothing under this filter' : 'Nothing pending'} description={court ? 'Choose All to see every open drawing.' : 'Every drawing in this list is approved.'} />
@@ -303,32 +271,10 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
               </TableRow>
             </TableHeader>
             <TableBody>
-              {groups.map((group, groupIndex) => {
-                const isOpen = expandedGroups.has(group.key);
-                return (
-                  <Fragment key={group.key}>
-                    <TableRow className={cn('cursor-pointer bg-muted/40', isOpen && 'border-b-0')} onClick={() => toggleGroup(group.key)}>
-                      <TableCell colSpan={COLUMN_COUNT}>{heading(group, groupIndex, isOpen)}</TableCell>
-                    </TableRow>
-                    {isOpen ? rowsOf(group.items, [groupIndex]) : null}
-                  </Fragment>
-                );
-              })}
+              <TreeTableRows state={strips} aside={pendingAside} columnCount={COLUMN_COUNT} rows={(group, index) => rowsOf(group.items, [index])} />
             </TableBody>
           </Table>
-          <div className="divide-y sm:hidden">
-            {groups.map((group, groupIndex) => {
-              const isOpen = expandedGroups.has(group.key);
-              return (
-                <div key={group.key}>
-                  <div role="button" tabIndex={0} aria-expanded={isOpen} onClick={() => toggleGroup(group.key)} onKeyDown={(event) => onStripKey(event, () => toggleGroup(group.key))} className="cursor-pointer bg-muted/40 px-3 py-3">
-                    {heading(group, groupIndex, isOpen)}
-                  </div>
-                  {isOpen && <div className="border-t bg-muted/30 p-2.5">{phoneCards(group.items, [groupIndex])}</div>}
-                </div>
-              );
-            })}
-          </div>
+          <TreeStrips state={strips} aside={pendingAside} cards={(group, index) => phoneCards(group.items, [index])} />
         </>
       )}
     </TableCard>

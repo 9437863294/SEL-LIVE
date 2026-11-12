@@ -7,8 +7,9 @@
  * file), the approve date, the overall status and a remark. A new sub-drawing is just named here;
  * its rounds are filled in later from the same dialog.
  *
- * Unlike Project Management's, nothing here comes from a BOQ item, a purchase order or a vendor:
- * the item's description and group are edited here too.
+ * As in Project Management's, what the item is — its description, group, scope and schedule — is
+ * shown here but not edited: recording a submission or a status never changes it. The register's
+ * Edit item details does that (`EditItemDialog`).
  */
 
 import { useMemo, useState } from 'react';
@@ -89,8 +90,6 @@ function formFor(target: DrawingTarget): DrawingForm {
   return {
     title: target.sub?.title ?? '',
     assignedToId: target.sub?.assignedToId ?? '',
-    description: target.item.description,
-    group: target.item.group ?? '',
     docNo: source.docNo ?? '',
     drawingNo: source.drawingNo ?? '',
     plannedStartDate: source.plannedStartDate ?? '',
@@ -215,30 +214,25 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
 
       <div className={cn(DIALOG.body, 'grid grid-cols-1 content-start gap-4 space-y-0 py-2')}>
         {!sub && (
-          <div className="grid grid-cols-1 gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-3">
-            <div className={cn('space-y-2', fs.group.visible ? 'sm:col-span-2' : 'sm:col-span-3')}>
-              <Label htmlFor="item-description">
-                <Mark setting={fs.description} />
-              </Label>
-              <Textarea id="item-description" rows={2} value={form.description} onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))} />
-              {!fs.group.visible && (
-                <p className="text-[11px] text-muted-foreground">
-                  {item.schedule} · {item.scope}
-                </p>
-              )}
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-2 rounded-lg border bg-muted/30 p-3 text-sm sm:grid-cols-3">
+            <div className={cn('min-w-0', fs.group.visible ? 'sm:col-span-2' : 'sm:col-span-3')}>
+              <dt className="text-xs text-muted-foreground">{fs.description.label}</dt>
+              <dd className="whitespace-pre-line break-words font-medium">{item.description || '—'}</dd>
             </div>
             {fs.group.visible && (
-              <div className="space-y-2">
-                <Label htmlFor="item-group">
-                  <Mark setting={fs.group} />
-                </Label>
-                <Input id="item-group" value={form.group} onChange={(e) => setForm((c) => ({ ...c, group: e.target.value }))} />
-                <p className="text-[11px] text-muted-foreground">
-                  {item.schedule} · {item.scope}
-                </p>
+              <div className="min-w-0">
+                <dt className="text-xs text-muted-foreground">{fs.group.label}</dt>
+                <dd className={cn('break-words', !item.group && 'italic text-muted-foreground')}>{item.group || 'Without a group'}</dd>
               </div>
             )}
-          </div>
+            <div className="min-w-0 sm:col-span-3">
+              <dt className="sr-only">Scope and schedule</dt>
+              <dd className="text-[11px] text-muted-foreground">
+                {item.scope} › {item.schedule}
+                {canEdit ? ' · to change the item itself, use Edit item details on the register' : ''}
+              </dd>
+            </div>
+          </dl>
         )}
 
         {sub && (

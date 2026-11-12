@@ -1,14 +1,14 @@
 'use client';
 
 /**
- * Register — Project Management's MDL register on its own: collapsible groups (Schedule › Scope ›
- * Group, where PM groups by purchase order), an item row per drawing item with its sub-drawings
- * nested beneath, and the same columns, actions and phone cards. A filter bar narrows it; any
- * filter opens every group that still has rows.
+ * Register — Project Management's MDL register on its own: collapsible Scope › Schedule › Group
+ * strips (where PM groups by purchase order), an item row per drawing item with its sub-drawings
+ * nested beneath, and the same columns, actions and phone cards. Scope and schedule strips start
+ * open and groups closed. A filter bar narrows it; any filter opens everything that still has rows.
  */
 
-import { Fragment, useMemo, useState, type KeyboardEvent } from 'react';
-import { CheckCircle2, ChevronRight, Layers, Paperclip, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CheckCircle2, ChevronRight, FilePenLine, Layers, Paperclip, Pencil, Plus, Trash2 } from 'lucide-react';
 
 import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { FilterBar } from '@/components/shared/filter-bar';
@@ -33,10 +33,11 @@ import {
   type Rollup,
   type SubDrawing,
 } from '@/lib/master-drawing-list/drawings';
-import { courtCounts, filterItems, groupItems, groupTitle, isCourtFilter, isOverallStatus, isSchedule, isScope, type RegisterGroup } from '@/lib/master-drawing-list/register';
-import { allNames } from '@/lib/master-drawing-list/settings';
+import { courtCounts, filterItems, groupItems, isCourtFilter, isOverallStatus, isSchedule, isScope } from '@/lib/master-drawing-list/register';
+import { allNames, listOrder } from '@/lib/master-drawing-list/settings';
 import { cn } from '@/lib/utils';
 
+import { TreeButtons, TreeStrips, TreeTableRows, plural, useGroupTree } from './group-tree';
 import { useMdlSettings } from './mdl-client';
 import { CourtBadge, CourtChips, MdlEmpty, MdlStatus } from './mdl-ui';
 
@@ -45,7 +46,10 @@ export interface RegisterActions {
   canEdit: boolean;
   canDelete: boolean;
   userId: string | undefined;
+  /** Drawing Details: the drawing's numbers, plan, rounds and status. */
   onEdit: (item: DrawingItem, sub: SubDrawing | null) => void;
+  /** Edit item details: the description and group. */
+  onEditDetails: (item: DrawingItem) => void;
   onAddSub: (item: DrawingItem) => void;
   onRemoveSub: (item: DrawingItem, sub: SubDrawing) => void;
   onDelete: (item: DrawingItem) => void;
@@ -62,15 +66,6 @@ export interface RegisterFilterState {
 }
 
 const NESTED_CARD_CLASS = 'border-border bg-muted/30 p-2.5 shadow-none';
-
-/** Enter/Space on a `role="button"` strip — but not when the key was meant for a link inside it. */
-const onStripKey = (event: KeyboardEvent, action: () => void) => {
-  if (event.target !== event.currentTarget) return;
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    action();
-  }
-};
 
 function RevisionBadge({ revision }: { revision: DrawingRevision | null }) {
   if (!revision) return <>—</>;
@@ -112,9 +107,9 @@ const COLUMN_COUNT = 16;
 
 export function RegisterView({ items, today, filters, actions }: { items: DrawingItem[]; today: string; filters: RegisterFilterState; actions: RegisterActions }) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState(filters.q);
   const settings = useMdlSettings();
+  const order = useMemo(() => listOrder(settings.masterData), [settings.masterData]);
 
   const active = {
     schedule: isSchedule(filters.schedule) ? filters.schedule : null,
@@ -125,19 +120,16 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
   };
   const filtering = Boolean(active.schedule || active.scope || active.status || active.court || search.trim());
   const shown = useMemo(() => filterItems(items, active, today), [items, active.schedule, active.scope, active.status, active.court, active.q, today]); // eslint-disable-line react-hooks/exhaustive-deps
-  const groups = useMemo(() => groupItems(shown), [shown]);
-  const allGroupKeys = groups.map((group) => group.key);
-  const isGroupOpen = (key: string) => filtering || expandedGroups.has(key);
+  const groups = useMemo(() => groupItems(shown, order), [shown, order]);
+  const strips = useGroupTree(groups, filtering);
 
-  const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) =>
-    set((current) => {
+  const toggleExpanded = (id: string) =>
+    setExpandedItems((current) => {
       const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-  const toggleExpanded = (id: string) => toggle(setExpandedItems, id);
-  const toggleGroup = (key: string) => toggle(setExpandedGroups, key);
 
   const registerHead = (
     <TableHeader>
@@ -157,7 +149,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
         <TableHead>Approve Date</TableHead>
         <TableHead>Status</TableHead>
         <TableHead>Remark</TableHead>
-        <TableHead className="w-24" />
+        <TableHead className="w-32" />
       </TableRow>
     </TableHeader>
   );
@@ -227,9 +219,14 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
           </TableCell>
           <TableCell onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center">
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onEdit(item, null)} disabled={!actions.canEdit} aria-label={`Edit ${item.description}`}>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onEdit(item, null)} disabled={!actions.canEdit} aria-label={`Update the drawing for ${item.description}`} title="Update drawing — rounds and status">
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
+              {actions.canEdit && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onEditDetails(item)} aria-label={`Edit the details of ${item.description}`} title="Edit item details — description and group">
+                  <FilePenLine className="h-3.5 w-3.5" />
+                </Button>
+              )}
               {actions.canEdit && (
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onAddSub(item)} aria-label={`Add a sub-drawing to ${item.description}`} title="Add sub-drawing">
                   <Plus className="h-3.5 w-3.5" />
@@ -311,36 +308,21 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
       ];
     });
 
-  /** A group's heading: outline number, title, its schedule and scope, items and how many drawings are approved. */
-  const groupHeading = (group: RegisterGroup<DrawingItem>, groupIndex: number, isOpen: boolean) => {
-    const summary = summariseItems(group.items);
+  /** How many of the rows' drawings are approved, as a bar and a count. */
+  const approvedBar = (rows: DrawingItem[]) => {
+    const summary = summariseItems(rows);
     const approvedPct = summary.drawings ? Math.round((summary.approved / summary.drawings) * 100) : 0;
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <ChevronRight aria-hidden className={cn('h-4 w-4 shrink-0 transition-transform', isOpen && 'rotate-90')} />
-        <span className="text-xs font-medium tabular-nums text-muted-foreground">{outlineNo(groupIndex)}.</span>
-        <Layers className="h-4 w-4 shrink-0 text-sky-600" />
-        <span className="font-semibold">{groupTitle(group)}</span>
-        {group.group && (
-          <span className="text-sm text-muted-foreground">
-            {group.schedule} · {group.scope}
-          </span>
-        )}
-        <span className="text-xs text-muted-foreground">
-          {group.items.length} item{group.items.length === 1 ? '' : 's'}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${summary.approved} of ${summary.drawings} drawings approved`}>
-            <div className="h-full bg-emerald-500" style={{ width: `${approvedPct}%` }} />
-          </div>
-          <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
-            {summary.approved}/{summary.drawings} approved
-          </span>
+      <div className="ml-auto flex items-center gap-2">
+        <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-background" role="img" aria-label={`${summary.approved} of ${summary.drawings} drawings approved`}>
+          <div className="h-full bg-emerald-500" style={{ width: `${approvedPct}%` }} />
         </div>
+        <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+          {summary.approved}/{summary.drawings} approved
+        </span>
       </div>
     );
   };
-
   /* ── Phone: groups become tappable strips; an open group lists its items as cards, sub-drawings nested. */
   const cardColumns: ListColumn<CardRow>[] = [
     {
@@ -392,10 +374,15 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
                 </Button>
               </div>
             )}
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => actions.onEdit(item, null)} disabled={!actions.canEdit} aria-label={`Edit ${item.description}`}>
-                <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => actions.onEdit(item, null)} disabled={!actions.canEdit} aria-label={`Update the drawing for ${item.description}`}>
+                <Pencil className="mr-1.5 h-3.5 w-3.5" /> Update
               </Button>
+              {actions.canEdit && (
+                <Button variant="outline" size="sm" onClick={() => actions.onEditDetails(item)} aria-label={`Edit the details of ${item.description}`}>
+                  <FilePenLine className="mr-1.5 h-3.5 w-3.5" /> Details
+                </Button>
+              )}
               {actions.canEdit && (
                 <Button variant="outline" size="sm" onClick={() => actions.onAddSub(item)} aria-label={`Add a sub-drawing to ${item.description}`}>
                   <Plus className="mr-1.5 h-3.5 w-3.5" /> Sub-drawing
@@ -494,21 +481,10 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
     <TableCard
       description={
         <>
-          {groups.length} group{groups.length === 1 ? '' : 's'} · {shown.length} of {items.length} item{items.length === 1 ? '' : 's'}
+          {plural(strips.tree.length, 'scope')} · {plural(groups.length, 'group')} · {shown.length} of {plural(items.length, 'item')}
         </>
       }
-      actions={
-        filtering ? undefined : (
-          <>
-            <Button variant="ghost" size="sm" className="h-9 px-2 text-xs sm:h-7" onClick={() => setExpandedGroups(new Set(allGroupKeys))} disabled={allGroupKeys.every((key) => expandedGroups.has(key))}>
-              Expand all
-            </Button>
-            <Button variant="ghost" size="sm" className="h-9 px-2 text-xs sm:h-7" onClick={() => setExpandedGroups(new Set())} disabled={expandedGroups.size === 0}>
-              Collapse all
-            </Button>
-          </>
-        )
-      }
+      actions={filtering ? undefined : <TreeButtons state={strips} />}
       toolbar={
         <div className="space-y-3">
         <CourtChips counts={courtCounts(items, today)} total={items.length} value={active.court} onChange={(court) => filters.set({ court })} />
@@ -527,19 +503,6 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
             filters.set({ schedule: null, scope: null, status: null, court: null, q: null });
           }}
         >
-          <Select value={active.schedule ?? 'all'} onValueChange={(value) => filters.set({ schedule: value === 'all' ? null : value })}>
-            <SelectTrigger aria-label="Schedule" className="text-left">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All schedules</SelectItem>
-              {allNames(settings.masterData.schedules).map((value) => (
-                <SelectItem key={value} value={value}>
-                  {value}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Select value={active.scope ?? 'all'} onValueChange={(value) => filters.set({ scope: value === 'all' ? null : value })}>
             <SelectTrigger aria-label="Scope" className="text-left">
               <SelectValue />
@@ -547,6 +510,19 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
             <SelectContent>
               <SelectItem value="all">All scopes</SelectItem>
               {allNames(settings.masterData.scopes).map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={active.schedule ?? 'all'} onValueChange={(value) => filters.set({ schedule: value === 'all' ? null : value })}>
+            <SelectTrigger aria-label="Schedule" className="text-left">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All schedules</SelectItem>
+              {allNames(settings.masterData.schedules).map((value) => (
                 <SelectItem key={value} value={value}>
                   {value}
                 </SelectItem>
@@ -577,39 +553,10 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
           <Table containerClassName="hidden sm:block">
             {registerHead}
             <TableBody>
-              {groups.map((group, groupIndex) => {
-                const isOpen = isGroupOpen(group.key);
-                return (
-                  <Fragment key={group.key}>
-                    <TableRow className={cn('cursor-pointer bg-muted/40', isOpen && 'border-b-0')} onClick={() => !filtering && toggleGroup(group.key)}>
-                      <TableCell colSpan={COLUMN_COUNT}>{groupHeading(group, groupIndex, isOpen)}</TableCell>
-                    </TableRow>
-                    {isOpen ? itemRows(group.items, [groupIndex]) : null}
-                  </Fragment>
-                );
-              })}
+              <TreeTableRows state={strips} aside={approvedBar} columnCount={COLUMN_COUNT} rows={(group, index) => itemRows(group.items, [index])} />
             </TableBody>
           </Table>
-          <div className="divide-y sm:hidden">
-            {groups.map((group, groupIndex) => {
-              const isOpen = isGroupOpen(group.key);
-              return (
-                <div key={group.key}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isOpen}
-                    onClick={() => !filtering && toggleGroup(group.key)}
-                    onKeyDown={(event) => onStripKey(event, () => !filtering && toggleGroup(group.key))}
-                    className="cursor-pointer bg-muted/40 px-3 py-3"
-                  >
-                    {groupHeading(group, groupIndex, isOpen)}
-                  </div>
-                  {isOpen && <div className="border-t bg-muted/30 p-2.5">{phoneCards(group.items, [groupIndex])}</div>}
-                </div>
-              );
-            })}
-          </div>
+          <TreeStrips state={strips} aside={approvedBar} cards={(group, index) => phoneCards(group.items, [index])} />
         </>
       )}
     </TableCard>

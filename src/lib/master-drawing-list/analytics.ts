@@ -22,6 +22,8 @@ import {
   type DrawingItem,
   type DrawingUnit,
 } from './drawings.ts';
+import type { ExcelSheet } from '../report-excel.ts';
+import { groupItems, groupTitle, nestGroups, sheetName, type ListOrder } from './register.ts';
 
 export const AGE_BANDS = [
   { label: '0–15 d', max: 15 },
@@ -60,7 +62,6 @@ export interface DashboardStats {
   sCurve: { month: string; label: string; plannedSubmission: number; actualSubmission: number; plannedApproval: number; actualApproval: number }[];
   monthly: { month: string; label: string; submitted: number; comments: number; approved: number }[];
   outcomes: { round: string; underReview: number; approved: number; approvedWithComments: number; resubmission: number; rejected: number }[];
-  bySection: { key: string; total: number; approved: number; client: number; sel: number; notStarted: number }[];
   longestClient: UnitDays[];
   longestSel: UnitDays[];
   overdueList: UnitDays[];
@@ -108,7 +109,6 @@ export function dashboardStats(items: DrawingItem[], today: string, periods: { r
   const roundsToApproval: number[] = [];
   const horizon = addDays(today, 14);
   const outcomes = new Map<string, DashboardStats['outcomes'][number]>();
-  const sections = new Map<string, DashboardStats['bySection'][number]>();
   const plannedSub: string[] = [];
   const actualSub: string[] = [];
   const plannedApp: string[] = [];
@@ -125,14 +125,6 @@ export function dashboardStats(items: DrawingItem[], today: string, periods: { r
     const { record } = unit;
     const state = ballInCourt(record, today);
     courts[state.court] += 1;
-    const sectionKey = `${unit.item.schedule} › ${unit.item.scope}`;
-    const section = sections.get(sectionKey) ?? { key: sectionKey, total: 0, approved: 0, client: 0, sel: 0, notStarted: 0 };
-    section.total += 1;
-    if (state.court === 'closed') section.approved += 1;
-    if (state.court === 'client') section.client += 1;
-    if (state.court === 'sel') section.sel += 1;
-    if (state.court === 'not_started') section.notStarted += 1;
-    sections.set(sectionKey, section);
 
     if ((state.court === 'client' || state.court === 'sel') && state.days !== null && state.since) {
       const band = AGE_BANDS.findIndex((entry) => state.days! <= entry.max);
@@ -211,10 +203,133 @@ export function dashboardStats(items: DrawingItem[], today: string, periods: { r
     sCurve,
     monthly: activityMonths.map((month) => ({ month, label: monthLabel(month), ...(monthly.get(month) ?? { submitted: 0, comments: 0, approved: 0 }) })),
     outcomes: [...outcomes.values()].sort((a, b) => roundIndex(a.round) - roundIndex(b.round)).filter((entry) => REVISION_ROUNDS.includes(entry.round as (typeof REVISION_ROUNDS)[number])),
-    bySection: [...sections.values()],
     longestClient: longest(withClient),
     longestSel: longest(withSel),
     overdueList: longest(overdueList),
     upcoming: upcoming.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 10),
+  };
+}
+
+/* ── progress by scope, schedule and group ───────────────────────────────── */
+
+/** Deliverables under a scope, schedule or group, by where the ball is, and how many are overdue. */
+export interface Progress {
+  items: number;
+  drawings: number;
+  approved: number;
+  client: number;
+  sel: number;
+  notStarted: number;
+  /** Planned end date passed, not approved. */
+  overdue: number;
+  /** Approved, as a share of the drawings. */
+  pct: number;
+}
+
+export function progressOf(items: DrawingItem[], today: string): Progress {
+  const progress: Progress = { items: items.length, drawings: 0, approved: 0, client: 0, sel: 0, notStarted: 0, overdue: 0, pct: 0 };
+  for (const { record } of drawingUnits(items)) {
+    progress.drawings += 1;
+    const { court } = ballInCourt(record, today);
+    if (court === 'closed') progress.approved += 1;
+    else if (court === 'client') progress.client += 1;
+    else if (court === 'sel') progress.sel += 1;
+    else progress.notStarted += 1;
+    if (isOverdue(record, today)) progress.overdue += 1;
+  }
+  progress.pct = progress.drawings ? Math.round((progress.approved / progress.drawings) * 100) : 0;
+  return progress;
+}
+
+export interface ProgressRow {
+  key: string;
+  level: 'scope' | 'schedule' | 'group';
+  scope: string;
+  schedule: string | null;
+  /** The workbook heading; null on scope and schedule rows, and for items under no heading. */
+  group: string | null;
+  /** What the row shows: the scope, the schedule, or the group's title. */
+  name: string;
+  progress: Progress;
+  children: ProgressRow[];
+}
+
+/**
+ * The register's Scope › Schedule › Group tree with each level's progress, in the register's order
+ * (scopes and schedules as configured, groups as first seen).
+ */
+export function progressTree(items: DrawingItem[], today: string, order?: ListOrder): ProgressRow[] {
+  return nestGroups(groupItems(items, order)).map((scope) => ({
+    key: scope.key,
+    level: 'scope',
+    scope: scope.scope,
+    schedule: null,
+    group: null,
+    name: scope.scope,
+    progress: progressOf(scope.items, today),
+    children: scope.schedules.map((schedule) => ({
+      key: schedule.key,
+      level: 'schedule',
+      scope: scope.scope,
+      schedule: schedule.schedule,
+      group: null,
+      name: schedule.schedule,
+      progress: progressOf(schedule.items, today),
+      children: schedule.groups.map((group) => ({
+        key: group.key,
+        level: 'group',
+        scope: scope.scope,
+        schedule: schedule.schedule,
+        group: group.group,
+        name: groupTitle(group),
+        progress: progressOf(group.items, today),
+        children: [],
+      })),
+    })),
+  }));
+}
+
+/**
+ * The status summary as one sheet: a row per scope, schedule and group in the register's order,
+ * then the drawing list's total. Each row names its scope and schedule, so a filter on either
+ * column keeps a level's rows together.
+ */
+export function progressSheet(tree: ProgressRow[], total: Progress, project: { short: string }): ExcelSheet {
+  const LEVEL = { scope: 'Scope', schedule: 'Schedule', group: 'Group' } as const;
+  const figures = (progress: Progress) => ({
+    items: progress.items,
+    drawings: progress.drawings,
+    approved: progress.approved,
+    client: progress.client,
+    sel: progress.sel,
+    notStarted: progress.notStarted,
+    overdue: progress.overdue,
+    pct: progress.drawings ? progress.approved / progress.drawings : 0,
+  });
+  const rows: Record<string, unknown>[] = [];
+  const add = (row: ProgressRow) => {
+    rows.push({ level: LEVEL[row.level], scope: row.scope, schedule: row.schedule ?? '', group: row.level === 'group' ? row.name : '', ...figures(row.progress) });
+    row.children.forEach(add);
+  };
+  tree.forEach(add);
+  rows.push({ level: 'Total', scope: '', schedule: '', group: '', ...figures(total) });
+  const count = (header: string, key: string) => ({ header, key, width: 11, numFmt: '0' });
+  return {
+    name: sheetName(`Summary ${project.short}`),
+    columns: [
+      { header: 'Level', key: 'level', width: 10 },
+      { header: 'Scope', key: 'scope', width: 18 },
+      { header: 'Schedule', key: 'schedule', width: 14 },
+      { header: 'Group', key: 'group', width: 40 },
+      count('Items', 'items'),
+      count('Drawings', 'drawings'),
+      count('Approved', 'approved'),
+      count('With client', 'client'),
+      count('With SEL', 'sel'),
+      count('Not submitted', 'notStarted'),
+      count('Overdue', 'overdue'),
+      { header: '% approved', key: 'pct', width: 11, numFmt: '0%' },
+    ],
+    rows,
   };
 }

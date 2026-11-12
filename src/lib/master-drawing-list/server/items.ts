@@ -7,7 +7,7 @@ import 'server-only';
  *
  * Who may do what (per drawing list, see `access.ts`):
  *   Drawings · Add     add an item
- *   Drawings · Edit    update any drawing, add or remove sub-drawings
+ *   Drawings · Edit    update any drawing, add or remove sub-drawings, edit an item's details
  *   (assignee)         update their own sub-drawing without Edit (not reassign it)
  *   Drawings · Delete  delete an item
  *   Settings · Manage  create and link drawing lists
@@ -19,7 +19,7 @@ import { getFirebaseAdminBucket } from '@/lib/firebase-admin';
 
 import { emptyRevisions, type DrawingItem, type DrawingRecord, type DrawingRevision, type SubDrawing } from '../drawings.ts';
 import { nextNumbers } from '../register.ts';
-import type { DrawingSaveInput, NewItemInput, NewProjectInput, ProjectLinkInput } from '../schemas.ts';
+import type { DrawingSaveInput, ItemDetailsInput, NewItemInput, NewProjectInput, ProjectLinkInput } from '../schemas.ts';
 import { drawingFormError, recordFromForm } from '../steps.ts';
 import type { MdlProject } from '../types.ts';
 import { dateRuleFor, fieldSetting } from '../settings.ts';
@@ -108,6 +108,27 @@ export async function createItem(context: MdlContext, input: NewItemInput): Prom
     return numbers.slNo;
   });
   return { id: ref.id, slNo };
+}
+
+/* ── item details ────────────────────────────────────────────────────────── */
+
+/**
+ * Changes what the item is — its description and its group — on its own, never as part of a
+ * drawing save. Needs Drawings · Edit. A group hidden by Field Control is left as it is.
+ */
+export async function updateItemDetails(context: MdlContext, itemId: string, input: ItemDetailsInput): Promise<DrawingItem> {
+  const ref = itemsCol().doc(itemId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new MdlError('This drawing item no longer exists.', 404);
+  const item = toItem(snap.id, snap.data() as DocumentData);
+  context.require('Drawings', 'Edit', await projectOf(item.projectCode));
+  const settings = await loadSettings();
+  const groupField = fieldSetting(settings.fieldControl, 'item', 'group');
+  const group = groupField.visible ? input.group : item.group;
+  if (groupField.visible && groupField.required && !group) throw new MdlError(`${groupField.label} is required.`, 422);
+  const changes = { description: input.description, group };
+  await ref.update({ ...changes, ...audit(context) } as DocumentData);
+  return toItem(itemId, { ...snap.data(), ...changes, updatedAt: new Date().toISOString(), updatedBy: context.userId, updatedByName: context.userName || null });
 }
 
 /* ── the Drawing Details dialog ──────────────────────────────────────────── */
@@ -207,7 +228,8 @@ export async function saveDrawing(context: MdlContext, itemId: string, input: Dr
     let changes: Record<string, unknown>;
     if (target.kind === 'item') {
       const record = recordFromForm({ ...form, revisions: keepStoredFiles(form.revisions, fresh.revisions, uploaded) }, fresh);
-      changes = { ...record, description: form.description.trim(), group: form.group.trim() || null };
+      // The description and group stay as they are: only Edit item details changes them.
+      changes = { ...record };
     } else {
       const prior = fresh.subDrawings.find((sub) => sub.id === target.subId);
       if (target.isNew && prior) throw new MdlError('This sub-drawing already exists.', 409);
