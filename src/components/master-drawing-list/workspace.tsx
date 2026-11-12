@@ -20,14 +20,15 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { canEditSubDrawing, emptySubDrawing, type DrawingItem, type DrawingRevision, type SubDrawing } from '@/lib/master-drawing-list/drawings';
 import { exportFileName, filterItems, isCourtFilter, isOverallStatus, isSchedule, isScope, registerSheet } from '@/lib/master-drawing-list/register';
+import { listOrder } from '@/lib/master-drawing-list/settings';
 import { exportWorkbook } from '@/lib/report-excel';
 
 import { CalendarView, GanttView } from './calendar-view';
 import { ReportsView } from './dashboard';
 import { DrawingDialog, type DrawingTarget } from './details-dialog';
-import { openDrawingFile, useMdl, useProjectRegister, useRegisterParams } from './mdl-client';
+import { openDrawingFile, useMdl, useMdlSettings, useProjectRegister, useRegisterParams } from './mdl-client';
 import { MdlError, MdlLoading, NoDrawingList, ProjectSelect } from './mdl-ui';
-import { AddItemDialog } from './new-item';
+import { AddItemDialog, EditItemDialog } from './new-item';
 import { PendingView } from './pending';
 import { RegisterView } from './register';
 import { DeleteItemDialog, RemoveSubDrawingDialog, type SubDrawingRef } from './step-dialogs';
@@ -44,6 +45,7 @@ const VIEWS: Record<MdlView, { title: string; icon: LucideIcon }> = {
 
 export default function MdlWorkspace({ view }: { view: MdlView }) {
   const { lookups } = useMdl();
+  const settings = useMdlSettings();
   const { user } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -56,6 +58,7 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
 
   const [drawingTarget, setDrawingTarget] = useState<DrawingTarget | null>(null);
   const [subToRemove, setSubToRemove] = useState<SubDrawingRef | null>(null);
+  const [detailsTarget, setDetailsTarget] = useState<DrawingItem | null>(null);
   const [itemToDelete, setItemToDelete] = useState<DrawingItem | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -99,7 +102,7 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
   const exportView = async () => {
     if (!data) return;
     try {
-      await exportWorkbook(exportFileName(data.project, today), [registerSheet(filterItems(items, filters, today), data.project, today)]);
+      await exportWorkbook(exportFileName(data.project, today), [registerSheet(filterItems(items, filters, today), data.project, today, listOrder(settings.masterData))]);
     } catch (error) {
       toast({ variant: 'destructive', title: 'Export failed', description: error instanceof Error ? error.message : 'The workbook could not be built.' });
     }
@@ -150,7 +153,7 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
       {!data ? (
         register.loading ? <MdlLoading /> : null
       ) : view === 'reports' ? (
-        <ReportsView items={items} today={today} project={data.project} onSelect={openDrawing} />
+        <ReportsView items={items} today={today} project={data.project} canExport={can.export} onSelect={openDrawing} />
       ) : view === 'pending' ? (
         <PendingView items={items} today={today} onSelect={openDrawing} />
       ) : view === 'calendar' ? (
@@ -168,6 +171,7 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
             canDelete: can.delete,
             userId: user?.id,
             onEdit: openDrawing,
+            onEditDetails: setDetailsTarget,
             onAddSub: (item) => setDrawingTarget({ item, sub: emptySubDrawing(crypto.randomUUID()), isNew: true }),
             onRemoveSub: (item, sub) => setSubToRemove({ item, sub }),
             onDelete: setItemToDelete,
@@ -177,6 +181,7 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
       )}
 
       <DrawingDialog target={activeTarget} today={today} canEdit={can.edit} onClose={closeDrawing} onSaved={register.replaceItem} />
+      <EditItemDialog item={detailsTarget} onOpenChange={(open) => !open && setDetailsTarget(null)} onSaved={register.replaceItem} />
       <RemoveSubDrawingDialog target={subToRemove} onClose={() => setSubToRemove(null)} onRemoved={register.replaceItem} />
       <DeleteItemDialog target={itemToDelete} onClose={() => setItemToDelete(null)} onDeleted={(id) => register.replaceItem({ id, removed: true })} />
       {data && (

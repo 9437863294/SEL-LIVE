@@ -17,6 +17,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
 import { derive, isIsoDate } from './derive.ts';
+import { matchListName } from './settings.ts';
 import { OVERALL_STATUSES, REVISION_ROUNDS, earliestSubmissionDate, type DrawingItem, type DrawingRevision, type OverallStatus, type RevisionStatus } from './drawings.ts';
 import { COLLECTIONS, SCHEDULES, SCOPES, STATUSES, STATUS_LABEL, type MdlItemCore, type MdlProject, type MdlRevision, type MdlSchedule, type MdlScope, type MdlStatus } from './types.ts';
 
@@ -148,9 +149,10 @@ export function parseImport(grid: ImportGrid, lists: ImportLists = { schedules: 
   // Firestore document ids cannot contain a slash.
   const usableId = (id: string) => !id.includes('/');
 
-  // Projects
+  // Projects. Items name their list by short name (as the template has it) or by code.
   const projects: MdlProject[] = [];
-  const shortToCode = new Map<string, string>();
+  const listKey = (value: string | null) => (value ?? '').trim().toLowerCase();
+  const codeOf = new Map<string, string>();
   for (const r of sheet(grid, 'Projects', PROJECT_COLUMNS)) {
     const code = r.get('Code');
     const short = r.get('Short name');
@@ -160,8 +162,9 @@ export function parseImport(grid: ImportGrid, lists: ImportLists = { schedules: 
       continue;
     }
     projects.push({ code, short, name: r.get('Full name') ?? short, client: r.get('Client'), drgPrefix: r.get('Drawing no. prefix') });
-    shortToCode.set(short, code);
+    codeOf.set(listKey(short), code);
   }
+  for (const project of projects) if (!codeOf.has(listKey(project.code))) codeOf.set(listKey(project.code), project.code);
 
   // Revisions, grouped by item
   const revisions = new Map<string, MdlRevision[]>();
@@ -184,22 +187,29 @@ export function parseImport(grid: ImportGrid, lists: ImportLists = { schedules: 
   // Items
   const items: ParsedItem[] = [];
   const seen = new Set<string>();
+  /** Every Item ID on the sheet, skipped or not: revisions of a skipped item are not reported again. */
+  const listed = new Set<string>();
   const nextOrder = new Map<string, number>();
   for (const r of sheet(grid, 'Items', ITEM_COLUMNS)) {
     const id = r.get('Item ID');
     if (!id) continue;
     const where = `Items row ${r.n} (${id})`;
-    const projectCode = shortToCode.get(r.get('Project') ?? '');
-    const schedule = r.get('Schedule') as MdlSchedule;
-    const scope = r.get('Scope') as MdlScope;
+    const projectCode = codeOf.get(listKey(r.get('Project')));
+    // The names in Settings › Schedules & Scopes, however the workbook spells them.
+    const schedule = matchListName(lists.schedules, r.get('Schedule')) as MdlSchedule | null;
+    const scope = matchListName(lists.scopes, r.get('Scope')) as MdlScope | null;
     const description = r.get('Description');
     if (seen.has(id)) { problems.push(`${where}: duplicate Item ID; row skipped.`); continue; }
+    listed.add(id);
     if (!usableId(id)) { problems.push(`${where}: the Item ID contains "/"; row skipped.`); continue; }
-    if (!projectCode) { problems.push(`${where}: project is not on the Projects sheet; row skipped.`); continue; }
-    if (!lists.schedules.includes(schedule) || !lists.scopes.includes(scope) || !description) {
-      problems.push(`${where}: schedule, scope or description is missing or not recognised; row skipped.`);
+    if (!projectCode) {
+      const known = projects.map((p) => `"${p.short}" or "${p.code}"`).join(', ');
+      problems.push(`${where}: project "${r.get('Project') ?? ''}" is not on the Projects sheet${known ? ` (use ${known})` : ''}; row skipped.`);
       continue;
     }
+    if (!description) { problems.push(`${where}: the description is blank; row skipped.`); continue; }
+    if (!schedule) { problems.push(`${where}: schedule "${r.get('Schedule') ?? ''}" is not one of ${lists.schedules.join(', ')} (Settings › Schedules & Scopes); row skipped.`); continue; }
+    if (!scope) { problems.push(`${where}: scope "${r.get('Scope') ?? ''}" is not one of ${lists.scopes.join(', ')} (Settings › Schedules & Scopes); row skipped.`); continue; }
     seen.add(id);
     const order = (nextOrder.get(projectCode) ?? 0) + 1;
     nextOrder.set(projectCode, order);
@@ -235,7 +245,7 @@ export function parseImport(grid: ImportGrid, lists: ImportLists = { schedules: 
     });
   }
   for (const id of revisions.keys()) {
-    if (!seen.has(id)) problems.push(`Revisions sheet: ${id} is not on the Items sheet; its revisions were ignored.`);
+    if (!listed.has(id)) problems.push(`Revisions sheet: ${id} is not on the Items sheet; its revisions were ignored.`);
   }
   return { projects, items, revisionCount, problems };
 }

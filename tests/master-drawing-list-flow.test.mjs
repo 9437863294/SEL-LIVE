@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import { FakeFirestore } from './helpers/fake-firestore.mjs';
 
 const { contextFor } = await import('../src/lib/master-drawing-list/server/context.ts');
-const { createItem, createProject, deleteItem, deleteSubDrawing, linkProject, readDrawingFile, saveDrawing } = await import('../src/lib/master-drawing-list/server/items.ts');
+const { createItem, createProject, deleteItem, deleteSubDrawing, linkProject, readDrawingFile, saveDrawing, updateItemDetails } = await import('../src/lib/master-drawing-list/server/items.ts');
+const { itemDetailsInputSchema } = await import('../src/lib/master-drawing-list/schemas.ts');
 const { groupsFor, lookups, register, settingsProjects } = await import('../src/lib/master-drawing-list/server/queries.ts');
 const { runImport } = await import('../src/lib/master-drawing-list/server/import.ts');
 const { formRevisions } = await import('../src/lib/master-drawing-list/drawings.ts');
@@ -116,6 +117,30 @@ test('sub-drawings: Edit adds and removes them; the assignee updates their own w
   await assert.rejects(deleteSubDrawing(assignee, id, 's1'), /Edit permission/);
   await deleteSubDrawing(engineer, id, 's1');
   assert.equal((await register(engineer, 'T1')).items[0].subDrawings.length, 0);
+});
+
+test('item details change only through Edit item details; a drawing save keeps the description and group', async () => {
+  const { id } = await createItem(engineer, newItem({ group: 'g1', description: 'item a' }));
+  // A drawing save that sends other values for them (an old browser tab, a crafted request) leaves them.
+  let item = await saveDrawing(engineer, id, { target: asItem, form: form({ description: 'changed', group: '', status: 'In Progress' }) }, files({}));
+  assert.deepEqual([item.description, item.group, item.status], ['item a', 'g1', 'In Progress']);
+  assert.deepEqual([globalThis.__db._store.get(`mdl_items/${id}`).description, globalThis.__db._store.get(`mdl_items/${id}`).group], ['item a', 'g1']);
+
+  await assert.rejects(updateItemDetails(assignee, id, itemDetailsInputSchema.parse({ description: 'item b', group: 'g2' })), /Edit permission/);
+  assert.throws(() => itemDetailsInputSchema.parse({ description: 'x', group: '' }), /Enter a description/);
+  item = await updateItemDetails(engineer, id, itemDetailsInputSchema.parse({ description: ' item b ', group: ' g2 ' }));
+  assert.deepEqual([item.description, item.group, item.status], ['item b', 'g2', 'In Progress']);
+  item = await updateItemDetails(engineer, id, itemDetailsInputSchema.parse({ description: 'item b', group: '' }));
+  assert.equal(item.group, null);
+  assert.equal(globalThis.__db._store.get(`mdl_items/${id}`).updatedBy, 'eng');
+
+  // Field Control: a required group must be given; a hidden one is left as it is.
+  globalThis.__db._store.set('mdl_settings/fieldControl', { forms: { item: { group: { required: true } } } });
+  await assert.rejects(updateItemDetails(engineer, id, itemDetailsInputSchema.parse({ description: 'item b', group: '' })), /Group is required/);
+  await updateItemDetails(engineer, id, itemDetailsInputSchema.parse({ description: 'item b', group: 'g3' }));
+  globalThis.__db._store.set('mdl_settings/fieldControl', { forms: { item: { group: { visible: false } } } });
+  item = await updateItemDetails(engineer, id, itemDetailsInputSchema.parse({ description: 'item c', group: '' }));
+  assert.deepEqual([item.description, item.group], ['item c', 'g3']);
 });
 
 test('files open only for those who may view the list, and only the paths the item records', async () => {

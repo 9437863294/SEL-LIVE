@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * Add Drawing Item — where Project Management's register adds BOQ items, this one adds its own.
+ * Add Drawing Item — where Project Management's register adds BOQ items, this one adds its own —
+ * and Edit Item Details, which changes an item's description and group later.
  * Everything on it follows the module's Settings:
  *   - Schedule and Scope offer the values switched on in Settings › Schedules & Scopes;
  *   - each field's label, whether it is shown and whether it is required come from Settings ›
@@ -22,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { isIsoDate } from '@/lib/master-drawing-list/derive';
+import type { DrawingItem } from '@/lib/master-drawing-list/drawings';
 import { activeNames, fieldSetting, type FieldSetting } from '@/lib/master-drawing-list/settings';
 
 import { mdlFetch, useMdlQuery, useMdlSettings } from './mdl-client';
@@ -238,6 +240,113 @@ export function AddItemDialog({ projectCode, open, onOpenChange, onAdded }: { pr
           {dateField('plannedStartDate', f.plannedStartDate)}
           {dateField('plannedEndDate', f.plannedEndDate)}
         </div>
+        {form.formState.errors.root?.message && (
+          <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            {form.formState.errors.root.message}
+          </p>
+        )}
+      </Form>
+    </FormDialog>
+  );
+}
+
+type ItemDetailsForm = { description: string; group: string };
+
+/**
+ * Edit item details — what the item is: its description and the group it sits under, labelled and
+ * required as Field Control sets them. Kept out of Drawing Details so that recording a submission
+ * or a status never changes the item. Scope, schedule and Sl. No. stay as they are.
+ */
+export function EditItemDialog({ item, onOpenChange, onSaved }: { item: DrawingItem | null; onOpenChange: (open: boolean) => void; onSaved: (item: DrawingItem) => void }) {
+  const { toast } = useToast();
+  const settings = useMdlSettings();
+  const f = useMemo(
+    () => ({ group: fieldSetting(settings.fieldControl, 'item', 'group'), description: fieldSetting(settings.fieldControl, 'item', 'description') }),
+    [settings.fieldControl],
+  );
+  const schema = useMemo(
+    () =>
+      z.object({
+        description: z.string().trim().min(3, `Enter the ${f.description.label.toLowerCase()}.`).max(2000, 'Keep this under 2000 characters.'),
+        group: z
+          .string()
+          .trim()
+          .max(200, 'Keep this under 200 characters.')
+          .refine((value) => !f.group.visible || !f.group.required || value.length > 0, `${f.group.label} is required.`),
+      }),
+    [f],
+  );
+  const form = useForm<ItemDetailsForm>({ resolver: zodResolver(schema), defaultValues: { description: '', group: '' } });
+  useEffect(() => {
+    if (item) form.reset({ description: item.description, group: item.group ?? '' });
+  }, [item]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const groups = useMdlQuery<GroupsData>(item ? `groups?project=${encodeURIComponent(item.projectCode)}` : null);
+  const suggestions = useMemo(
+    () => (groups.data?.groups ?? []).filter((entry) => item && entry.schedule === item.schedule && entry.scope === item.scope).map((entry) => entry.group),
+    [groups.data, item],
+  );
+
+  const submit = form.handleSubmit(async (values) => {
+    if (!item) return;
+    try {
+      const result = await mdlFetch<{ item: DrawingItem }>(`items/${encodeURIComponent(item.id)}`, { method: 'PATCH', body: values });
+      toast({ title: 'Item details saved', description: `Sl. No. ${item.slNo || '—'} in ${item.scope} › ${item.schedule}.` });
+      onSaved(result.item);
+      onOpenChange(false);
+    } catch (error) {
+      form.setError('root', { message: error instanceof Error ? error.message : 'Could not save the item details.' });
+    }
+  });
+
+  return (
+    <FormDialog
+      open={Boolean(item)}
+      onOpenChange={onOpenChange}
+      title="Edit Item Details"
+      description={item ? `Sl. No. ${item.slNo || '—'} · ${item.scope} › ${item.schedule}. Its drawings, rounds and status are not changed here.` : undefined}
+      size="lg"
+      onSubmit={submit}
+      submitLabel="Save"
+      submitting={form.formState.isSubmitting}
+    >
+      <Form {...form}>
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                {f.description.label} <span className="text-destructive">*</span>
+              </FormLabel>
+              <FormControl>
+                <Textarea rows={3} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        {f.group.visible && (
+          <FormField
+            control={form.control}
+            name="group"
+            render={({ field }) => (
+              <FormItem>
+                <FieldLabel setting={f.group} />
+                <FormControl>
+                  <Input list="mdl-edit-group-suggestions" autoComplete="off" placeholder="The heading the item sits under" {...field} />
+                </FormControl>
+                <datalist id="mdl-edit-group-suggestions">
+                  {suggestions.map((group) => (
+                    <option key={group} value={group} />
+                  ))}
+                </datalist>
+                <FormDescription>Moving it to another group moves it there on the register.</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
         {form.formState.errors.root?.message && (
           <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
             {form.formState.errors.root.message}

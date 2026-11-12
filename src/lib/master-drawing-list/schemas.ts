@@ -41,8 +41,6 @@ export const revisionSchema = z.object({
 export const drawingFormSchema = z.object({
   title: text(200),
   assignedToId: text(200),
-  description: text(2000),
-  group: text(200),
   docNo: text(200),
   drawingNo: text(200),
   plannedStartDate: dateOrEmpty,
@@ -60,6 +58,15 @@ export const drawingSaveInputSchema = z.object({
     z.object({ kind: z.literal('sub'), subId: z.string().trim().min(1).max(100), isNew: z.boolean() }),
   ]),
   form: drawingFormSchema,
+});
+
+/**
+ * Edit item details: the item's description and the group it sits under. Kept apart from the
+ * Drawing Details dialog, so recording a submission or a status never changes what the item is.
+ */
+export const itemDetailsInputSchema = z.object({
+  description: z.string().trim().min(3, 'Enter a description.').max(2000, 'Keep the description under 2000 characters.'),
+  group: optionalText(200),
 });
 
 /** Add drawing item. The Sl. No. and position are given by the server. */
@@ -152,6 +159,7 @@ export const projectLinkInputSchema = z
 
 export type DrawingSaveInput = z.output<typeof drawingSaveInputSchema>;
 export type NewItemInput = z.output<typeof newItemInputSchema>;
+export type ItemDetailsInput = z.output<typeof itemDetailsInputSchema>;
 export type ProjectLinkInput = z.output<typeof projectLinkInputSchema>;
 export type NewProjectInput = z.output<typeof newProjectInputSchema>;
 export type ImportInput = z.output<typeof importInputSchema>;

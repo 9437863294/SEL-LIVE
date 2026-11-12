@@ -22,7 +22,7 @@ import {
   summariseItems,
 } from '../src/lib/master-drawing-list/drawings.ts';
 import { drawingFormError, recordFromForm } from '../src/lib/master-drawing-list/steps.ts';
-import { filterItems, groupItems, nextNumbers, registerSheet } from '../src/lib/master-drawing-list/register.ts';
+import { filterItems, groupItems, groupTitle, nestGroups, nextNumbers, registerSheet } from '../src/lib/master-drawing-list/register.ts';
 import { resolveMdlAccess } from '../src/lib/master-drawing-list/access.ts';
 import { drawingSaveInputSchema, newItemInputSchema } from '../src/lib/master-drawing-list/schemas.ts';
 import { ITEM_COLUMNS, PROJECT_COLUMNS, REVISION_COLUMNS, cellText, gridFromWorkbook, parseImport, summariseImport, toDrawingItem, ImportFormatError } from '../src/lib/master-drawing-list/import.ts';
@@ -133,7 +133,9 @@ test('the assignee may update their sub-drawing without Edit; nobody else may', 
 
 test('save rules: titles, planned window, dates in order and not in the future', () => {
   assert.match(drawingFormError(form(), { isSub: true, today: TODAY, uploads: noUploads }), /Sub-drawing Title is required/);
-  assert.match(drawingFormError(form({ description: 'x' }), { isSub: false, today: TODAY, uploads: noUploads }), /item description/);
+  // What the item is (description, group) is not on the drawing form: a status save never checks or changes it.
+  assert.equal(drawingFormError(form({ description: 'x' }), { isSub: false, today: TODAY, uploads: noUploads }), null);
+  assert.equal(drawingFormError(form(), { isSub: false, today: TODAY, uploads: noUploads, fields: { item: { group: { required: true } } } }), null);
   assert.match(drawingFormError(form({ plannedStartDate: '2026-05-01', plannedEndDate: '2026-04-01' }), { isSub: false, today: TODAY, uploads: noUploads }), /end date cannot be before/);
   assert.match(drawingFormError(form({ revisions: rounds(round('R0', '2026-07-01', 'Under Review')) }), { isSub: false, today: TODAY, uploads: new Set(['R0']) }), /R0 submission date cannot be in the future/);
   assert.match(drawingFormError(form({ revisions: rounds(round('R0', '2026-05-10', 'Under Review', '2026-05-01')) }), { isSub: false, today: TODAY, uploads: new Set(['R0']) }), /comments date cannot be before its submission date \(10\.05\.2026\)/);
@@ -179,11 +181,50 @@ test('groups keep first-appearance order and gather late items; filters use the 
   const c = item({ schedule: 'Civil' });
   const d = item({ group: 'G1', subDrawings: [sub({ title: 'foundation plan', status: 'Approved' })] });
   const groups = groupItems([a, b, c, d]);
-  assert.deepEqual(groups.map((g) => [g.key, g.items.length]), [['Supply|Substation|G1', 2], ['Supply|Substation|G2', 1], ['Civil|Substation|', 1]]);
+  assert.deepEqual(groups.map((g) => [g.key, g.items.length]), [['Substation|Supply|G1', 2], ['Substation|Supply|G2', 1], ['Substation|Civil|', 1]]);
   assert.deepEqual(filterItems([a, b, c, d], { status: 'Approved' }, TODAY).map((x) => x.id), [b.id, d.id]);
   assert.deepEqual(filterItems([a, b, c, d], { q: 'foundation' }, TODAY).map((x) => x.id), [d.id]);
   assert.deepEqual(filterItems([a, b, c, d], { schedule: 'Civil' }, TODAY).map((x) => x.id), [c.id]);
   assert.deepEqual(nextNumbers([a, b, c, d], 'Supply', 'Substation'), { order: d.order + 1, slNo: String(Math.max(Number(a.slNo), Number(b.slNo), Number(d.slNo)) + 1) });
+});
+
+test('register: Scope › Schedule › Group, scopes and schedules in the configured order, groups as first seen', () => {
+  const rows = [
+    item({ scope: 'Transmission Line', schedule: 'Civil', group: 'T-G1' }),
+    item({ schedule: 'Electrical', group: 'E-G1' }),
+    item({ schedule: 'Supply', group: 'S-G2' }),
+    item({ schedule: 'Supply', group: 'S-G1' }),
+    item({ scope: 'Transmission Line', schedule: 'Supply' }),
+    item({ scope: 'Unlisted', schedule: 'Civil', group: 'U-G1' }),
+    item({ schedule: 'Supply', group: 'S-G2' }),
+  ];
+  const order = { scopes: ['Substation', 'Transmission Line'], schedules: ['Supply', 'Civil', 'Electrical'] };
+  const groups = groupItems(rows, order);
+  assert.deepEqual(groups.map((g) => g.key), [
+    'Substation|Supply|S-G2',
+    'Substation|Supply|S-G1',
+    'Substation|Electrical|E-G1',
+    'Transmission Line|Supply|',
+    'Transmission Line|Civil|T-G1',
+    'Unlisted|Civil|U-G1',
+  ]);
+  assert.equal(groups[0].items.length, 2, 'a late item joins its group');
+  const tree = nestGroups(groups);
+  assert.deepEqual(
+    tree.map((scope) => [scope.scope, scope.items.length, scope.schedules.map((schedule) => [schedule.schedule, schedule.groups.length, schedule.items.length])]),
+    [
+      ['Substation', 4, [['Supply', 2, 3], ['Electrical', 1, 1]]],
+      ['Transmission Line', 2, [['Supply', 1, 1], ['Civil', 1, 1]]],
+      ['Unlisted', 1, [['Civil', 1, 1]]],
+    ],
+  );
+  // Without a configured order, scopes and schedules come as first seen — still each scope together.
+  assert.deepEqual(nestGroups(groupItems(rows)).map((scope) => scope.scope), ['Transmission Line', 'Substation', 'Unlisted']);
+  assert.equal(groupTitle({ group: null }), 'Without a group');
+  // The export follows the same order, Scope before Schedule.
+  const sheet = registerSheet(rows, { short: 'T1' }, TODAY, order);
+  assert.deepEqual(sheet.columns.slice(0, 3).map((column) => column.header), ['Scope', 'Schedule', 'Group']);
+  assert.deepEqual(sheet.rows.map((row) => row.group), ['S-G2', 'S-G2', 'S-G1', 'E-G1', '', 'T-G1', 'U-G1']);
 });
 
 test('Excel: a row per item and per sub-drawing, a column set per round reached', async () => {
@@ -270,12 +311,42 @@ test('import reads the three sheets with the reference rules and reports what it
   const problems = parsed.problems.join('\n');
   assert.match(problems, /"31\.02\.2026" is not a date/);
   assert.match(problems, /\(a1\): duplicate Item ID/);
-  assert.match(problems, /\(a4\): project is not on the Projects sheet/);
-  assert.match(problems, /\(a5\): schedule, scope or description/);
+  assert.match(problems, /\(a4\): project "nowhere" is not on the Projects sheet \(use "S1" or "T1"\)/);
+  assert.match(problems, /\(a5\): schedule "Other" is not one of Supply, Civil, Electrical/);
   assert.match(problems, /\(a\/6\): the Item ID contains "\/"/);
   assert.match(problems, /zz is not on the Items sheet/);
   assert.match(problems, /Revisions row 7: needs an Item ID and a revision such as R0/);
   assert.throws(() => parseImport({ Items: grid().Items, Revisions: grid().Revisions }), (error) => error instanceof ImportFormatError && /Sheet "Projects" is missing/.test(error.message));
+});
+
+test('import: items may name their list by code or short name; schedule and scope spellings map to the configured names', async () => {
+  const { matchListName } = await import('../src/lib/master-drawing-list/settings.ts');
+  assert.equal(matchListName(['Supply', 'Civil', 'Electrical'], 'Civil Works'), 'Civil');
+  assert.equal(matchListName(['Supply', 'Civil', 'Electrical'], ' electrical works '), 'Electrical');
+  assert.equal(matchListName(['Substation', 'Transmission Line'], 'Transmission line'), 'Transmission Line');
+  assert.equal(matchListName(['Schedule I Supply', 'Schedule III Civil Works'], 'Supply'), 'Schedule I Supply');
+  assert.equal(matchListName(['Civil', 'Civil Works'], 'civil works'), 'Civil Works', 'an exact name wins');
+  assert.equal(matchListName(['Civil (Schedule II)', 'Civil (Schedule III)'], 'Civil'), null, 'two candidates: refused, not guessed');
+  assert.equal(matchListName(['Supply', 'Civil'], 'Civil Supply'), null);
+  assert.equal(matchListName(['Supply'], ''), null);
+
+  const book = grid();
+  book.Items = sheetOf(ITEM_COLUMNS, [
+    itemRow({ 'Item ID': 'b1', Project: 't1', Schedule: 'Civil Works', Scope: 'substation' }),
+    itemRow({ 'Item ID': 'b2', Project: 'S1', Schedule: 'Electrical Works', Scope: 'Transmission line' }),
+    itemRow({ 'Item ID': 'b3', Project: 'T1', Schedule: 'Mechanical' }),
+  ]);
+  book.Revisions = sheetOf(REVISION_COLUMNS, [
+    { 'Item ID': 'b1', Revision: 'R0', 'Submitted on': '2026-01-10', 'Comments received on': null },
+    { 'Item ID': 'b3', Revision: 'R0', 'Submitted on': '2026-01-10', 'Comments received on': null },
+  ]);
+  const parsed = parseImport(book);
+  assert.deepEqual(parsed.items.map((entry) => [entry.id, entry.core.projectCode, entry.core.schedule, entry.core.scope]), [
+    ['b1', 'T1', 'Civil', 'Substation'],
+    ['b2', 'T1', 'Electrical', 'Transmission Line'],
+  ]);
+  // The skipped row is reported once: not again for its revisions.
+  assert.deepEqual(parsed.problems, ['Items row 4 (b3): schedule "Mechanical" is not one of Supply, Civil, Electrical (Settings › Schedules & Scopes); row skipped.']);
 });
 
 test('import becomes the register record: round statuses and the overall status from the dates', () => {
@@ -361,6 +432,40 @@ test('dashboard: deliverables, courts, first-time approval, overdue against the 
   assert.deepEqual([june.plannedSubmission, june.actualSubmission, june.plannedApproval, june.actualApproval], [3, 4, 2, 2]);
   assert.ok(stats.outcomes.find((entry) => entry.round === 'R1').approved === 1);
   assert.deepEqual(courtCounts(items, TODAY), { client: 1, sel: 1, not_started: 2, closed: 2, overdue: 1 });
+});
+
+test('reports: progress per scope, schedule and group in the register order; the summary sheet and its total', async () => {
+  const { progressOf, progressTree, progressSheet } = await import('../src/lib/master-drawing-list/analytics.ts');
+  const items = [
+    item({ scope: 'Transmission Line', schedule: 'Civil', group: 'Towers', plannedEndDate: '2026-01-01' }),
+    item({ schedule: 'Supply', group: 'Panels', status: 'Approved', approveDate: '2026-02-10', revisions: rounds(round('R0', '2026-01-05', 'Approved')) }),
+    item({ schedule: 'Supply', group: 'Panels', revisions: rounds(round('R0', '2026-05-01', 'Under Review')) }),
+    item({ schedule: 'Electrical', subDrawings: [sub({ status: 'Approved', approveDate: '2026-03-01', revisions: rounds(round('R0', '2026-02-01', 'Approved')) }), sub({ title: 'b', revisions: rounds(round('R0', '2026-04-01', 'Resubmission Required', '2026-06-25')) })] }),
+  ];
+  const order = { scopes: ['Substation', 'Transmission Line'], schedules: ['Supply', 'Civil', 'Electrical'] };
+  const tree = progressTree(items, TODAY, order);
+  const flat = (rows) => rows.flatMap((row) => [[row.level, row.name, row.progress.drawings, row.progress.approved], ...flat(row.children)]);
+  assert.deepEqual(flat(tree), [
+    ['scope', 'Substation', 4, 2],
+    ['schedule', 'Supply', 2, 1],
+    ['group', 'Panels', 2, 1],
+    ['schedule', 'Electrical', 2, 1],
+    ['group', 'Without a group', 2, 1],
+    ['scope', 'Transmission Line', 1, 0],
+    ['schedule', 'Civil', 1, 0],
+    ['group', 'Towers', 1, 0],
+  ]);
+  const substation = tree[0].progress;
+  assert.deepEqual(substation, { items: 3, drawings: 4, approved: 2, client: 1, sel: 1, notStarted: 0, overdue: 0, pct: 50 });
+  assert.equal(tree[1].progress.overdue, 1);
+
+  const total = progressOf(items, TODAY);
+  assert.deepEqual([total.items, total.drawings, total.approved, total.pct], [4, 5, 2, 40]);
+  const sheet = progressSheet(tree, total, { short: 'T1' });
+  assert.equal(sheet.rows.length, 9);
+  assert.deepEqual(sheet.rows.map((row) => [row.level, row.scope, row.schedule, row.group]).slice(0, 3), [['Scope', 'Substation', '', ''], ['Schedule', 'Substation', 'Supply', ''], ['Group', 'Substation', 'Supply', 'Panels']]);
+  assert.deepEqual(sheet.rows.at(-1), { level: 'Total', scope: '', schedule: '', group: '', items: 4, drawings: 5, approved: 2, client: 1, sel: 1, notStarted: 1, overdue: 1, pct: 0.4 });
+  assert.ok((await buildWorkbookBuffer([sheet])).byteLength > 1000);
 });
 
 /* ── a project's own workbook ───────────────────────────────────────────── */

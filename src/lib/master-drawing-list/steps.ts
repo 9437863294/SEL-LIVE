@@ -22,12 +22,14 @@ import { isIsoDate } from './derive.ts';
 import { earliestSubmissionDate, hasRevisionData, isApproved, isRevisionRejected, storedRevisions, type DrawingRecord, type DrawingRevision, type OverallStatus } from './drawings.ts';
 import { dateWindow, describeDateRule, fieldSetting, type FieldControl, type MdlDateKind, type MdlDateRule } from './settings.ts';
 
-/** What the dialog edits. `title` and `assignedToId` only matter for a sub-drawing; `description` and `group` only for an item. */
+/**
+ * What the Drawing Details dialog edits: the drawing's numbers, plan, rounds and status. `title`
+ * and `assignedToId` only matter for a sub-drawing. The item's description and group are not here —
+ * they change only through Edit item details.
+ */
 export interface DrawingForm {
   title: string;
   assignedToId: string;
-  description: string;
-  group: string;
   docNo: string;
   drawingNo: string;
   plannedStartDate: string;
@@ -59,10 +61,9 @@ export function drawingFormError(form: DrawingForm, options: DrawingFormOptions)
   const missing = (setting: { label: string; required: boolean }, value: string) => (setting.required && !value.trim() ? `${setting.label} is required.` : null);
 
   if (options.isSub && !form.title.trim()) return `${field('sub', 'title').label} is required — a name such as “GA Drawing” or “Foundation Drawing”.`;
-  if (!options.isSub && form.description.trim().length < 3) return `Enter the ${field('item', 'description').label.toLowerCase()}.`;
 
   // Field Control: the fields made required.
-  const required: (string | null)[] = options.isSub ? [missing(field('sub', 'assignedTo'), form.assignedToId)] : [missing(field('item', 'group'), form.group)];
+  const required: (string | null)[] = options.isSub ? [missing(field('sub', 'assignedTo'), form.assignedToId)] : [];
   required.push(
     missing(field('drawing', 'docNo'), form.docNo),
     missing(field('drawing', 'drawingNo'), form.drawingNo),

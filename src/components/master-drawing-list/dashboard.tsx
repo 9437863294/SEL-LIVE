@@ -9,8 +9,9 @@
  *   2. Control figures: overdue against plan, late to submit, overdue against the contract's review
  *      periods (Settings), turnaround on both sides, first-time approvals, rounds to approval.
  *   3. Trends: planned against actual submissions and approvals (S-curve), monthly throughput, the
- *      client's verdict per round, ageing, and progress per schedule and scope.
- *   4. What needs attention, each row opening its drawing.
+ *      client's verdict per round, ageing, and progress per scope and schedule.
+ *   4. The status summary: every scope, schedule and group, in the register's order, downloadable.
+ *   5. What needs attention, each row opening its drawing and saying where it sits.
  *
  * Figures count deliverables: each sub-drawing, else the item itself (`analytics.ts`).
  */
@@ -39,27 +40,20 @@ import { SectionHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { Card, CardContent } from '@/components/ui/card';
 import { chartChrome } from '@/components/ui/chart';
-import { dashboardStats, type UnitDays } from '@/lib/master-drawing-list/analytics';
+import { useToast } from '@/hooks/use-toast';
+import { dashboardStats, progressOf, progressSheet, progressTree, type UnitDays } from '@/lib/master-drawing-list/analytics';
 import { COURT_LABEL, formatMdlDate, type DrawingItem, type DrawingUnit, type SubDrawing } from '@/lib/master-drawing-list/drawings';
+import { exportFileName } from '@/lib/master-drawing-list/register';
+import { listOrder } from '@/lib/master-drawing-list/settings';
+import { exportWorkbook } from '@/lib/report-excel';
 import { cn } from '@/lib/utils';
 
-import type { MdlProjectView } from './mdl-client';
+import { useMdlSettings, type MdlProjectView } from './mdl-client';
 import { MdlEmpty, MdlStatus } from './mdl-ui';
 import { MDL_BASE } from './module-layout-shell';
+import { MDL_COLOURS, ScopeProgress, StatusSummary } from './progress-summary';
 
-// Colours: the app's status tones as fills — approved emerald, with client blue, with SEL amber,
-// not submitted slate; the verdicts add orange (resubmit) and red (rejected). Text stays in text ink.
-const C = {
-  approved: '#10b981',
-  withComments: '#f59e0b',
-  resubmit: '#f97316',
-  rejected: '#ef4444',
-  review: '#3b82f6',
-  client: '#3b82f6',
-  sel: '#f59e0b',
-  notStarted: '#94a3b8',
-  submission: '#0ea5e9',
-};
+const C = MDL_COLOURS;
 
 function ChartCard({ title, description, children, className, action }: { title: string; description?: string; children: React.ReactNode; className?: string; action?: React.ReactNode }) {
   return (
@@ -105,10 +99,49 @@ function HeroTile({ label, value, hint, icon: Icon, dot }: { label: string; valu
   );
 }
 
+/** A drawing in an attention list, with the scope and schedule it sits under. */
+function UnitName({ unit }: { unit: DrawingUnit }) {
+  return (
+    <span className="block min-w-0">
+      <span className="block truncate" title={unit.label}>
+        {unit.label}
+      </span>
+      <span className="block truncate text-[11px] text-muted-foreground">
+        {unit.item.scope} › {unit.item.schedule}
+        {unit.item.group ? ` › ${unit.item.group}` : ''}
+      </span>
+    </span>
+  );
+}
+
 const days = (value: number | null, unit = 'd') => (value === null ? '—' : `${value}${unit}`);
 
-export function ReportsView({ items, today, project, onSelect }: { items: DrawingItem[]; today: string; project: MdlProjectView; onSelect: (item: DrawingItem, sub: SubDrawing | null) => void }) {
+export function ReportsView({
+  items,
+  today,
+  project,
+  canExport = false,
+  onSelect,
+}: {
+  items: DrawingItem[];
+  today: string;
+  project: MdlProjectView;
+  /** Drawings · Export: the status summary's download. */
+  canExport?: boolean;
+  onSelect: (item: DrawingItem, sub: SubDrawing | null) => void;
+}) {
   const stats = useMemo(() => dashboardStats(items, today, { reviewDays: project.reviewDays, resubmitDays: project.resubmitDays }), [items, today, project.reviewDays, project.resubmitDays]);
+  const { masterData } = useMdlSettings();
+  const tree = useMemo(() => progressTree(items, today, listOrder(masterData)), [items, today, masterData]);
+  const total = useMemo(() => progressOf(items, today), [items, today]);
+  const { toast } = useToast();
+  const downloadSummary = async () => {
+    try {
+      await exportWorkbook(exportFileName(project, today, 'MDL-Summary'), [progressSheet(tree, total, project)]);
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Download failed', description: error instanceof Error ? error.message : 'The workbook could not be built.' });
+    }
+  };
 
   if (!items.length) {
     return <MdlEmpty icon={FileStack} title="No drawings in this list yet" description="Add items on the Register, or bring the project's workbook in on the Excel Import page." />;
@@ -124,10 +157,9 @@ export function ReportsView({ items, today, project, onSelect }: { items: Drawin
     { name: COURT_LABEL.not_started, value: stats.courts.not_started, fill: C.notStarted },
   ].filter((entry) => entry.value > 0);
   const hasPlan = stats.sCurve.some((point) => point.plannedSubmission || point.plannedApproval);
-  const sectionMax = Math.max(1, ...stats.bySection.map((section) => section.total));
 
   const unitColumns = (kind: 'client' | 'sel' | 'overdue'): ListColumn<UnitDays & { id: string }>[] => [
-    { header: 'Drawing', mobile: 'title', className: 'max-w-[18rem] truncate', cell: ({ unit }) => <span title={unit.label}>{unit.label}</span> },
+    { header: 'Drawing', mobile: 'title', className: 'max-w-[18rem]', cell: ({ unit }) => <UnitName unit={unit} /> },
     { header: kind === 'overdue' ? 'Planned end' : 'Since', className: 'whitespace-nowrap', cell: ({ since }) => formatMdlDate(since) },
     { header: 'Days', mobile: 'aside', align: 'right', cell: ({ days: d }) => <span className={cn('font-semibold tabular-nums', d > 30 ? 'text-rose-700' : 'text-slate-800')}>{d}</span> },
   ];
@@ -303,37 +335,15 @@ export function ReportsView({ items, today, project, onSelect }: { items: Drawin
             })}
           </div>
         </ChartCard>
-        <ChartCard title="Progress by schedule and scope" description="Approved, with the client, with SEL and not submitted.">
-          <div className="space-y-3">
-            {stats.bySection.map((section) => (
-              <div key={section.key}>
-                <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-                  <span className="min-w-0 truncate font-medium text-slate-800">{section.key}</span>
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {section.approved}/{section.total} approved · {section.total ? Math.round((section.approved / section.total) * 100) : 0}%
-                  </span>
-                </div>
-                <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-full bg-slate-100" style={{ width: `${Math.max(12, (section.total / sectionMax) * 100)}%` }} role="img" aria-label={`${section.key}: ${section.approved} approved, ${section.client} with client, ${section.sel} with SEL, ${section.notStarted} not submitted`}>
-                  {(
-                    [
-                      [section.approved, C.approved],
-                      [section.client, C.client],
-                      [section.sel, C.sel],
-                      [section.notStarted, C.notStarted],
-                    ] as const
-                  )
-                    .filter(([count]) => count > 0)
-                    .map(([count, color]) => (
-                      <span key={color} className="h-full first:rounded-l-full last:rounded-r-full" style={{ width: `${(count / section.total) * 100}%`, backgroundColor: color }} />
-                    ))}
-                </div>
-              </div>
-            ))}
-          </div>
+        <ChartCard title="Progress by scope and schedule" description="Each scope, then its schedules: approved, with the client, with SEL and not submitted.">
+          <ScopeProgress tree={tree} />
         </ChartCard>
       </div>
 
-      {/* 4 · what needs attention */}
+      {/* 4 · the status summary */}
+      <StatusSummary tree={tree} total={total} onDownload={canExport ? () => void downloadSummary() : undefined} />
+
+      {/* 5 · what needs attention */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TableCard title="Longest with the client" description="Submitted and waiting for comments or approval" icon={Send} count={stats.courts.client} noun="drawing" scroll="natural">
           {stats.longestClient.length ? <DataList rows={listOf(stats.longestClient)} columns={unitColumns('client')} onRowClick={({ unit }) => openUnit(unit)} frameless dense /> : <p className="p-4 text-sm text-muted-foreground">Nothing with the client.</p>}
@@ -349,7 +359,7 @@ export function ReportsView({ items, today, project, onSelect }: { items: Drawin
             <DataList
               rows={stats.upcoming.map((entry, index) => ({ ...entry, id: `${entry.unit.item.id}-${entry.unit.sub?.id ?? 'item'}-${index}` }))}
               columns={[
-                { header: 'Drawing', mobile: 'title', className: 'max-w-[18rem] truncate', cell: ({ unit }) => <span title={unit.label}>{unit.label}</span> },
+                { header: 'Drawing', mobile: 'title', className: 'max-w-[18rem]', cell: ({ unit }) => <UnitName unit={unit} /> },
                 { header: 'Due', className: 'whitespace-nowrap', cell: ({ date }) => formatMdlDate(date) },
                 { header: 'For', mobile: 'aside', cell: ({ kind }) => <MdlStatus status={kind === 'submission' ? 'Pending' : 'Under Review'}>{kind === 'submission' ? 'Submission' : 'Approval'}</MdlStatus> },
               ]}

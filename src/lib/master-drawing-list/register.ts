@@ -1,5 +1,5 @@
 /**
- * The register's views as pure functions over drawing items: the Schedule › Scope › Group groups
+ * The register's views as pure functions over drawing items: the Scope › Schedule › Group groups
  * (where Project Management groups by purchase order), search and filters, numbering for a new
  * item, the groups to suggest, and the Excel sheet of the view on screen.
  */
@@ -51,27 +51,93 @@ export interface RegisterGroup<T> {
   key: string;
   schedule: MdlSchedule;
   scope: MdlScope;
-  /** The workbook heading, or null for items directly under the scope. */
+  /** The workbook heading, or null for items directly under the schedule. */
   group: string | null;
   items: T[];
 }
 
+/** Scope and schedule names in the order Settings › Schedules & Scopes lists them. */
+export interface ListOrder {
+  scopes: readonly string[];
+  schedules: readonly string[];
+}
+
+/** A name's place: its position in the configured list, else after them all in first-seen order. */
+function ranker(names: readonly string[] = []) {
+  const rank = new Map<string, number>();
+  for (const name of names) if (!rank.has(name)) rank.set(name, rank.size);
+  return (name: string) => {
+    if (!rank.has(name)) rank.set(name, rank.size);
+    return rank.get(name)!;
+  };
+}
+
 /**
- * Items under Schedule › Scope › Group, each group in the order it first appears in the register
- * and every item of a heading under it — an item added later joins its group rather than opening a
- * second one at the end.
+ * Items under Scope › Schedule › Group. Scopes and schedules follow the configured order (names not
+ * in it come after, as first seen); within a schedule each group keeps the order it first appears in
+ * the register, and every item of a heading sits under it — an item added later joins its group
+ * rather than opening a second one at the end.
  */
-export function groupItems<T extends Pick<DrawingItem, 'schedule' | 'scope' | 'group' | 'order'>>(items: T[]): RegisterGroup<T>[] {
+export function groupItems<T extends Pick<DrawingItem, 'schedule' | 'scope' | 'group' | 'order'>>(items: T[], order?: ListOrder): RegisterGroup<T>[] {
   const groups = new Map<string, RegisterGroup<T>>();
   for (const item of [...items].sort((a, b) => a.order - b.order)) {
-    const key = `${item.schedule}|${item.scope}|${item.group ?? ''}`;
+    const key = `${item.scope}|${item.schedule}|${item.group ?? ''}`;
     if (!groups.has(key)) groups.set(key, { key, schedule: item.schedule, scope: item.scope, group: item.group, items: [] });
     groups.get(key)!.items.push(item);
   }
-  return [...groups.values()];
+  const scopeRank = ranker(order?.scopes);
+  const scheduleRank = ranker(order?.schedules);
+  // Ranked in first-seen order, so unlisted names keep theirs; the sort is stable.
+  return [...groups.values()]
+    .map((group) => ({ group, scope: scopeRank(group.scope), schedule: scheduleRank(group.schedule) }))
+    .sort((a, b) => a.scope - b.scope || a.schedule - b.schedule)
+    .map(({ group }) => group);
 }
 
-export const groupTitle = (group: Pick<RegisterGroup<unknown>, 'group' | 'schedule' | 'scope'>) => group.group ?? `${group.schedule} · ${group.scope}`;
+export const groupTitle = (group: Pick<RegisterGroup<unknown>, 'group'>) => group.group ?? 'Without a group';
+
+export interface RegisterSchedule<T> {
+  key: string;
+  scope: MdlScope;
+  schedule: MdlSchedule;
+  /** Every item of the schedule, group by group. */
+  items: T[];
+  groups: RegisterGroup<T>[];
+}
+
+export interface RegisterScope<T> {
+  key: string;
+  scope: MdlScope;
+  /** Every item of the scope, schedule by schedule. */
+  items: T[];
+  schedules: RegisterSchedule<T>[];
+}
+
+/** `groupItems`' groups as a tree: scope › schedule › group. */
+export function nestGroups<T>(groups: RegisterGroup<T>[]): RegisterScope<T>[] {
+  const scopes: RegisterScope<T>[] = [];
+  const byScope = new Map<string, RegisterScope<T>>();
+  const bySchedule = new Map<string, RegisterSchedule<T>>();
+  for (const group of groups) {
+    let scope = byScope.get(group.scope);
+    if (!scope) {
+      scope = { key: group.scope, scope: group.scope, items: [], schedules: [] };
+      byScope.set(group.scope, scope);
+      scopes.push(scope);
+    }
+    const scheduleKey = `${group.scope}|${group.schedule}`;
+    let schedule = bySchedule.get(scheduleKey);
+    if (!schedule) {
+      schedule = { key: scheduleKey, scope: group.scope, schedule: group.schedule, items: [], groups: [] };
+      bySchedule.set(scheduleKey, schedule);
+      scope.schedules.push(schedule);
+    }
+    schedule.groups.push(group);
+    schedule.items.push(...group.items);
+    scope.items.push(...group.items);
+  }
+  return scopes;
+}
 
 /* ── filters ─────────────────────────────────────────────────────────────── */
 
@@ -150,7 +216,7 @@ const excelDate = (value: string | null | undefined): Date | null => (value ? ne
  * submitted / status / comments / comments-date set of columns per round (as many as the deepest
  * row needs). Dates are real Excel dates shown DD.MM.YYYY.
  */
-export function registerSheet(items: DrawingItem[], project: { short: string }, today: string): ExcelSheet {
+export function registerSheet(items: DrawingItem[], project: { short: string }, today: string, order?: ListOrder): ExcelSheet {
   const records = items.flatMap((item) => [item, ...item.subDrawings]);
   const rounds = Math.max(1, ...records.map((record) => {
     const last = latestRevision(record.revisions);
@@ -158,8 +224,8 @@ export function registerSheet(items: DrawingItem[], project: { short: string }, 
   }));
   const date = { width: 12, numFmt: 'dd.mm.yyyy' };
   const columns: ExcelSheet['columns'] = [
-    { header: 'Schedule', key: 'schedule', width: 11 },
     { header: 'Scope', key: 'scope', width: 16 },
+    { header: 'Schedule', key: 'schedule', width: 11 },
     { header: 'Group', key: 'group', width: 28 },
     { header: 'Sl. No.', key: 'slNo', width: 8 },
     { header: 'Description / Sub-drawing', key: 'description', width: 60 },
@@ -186,14 +252,14 @@ export function registerSheet(items: DrawingItem[], project: { short: string }, 
     { header: 'Remark', key: 'remark', width: 40 },
   );
   const rows: Record<string, unknown>[] = [];
-  for (const group of groupItems(items)) {
+  for (const group of groupItems(items, order)) {
     for (const item of group.items) {
       const rolled = rollup(item, today);
       for (const record of [item, ...item.subDrawings]) {
         const isSub = record !== item;
         const row: Record<string, unknown> = {
-          schedule: item.schedule,
           scope: item.scope,
+          schedule: item.schedule,
           group: item.group ?? '',
           slNo: isSub ? '' : item.slNo,
           description: isSub ? `   ↳ ${(record as DrawingItem['subDrawings'][number]).title}` : item.description,
@@ -219,14 +285,19 @@ export function registerSheet(items: DrawingItem[], project: { short: string }, 
       }
     }
   }
-  // Sheet names: 31 characters, none of : \ / ? * [ ]. Replaced one by one rather than with a
-  // character class: Tailwind scans src/ and reads a bracketed colon as a CSS class.
-  let name = `MDL ${project.short}`;
-  for (const forbidden of ['\\', '/', '?', '*', '[', ']', ':']) name = name.split(forbidden).join(' ');
-  return { name: name.slice(0, 31), columns, rows };
+  return { name: sheetName(`MDL ${project.short}`), columns, rows };
 }
 
-/** `MDL-<short>-<DD.MM.YYYY>.xlsx`. */
-export function exportFileName(project: { short: string }, today: string): string {
-  return `MDL-${project.short.replace(/[^A-Za-z0-9._-]+/g, '-')}-${today.slice(8, 10)}.${today.slice(5, 7)}.${today.slice(0, 4)}.xlsx`;
+/** An Excel sheet name: 31 characters, none of : \ / ? * [ ]. */
+export function sheetName(text: string): string {
+  // Replaced one by one rather than with a character class: Tailwind scans src/ and reads a
+  // bracketed colon as a CSS class.
+  let name = text;
+  for (const forbidden of ['\\', '/', '?', '*', '[', ']', ':']) name = name.split(forbidden).join(' ');
+  return name.slice(0, 31);
+}
+
+/** `<prefix>-<short>-<DD.MM.YYYY>.xlsx`, `MDL-…` by default. */
+export function exportFileName(project: { short: string }, today: string, prefix = 'MDL'): string {
+  return `${prefix}-${project.short.replace(/[^A-Za-z0-9._-]+/g, '-')}-${today.slice(8, 10)}.${today.slice(5, 7)}.${today.slice(0, 4)}.xlsx`;
 }
