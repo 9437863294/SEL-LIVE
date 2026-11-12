@@ -1072,6 +1072,65 @@ export async function fetchSingleEmployeeDetail(
 }
 
 /**
+ * One employee's bank account and nothing else — for Expenses, which pays employees and needs the
+ * account, not the profile. Two requests rather than the twenty `fetchSingleEmployeeDetail` makes
+ * with `includeSensitive`: the bank record, and the BANKACCNO identity, which is where greytHR keeps
+ * the IFSC. A 404 is "not on file", as above; anything else throws, so the caller can say greytHR
+ * could not be read rather than that there is nothing to read.
+ *
+ * `bankName` arrives as a code on most tenants, so it is resolved through `lov::bank` here — the same
+ * list the sync labels it with — and only when it looks like one.
+ */
+export async function fetchEmployeeBankDetail(
+  employeeId: string | number,
+  options: { config?: GreytHRConfig } = {},
+): Promise<{ bank: GreytHRBankRow | null; bankIdentity: GreytHRIdentityRow | null; bankName: string }> {
+  const id = encodeURIComponent(String(employeeId));
+  const config = options.config ?? greytHRConfig();
+
+  const readOne = async <T>(path: string, label: string): Promise<T | null> => {
+    let json: T | T[] | { data?: T[] };
+    try {
+      json = await greytHRRequest<T | T[] | { data?: T[] }>(`/employee/v2/employees/${id}${path}`, {
+        label: `${label} ${employeeId}`,
+        config,
+      });
+    } catch (error) {
+      if (error instanceof GreytHRError && error.status === 404) return null;
+      throw error;
+    }
+    if (Array.isArray(json)) return json.length ? json[0] : null;
+    const envelope = (json as { data?: T[] } | null)?.data;
+    if (Array.isArray(envelope)) return envelope.length ? envelope[0] : null;
+    return (json as T) ?? null;
+  };
+
+  const [bank, identity] = await Promise.all([
+    readOne<GreytHRBankRow>('/bank', 'bank'),
+    readOne<GreytHRIdentityRow>('/identities/BANKACCNO', 'identities/BANKACCNO'),
+  ]);
+
+  const rawName = String(bank?.bankName ?? '').trim();
+  let bankName = rawName;
+  if (/^\d+$/.test(rawName)) {
+    // A label is a nicety: losing the list costs the name, not the account.
+    const lov = await fetchLov(['lov::bank'], { config }).catch(() => null);
+    const rows = lov?.['lov::bank'];
+    const row = Array.isArray(rows)
+      ? rows.find((entry) => Array.isArray(entry) && String(entry[0]) === rawName && typeof entry[1] === 'string')
+      : undefined;
+    if (row) bankName = String(row[1]);
+  }
+
+  return {
+    bank,
+    // greytHR answers 200 with an empty shell for an identity the employee does not hold.
+    bankIdentity: identity && (String(identity.documentNo ?? '').trim() || String(identity.ifscCode ?? '').trim()) ? identity : null,
+    bankName,
+  };
+}
+
+/**
  * A cheap authenticated call, for the settings screen's "Test connection" button.
  *
  * Asks for one employee rather than a dedicated health endpoint (there isn't one), so a success

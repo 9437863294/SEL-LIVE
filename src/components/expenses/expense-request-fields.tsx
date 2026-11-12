@@ -9,7 +9,8 @@
  * Two rows, each on its own proportions on a wide card — who and where it is booked (department,
  * project, party, sub-head and the head worked out from it), then how much and what for (amount,
  * net payable, description, remarks) — with labels, help text, visibility and required-ness from
- * Settings › Field Control, and under them whatever GST & TDS section the caller passes. The look is
+ * Settings › Field Control, and under them whatever bank details and GST & TDS sections the caller
+ * passes. What is typed is kept in capital letters (`upperCaseTyped`). The look is
  * expense-form.module.css. `ExpenseRequestTotals` is the amount / net payable line beside Save.
  */
 
@@ -44,6 +45,7 @@ import {
   accentStyle,
   columnTemplate,
   money,
+  upperCaseTyped,
   xr,
 } from '@/components/expenses/expense-form-ui';
 import { requestAmountError, resolveFormField, type ExpensesModuleSettings } from '@/lib/expenses-settings';
@@ -187,6 +189,7 @@ export function ExpenseRequestFields({
   netPayable,
   withStatutory,
   locked = [],
+  bank,
   statutory,
 }: {
   form: UseFormReturn<ExpenseFormValues>;
@@ -208,6 +211,8 @@ export function ExpenseRequestFields({
   /** GST & TDS are entered, so the amount is the value before GST. */
   withStatutory: boolean;
   locked?: readonly LockableExpenseField[];
+  /** The bank details section (where the payment goes), under the fields. */
+  bank?: ReactNode;
   /** The GST & TDS section, under the fields. */
   statutory?: ReactNode;
 }) {
@@ -316,7 +321,9 @@ export function ExpenseRequestFields({
               const onRecord = field.value ? findRecordedParty(field.value, recordedParties) : undefined;
               const matches = partyOptions.filter(p => p.toLowerCase().includes(partySearch.toLowerCase()));
               const canAdd = !restrictParty && !!partySearch.trim() && !partyOptions.some(n => n.toLowerCase() === partySearch.toLowerCase());
-              const choose = (name: string) => {
+              // Kept in capitals, as the whole request is. Matching a party on record ignores case.
+              const choose = (picked: string) => {
+                const name = picked.toUpperCase();
                 field.onChange(name);
                 form.setValue('partyName', name);
                 setPartySearch(name);
@@ -350,7 +357,8 @@ export function ExpenseRequestFields({
                     </PopoverTrigger>
                     <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[300px] rounded-2xl p-1" side="bottom" align="start">
                       <Command>
-                        <CommandInput placeholder="Search party name..." value={partySearch} onValueChange={setPartySearch} />
+                        {/* Shown in capitals, as the name will be saved; the search itself ignores case. */}
+                        <CommandInput placeholder="Search party name..." value={partySearch} onValueChange={setPartySearch} className="uppercase placeholder:normal-case" />
                         <CommandList className="max-h-72">
                           <CommandEmpty>{restrictParty ? 'No party on record matches.' : 'No party found.'}</CommandEmpty>
                           <CommandGroup>
@@ -365,15 +373,15 @@ export function ExpenseRequestFields({
                               <CommandItem
                                 value={partySearch}
                                 onSelect={() => {
-                                  setAddedParties(prev => [...prev, partySearch]);
-                                  choose(partySearch);
+                                  setAddedParties(prev => [...prev, partySearch.trim().toUpperCase()]);
+                                  choose(partySearch.trim());
                                 }}
                                 className="gap-2.5 rounded-[10px] px-2 py-1.5 font-bold text-blue-600 dark:text-blue-400"
                               >
                                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[9px] border border-dashed border-blue-300" aria-hidden="true">
                                   <Plus className="h-3.5 w-3.5" />
                                 </span>
-                                <span className="min-w-0 truncate">Add &ldquo;{partySearch}&rdquo;</span>
+                                <span className="min-w-0 truncate">Add &ldquo;{partySearch.trim().toUpperCase()}&rdquo;</span>
                               </CommandItem>
                             )}
                           </CommandGroup>
@@ -512,6 +520,7 @@ export function ExpenseRequestFields({
                   <input
                     {...field}
                     value={field.value ?? ''}
+                    onChange={event => field.onChange(upperCaseTyped(event))}
                     placeholder="What the payment is for, e.g. Cement supply for Block A"
                     className={cn(xr.control, field.value && xr.set)}
                   />
@@ -531,6 +540,7 @@ export function ExpenseRequestFields({
                   <input
                     {...field}
                     value={field.value ?? ''}
+                    onChange={event => field.onChange(upperCaseTyped(event))}
                     placeholder="Anything else worth noting"
                     className={cn(xr.control, field.value && xr.set)}
                   />
@@ -542,6 +552,7 @@ export function ExpenseRequestFields({
         </div>
       </div>
 
+      {bank && <div className={xr.tax}>{bank}</div>}
       {statutory && <div className={xr.tax}>{statutory}</div>}
     </section>
   );

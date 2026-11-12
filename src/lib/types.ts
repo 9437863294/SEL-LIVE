@@ -954,6 +954,8 @@ export interface ExpenseRequest {
   statutory?: import("@/lib/statutory").ExpenseStatutory;
   /** The company GST registration this bill was attributed to; '' lets the chain decide. See src/lib/gst-registrations.ts. */
   gstRegistrationId?: string;
+  /** The account the payment goes to — from the Employee module when the party is an employee. See src/lib/expenses-bank.ts. */
+  bankDetails?: import("@/lib/expenses-bank").StoredExpenseBank;
 }
 
 export interface AccountHead {

@@ -658,6 +658,8 @@ export interface EmployeeSensitiveDetail {
         verified?: boolean;
         verifiedDate?: string | null;
         masked?: boolean;
+        /** Set on the BANKACCNO identity — greytHR's bank record itself carries no IFSC. */
+        ifscCode?: string;
       }
     >
   >;
@@ -1034,6 +1036,7 @@ export function buildSensitiveDetail(input: BuildSensitiveInput): EmployeeSensit
       verified: flag(row.verified),
       verifiedDate: sanitizeGreytHRDate(row.verifiedDate),
       masked: flag(row.enableMasking),
+      ifscCode: text(row.ifscCode),
     };
   }
 

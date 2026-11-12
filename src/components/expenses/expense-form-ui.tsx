@@ -11,7 +11,7 @@
  * form works out or holds fixed, shown where an input would be.
  */
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { FormDescription, FormItem, FormLabel, FormMessage, useFormField } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
@@ -46,6 +46,22 @@ export const columnTemplate = (weights: readonly number[]) => weights.map((w) =>
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** ₹1,84,500.00 */
 export const money = (n: number) => inr.format(Number(n) || 0);
+
+/**
+ * What was typed, in capitals — an expense request is kept in capital letters. The box is changed
+ * in place with the caret put back where it was, so typing into the middle of a word does not
+ * throw the caret to the end the way re-rendering a different value would.
+ */
+export function upperCaseTyped(event: ChangeEvent<HTMLInputElement>): string {
+  const input = event.target;
+  const upper = input.value.toUpperCase();
+  if (upper !== input.value) {
+    const { selectionStart, selectionEnd } = input;
+    input.value = upper;
+    if (selectionStart !== null && selectionEnd !== null) input.setSelectionRange(selectionStart, selectionEnd);
+  }
+  return upper;
+}
 
 /** The coloured tile, the words, and the required star or "(optional)" — the inside of a label. */
 export function LabelBody({

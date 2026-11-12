@@ -49,6 +49,8 @@ import {
 import { FieldItem, FieldLabel, FieldNote, money, xr } from '@/components/expenses/expense-form-ui';
 import { cn } from '@/lib/utils';
 import { useBillRegistration } from '@/components/expenses/bill-registration';
+import { BankDetailsSection } from '@/components/expenses/bank-details-section';
+import { EMPTY_BANK_VALUE, bankErrors, toStoredBank, type ExpenseBankValue } from '@/lib/expenses-bank';
 import {
   EMPTY_STATUTORY,
   buildExpenseStatutory,
@@ -103,8 +105,9 @@ function NewExpenseRequestForm() {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   })();
   const projectIdFromUrl = searchParams?.get('projectId') ?? null;
-  const partyNameFromUrl = searchParams?.get('partyName') ?? null;
-  const descriptionFromUrl = searchParams?.get('description') ?? null;
+  // A request is kept in capital letters, whatever spelling the link that opened it carried.
+  const partyNameFromUrl = searchParams?.get('partyName')?.toUpperCase() ?? null;
+  const descriptionFromUrl = searchParams?.get('description')?.toUpperCase() ?? null;
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(true);
@@ -127,6 +130,13 @@ function NewExpenseRequestForm() {
   const [statutory, setStatutory] = useState<StatutoryValue>(EMPTY_STATUTORY);
   const [showStatutoryErrors, setShowStatutoryErrors] = useState(false);
   const [statutoryKey, setStatutoryKey] = useState(0);
+
+  /**
+   * Where the payment goes (Bank details section). Optional; filled from the Employee module when
+   * the party is an employee and editable either way. Stored on the request only when entered.
+   */
+  const [bank, setBank] = useState<ExpenseBankValue>(EMPTY_BANK_VALUE);
+  const [showBankErrors, setShowBankErrors] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(buildExpenseFormSchema(settings, recordedPartyNames)),
@@ -202,7 +212,15 @@ function NewExpenseRequestForm() {
         const existingExpenses = expensesSnap.docs.map(doc => doc.data() as ExpenseRequest);
         const existingExpenseParties = existingExpenses.map(expense => expense.partyName);
         const existingRequisitionParties = requisitionsSnap.docs.map(doc => (doc.data() as DailyRequisitionEntry).partyName);
-        const uniquePartyNames = [...new Set([...existingExpenseParties, ...existingRequisitionParties].filter(Boolean))].sort();
+        // Offered in capitals, as a new request saves them — one entry for a name recorded in
+        // several cases ("Ramesh Traders", "RAMESH TRADERS"), which the party rule treats as one party.
+        const uniquePartyNames = [
+          ...new Set(
+            [...existingExpenseParties, ...existingRequisitionParties]
+              .map(name => String(name ?? '').replace(/\s+/g, ' ').trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        ].sort();
         setRecordedPartyNames(uniquePartyNames);
         setRecordedRequestNos(existingExpenses.map(expense => expense.requestNo).filter(Boolean));
         setRecentRequests(
@@ -299,6 +317,12 @@ function NewExpenseRequestForm() {
         return;
       }
     }
+    const bankProblems = Object.values(bankErrors(bank));
+    if (bankProblems.length) {
+      setShowBankErrors(true);
+      toast({ title: 'Check the bank details', description: bankProblems[0], variant: 'destructive' });
+      return;
+    }
     // Settings › Data Control › "Warn on a repeat request within N days": the same party for the
     // same amount recently is usually the same bill raised twice, so ask before saving it.
     if (!duplicateConfirmed) {
@@ -326,9 +350,11 @@ function NewExpenseRequestForm() {
 
       // A field hidden under Field Control is saved empty — that is what hiding it means, and the
       // form no longer shows it, so a value could otherwise only have come from the query string.
+      // Saved in capital letters, as the form shows them — whatever arrived by a link or a paste.
       const shown = (key: Parameters<typeof resolveFormField>[1], value: string) =>
-        fieldFor(key).visible ? value : '';
+        fieldFor(key).visible ? value.trim().toUpperCase() : '';
       const savedPartyName = shown('partyName', partyName);
+      const savedBank = toStoredBank(bank);
 
       // A field the configuration has made optional arrives as undefined, which Firestore rejects
       // — and a request whose remarks are missing should read as empty, not as absent.
@@ -345,6 +371,7 @@ function NewExpenseRequestForm() {
         createdAt: new Date().toISOString(),
         gstRegistrationId: chosenRegistrationId,
         ...(withStatutory ? { statutory: buildExpenseStatutory(taxable, statutoryInput) } : {}),
+        ...(savedBank ? { bankDetails: savedBank } : {}),
       };
 
       const configRef = doc(db, 'departmentSerialConfigs', data.departmentId);
@@ -377,6 +404,8 @@ function NewExpenseRequestForm() {
           department: selectedDept.name,
           amount: data.amount,
           ...(withStatutory ? { netPayable: computeStatutory(taxable, statutory).net, gstNo: statutory.gstNo, tdsSection: statutory.tdsSection } : {}),
+          // Where the account came from — never the account number itself.
+          ...(savedBank ? { bankDetailsFrom: savedBank.source, ...(savedBank.edited ? { bankDetailsEdited: true } : {}) } : {}),
         },
         recordId: requestRef.id,
         recordRef: newRequestNo,
@@ -405,6 +434,8 @@ function NewExpenseRequestForm() {
       setStatutory(EMPTY_STATUTORY);
       setShowStatutoryErrors(false);
       setStatutoryKey(key => key + 1);
+      setBank(EMPTY_BANK_VALUE);
+      setShowBankErrors(false);
     } catch (error: any) {
       console.error('Error creating expense request:', error);
       toast({ title: 'Save Failed', description: error.message || 'An error occurred while saving the request.', variant: 'destructive' });
@@ -440,6 +471,7 @@ function NewExpenseRequestForm() {
     !(watchedAmount > 0) && 'amount',
     missing('description', watched.description) && 'description',
     missing('remarks', watched.remarks) && 'remarks',
+    Object.keys(bankErrors(bank)).length > 0 && 'bank details',
     withStatutoryNow &&
       Object.keys(statutoryErrors(watchedAmount, statutory, bill.companyStateCode)).length > 0 &&
       'GST & TDS details',
@@ -511,6 +543,15 @@ function NewExpenseRequestForm() {
                       <FieldNote>{departmentIdFromUrl ? 'Set by the link that opened this form' : ''}</FieldNote>
                     </FieldItem>
                   )}
+                />
+              }
+              bank={
+                <BankDetailsSection
+                  partyName={watched.partyName ?? ''}
+                  departmentId={watchedDepartmentId}
+                  value={bank}
+                  onChange={setBank}
+                  showErrors={showBankErrors}
                 />
               }
               statutory={

@@ -488,6 +488,26 @@ function StatutoryDetails({ statutory }: { statutory: NonNullable<ExpenseRequest
   );
 }
 
+/** The account the request is paid into (src/lib/expenses-bank.ts). */
+function BankDetails({ bank }: { bank: NonNullable<ExpenseRequest['bankDetails']> }) {
+  const from =
+    bank.source === 'employee'
+      ? 'From the Employee module' + (bank.employeeNo ? ' · ' + bank.employeeNo : '') + (bank.edited ? ' · changed on the request' : '')
+      : 'Entered on the request';
+  return (
+    <section aria-label="Bank details" className="space-y-3 border-t pt-4">
+      <h3 className={LABEL}>Bank details <span className="font-semibold normal-case tracking-normal">— {from}</span></h3>
+      <div className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+        <Field label="Account holder" value={bank.accountHolderName} className="sm:col-span-2" />
+        <Field label="Account number" value={bank.accountNumber} />
+        <Field label="IFSC" value={bank.ifscCode} />
+        <Field label="Bank" value={bank.bankName} />
+        <Field label="Branch" value={bank.branchName} />
+      </div>
+    </section>
+  );
+}
+
 /** A link into another module, wrapping inside a narrow dialog rather than widening it. */
 function ModuleLink({ href, children }: { href: string; children: string }) {
   return (
@@ -779,6 +799,7 @@ export function ExpenseDetailsDialog({
               </div>
 
               <div className="space-y-4 px-5 pt-4">
+                {expense.bankDetails && <BankDetails bank={expense.bankDetails} />}
                 {expense.statutory && <StatutoryDetails statutory={expense.statutory} />}
 
                 <RequisitionSection expense={expense} requisition={requisition} unavailable={requisitionsUnavailable} />
