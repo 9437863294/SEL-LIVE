@@ -45,6 +45,8 @@ export interface DrawingRevision {
   status?: RevisionStatus | '';
   comments: string;
   commentsDate: string;
+  /** The transmittal (covering letter) the round went to the client under. */
+  transmittalNo?: string;
   /** The drawing file submitted with this round (Storage path under master-drawing-list/). */
   fileName?: string;
   filePath?: string;
@@ -279,6 +281,76 @@ export const canEditSubDrawing = (sub: Pick<SubDrawing, 'assignedToId'>, userId:
 
 /** Outline numbering: group, item, sub-drawing — "1", "1.2", "1.2.3". */
 export const outlineNo = (...indexes: number[]): string => indexes.map((index) => index + 1).join('.');
+
+/* ── ball in court ───────────────────────────────────────────────────────── */
+
+/**
+ * Who has to act next — the document controller's "ball in court": the client while a round is
+ * under review, SEL once comments are back (or the round was rejected), nobody yet before the first
+ * submission, and nobody once approved.
+ */
+export type Court = 'client' | 'sel' | 'not_started' | 'closed';
+
+export const COURT_LABEL: Record<Court, string> = {
+  client: 'With client',
+  sel: 'With SEL',
+  not_started: 'Not submitted',
+  closed: 'Approved',
+};
+
+export interface CourtState {
+  court: Court;
+  /** The date the ball landed there (last submission, or the client's comments). */
+  since: string | null;
+  /** Days since then; null when there is no date. */
+  days: number | null;
+  /** The round it is about. */
+  round: RevisionRound | null;
+}
+
+export function ballInCourt(record: Pick<DrawingRecord, 'revisions' | 'status'>, today: string): CourtState {
+  if (isApproved(record.status)) return { court: 'closed', since: null, days: null, round: null };
+  const last = latestRevision(record.revisions ?? []);
+  if (!last || (!last.submissionDate && !last.status && !last.commentsDate)) return { court: 'not_started', since: null, days: null, round: null };
+  const daysSince = (date: string) => (date ? Math.max(0, Math.round(dayNumber(today) - dayNumber(date))) : null);
+  const kickedBack = last.status === 'Resubmission Required' || last.status === 'Rejected' || (Boolean(last.commentsDate) && last.status !== 'Under Review');
+  if (kickedBack) return { court: 'sel', since: last.commentsDate || null, days: daysSince(last.commentsDate), round: last.round };
+  return { court: 'client', since: last.submissionDate || null, days: daysSince(last.submissionDate), round: last.round };
+}
+
+/**
+ * The deliverables of a set of items, the way a document controller counts them: each sub-drawing
+ * is one; an item with none is one itself; an item with sub-drawings and a drawing of its own
+ * counts that too.
+ */
+export interface DrawingUnit {
+  item: DrawingItem;
+  record: DrawingRecord;
+  sub: SubDrawing | null;
+  label: string;
+}
+
+export function drawingUnits(items: DrawingItem[]): DrawingUnit[] {
+  const units: DrawingUnit[] = [];
+  for (const item of items) {
+    if (!item.subDrawings.length || hasOwnDrawingWork(item)) units.push({ item, record: item, sub: null, label: item.description });
+    for (const sub of item.subDrawings) units.push({ item, record: sub, sub, label: `${item.description} › ${sub.title || 'Untitled drawing'}` });
+  }
+  return units;
+}
+
+/** Days the client took on a round (to its comments, or to approval on the last round), and days SEL took to resubmit after comments. */
+export function roundTurnarounds(record: Pick<DrawingRecord, 'revisions' | 'approveDate' | 'status'>): { round: RevisionRound; client: number | null; sel: number | null }[] {
+  const used = (record.revisions ?? []).filter((revision) => revision.submissionDate);
+  return used.map((revision, index) => {
+    const next = used[index + 1];
+    const lastRound = index === used.length - 1;
+    const answered = revision.commentsDate || (lastRound && isApproved(record.status) ? record.approveDate : '');
+    const client = answered ? Math.round(dayNumber(answered) - dayNumber(revision.submissionDate)) : null;
+    const sel = revision.commentsDate && next?.submissionDate ? Math.round(dayNumber(next.submissionDate) - dayNumber(revision.commentsDate)) : null;
+    return { round: revision.round, client: client !== null && client >= 0 ? client : null, sel: sel !== null && sel >= 0 ? sel : null };
+  });
+}
 
 /** How far a set of items has got, for a group heading: drawings (sub-drawings, else the item) and approved. */
 export function summariseItems(items: DrawingItem[]): { drawings: number; approved: number } {

@@ -22,7 +22,9 @@ import { nextNumbers } from '../register.ts';
 import type { DrawingSaveInput, NewItemInput, NewProjectInput, ProjectLinkInput } from '../schemas.ts';
 import { drawingFormError, recordFromForm } from '../steps.ts';
 import type { MdlProject } from '../types.ts';
+import { dateRuleFor, fieldSetting } from '../settings.ts';
 import { MdlError, type MdlContext } from './context.ts';
+import { loadSettings, requireListed } from './settings.ts';
 import { db, itemsCol, projectsCol, toItem } from './store.ts';
 
 const audit = (context: MdlContext) => ({
@@ -63,6 +65,17 @@ export async function createItem(context: MdlContext, input: NewItemInput): Prom
   const projectSnap = await projectsCol().doc(input.projectCode).get();
   if (!projectSnap.exists) throw new MdlError('This project is not set up for the drawing list.', 404);
   context.require('Drawings', 'Add', { projectId: (projectSnap.data() as MdlProject).projectId ?? null });
+  const settings = await loadSettings();
+  requireListed(settings, input.schedule, input.scope, { activeOnly: true });
+  const fieldRequired: [ReturnType<typeof fieldSetting>, string][] = [
+    [fieldSetting(settings.fieldControl, 'item', 'group'), input.group ?? ''],
+    [fieldSetting(settings.fieldControl, 'drawing', 'docNo'), input.docNo],
+    [fieldSetting(settings.fieldControl, 'drawing', 'drawingNo'), input.drawingNo],
+    [fieldSetting(settings.fieldControl, 'drawing', 'plannedStartDate'), input.plannedStartDate],
+    [fieldSetting(settings.fieldControl, 'drawing', 'plannedEndDate'), input.plannedEndDate],
+  ];
+  const unfilled = fieldRequired.find(([setting, value]) => setting.required && !value.trim());
+  if (unfilled) throw new MdlError(`${unfilled[0].label} is required.`, 422);
 
   const ref = itemsCol().doc();
   const slNo = await db().runTransaction(async (tx) => {
@@ -162,7 +175,16 @@ export async function saveDrawing(context: MdlContext, itemId: string, input: Dr
     if (file.bytes.byteLength > MAX_FILE_BYTES) throw new MdlError(`${round}: the file is larger than 25 MB.`);
     if (!form.revisions.some((revision) => revision.round === round)) throw new MdlError(`${round}: there is no such round to attach the file to.`);
   }
-  const error = drawingFormError(form, { isSub: target.kind === 'sub', previous, today: context.today, uploads: new Set(files.keys()) });
+  const settings = await loadSettings();
+  const error = drawingFormError(form, {
+    isSub: target.kind === 'sub',
+    isNew: target.kind === 'sub' && target.isNew,
+    previous,
+    today: context.today,
+    uploads: new Set(files.keys()),
+    fields: settings.fieldControl,
+    dateRule: dateRuleFor(settings.dateControl, item.projectCode),
+  });
   if (error) throw new MdlError(error, 422);
 
   // Store the files first (Storage is outside the transaction), filed under the item and record.
@@ -269,7 +291,7 @@ export async function createProject(context: MdlContext, input: NewProjectInput)
   return { code: input.code };
 }
 
-/** Links a drawing list to an ERP project (or unlinks it). Settings · Manage, every list. */
+/** Links a drawing list to an ERP project (or unlinks it) and sets its review periods. Settings · Manage, every list. */
 export async function linkProject(context: MdlContext, code: string, input: ProjectLinkInput): Promise<void> {
   context.require('Settings', 'Manage');
   if (input.projectId) {
@@ -280,7 +302,11 @@ export async function linkProject(context: MdlContext, code: string, input: Proj
   await db().runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new MdlError('This drawing list does not exist.', 404);
-    tx.update(ref, { projectId: input.projectId, ...audit(context) });
+    const changes: Record<string, unknown> = {};
+    if (input.projectId !== undefined) changes.projectId = input.projectId;
+    if (input.reviewDays !== undefined) changes.reviewDays = input.reviewDays;
+    if (input.resubmitDays !== undefined) changes.resubmitDays = input.resubmitDays;
+    tx.update(ref, { ...changes, ...audit(context) });
   });
 }
 

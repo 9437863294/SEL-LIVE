@@ -98,7 +98,7 @@ test('Drawing Details: a submission needs its file; the next round opens only af
 
 test('sub-drawings: Edit adds and removes them; the assignee updates their own without Edit but cannot reassign it', async () => {
   const { id } = await createItem(engineer, newItem());
-  await assert.rejects(saveDrawing(engineer, id, { target: { kind: 'sub', subId: 's1', isNew: true }, form: form({ title: '' }) }, files({})), /sub-drawing a title/);
+  await assert.rejects(saveDrawing(engineer, id, { target: { kind: 'sub', subId: 's1', isNew: true }, form: form({ title: '' }) }, files({})), /Sub-drawing Title is required/);
   let item = await saveDrawing(engineer, id, { target: { kind: 'sub', subId: 's1', isNew: true }, form: form({ title: 'GA', assignedToId: 'asg' }) }, files({}));
   assert.equal(item.subDrawings[0].assignedToName, 'user asg');
   await assert.rejects(saveDrawing(engineer, id, { target: { kind: 'sub', subId: 's1', isNew: true }, form: form({ title: 'GA' }) }, files({})), /already exists/);
@@ -182,6 +182,74 @@ test('Excel import: preview writes nothing; import writes the register record; r
   assert.equal(globalThis.__db._store.get('mdl_projects/T3').projectId, 'p1');
 });
 
+test('a project workbook imports into an existing drawing list with the mapping shown', async () => {
+  const { detectSheet } = await import('../src/lib/master-drawing-list/workbook-import.ts');
+  const sheet = { name: 'Supply', rows: [
+    { n: 1, cells: ['MASTER DRAWING LIST'] },
+    { n: 2, cells: ['SL NO', 'Description', 'R0_submission', 'comments date', 'Approval date', 'Approval Status'] },
+    { n: 3, cells: ['1', 'item a', '16.03.2026', null, '20.03.2026', 'APPROVED'] },
+    { n: 4, cells: ['2', 'item b', '10.06.2026', null, null, 'SUBMITTED'] },
+  ] };
+  const source = { kind: 'project', projectCode: 'T1', fileName: 'list.xlsx', sheets: [sheet], mappings: [detectSheet(sheet, 'list.xlsx')] };
+  const preview = await runImport(importer(), { mode: 'preview', overwrite: false, source });
+  assert.deepEqual(preview.sheets, [{ sheet: 'Supply', items: 2, groups: 0, revisions: 2, sections: [] }]);
+  assert.equal(preview.summary.projects[0].code, 'T1');
+  assert.equal(preview.summary.totals.approved, 1);
+  const first = await runImport(importer(), { mode: 'import', overwrite: false, source });
+  assert.deepEqual(first.written, { projects: 0, written: 2, skipped: 0 });
+  const rows = (await register(engineer, 'T1')).items;
+  assert.deepEqual(rows.map((row) => [row.description, row.status, row.revisions[0].status]), [['item a', 'Approved', 'Approved'], ['item b', 'In Progress', 'Under Review']]);
+  assert.equal(globalThis.__db._store.get('mdl_projects/T1').name, 'list one');
+  assert.deepEqual((await runImport(importer(), { mode: 'import', overwrite: false, source })).written, { projects: 0, written: 0, skipped: 2 });
+  // Outside the importer's scope: refused.
+  const scopedImporter = contextOf('si', { [`${M}.Drawings`]: ['View'], [`${M}.Import`]: ['View', 'Import'] }, ['p9']);
+  await assert.rejects(runImport(scopedImporter, { mode: 'preview', overwrite: false, source }), /outside your access/);
+});
+
+test('review periods are saved on the drawing list and come back with it', async () => {
+  await linkProject(director, 'T1', { reviewDays: 21, resubmitDays: 7 });
+  const listed = (await lookups(engineer)).projects.find((p) => p.code === 'T1');
+  assert.equal(listed.reviewDays, 21);
+  assert.equal(listed.resubmitDays, 7);
+  assert.equal(listed.projectId, 'p1');
+  await linkProject(director, 'T1', { reviewDays: null });
+  assert.equal((await lookups(engineer)).projects.find((p) => p.code === 'T1').reviewDays, null);
+});
+
+test('Settings: schedules and scopes, Field Control and Date Control are saved, and the writes follow them', async () => {
+  const { saveMasterData, saveFieldControl, saveDateControl, settingsView, loadSettings } = await import('../src/lib/master-drawing-list/server/settings.ts');
+  await createItem(engineer, newItem());
+  await assert.rejects(settingsView(contextOf('x', { [`${M}.Drawings`]: ['View'] }, ['p1'])), /Settings is required/);
+  const view = await settingsView(director);
+  assert.equal(view.usage.schedules.Supply, 1);
+  const schedules = view.settings.masterData.schedules;
+
+  // Supply is on a drawing: it cannot be renamed or removed, only switched off.
+  await assert.rejects(saveMasterData(director, { schedules: schedules.map((v) => (v.name === 'Supply' ? { ...v, name: 'Supplies' } : v)), scopes: view.settings.masterData.scopes }), /cannot be renamed/);
+  await assert.rejects(saveMasterData(engineer, view.settings.masterData), /Manage permission/);
+  await saveMasterData(director, { schedules: [...schedules.map((v) => (v.name === 'Supply' ? { ...v, active: false } : v)), { id: 'mech', name: 'Mechanical', active: true }], scopes: view.settings.masterData.scopes });
+  await assert.rejects(createItem(engineer, newItem()), /not a schedule in use/);
+  const { slNo } = await createItem(engineer, newItem({ schedule: 'Mechanical' }));
+  assert.equal(slNo, '1');
+  assert.equal((await settingsView(director)).history.masterData[0].byName, 'user dir');
+
+  // Field Control: Doc No. required on items and drawings.
+  await saveFieldControl(director, { forms: { drawing: { docNo: { required: true } } } });
+  await assert.rejects(createItem(engineer, newItem({ schedule: 'Mechanical' })), /Doc No\. is required/);
+  const { id } = await createItem(engineer, newItem({ schedule: 'Mechanical', docNo: 'D-9' }));
+  await assert.rejects(saveDrawing(engineer, id, { target: { kind: 'item' }, form: form({ docNo: '' }) }, files({})), /Doc No\. is required/);
+
+  // Date Control: three days back for list T1.
+  await saveDateControl(director, { enabled: false, backdateDays: 7, futureDays: 0, applySubmission: true, applyComments: true, applyApproval: true, projects: { T1: { enabled: true, backdateDays: 3, futureDays: 0, applySubmission: true, applyComments: true, applyApproval: true } } });
+  await assert.rejects(saveDrawing(engineer, id, { target: { kind: 'item' }, form: form({ docNo: 'D-9', revisions: rounds(['R0', '2026-06-20', 'Under Review']) }) }, files({ R0: pdf() })), /cannot be earlier than 27\.06\.2026/);
+  const saved = await saveDrawing(engineer, id, { target: { kind: 'item' }, form: form({ docNo: 'D-9', revisions: rounds(['R0', '2026-06-28', 'Under Review']) }) }, files({ R0: pdf() }));
+  assert.equal(saved.revisions[0].submissionDate, '2026-06-28');
+  const settings = await loadSettings();
+  assert.equal(settings.dateControl.projects.T1.backdateDays, 3);
+  assert.equal(settings.fieldControl.drawing.docNo.required, true);
+  assert.equal((await lookups(engineer)).settings.masterData.schedules.find((v) => v.name === 'Mechanical').active, true);
+});
+
 test('drawing lists: created and linked in Settings', async () => {
   const input = { projectId: 'p1', code: 'NEW', short: 'new', name: 'new list', client: null, drgPrefix: null };
   await assert.rejects(createProject(engineer, input), /Manage permission/);
@@ -193,4 +261,77 @@ test('drawing lists: created and linked in Settings', async () => {
   await assert.rejects(linkProject(engineer, 'T2', { projectId: 'p1' }), /Manage permission/);
   await linkProject(director, 'T2', { projectId: 'p1' });
   assert.equal((await settingsProjects(director)).projects.find((p) => p.code === 'T2').projectId, 'p1');
+});
+
+test('import history and undo: the record of each import; undo removes what it added unless edited since, once', async () => {
+  const { importHistory, undoImport } = await import('../src/lib/master-drawing-list/server/import.ts');
+  const { detectSheet } = await import('../src/lib/master-drawing-list/workbook-import.ts');
+  const sheet = { name: 'Supply', rows: [
+    { n: 1, cells: ['SL NO', 'Description', 'R0_submission'] },
+    { n: 2, cells: ['1', 'item a', '16.03.2026'] },
+    { n: 3, cells: ['2', 'item b', '10.06.2026'] },
+  ] };
+  const source = { kind: 'project', projectCode: 'T1', fileName: 'list.xlsx', sheets: [sheet], mappings: [detectSheet(sheet, 'list.xlsx')] };
+  const done = await runImport(importer(), { mode: 'import', overwrite: false, rememberMappings: false, source });
+  assert.ok(done.importId);
+  const [record] = await importHistory(importer());
+  assert.deepEqual([record.id, record.fileName, record.kind, record.projectCodes, record.written, record.created, record.replaced, record.byName, record.undoneAt], [done.importId, 'list.xlsx', 'project', ['T1'], 2, 2, 0, 'user imp', null]);
+  const ids = (await register(engineer, 'T1')).items.map((item) => item.id);
+  assert.equal(ids.length, 2);
+  for (const id of ids) assert.equal(globalThis.__db._store.get(`mdl_items/${id}`).importId, done.importId);
+
+  // Someone records comments on one of them: Undo keeps it.
+  const edited = ids[0];
+  await saveDrawing(importer(), edited, { target: asItem, form: form({ description: globalThis.__db._store.get(`mdl_items/${edited}`).description, group: '', status: 'In Progress', revisions: rounds(['R0', '2026-03-16', 'Resubmission Required', '2026-03-20']) }) }, files({}));
+
+  await assert.rejects(undoImport(contextOf('v', { [`${M}.Drawings`]: ['View'], [`${M}.All Projects`]: ['View'], [`${M}.Import`]: ['View'] }), done.importId), /Import is required/);
+  const undone = await undoImport(importer(), done.importId);
+  assert.deepEqual([undone.removed, undone.kept, undone.undoneByName], [1, 1, 'user imp']);
+  assert.deepEqual((await register(engineer, 'T1')).items.map((item) => item.id), [edited]);
+  await assert.rejects(undoImport(importer(), done.importId), /already been undone/);
+  await assert.rejects(undoImport(importer(), 'nope'), /does not exist/);
+  assert.equal((await importHistory(importer()))[0].removed, 1);
+
+  // History shows only imports into lists the caller can see.
+  const scoped = contextOf('sc', { [`${M}.Drawings`]: ['View'], [`${M}.Import`]: ['View'] }, ['p9']);
+  assert.deepEqual(await importHistory(scoped), []);
+  await assert.rejects(importHistory(engineer), /Import is required/);
+});
+
+test('saved column mappings: remembered on import, offered for the same headings, removable', async () => {
+  const { listMappings, deleteMapping } = await import('../src/lib/master-drawing-list/server/import.ts');
+  const { applyTemplates, detectSheet } = await import('../src/lib/master-drawing-list/workbook-import.ts');
+  const sheet = { name: 'Supply', rows: [
+    { n: 1, cells: ['SL NO', 'Description', 'R0_submission', 'Extra'] },
+    { n: 2, cells: ['1', 'item a', '16.03.2026', 'x'] },
+  ] };
+  const detected = detectSheet(sheet, 'list.xlsx');
+  // The user corrected the mapping before importing: Extra is the remarks column.
+  const confirmed = { ...detected, schedule: 'Civil', columns: ['slNo', 'description', 'sub:0', 'remarks'] };
+  const source = { kind: 'project', projectCode: 'T1', fileName: 'list.xlsx', sheets: [sheet], mappings: [confirmed] };
+  await runImport(importer(), { mode: 'preview', overwrite: false, rememberMappings: true, source });
+  assert.deepEqual(await listMappings(importer()), [], 'a dry run remembers nothing');
+  await runImport(importer(), { mode: 'import', overwrite: false, rememberMappings: true, source });
+  const [saved] = await listMappings(importer());
+  assert.deepEqual([saved.projectCode, saved.sheetName, saved.schedule, saved.columns, saved.savedByName], ['T1', 'Supply', 'Civil', ['slNo', 'description', 'sub:0', 'remarks'], 'user imp']);
+
+  // Next month's workbook, same headings: it opens with the confirmed mapping.
+  const next = { name: 'Supply', rows: [sheet.rows[0], { n: 2, cells: ['1', 'item a', '16.03.2026', 'y'] }] };
+  const { mappings, applied } = applyTemplates([next], [detectSheet(next, 'new.xlsx')], await listMappings(importer()), 'T1');
+  assert.equal(applied[0].id, saved.id);
+  assert.deepEqual([mappings[0].schedule, mappings[0].columns], ['Civil', ['slNo', 'description', 'sub:0', 'remarks']]);
+
+  // Confirming the same layout again replaces it rather than adding a second.
+  await runImport(importer(), { mode: 'import', overwrite: true, rememberMappings: true, source: { ...source, mappings: [{ ...confirmed, schedule: 'Supply' }] } });
+  const again = await listMappings(importer());
+  assert.equal(again.length, 1);
+  assert.equal(again[0].schedule, 'Supply');
+
+  await assert.rejects(deleteMapping(contextOf('v', { [`${M}.Drawings`]: ['View'], [`${M}.All Projects`]: ['View'], [`${M}.Import`]: ['View'] }), again[0].id), /Import is required/);
+  await deleteMapping(importer(), again[0].id);
+  assert.deepEqual(await listMappings(importer()), []);
+  await assert.rejects(deleteMapping(importer(), again[0].id), /no longer exists/);
+  // Off: nothing remembered.
+  await runImport(importer(), { mode: 'import', overwrite: true, rememberMappings: false, source });
+  assert.deepEqual(await listMappings(importer()), []);
 });

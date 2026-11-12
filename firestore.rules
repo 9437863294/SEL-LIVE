@@ -64,7 +64,7 @@ service cloud.firestore {
         'fleetJobRuns',
         // Master Drawing List: every read and write goes through /api/master-drawing-list on the
         // Admin SDK (src/lib/master-drawing-list/server), which recalculates each item's status.
-        'mdl_items', 'mdl_projects',
+        'mdl_imports', 'mdl_items', 'mdl_projects', 'mdl_settings',
         // Employee › Category: which Settings › Projects each greytHR "Project Name" means. Read and
         // written through /api/employee/project-links (src/lib/employee-projects).
         'employeeProjectLinks',

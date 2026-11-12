@@ -20,7 +20,6 @@ import {
   OVERALL_STATUSES,
   canEditSubDrawing,
   cycleAgeDays,
-  drawingStage,
   formatMdlDate,
   isApproved,
   isOverdue,
@@ -34,11 +33,12 @@ import {
   type Rollup,
   type SubDrawing,
 } from '@/lib/master-drawing-list/drawings';
-import { filterItems, groupItems, groupTitle, isOverallStatus, isSchedule, isScope, type RegisterGroup } from '@/lib/master-drawing-list/register';
-import { SCHEDULES, SCOPES } from '@/lib/master-drawing-list/types';
+import { courtCounts, filterItems, groupItems, groupTitle, isCourtFilter, isOverallStatus, isSchedule, isScope, type RegisterGroup } from '@/lib/master-drawing-list/register';
+import { allNames } from '@/lib/master-drawing-list/settings';
 import { cn } from '@/lib/utils';
 
-import { MdlEmpty, MdlStatus } from './mdl-ui';
+import { useMdlSettings } from './mdl-client';
+import { CourtBadge, CourtChips, MdlEmpty, MdlStatus } from './mdl-ui';
 
 export interface RegisterActions {
   /** Drawings · Edit on this drawing list. */
@@ -56,6 +56,7 @@ export interface RegisterFilterState {
   schedule: string | null;
   scope: string | null;
   status: string | null;
+  court: string | null;
   q: string;
   set: (changes: Record<string, string | null>) => void;
 }
@@ -113,15 +114,17 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState(filters.q);
+  const settings = useMdlSettings();
 
   const active = {
     schedule: isSchedule(filters.schedule) ? filters.schedule : null,
     scope: isScope(filters.scope) ? filters.scope : null,
     status: isOverallStatus(filters.status) ? filters.status : null,
+    court: isCourtFilter(filters.court) ? filters.court : null,
     q: search,
   };
-  const filtering = Boolean(active.schedule || active.scope || active.status || search.trim());
-  const shown = useMemo(() => filterItems(items, active, today), [items, active.schedule, active.scope, active.status, active.q, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filtering = Boolean(active.schedule || active.scope || active.status || active.court || search.trim());
+  const shown = useMemo(() => filterItems(items, active, today), [items, active.schedule, active.scope, active.status, active.court, active.q, today]); // eslint-disable-line react-hooks/exhaustive-deps
   const groups = useMemo(() => groupItems(shown), [shown]);
   const allGroupKeys = groups.map((group) => group.key);
   const isGroupOpen = (key: string) => filtering || expandedGroups.has(key);
@@ -143,7 +146,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
         <TableHead>Sl. No.</TableHead>
         <TableHead className="min-w-[200px]">Item Description</TableHead>
         <TableHead>Drawings</TableHead>
-        <TableHead>Stage</TableHead>
+        <TableHead>Ball in Court</TableHead>
         <TableHead>Assigned To</TableHead>
         <TableHead>Doc No.</TableHead>
         <TableHead>Drawing No.</TableHead>
@@ -197,7 +200,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
               <span className="text-muted-foreground">—</span>
             )}
           </TableCell>
-          <TableCell className="whitespace-nowrap">{subDrawings.length === 0 ? <MdlStatus status={drawingStage(item)} /> : <span className="text-muted-foreground">—</span>}</TableCell>
+          <TableCell className="whitespace-nowrap">{subDrawings.length === 0 ? <CourtBadge record={item} today={today} /> : <span className="text-muted-foreground">—</span>}</TableCell>
           <TableCell>—</TableCell>
           <TableCell className="whitespace-nowrap">{item.docNo || '—'}</TableCell>
           <TableCell className="max-w-xs truncate" title={item.drawingNo}>
@@ -261,7 +264,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
                   </TableCell>
                   <TableCell>—</TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <MdlStatus status={drawingStage(sub)} />
+                    <CourtBadge record={sub} today={today} />
                   </TableCell>
                   <TableCell className="max-w-[140px] whitespace-nowrap">
                     <span className={cn('truncate text-xs', !sub.assignedToName && 'text-muted-foreground')}>{sub.assignedToName || 'Unassigned'}</span>
@@ -366,7 +369,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
           <span className="text-muted-foreground">—</span>
         ),
     },
-    { header: 'Stage', cell: ({ item }) => (item.subDrawings.length ? <span className="text-muted-foreground">—</span> : <MdlStatus status={drawingStage(item)} />) },
+    { header: 'Ball in Court', cell: ({ item }) => (item.subDrawings.length ? <span className="text-muted-foreground">—</span> : <CourtBadge record={item} today={today} />) },
     { header: 'Doc No.', cell: ({ item }) => item.docNo || '—' },
     { header: 'Drawing No.', cell: ({ item }) => <span title={item.drawingNo}>{item.drawingNo || '—'}</span> },
     { header: 'Planned Start', cell: ({ rollup: rolled }) => formatMdlDate(rolled.plannedStartDate) },
@@ -427,7 +430,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
       mobile: 'title',
       cell: ({ sub }) => (
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-          <MdlStatus status={drawingStage(sub)} />
+          <CourtBadge record={sub} today={today} />
           <MdlStatus status={sub.status} />
           <span className={cn(sub.assignedToName && 'text-foreground')}>{sub.assignedToName || 'Unassigned'}</span>
         </span>
@@ -507,6 +510,8 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
         )
       }
       toolbar={
+        <div className="space-y-3">
+        <CourtChips counts={courtCounts(items, today)} total={items.length} value={active.court} onChange={(court) => filters.set({ court })} />
         <FilterBar
           search={{
             value: search,
@@ -519,7 +524,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
           activeCount={[active.schedule, active.scope, active.status].filter(Boolean).length}
           onClear={() => {
             setSearch('');
-            filters.set({ schedule: null, scope: null, status: null, q: null });
+            filters.set({ schedule: null, scope: null, status: null, court: null, q: null });
           }}
         >
           <Select value={active.schedule ?? 'all'} onValueChange={(value) => filters.set({ schedule: value === 'all' ? null : value })}>
@@ -528,7 +533,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All schedules</SelectItem>
-              {SCHEDULES.map((value) => (
+              {allNames(settings.masterData.schedules).map((value) => (
                 <SelectItem key={value} value={value}>
                   {value}
                 </SelectItem>
@@ -541,7 +546,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All scopes</SelectItem>
-              {SCOPES.map((value) => (
+              {allNames(settings.masterData.scopes).map((value) => (
                 <SelectItem key={value} value={value}>
                   {value}
                 </SelectItem>
@@ -562,6 +567,7 @@ export function RegisterView({ items, today, filters, actions }: { items: Drawin
             </SelectContent>
           </Select>
         </FilterBar>
+        </div>
       }
     >
       {!groups.length ? (

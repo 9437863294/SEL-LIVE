@@ -1,10 +1,14 @@
 // Master Drawing List: shared types. Safe to import from client and server code.
 
-export const SCHEDULES = ['Supply', 'Civil', 'Electrical'] as const;
-export type MdlSchedule = (typeof SCHEDULES)[number];
+/**
+ * Schedules and scopes are configured in Settings › Schedules & Scopes (`settings.ts`); these are
+ * the lists a new installation starts with, and what the register uses until the settings exist.
+ */
+export const SCHEDULES: readonly string[] = ['Supply', 'Civil', 'Electrical'];
+export type MdlSchedule = string;
 
-export const SCOPES = ['Substation', 'Transmission Line'] as const;
-export type MdlScope = (typeof SCOPES)[number];
+export const SCOPES: readonly string[] = ['Substation', 'Transmission Line'];
+export type MdlScope = string;
 
 export const STATUSES = [
   'approved',
@@ -102,6 +106,10 @@ export interface MdlProject {
    * holders see it.
    */
   projectId?: string | null;
+  /** The client's review period in days under the contract: past it, a drawing with the client is overdue. */
+  reviewDays?: number | null;
+  /** SEL's period to resubmit after comments, in days. */
+  resubmitDays?: number | null;
 }
 
 export const COLLECTIONS = { projects: 'mdl_projects', items: 'mdl_items' } as const;

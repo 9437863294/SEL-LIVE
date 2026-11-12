@@ -30,6 +30,7 @@ import {
   REVISION_STATUSES,
   countVisibleRevisions,
   formRevisions,
+  isApproved,
   isRevisionRejected,
   type DrawingItem,
   type DrawingRevision,
@@ -40,7 +41,19 @@ import {
 import { drawingFormError, type DrawingForm } from '@/lib/master-drawing-list/steps';
 import { cn } from '@/lib/utils';
 
-import { mdlSendForm, openDrawingFile } from './mdl-client';
+import { dateRuleFor, dateWindow, describeDateRule, fieldSetting, type FieldSetting } from '@/lib/master-drawing-list/settings';
+
+import { mdlSendForm, openDrawingFile, useMdlSettings } from './mdl-client';
+
+/** A field's label as Field Control names it, with the required mark or "(optional)". */
+function Mark({ setting, required = setting.required }: { setting: FieldSetting; required?: boolean }) {
+  return (
+    <>
+      {setting.label}
+      {required ? <span className="text-destructive"> *</span> : <span className="font-normal text-muted-foreground"> (optional)</span>}
+    </>
+  );
+}
 
 /** The dialog edits an item's own drawing (sub === null) or one of its sub-drawings; `isNew` for one being added. */
 export type DrawingTarget = { item: DrawingItem; sub: SubDrawing | null; isNew: boolean };
@@ -56,6 +69,20 @@ const DIALOG = {
 // Radix Select cannot hold an empty string value.
 const UNASSIGNED = 'none';
 const NO_STATUS = 'none';
+
+const dayGap = (from: string, to: string) => Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86_400_000);
+
+/** How long the round took: the client to answer it, and SEL to resubmit after comments — or how long it has waited. */
+function RoundTiming({ revision, next, approveDate, today }: { revision: DrawingRevision; next?: DrawingRevision; approveDate: string; today: string }) {
+  if (!revision.submissionDate) return null;
+  const answered = revision.commentsDate || (!next?.submissionDate && approveDate ? approveDate : '');
+  const parts: string[] = [];
+  if (answered && answered >= revision.submissionDate) parts.push('client took ' + dayGap(revision.submissionDate, answered) + ' d');
+  else if (!answered) parts.push('with client ' + dayGap(revision.submissionDate, today) + ' d');
+  if (revision.commentsDate && next?.submissionDate && next.submissionDate >= revision.commentsDate) parts.push('SEL resubmitted in ' + dayGap(revision.commentsDate, next.submissionDate) + ' d');
+  else if (revision.commentsDate && !next?.submissionDate && !approveDate) parts.push('with SEL ' + dayGap(revision.commentsDate, today) + ' d');
+  return parts.length ? <span className="text-[11px] text-muted-foreground">{parts.join(' · ')}</span> : null;
+}
 
 function formFor(target: DrawingTarget): DrawingForm {
   const source = target.sub ?? target.item;
@@ -105,6 +132,33 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
   const [isSaving, setIsSaving] = useState(false);
   const { item, sub, isNew } = target;
   const previous = sub ?? item;
+  const settings = useMdlSettings();
+  // Field Control: each field's label, and whether it is shown and required.
+  const fs = useMemo(() => {
+    const at = (formKey: 'item' | 'drawing' | 'sub' | 'round', key: string) => fieldSetting(settings.fieldControl, formKey, key);
+    return {
+      description: at('item', 'description'),
+      group: at('item', 'group'),
+      title: at('sub', 'title'),
+      assignedTo: at('sub', 'assignedTo'),
+      docNo: at('drawing', 'docNo'),
+      drawingNo: at('drawing', 'drawingNo'),
+      plannedStartDate: at('drawing', 'plannedStartDate'),
+      plannedEndDate: at('drawing', 'plannedEndDate'),
+      approveDate: at('drawing', 'approveDate'),
+      status: at('drawing', 'status'),
+      remark: at('drawing', 'remark'),
+      submissionDate: at('round', 'submissionDate'),
+      transmittalNo: at('round', 'transmittalNo'),
+      roundStatus: at('round', 'status'),
+      commentsDate: at('round', 'commentsDate'),
+      file: at('round', 'file'),
+      comments: at('round', 'comments'),
+    };
+  }, [settings.fieldControl]);
+  // Date Control: the window this drawing list allows, for the date pickers.
+  const rule = dateRuleFor(settings.dateControl, item.projectCode);
+  const windows = { submission: dateWindow(rule, 'submission', today), comments: dateWindow(rule, 'comments', today), approval: dateWindow(rule, 'approval', today) };
 
   // Only active users can be picked, but a sub-drawing assigned before someone left keeps them in
   // the list — dropping them would silently unassign it the next time anyone saved.
@@ -125,7 +179,7 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
   const handleSave = async () => {
     const uploads = new Set(Object.keys(pendingFiles).filter((round) => pendingFiles[round]));
     const shown = { ...form, revisions: form.revisions.slice(0, visibleRounds) };
-    const error = drawingFormError(shown, { isSub: Boolean(sub), previous: isNew ? null : previous, today, uploads });
+    const error = drawingFormError(shown, { isSub: Boolean(sub), isNew, previous: isNew ? null : previous, today, uploads, fields: settings.fieldControl, dateRule: rule });
     if (error) {
       toast({ title: 'Check the drawing details', description: error, variant: 'destructive' });
       return;
@@ -162,72 +216,99 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
       <div className={cn(DIALOG.body, 'grid grid-cols-1 content-start gap-4 space-y-0 py-2')}>
         {!sub && (
           <div className="grid grid-cols-1 gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-3">
-            <div className="space-y-2 sm:col-span-2">
+            <div className={cn('space-y-2', fs.group.visible ? 'sm:col-span-2' : 'sm:col-span-3')}>
               <Label htmlFor="item-description">
-                Item Description <span className="text-destructive">*</span>
+                <Mark setting={fs.description} />
               </Label>
               <Textarea id="item-description" rows={2} value={form.description} onChange={(e) => setForm((c) => ({ ...c, description: e.target.value }))} />
+              {!fs.group.visible && (
+                <p className="text-[11px] text-muted-foreground">
+                  {item.schedule} · {item.scope}
+                </p>
+              )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="item-group">Group</Label>
-              <Input id="item-group" value={form.group} onChange={(e) => setForm((c) => ({ ...c, group: e.target.value }))} placeholder="Optional" />
-              <p className="text-[11px] text-muted-foreground">
-                {item.schedule} · {item.scope}
-              </p>
-            </div>
+            {fs.group.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="item-group">
+                  <Mark setting={fs.group} />
+                </Label>
+                <Input id="item-group" value={form.group} onChange={(e) => setForm((c) => ({ ...c, group: e.target.value }))} />
+                <p className="text-[11px] text-muted-foreground">
+                  {item.schedule} · {item.scope}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
         {sub && (
           <div className="grid grid-cols-1 gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
-            <div className="space-y-2">
+            <div className={cn('space-y-2', !fs.assignedTo.visible && 'sm:col-span-2')}>
               <Label htmlFor="sub-title">
-                Sub-drawing Title <span className="text-destructive">*</span>
+                <Mark setting={fs.title} />
               </Label>
               <Input id="sub-title" value={form.title} onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))} placeholder="e.g. GA Drawing, Foundation Drawing" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="sub-assignee">Assigned To</Label>
-              <Select value={form.assignedToId || UNASSIGNED} onValueChange={(value) => setForm((c) => ({ ...c, assignedToId: value === UNASSIGNED ? '' : value }))} disabled={!canEdit}>
-                <SelectTrigger id="sub-assignee" className="text-left">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                  {assigneeOptions.map((candidate) => (
-                    <SelectItem key={candidate.id} value={candidate.id}>
-                      {candidate.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">The assignee can update this sub-drawing even without Edit rights on the register.</p>
-            </div>
+            {fs.assignedTo.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="sub-assignee">
+                  <Mark setting={fs.assignedTo} />
+                </Label>
+                <Select value={form.assignedToId || UNASSIGNED} onValueChange={(value) => setForm((c) => ({ ...c, assignedToId: value === UNASSIGNED ? '' : value }))} disabled={!canEdit}>
+                  <SelectTrigger id="sub-assignee" className="text-left">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                    {assigneeOptions.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id}>
+                        {candidate.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">The assignee can update this sub-drawing even without Edit rights on the register.</p>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="doc-no">Doc No.</Label>
-            <Input id="doc-no" value={form.docNo} onChange={(e) => setForm((c) => ({ ...c, docNo: e.target.value }))} />
+        {(fs.docNo.visible || fs.drawingNo.visible || fs.plannedStartDate.visible || fs.plannedEndDate.visible) && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {fs.docNo.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="doc-no">
+                  <Mark setting={fs.docNo} />
+                </Label>
+                <Input id="doc-no" value={form.docNo} onChange={(e) => setForm((c) => ({ ...c, docNo: e.target.value }))} />
+              </div>
+            )}
+            {fs.drawingNo.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="drawing-no">
+                  <Mark setting={fs.drawingNo} />
+                </Label>
+                <Input id="drawing-no" value={form.drawingNo} onChange={(e) => setForm((c) => ({ ...c, drawingNo: e.target.value }))} />
+              </div>
+            )}
+            {fs.plannedStartDate.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="planned-start-date">
+                  <Mark setting={fs.plannedStartDate} />
+                </Label>
+                <Input id="planned-start-date" type="date" value={form.plannedStartDate} onChange={(e) => setForm((c) => ({ ...c, plannedStartDate: e.target.value }))} />
+              </div>
+            )}
+            {fs.plannedEndDate.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="planned-end-date">
+                  <Mark setting={fs.plannedEndDate} />
+                </Label>
+                <Input id="planned-end-date" type="date" min={form.plannedStartDate || undefined} value={form.plannedEndDate} onChange={(e) => setForm((c) => ({ ...c, plannedEndDate: e.target.value }))} />
+              </div>
+            )}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="drawing-no">Drawing No.</Label>
-            <Input id="drawing-no" value={form.drawingNo} onChange={(e) => setForm((c) => ({ ...c, drawingNo: e.target.value }))} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="planned-start-date">
-              Planned Start Date <span className="text-muted-foreground">(optional)</span>
-            </Label>
-            <Input id="planned-start-date" type="date" value={form.plannedStartDate} onChange={(e) => setForm((c) => ({ ...c, plannedStartDate: e.target.value }))} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="planned-end-date">
-              Planned End Date <span className="text-muted-foreground">(optional)</span>
-            </Label>
-            <Input id="planned-end-date" type="date" min={form.plannedStartDate || undefined} value={form.plannedEndDate} onChange={(e) => setForm((c) => ({ ...c, plannedEndDate: e.target.value }))} />
-          </div>
-        </div>
+        )}
 
         {isNew ? (
           <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
@@ -239,64 +320,96 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
             <div className="space-y-3">
               <div>
                 <p className="text-sm font-medium">Submission to Client</p>
-                <p className="text-xs text-muted-foreground">Optional while planning. Once you submit a round to the client, attach the drawing that went with it.</p>
+                <p className="text-xs text-muted-foreground">
+                  Optional while planning. Once you submit a round to the client{fs.file.visible ? ', attach the drawing that went with it' : ''}.{' '}
+                  {rule.enabled ? describeDateRule(rule) : ''}
+                </p>
               </div>
               {form.revisions.slice(0, visibleRounds).map((revision) => {
                 const pendingFile = pendingFiles[revision.round];
                 return (
                   <div key={revision.round} className="rounded-lg border p-3">
-                    <div className="mb-2 flex items-center gap-2">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
                       <Badge variant="neutral">{revision.round}</Badge>
+                      <RoundTiming revision={revision} next={form.revisions[form.revisions.indexOf(revision) + 1]} approveDate={form.approveDate} today={today} />
                     </div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Submission Date</Label>
-                        <Input type="date" max={today} value={revision.submissionDate ?? ''} onChange={(e) => updateRevision(revision.round, { submissionDate: e.target.value })} />
+                        <Label className="text-xs">
+                          <Mark setting={fs.submissionDate} />
+                        </Label>
+                        <Input type="date" min={windows.submission.min ?? undefined} max={windows.submission.max} value={revision.submissionDate ?? ''} onChange={(e) => updateRevision(revision.round, { submissionDate: e.target.value })} />
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Status</Label>
-                        <Select value={revision.status || NO_STATUS} onValueChange={(value) => updateRevision(revision.round, { status: value === NO_STATUS ? '' : (value as RevisionStatus) })}>
-                          <SelectTrigger className="text-left">
-                            <SelectValue placeholder="Select..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NO_STATUS}>Select...</SelectItem>
-                            {REVISION_STATUSES.map((status) => (
-                              <SelectItem key={status} value={status}>
-                                {status}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Comments Date</Label>
-                        <Input type="date" max={today} min={revision.submissionDate || undefined} value={revision.commentsDate ?? ''} onChange={(e) => updateRevision(revision.round, { commentsDate: e.target.value })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Drawing File</Label>
-                        <Input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg,.dwg,.dxf"
-                          onChange={(e) => setPendingFiles((current) => ({ ...current, [revision.round]: e.target.files?.[0] ?? undefined }))}
-                        />
-                        {(pendingFile || revision.filePath) && (
-                          <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-                            <Paperclip className="h-3 w-3 shrink-0" />
-                            {pendingFile ? (
-                              pendingFile.name
-                            ) : (
-                              <button type="button" onClick={() => openFile(revision.filePath!)} className="truncate text-left underline underline-offset-2">
-                                {revision.fileName || 'View drawing'}
-                              </button>
-                            )}
-                          </p>
-                        )}
-                      </div>
-                      <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
-                        <Label className="text-xs">Comments</Label>
-                        <Input value={revision.comments ?? ''} onChange={(e) => updateRevision(revision.round, { comments: e.target.value })} placeholder="Optional" />
-                      </div>
+                      {fs.transmittalNo.visible && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">
+                            <Mark setting={fs.transmittalNo} />
+                          </Label>
+                          <Input value={revision.transmittalNo ?? ''} onChange={(e) => updateRevision(revision.round, { transmittalNo: e.target.value })} />
+                        </div>
+                      )}
+                      {fs.roundStatus.visible && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">
+                            <Mark setting={fs.roundStatus} />
+                          </Label>
+                          <Select value={revision.status || NO_STATUS} onValueChange={(value) => updateRevision(revision.round, { status: value === NO_STATUS ? '' : (value as RevisionStatus) })}>
+                            <SelectTrigger className="text-left">
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={NO_STATUS}>Select...</SelectItem>
+                              {REVISION_STATUSES.map((status) => (
+                                <SelectItem key={status} value={status}>
+                                  {status}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {fs.commentsDate.visible && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">
+                            <Mark setting={fs.commentsDate} />
+                          </Label>
+                          <Input
+                            type="date"
+                            max={windows.comments.max}
+                            min={[revision.submissionDate, windows.comments.min].filter(Boolean).sort().pop() || undefined}
+                            value={revision.commentsDate ?? ''}
+                            onChange={(e) => updateRevision(revision.round, { commentsDate: e.target.value })}
+                          />
+                        </div>
+                      )}
+                      {fs.file.visible && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">
+                            <Mark setting={fs.file} />
+                          </Label>
+                          <Input type="file" accept=".pdf,.png,.jpg,.jpeg,.dwg,.dxf" onChange={(e) => setPendingFiles((current) => ({ ...current, [revision.round]: e.target.files?.[0] ?? undefined }))} />
+                          {(pendingFile || revision.filePath) && (
+                            <p className="flex items-center gap-1 truncate text-[11px] text-muted-foreground">
+                              <Paperclip className="h-3 w-3 shrink-0" />
+                              {pendingFile ? (
+                                pendingFile.name
+                              ) : (
+                                <button type="button" onClick={() => openFile(revision.filePath!)} className="truncate text-left underline underline-offset-2">
+                                  {revision.fileName || 'View drawing'}
+                                </button>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {fs.comments.visible && (
+                        <div className="space-y-1.5 sm:col-span-2 lg:col-span-5">
+                          <Label className="text-xs">
+                            <Mark setting={fs.comments} />
+                          </Label>
+                          <Input value={revision.comments ?? ''} onChange={(e) => updateRevision(revision.round, { comments: e.target.value })} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -327,12 +440,18 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
             </div>
             <div className="h-px bg-border" />
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="approve-date">Approve Date</Label>
-                <Input id="approve-date" type="date" max={today} value={form.approveDate} onChange={(e) => setForm((c) => ({ ...c, approveDate: e.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="overall-status">Overall Status</Label>
+              {fs.approveDate.visible && (
+                <div className="space-y-2">
+                  <Label htmlFor="approve-date">
+                    <Mark setting={fs.approveDate} required={fs.approveDate.required && isApproved(form.status)} />
+                  </Label>
+                  <Input id="approve-date" type="date" min={windows.approval.min ?? undefined} max={windows.approval.max} value={form.approveDate} onChange={(e) => setForm((c) => ({ ...c, approveDate: e.target.value }))} />
+                </div>
+              )}
+              <div className={cn('space-y-2', !fs.approveDate.visible && 'sm:col-span-2')}>
+                <Label htmlFor="overall-status">
+                  <Mark setting={fs.status} />
+                </Label>
                 <Select value={form.status} onValueChange={(status) => setForm((c) => ({ ...c, status: status as OverallStatus }))}>
                   <SelectTrigger id="overall-status" className="text-left">
                     <SelectValue />
@@ -347,10 +466,14 @@ function DrawingDialogBody({ target, today, canEdit, onClose, onSaved }: { targe
                 </Select>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="remark">Remark</Label>
-              <Textarea id="remark" value={form.remark} onChange={(e) => setForm((c) => ({ ...c, remark: e.target.value }))} placeholder="Optional" />
-            </div>
+            {fs.remark.visible && (
+              <div className="space-y-2">
+                <Label htmlFor="remark">
+                  <Mark setting={fs.remark} />
+                </Label>
+                <Textarea id="remark" value={form.remark} onChange={(e) => setForm((c) => ({ ...c, remark: e.target.value }))} />
+              </div>
+            )}
             {!sub && item.legacy && (
               <div className="rounded-md border border-dashed p-2.5 text-xs text-muted-foreground">
                 <p>

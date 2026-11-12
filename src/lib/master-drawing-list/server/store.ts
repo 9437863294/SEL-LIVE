@@ -43,6 +43,7 @@ function toRevisions(value: unknown): DrawingRevision[] {
     const r = (raw ?? {}) as Record<string, unknown>;
     const revision: DrawingRevision = { round: str(r.round) as DrawingRevision['round'], submissionDate: str(r.submissionDate), comments: str(r.comments), commentsDate: str(r.commentsDate) };
     if (r.status) revision.status = str(r.status) as DrawingRevision['status'];
+    if (r.transmittalNo) revision.transmittalNo = str(r.transmittalNo);
     if (r.fileName) revision.fileName = str(r.fileName);
     if (r.filePath) revision.filePath = str(r.filePath);
     return revision;
@@ -107,6 +108,8 @@ function toProject(data: DocumentData): MdlProject {
     client: typeof data.client === 'string' ? data.client : null,
     drgPrefix: typeof data.drgPrefix === 'string' ? data.drgPrefix : null,
     projectId: typeof data.projectId === 'string' && data.projectId ? data.projectId : null,
+    reviewDays: typeof data.reviewDays === 'number' ? data.reviewDays : null,
+    resubmitDays: typeof data.resubmitDays === 'number' ? data.resubmitDays : null,
   };
 }
 

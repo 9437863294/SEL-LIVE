@@ -38,6 +38,8 @@ before(async () => {
     // Master Drawing List: written and read through /api/master-drawing-list only.
     'mdl_projects/x1': { code: 'x1' },
     'mdl_items/x1': { projectCode: 'x1' },
+    'mdl_settings/x1': { forms: {} },
+    'mdl_imports/x1': { fileName: 'x' },
   });
 });
 after(async () => env?.cleanup());
@@ -54,7 +56,7 @@ test('server-only collections refuse a signed-in browser, read and write', async
 });
 
 test('Master Drawing List collections refuse a signed-in browser, read and write', async () => {
-  for (const name of ['mdl_projects', 'mdl_items']) {
+  for (const name of ['mdl_projects', 'mdl_items', 'mdl_settings', 'mdl_imports']) {
     await assertFails(signedIn().doc(`${name}/x1`).get());
     await assertFails(signedIn().doc(`${name}/x1`).set({ x: 1 }));
     await assertFails(signedIn().doc(`${name}/x2`).set({ x: 1 }));

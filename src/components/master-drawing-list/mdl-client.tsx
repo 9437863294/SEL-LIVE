@@ -14,6 +14,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { auth } from '@/lib/firebase';
 import type { MdlResource } from '@/lib/master-drawing-list/access';
+import { DEFAULT_SETTINGS, type MdlSettings } from '@/lib/master-drawing-list/settings';
 import type { MdlLookups, RegisterData } from '@/lib/master-drawing-list/server/queries';
 
 export type { MdlLookups, RegisterData };
@@ -201,6 +202,11 @@ export function useMdl(): MdlState {
   const value = useContext(MdlContext);
   if (!value) throw new Error('useMdl must be used inside MdlProvider');
   return value;
+}
+
+/** Schedules & Scopes, Field Control and Date Control as configured (the defaults until loaded). */
+export function useMdlSettings(): MdlSettings {
+  return useMdl().lookups?.settings ?? DEFAULT_SETTINGS;
 }
 
 /** Lookups once loaded; the screens render inside the shell, which waits for them. */

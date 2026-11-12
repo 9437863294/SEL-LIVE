@@ -127,7 +127,13 @@ export interface ParsedImport {
 }
 
 /** The reference importer's reading of the three sheets: what it would write, and what it had to skip. */
-export function parseImport(grid: ImportGrid): ParsedImport {
+/** The schedules and scopes rows may use: Settings › Schedules & Scopes, else the defaults. */
+export interface ImportLists {
+  schedules: readonly string[];
+  scopes: readonly string[];
+}
+
+export function parseImport(grid: ImportGrid, lists: ImportLists = { schedules: SCHEDULES, scopes: SCOPES }): ParsedImport {
   const problems: string[] = [];
 
   /** 'YYYY-MM-DD' from a date cell or DD.MM.YYYY text. */
@@ -190,7 +196,7 @@ export function parseImport(grid: ImportGrid): ParsedImport {
     if (seen.has(id)) { problems.push(`${where}: duplicate Item ID; row skipped.`); continue; }
     if (!usableId(id)) { problems.push(`${where}: the Item ID contains "/"; row skipped.`); continue; }
     if (!projectCode) { problems.push(`${where}: project is not on the Projects sheet; row skipped.`); continue; }
-    if (!SCHEDULES.includes(schedule) || !SCOPES.includes(scope) || !description) {
+    if (!lists.schedules.includes(schedule) || !lists.scopes.includes(scope) || !description) {
       problems.push(`${where}: schedule, scope or description is missing or not recognised; row skipped.`);
       continue;
     }
@@ -363,13 +369,16 @@ export interface WriteOptions {
   timestamp: () => unknown;
   /** Written beside `updatedBy: 'import'`. */
   importedByName?: string | null;
+  /** The import record (`mdl_imports/{id}`) the items are written under, for Undo. */
+  importId?: string;
 }
 
 /**
  * Writes the drawing lists (merged, so a link made in Settings survives) and the items, 300 to a
  * batch. An item that already exists is skipped, unless `overwrite` and it is still as imported.
  */
-export async function writeImport(db: Firestore, parsed: ParsedImport, options: WriteOptions): Promise<{ projects: number; written: number; skipped: number }> {
+export async function writeImport(db: Firestore, parsed: ParsedImport, options: WriteOptions): Promise<{ projects: number; written: number; skipped: number; createdIds: string[]; replacedIds: string[] }> {
+  // A project workbook imports into an existing drawing list: `projects` is empty then.
   for (const p of parsed.projects) {
     const link = options.links?.get(p.code);
     await db.collection(COLLECTIONS.projects).doc(p.code).set(link ? { ...p, projectId: link } : p, { merge: true });
@@ -377,6 +386,8 @@ export async function writeImport(db: Firestore, parsed: ParsedImport, options: 
   const col = db.collection(COLLECTIONS.items);
   let written = 0;
   let skipped = 0;
+  const createdIds: string[] = [];
+  const replacedIds: string[] = [];
   for (let i = 0; i < parsed.items.length; i += 300) {
     const chunk = parsed.items.slice(i, i + 300);
     const existing = await db.getAll(...chunk.map((it) => col.doc(it.id)));
@@ -392,10 +403,12 @@ export async function writeImport(db: Firestore, parsed: ParsedImport, options: 
         updatedAt: options.timestamp(),
         updatedBy: 'import',
         updatedByName: options.importedByName ?? null,
+        ...(options.importId ? { importId: options.importId } : {}),
       });
+      (snap.exists ? replacedIds : createdIds).push(it.id);
       written += 1;
     });
     await batch.commit();
   }
-  return { projects: parsed.projects.length, written, skipped };
+  return { projects: parsed.projects.length, written, skipped, createdIds, replacedIds };
 }

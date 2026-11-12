@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { isIsoDate } from './derive.ts';
 import { OVERALL_STATUSES, REVISION_ROUNDS, REVISION_STATUSES } from './drawings.ts';
-import { SCHEDULES, SCOPES } from './types.ts';
+import { MAX_BACKDATE_DAYS, MAX_FUTURE_DAYS, MDL_FORM_KEYS } from './settings.ts';
 
 /** Trimmed text, '' / null / missing → null. */
 const optionalText = (max: number) =>
@@ -32,6 +32,7 @@ export const revisionSchema = z.object({
   status: z.union([z.enum(REVISION_STATUSES), z.literal('')]).optional(),
   comments: text(2000),
   commentsDate: dateOrEmpty,
+  transmittalNo: text(120).optional(),
   fileName: text(300).optional(),
   filePath: text(600).optional(),
 });
@@ -64,8 +65,9 @@ export const drawingSaveInputSchema = z.object({
 /** Add drawing item. The Sl. No. and position are given by the server. */
 export const newItemInputSchema = z.object({
   projectCode: z.string().trim().min(1, 'Choose a project.'),
-  schedule: z.enum(SCHEDULES, { errorMap: () => ({ message: 'Choose a schedule.' }) }),
-  scope: z.enum(SCOPES, { errorMap: () => ({ message: 'Choose a scope.' }) }),
+  // Checked against Settings › Schedules & Scopes by the server.
+  schedule: z.string().trim().min(1, 'Choose a schedule.').max(60),
+  scope: z.string().trim().min(1, 'Choose a scope.').max(60),
   group: optionalText(200),
   description: z.string().trim().min(3, 'Enter a description.').max(2000, 'Keep the description under 2000 characters.'),
   docNo: z.string().trim().max(200).default(''),
@@ -95,19 +97,94 @@ const gridSheet = z.object({
   headings: z.array(z.string().max(300)).max(200),
   rows: z.array(z.object({ n: z.number().int().positive(), cells: z.record(gridCell) })).max(20000),
 });
-export const importInputSchema = z.object({
-  grid: z.record(gridSheet),
-  mode: z.enum(['preview', 'import']),
-  overwrite: z.boolean().default(false),
+const COLUMN_ROLE = /^(ignore|slNo|description|drgNo|plannedStart|plannedEnd|approval|status|remarks|sub-[0-9]|com-[0-9])$/;
+const rawSheet = z.object({
+  name: z.string().max(200),
+  rows: z.array(z.object({ n: z.number().int().positive(), cells: z.array(gridCell).max(60) })).max(20000),
+});
+const sheetMapping = z.object({
+  sheet: z.string().max(200),
+  include: z.boolean(),
+  headerRow: z.number().int().positive(),
+  schedule: z.string().trim().min(1).max(60),
+  scope: z.string().trim().min(1).max(60),
+  // Checked as "sub-0" so that no bracketed colon appears in this file (Tailwind scans src/).
+  columns: z.array(z.string().refine((role) => COLUMN_ROLE.test(role.replace(':', '-')), 'Unknown column role.')).max(60),
+  skipRows: z.array(z.number().int().positive()).max(20000).optional(),
+  templateId: z.string().max(200).optional(),
 });
 
-/** Link a drawing list to an ERP project, or unlink it (null). */
-export const projectLinkInputSchema = z.object({
-  projectId: z.string().trim().min(1).max(200).nullable(),
-});
+/**
+ * The Excel Import: the consolidated three-sheet workbook (`grid`, as before), or a project's own
+ * MDL workbook (`source.kind: 'project'`) read into an existing drawing list with the column
+ * mapping the page showed. `mode` previews or imports.
+ */
+export const importInputSchema = z.object({
+  mode: z.enum(['preview', 'import']),
+  overwrite: z.boolean().default(false),
+  /** Keep the confirmed column mappings for the next workbook with the same headings. */
+  rememberMappings: z.boolean().default(true),
+  /** The file's name, for the import history. */
+  fileName: z.string().max(300).optional(),
+  grid: z.record(gridSheet).optional(),
+  source: z
+    .object({
+      kind: z.literal('project'),
+      projectCode: z.string().trim().min(1, 'Choose the drawing list to import into.'),
+      fileName: z.string().max(300),
+      sheets: z.array(rawSheet).max(50),
+      mappings: z.array(sheetMapping).max(50),
+    })
+    .optional(),
+}).refine((value) => Boolean(value.grid) !== Boolean(value.source), 'Send either the consolidated workbook or a project workbook.');
+
+/** Days, 1–365, or null for none. */
+const period = z.number().int().min(1, 'Enter at least 1 day.').max(365, 'Keep it within 365 days.').nullable();
+
+/** Settings › Projects: link a drawing list to an ERP project (null unlinks), and its review periods. */
+export const projectLinkInputSchema = z
+  .object({
+    projectId: z.string().trim().min(1).max(200).nullable().optional(),
+    reviewDays: period.optional(),
+    resubmitDays: period.optional(),
+  })
+  .refine((value) => value.projectId !== undefined || value.reviewDays !== undefined || value.resubmitDays !== undefined, 'Nothing to change.');
 
 export type DrawingSaveInput = z.output<typeof drawingSaveInputSchema>;
 export type NewItemInput = z.output<typeof newItemInputSchema>;
 export type ProjectLinkInput = z.output<typeof projectLinkInputSchema>;
 export type NewProjectInput = z.output<typeof newProjectInputSchema>;
 export type ImportInput = z.output<typeof importInputSchema>;
+
+/* ── Settings ──────────────────────────────────────────────────────────── */
+
+const masterValue = z.object({ id: z.string().trim().min(1).max(80), name: z.string().trim().min(1, 'Every value needs a name.').max(60), active: z.boolean() });
+
+/** Settings › Schedules & Scopes. */
+export const masterDataInputSchema = z.object({
+  schedules: z.array(masterValue).min(1).max(50),
+  scopes: z.array(masterValue).min(1).max(50),
+});
+
+const fieldOverride = z.object({ label: z.string().trim().max(80).optional(), visible: z.boolean().optional(), required: z.boolean().optional() });
+
+/** Settings › Field Control: per form, per field. Unknown forms and fields are dropped by the server. */
+export const fieldControlInputSchema = z.object({
+  forms: z.record(z.enum(MDL_FORM_KEYS as [string, ...string[]]), z.record(fieldOverride)),
+});
+
+const dateRule = z.object({
+  enabled: z.boolean(),
+  backdateDays: z.number().int().min(0).max(MAX_BACKDATE_DAYS),
+  futureDays: z.number().int().min(0).max(MAX_FUTURE_DAYS),
+  applySubmission: z.boolean(),
+  applyComments: z.boolean(),
+  applyApproval: z.boolean(),
+});
+
+/** Settings › Date Control: the rule for every drawing list, and lists with their own. */
+export const dateControlInputSchema = dateRule.extend({ projects: z.record(dateRule).default({}) });
+
+export type MasterDataInput = z.output<typeof masterDataInputSchema>;
+export type FieldControlInput = z.output<typeof fieldControlInputSchema>;
+export type DateControlInput = z.output<typeof dateControlInputSchema>;

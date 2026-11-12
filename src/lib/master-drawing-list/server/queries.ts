@@ -10,8 +10,10 @@ import 'server-only';
 import { MDL_ACTIONS, type MdlResource } from '../access.ts';
 import type { DrawingItem } from '../drawings.ts';
 import { existingGroups, nextNumbers } from '../register.ts';
-import { SCHEDULES, SCOPES, type MdlSchedule, type MdlScope } from '../types.ts';
+import type { MdlSchedule, MdlScope } from '../types.ts';
+import { allNames, type MdlSettings } from '../settings.ts';
 import type { MdlContext } from './context.ts';
+import { loadSettings } from './settings.ts';
 import { allProjectViews, erpProjects, listItems, listProjects, projectFor, type MdlProjectView } from './store.ts';
 
 export interface MdlLookups {
@@ -21,17 +23,19 @@ export interface MdlLookups {
   allProjects: boolean;
   today: string;
   user: { id: string; name: string };
+  /** Schedules & Scopes, Field Control and Date Control, as Settings configures them. */
+  settings: MdlSettings;
 }
 
 export async function lookups(context: MdlContext): Promise<MdlLookups> {
-  const projects = await listProjects(context);
+  const [projects, settings] = await Promise.all([listProjects(context), loadSettings()]);
   const permissions = Object.fromEntries(
     (Object.keys(MDL_ACTIONS) as MdlResource[]).map((resource) => [
       resource,
       MDL_ACTIONS[resource].filter((action) => context.can(resource, action) || projects.some((project) => context.can(resource, action, project))),
     ]),
   ) as Record<MdlResource, string[]>;
-  return { projects, permissions, allProjects: context.allProjects, today: context.today, user: { id: context.userId, name: context.userName } };
+  return { projects, permissions, allProjects: context.allProjects, today: context.today, user: { id: context.userId, name: context.userName }, settings };
 }
 
 export interface RegisterData {
@@ -62,10 +66,10 @@ export async function register(context: MdlContext, projectCode: string): Promis
 export async function groupsFor(context: MdlContext, projectCode: string): Promise<{ groups: ReturnType<typeof existingGroups>; nextSlNo: Record<string, string> }> {
   const project = await projectFor(context, projectCode);
   context.require('Drawings', 'Add', project);
-  const items = await listItems(project.code);
+  const [items, settings] = await Promise.all([listItems(project.code), loadSettings()]);
   const nextSlNo: Record<string, string> = {};
-  for (const schedule of SCHEDULES as readonly MdlSchedule[]) {
-    for (const scope of SCOPES as readonly MdlScope[]) nextSlNo[`${schedule}|${scope}`] = nextNumbers(items, schedule, scope).slNo;
+  for (const schedule of allNames(settings.masterData.schedules) as MdlSchedule[]) {
+    for (const scope of allNames(settings.masterData.scopes) as MdlScope[]) nextSlNo[`${schedule}|${scope}`] = nextNumbers(items, schedule, scope).slNo;
   }
   return { groups: existingGroups(items), nextSlNo };
 }

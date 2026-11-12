@@ -8,19 +8,41 @@ import type { ExcelSheet } from '../report-excel.ts';
 import {
   OVERALL_STATUSES,
   REVISION_ROUNDS,
+  ballInCourt,
+  drawingUnits,
   cycleAgeDays,
   drawingStage,
   isPendingTask,
   latestRevision,
   roundIndex,
   rollup,
+  type Court,
   type DrawingItem,
   type OverallStatus,
 } from './drawings.ts';
-import { SCHEDULES, SCOPES, type MdlSchedule, type MdlScope } from './types.ts';
+import type { MdlSchedule, MdlScope } from './types.ts';
 
-export const isSchedule = (value: unknown): value is MdlSchedule => SCHEDULES.includes(value as MdlSchedule);
-export const isScope = (value: unknown): value is MdlScope => SCOPES.includes(value as MdlScope);
+// Schedules and scopes are configured (Settings › Schedules & Scopes); any name may be filtered on.
+export const isSchedule = (value: unknown): value is MdlSchedule => typeof value === 'string' && value.trim().length > 0;
+export const isScope = (value: unknown): value is MdlScope => typeof value === 'string' && value.trim().length > 0;
+/** The quick filters over the register: where the ball is, or overdue against plan. */
+export const COURT_FILTERS = ['client', 'sel', 'not_started', 'closed', 'overdue'] as const;
+export type CourtFilter = (typeof COURT_FILTERS)[number];
+export const isCourtFilter = (value: unknown): value is CourtFilter => COURT_FILTERS.includes(value as CourtFilter);
+
+/** Whether any drawing of the item (its own, or a sub-drawing) is in that court — or the item is overdue. */
+export function inCourt(item: DrawingItem, filter: CourtFilter, today: string): boolean {
+  if (filter === 'overdue') return rollup(item, today).overdue;
+  return drawingUnits([item]).some((unit) => ballInCourt(unit.record, today).court === (filter as Court));
+}
+
+/** How many items each quick filter would show. */
+export function courtCounts(items: DrawingItem[], today: string): Record<CourtFilter, number> {
+  const counts = Object.fromEntries(COURT_FILTERS.map((filter) => [filter, 0])) as Record<CourtFilter, number>;
+  for (const item of items) for (const filter of COURT_FILTERS) if (inCourt(item, filter, today)) counts[filter] += 1;
+  return counts;
+}
+
 export const isOverallStatus = (value: unknown): value is OverallStatus => OVERALL_STATUSES.includes(value as OverallStatus);
 
 /* ── groups ──────────────────────────────────────────────────────────────── */
@@ -57,6 +79,7 @@ export interface RegisterFilters {
   schedule?: MdlSchedule | null;
   scope?: MdlScope | null;
   status?: OverallStatus | null;
+  court?: CourtFilter | null;
   /** Searched in the description, numbers, group, remark and sub-drawing titles. */
   q?: string | null;
 }
@@ -84,6 +107,7 @@ export function filterItems(items: DrawingItem[], filters: RegisterFilters, toda
       (!filters.schedule || item.schedule === filters.schedule) &&
       (!filters.scope || item.scope === filters.scope) &&
       (!filters.status || rollup(item, today).status === filters.status) &&
+      (!filters.court || inCourt(item, filters.court, today)) &&
       matchesSearch(item, filters.q),
   );
 }
@@ -148,6 +172,7 @@ export function registerSheet(items: DrawingItem[], project: { short: string }, 
   for (const round of REVISION_ROUNDS.slice(0, rounds)) {
     columns.push(
       { header: `${round} submitted`, key: `${round}s`, ...date },
+      { header: `${round} transmittal`, key: `${round}t`, width: 16 },
       { header: `${round} status`, key: `${round}st`, width: 20 },
       { header: `${round} comments date`, key: `${round}cd`, ...date },
       { header: `${round} comments`, key: `${round}c`, width: 30 },
@@ -185,6 +210,7 @@ export function registerSheet(items: DrawingItem[], project: { short: string }, 
         };
         for (const revision of record.revisions) {
           row[`${revision.round}s`] = excelDate(revision.submissionDate);
+          row[`${revision.round}t`] = revision.transmittalNo ?? '';
           row[`${revision.round}st`] = revision.status ?? '';
           row[`${revision.round}cd`] = excelDate(revision.commentsDate);
           row[`${revision.round}c`] = revision.comments;

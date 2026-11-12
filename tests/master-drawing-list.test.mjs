@@ -132,7 +132,7 @@ test('the assignee may update their sub-drawing without Edit; nobody else may', 
 /* ── the save rules ─────────────────────────────────────────────────────── */
 
 test('save rules: titles, planned window, dates in order and not in the future', () => {
-  assert.match(drawingFormError(form(), { isSub: true, today: TODAY, uploads: noUploads }), /sub-drawing a title/);
+  assert.match(drawingFormError(form(), { isSub: true, today: TODAY, uploads: noUploads }), /Sub-drawing Title is required/);
   assert.match(drawingFormError(form({ description: 'x' }), { isSub: false, today: TODAY, uploads: noUploads }), /item description/);
   assert.match(drawingFormError(form({ plannedStartDate: '2026-05-01', plannedEndDate: '2026-04-01' }), { isSub: false, today: TODAY, uploads: noUploads }), /end date cannot be before/);
   assert.match(drawingFormError(form({ revisions: rounds(round('R0', '2026-07-01', 'Under Review')) }), { isSub: false, today: TODAY, uploads: new Set(['R0']) }), /R0 submission date cannot be in the future/);
@@ -316,4 +316,254 @@ test('the grid is read from a real exceljs workbook: dates, rich text and formul
   assert.equal(read.Items.rows[0].cells['Sl. No. (as in workbook)'], '7');
   assert.equal(parseImport(read).items[0].core.description, 'item a');
   assert.equal(cellText({ error: '#N/A' }), null);
+});
+
+/* ── ball in court, turnaround, dashboard figures ───────────────────────── */
+
+const { ballInCourt, roundTurnarounds } = await import('../src/lib/master-drawing-list/drawings.ts');
+const { dashboardStats } = await import('../src/lib/master-drawing-list/analytics.ts');
+const { courtCounts } = await import('../src/lib/master-drawing-list/register.ts');
+
+test('ball in court: client while under review, SEL once comments are back, nobody before or after', () => {
+  assert.deepEqual(ballInCourt(item(), TODAY), { court: 'not_started', since: null, days: null, round: null });
+  assert.deepEqual(ballInCourt(item({ revisions: rounds(round('R0', '2026-06-01', 'Under Review')) }), TODAY), { court: 'client', since: '2026-06-01', days: 29, round: 'R0' });
+  assert.deepEqual(ballInCourt(item({ revisions: rounds(round('R0', '2026-06-01', 'Resubmission Required', '2026-06-20')) }), TODAY), { court: 'sel', since: '2026-06-20', days: 10, round: 'R0' });
+  assert.equal(ballInCourt(item({ revisions: rounds(round('R0', '2026-06-01', '', '2026-06-20')) }), TODAY).court, 'sel');
+  assert.equal(ballInCourt(item({ status: 'Approved with Comments', revisions: rounds(round('R0', '2026-06-01', 'Approved with Comments')) }), TODAY).court, 'closed');
+});
+
+test('turnaround per round: client to comments (or approval on the last round), SEL to resubmit', () => {
+  const record = { status: 'Approved', approveDate: '2026-03-10', revisions: [round('R0', '2026-01-01', 'Resubmission Required', '2026-01-15'), round('R1', '2026-01-25', 'Approved')] };
+  assert.deepEqual(roundTurnarounds(record), [{ round: 'R0', client: 14, sel: 10 }, { round: 'R1', client: 44, sel: null }]);
+});
+
+test('dashboard: deliverables, courts, first-time approval, overdue against the review period, S-curve', () => {
+  const items = [
+    item({ status: 'Approved', approveDate: '2026-02-10', plannedStartDate: '2026-01-01', plannedEndDate: '2026-02-01', revisions: rounds(round('R0', '2026-01-05', 'Approved')) }),
+    item({ status: 'In Progress', plannedStartDate: '2026-02-01', plannedEndDate: '2026-04-01', revisions: rounds(round('R0', '2026-05-01', 'Under Review')) }),
+    item({ status: 'In Progress', revisions: rounds(round('R0', '2026-04-01', 'Resubmission Required', '2026-06-25')) }),
+    item({ plannedStartDate: '2026-06-01' }),
+    item({ subDrawings: [sub({ status: 'Approved', approveDate: '2026-03-01', revisions: rounds(round('R0', '2026-02-01', 'Resubmission Required', '2026-02-10'), round('R1', '2026-02-20', 'Approved')) }), sub({ title: 'b' })] }),
+  ];
+  const stats = dashboardStats(items, TODAY, { reviewDays: 30, resubmitDays: 7 });
+  assert.equal(stats.items, 5);
+  assert.equal(stats.units, 6);
+  assert.deepEqual(stats.courts, { client: 1, sel: 1, not_started: 2, closed: 2 });
+  assert.equal(stats.approvedPct, 33);
+  assert.deepEqual(stats.firstTime, { approved: 2, atFirst: 1, pct: 50 });
+  assert.equal(stats.avgRounds, 1.5);
+  assert.equal(stats.overdue, 1);
+  assert.equal(stats.lateToSubmit, 1);
+  assert.equal(stats.clientOverdue, 1);
+  assert.equal(stats.selOverdue, 0);
+  assert.equal(dashboardStats(items, TODAY).clientOverdue, null);
+  const june = stats.sCurve.find((point) => point.month === '2026-06');
+  assert.deepEqual([june.plannedSubmission, june.actualSubmission, june.plannedApproval, june.actualApproval], [3, 4, 2, 2]);
+  assert.ok(stats.outcomes.find((entry) => entry.round === 'R1').approved === 1);
+  assert.deepEqual(courtCounts(items, TODAY), { client: 1, sel: 1, not_started: 2, closed: 2, overdue: 1 });
+});
+
+/* ── a project's own workbook ───────────────────────────────────────────── */
+
+const { detectSheet, parseProjectWorkbook, looseDate, rolesForHeader } = await import('../src/lib/master-drawing-list/workbook-import.ts');
+
+const rawSheet = (name, rows) => ({ name, rows: rows.map((cells, index) => ({ n: index + 1, cells })) });
+
+test('workbook columns are worked out from their headings, comments dates belonging to the submission before', () => {
+  assert.deepEqual(rolesForHeader(['SL NO', 'Description', 'Planning Date', 'Proposed Approval date', 'Drg/Doc No:', 'R0_submission', 'comments date', 'R1-SUBMISSION', 'R1-COMMENT', 'APPROVE DATE', 'Approval Status', 'REMARKS', 'Remarks']), [
+    'slNo', 'description', 'plannedStart', 'plannedEnd', 'drgNo', 'sub:0', 'com:0', 'sub:1', 'com:1', 'approval', 'status', 'remarks', 'ignore',
+  ]);
+  const sheet = rawSheet('Civil', [['MASTER DRAWING LIST'], ['CIVIL_TRANSMISSION LINE'], ['Sl. No.', 'DESCRIPTION OF ITEMS', 'R0 SUBMISSION', 'COMMENTS DATE', 'R1 SUBMISSION', 'APPROVAL DATE']]);
+  const mapping = detectSheet(sheet, 'list.xlsx');
+  assert.equal(mapping.headerRow, 3);
+  assert.equal(mapping.schedule, 'Civil');
+  assert.equal(mapping.scope, 'Transmission Line');
+  assert.equal(mapping.include, true);
+  assert.equal(detectSheet(rawSheet('Sheet1', [['SL NO', 'Description']]), 'x.xlsx').include, false);
+});
+
+test('dates: Excel dates or DD.MM.YYYY text; a typed year 0026 is caught', () => {
+  assert.deepEqual(looseDate('16.03.2026'), { date: '2026-03-16', problem: null });
+  assert.deepEqual(looseDate('2026-03-16'), { date: '2026-03-16', problem: null });
+  assert.deepEqual(looseDate('6/3/26'), { date: '2026-03-06', problem: null });
+  assert.match(looseDate('26.03.0026').problem, /year 26/);
+  assert.equal(looseDate('AS REQ').problem, null);
+  assert.match(looseDate('pending').problem, /not a date/);
+});
+
+test('workbook rows: group headings, rounds, approval and the corrections to make', () => {
+  const sheet = rawSheet('Supply', [
+    ['MASTER DRAWING LIST'],
+    ['SL NO', 'Description', 'R0_submission', 'comments date', 'R1_submission', 'Approval date', 'Approval Status'],
+    [null, 'SUB-STATION'],
+    ['1', 'item a', '16.03.2026', null, null, '20.03.2026', 'APPROVED'],
+    ['2', 'item b', '26.03.0026', '04.04.2026', '17.04.2026', null, 'SUBMITTED'],
+    ['A', 'EQUIPMENT'],
+    ['3', 'item c', null, null, null, null, 'VENDOR NOT FINALISED'],
+  ]);
+  const mapping = detectSheet(sheet, 'list.xlsx');
+  const parsed = parseProjectWorkbook([sheet], [mapping], 'T1', 'list.xlsx');
+  assert.deepEqual(parsed.sheets, [{ sheet: 'Supply', items: 3, groups: 2, revisions: 3, sections: [] }]);
+  const [a, b, c] = parsed.items;
+  assert.equal(a.core.group, 'SUB-STATION');
+  assert.equal(c.core.group, 'EQUIPMENT');
+  assert.equal(derive(a.core).status, 'approved');
+  assert.deepEqual(b.core.revisions.map((r) => [r.rev, r.submittedOn, r.commentedOn]), [[0, null, '2026-04-04'], [1, '2026-04-17', null]]);
+  assert.equal(derive(c.core).status, 'vendor_not_finalised');
+  assert.match(parsed.problems.join('\n'), /Supply row 5: R0 submission: "26\.03\.0026" has the year 26/);
+  assert.ok(b.core.legacy.issues.some((issue) => /comments date without a submission/.test(issue)));
+  assert.equal(a.id, parseProjectWorkbook([sheet], [mapping], 'T1', 'list.xlsx').items[0].id);
+  assert.match(a.id, /^T1-/);
+});
+
+/* ── Settings: Schedules & Scopes, Field Control, Date Control ──────────── */
+
+const settingsLib = await import('../src/lib/master-drawing-list/settings.ts');
+
+test('Field Control: labels, shown and required; locked fields keep their place; hidden is never required', () => {
+  const { fieldSetting, resolveFieldControl } = settingsLib;
+  assert.deepEqual(fieldSetting({}, 'drawing', 'docNo'), { label: 'Doc No.', visible: true, required: false, locked: false });
+  const control = resolveFieldControl({ drawing: { docNo: { label: ' Document No. ', required: true }, remark: { visible: false, required: true } }, item: { description: { label: 'Item', visible: false } }, bogus: { x: {} } });
+  assert.deepEqual(fieldSetting(control, 'drawing', 'docNo'), { label: 'Document No.', visible: true, required: true, locked: false });
+  assert.deepEqual(fieldSetting(control, 'drawing', 'remark'), { label: 'Remark', visible: false, required: false, locked: false });
+  assert.deepEqual(fieldSetting(control, 'item', 'description'), { label: 'Item', visible: true, required: true, locked: true });
+  assert.equal(fieldSetting({}, 'round', 'file').required, true);
+  assert.equal(control.bogus, undefined);
+});
+
+test('Schedules & Scopes: names required and unique, one switched on; values on drawings keep their name', () => {
+  const { masterValuesError, usedValueChange, resolveMasterData } = settingsLib;
+  assert.deepEqual(resolveMasterData(null).schedules.map((v) => v.name), ['Supply', 'Civil', 'Electrical']);
+  assert.match(masterValuesError('schedules', [{ id: 'a', name: 'X', active: true }, { id: 'b', name: 'x', active: true }]), /listed twice/);
+  assert.match(masterValuesError('scopes', [{ id: 'a', name: 'X', active: false }]), /at least one scope switched on/);
+  assert.equal(masterValuesError('scopes', [{ id: 'a', name: 'X', active: true }]), null);
+  const before = [{ id: 's', name: 'Supply', active: true }, { id: 'c', name: 'Civil', active: true }];
+  assert.match(usedValueChange(before, [{ id: 's', name: 'Supplies', active: true }, before[1]], { Supply: 3 }), /cannot be renamed/);
+  assert.match(usedValueChange(before, [before[1]], { Supply: 3 }), /switch it off instead/);
+  assert.equal(usedValueChange(before, [{ id: 's', name: 'Supply', active: false }, { id: 'c', name: 'Civil works', active: true }], { Supply: 3 }), null);
+});
+
+test('Date Control: the window, a list\'s own rule, and the wording', () => {
+  const { dateWindow, dateRuleFor, describeDateRule, resolveDateControl } = settingsLib;
+  const off = resolveDateControl(null);
+  assert.deepEqual(dateWindow(off, 'submission', TODAY), { min: null, max: TODAY });
+  const control = resolveDateControl({ enabled: true, backdateDays: 10, futureDays: 2, applyComments: false, projects: { T2: { enabled: true, backdateDays: 0, futureDays: 0 } } });
+  assert.deepEqual(dateWindow(control, 'submission', TODAY), { min: '2026-06-20', max: '2026-07-02' });
+  assert.deepEqual(dateWindow(control, 'comments', TODAY), { min: null, max: TODAY });
+  assert.equal(dateRuleFor(control, 'T2').source, 'project');
+  assert.deepEqual(dateWindow(dateRuleFor(control, 'T2'), 'approval', TODAY), { min: TODAY, max: TODAY });
+  assert.equal(describeDateRule(control), 'Dates within the last 10 days, or up to 2 days ahead.');
+});
+
+test('saving: Field Control requirements and the Date Control window, only for dates entered now', () => {
+  const { resolveFieldControl, resolveDateControl } = settingsLib;
+  const fields = resolveFieldControl({ drawing: { docNo: { required: true } }, round: { transmittalNo: { required: true }, file: { required: false } } });
+  const base = form({ docNo: 'D-1', revisions: rounds(round('R0', '2026-06-25', 'Under Review', '', { transmittalNo: 'T/1' })) });
+  assert.equal(drawingFormError(base, { isSub: false, today: TODAY, uploads: noUploads, fields }), null);
+  assert.match(drawingFormError({ ...base, docNo: '' }, { isSub: false, today: TODAY, uploads: noUploads, fields }), /Doc No\. is required/);
+  assert.match(drawingFormError(form({ docNo: 'D-1', revisions: rounds(round('R0', '2026-06-25', 'Under Review')) }), { isSub: false, today: TODAY, uploads: noUploads, fields }), /R0: Transmittal No\. is required/);
+  const dateRule = resolveDateControl({ enabled: true, backdateDays: 3 });
+  assert.match(drawingFormError(base, { isSub: false, today: TODAY, uploads: noUploads, fields, dateRule }), /R0 submission date cannot be earlier than 27\.06\.2026/);
+  // The same old date already on record is not held to the window.
+  assert.equal(drawingFormError(base, { isSub: false, previous: { revisions: [round('R0', '2026-06-25', 'Under Review')] }, today: TODAY, uploads: noUploads, fields, dateRule }), null);
+  const ahead = resolveDateControl({ enabled: true, backdateDays: 30, futureDays: 5 });
+  assert.equal(drawingFormError(form({ revisions: rounds(round('R0', '2026-07-03', 'Under Review')) }), { isSub: false, today: TODAY, uploads: new Set(['R0']), dateRule: ahead }), null);
+  assert.match(drawingFormError(form({ revisions: rounds(round('R0', '2026-07-08', 'Under Review')) }), { isSub: false, today: TODAY, uploads: new Set(['R0']), dateRule: ahead }), /cannot be later than 05\.07\.2026/);
+});
+
+test('import detection picks the configured schedule and scope names', () => {
+  const lists = { schedules: ['Schedule I Supply', 'Schedule III Civil Works'], scopes: ['Substation', 'Transmission Line'] };
+  const supply = detectSheet(rawSheet('Supply', [['SL NO', 'Description']]), 'x.xlsx', lists);
+  assert.equal(supply.schedule, 'Schedule I Supply');
+  const civil = detectSheet(rawSheet('Civil', [['TL'], ['SL NO', 'Description']]), 'x.xlsx', lists);
+  assert.equal(civil.schedule, 'Schedule III Civil Works');
+  assert.equal(civil.scope, 'Transmission Line');
+});
+
+test('a heading merged across the row switches schedule or scope part-way; placeholders are blank, not errors', () => {
+  const sheet = rawSheet('civil', [
+    ['Civil Works_Substation'],
+    ['SL NO', 'Description', 'Planning Date', 'R0_submission', 'Approval date'],
+    ['1', 'item a', 'AS REQ', '04.04.2025', '19.05.2025'],
+    ['Electrical Works_Substation', 'Electrical Works_Substation', 'Electrical Works_Substation', 'Electrical Works_Substation', null],
+    ['2', 'item b', '-', '04.04.2025', null],
+    ['Civil Works_Transmission line', 'Civil Works_Transmission line', 'Civil Works_Transmission line', null, null],
+    ['3', 'item c', null, '21.04.2025', null],
+  ]);
+  const parsed = parseProjectWorkbook([sheet], [detectSheet(sheet, 'x.xlsx')], 'T1', 'x.xlsx');
+  assert.deepEqual(parsed.items.map((entry) => [entry.core.description, entry.core.schedule, entry.core.scope]), [
+    ['item a', 'Civil', 'Substation'],
+    ['item b', 'Electrical', 'Substation'],
+    ['item c', 'Civil', 'Transmission Line'],
+  ]);
+  assert.deepEqual(parsed.sheets[0].sections, ['Electrical › Substation from row 4', 'Civil › Transmission Line from row 6']);
+  assert.deepEqual(parsed.problems, []);
+});
+
+/* ── Excel Import: row check, skipped rows, saved column mappings ──────────── */
+
+const { applyTemplates, headerSignature } = await import('../src/lib/master-drawing-list/workbook-import.ts');
+
+test('the row check: every row read as item, heading or section, with the cells behind each problem; skipped rows stay out', () => {
+  const sheet = rawSheet('Supply', [
+    ['MASTER DRAWING LIST'],
+    ['SL NO', 'Description', 'R0_submission', 'comments date', 'Approval date'],
+    [null, 'EQUIPMENT'],
+    ['1', 'item a', '16.03.2026', null, '20.03.2026'],
+    ['2', 'item b', '26.03.0026', null, null],
+    ['3', 'item c', '01.04.2026', null, null],
+  ]);
+  const mapping = detectSheet(sheet, 'list.xlsx');
+  const parsed = parseProjectWorkbook([sheet], [mapping], 'T1', 'list.xlsx');
+  assert.deepEqual(parsed.rows.map((row) => [row.n, row.kind, row.description, row.group]), [
+    [3, 'group', 'EQUIPMENT', 'EQUIPMENT'],
+    [4, 'item', 'item a', 'EQUIPMENT'],
+    [5, 'item', 'item b', 'EQUIPMENT'],
+    [6, 'item', 'item c', 'EQUIPMENT'],
+  ]);
+  const flagged = parsed.rows.find((row) => row.n === 5);
+  assert.equal(flagged.issues.length, 1);
+  assert.match(flagged.issues[0].text, /year 26/);
+  assert.deepEqual(flagged.issues[0].cols, [2]);
+  assert.deepEqual(parsed.rows.find((row) => row.n === 4).issues, []);
+
+  const skipped = parseProjectWorkbook([sheet], [{ ...mapping, skipRows: [5] }], 'T1', 'list.xlsx');
+  assert.deepEqual(skipped.items.map((entry) => entry.core.description), ['item a', 'item c']);
+  assert.equal(skipped.rows.find((row) => row.n === 5).kind, 'skipped');
+  assert.deepEqual(skipped.problems, []);
+  // Ids come from the sheet, Sl. No. and description, so skipping a row does not change the others.
+  assert.equal(skipped.items[1].id, parsed.items[2].id);
+});
+
+test('saved column mappings: matched by the heading row, same drawing list first, newest first', () => {
+  const sheet = rawSheet('Supply', [['MDL'], ['SL NO', 'Item', 'First sent', 'Back on', null, null]]);
+  assert.equal(headerSignature(sheet, 2), 'sl no|item|first sent|back on');
+  assert.equal(headerSignature(sheet, 9), '');
+  const detected = detectSheet(sheet, 'list.xlsx');
+  const template = (overrides) => ({
+    id: 'x',
+    signature: 'sl no|item|first sent|back on',
+    headerRow: 2,
+    schedule: 'Civil',
+    scope: 'Transmission Line',
+    columns: ['slNo', 'description', 'sub:0', 'com:0'],
+    projectCode: 'T1',
+    sheetName: 'Supply',
+    fileName: 'old.xlsx',
+    savedAt: '2026-06-01T00:00:00.000Z',
+    savedByName: 'user a',
+    ...overrides,
+  });
+  const other = template({ id: 'other', projectCode: 'T2', schedule: 'Electrical', savedAt: '2026-06-20T00:00:00.000Z' });
+  const own = template({ id: 'own' });
+  const { mappings, applied } = applyTemplates([sheet], [detected], [other, own], 'T1');
+  assert.equal(applied[0].id, 'own');
+  assert.deepEqual([mappings[0].schedule, mappings[0].scope, mappings[0].columns, mappings[0].include], ['Civil', 'Transmission Line', ['slNo', 'description', 'sub:0', 'com:0'], true]);
+  // Another list's layout is used when this list has none.
+  assert.equal(applyTemplates([sheet], [detected], [other], 'T1').applied[0].id, 'other');
+  // Different headings: the detected layout stands.
+  const changed = rawSheet('Supply', [['MDL'], ['SL NO', 'Item', 'Sent']]);
+  const result = applyTemplates([changed], [detectSheet(changed, 'list.xlsx')], [own], 'T1');
+  assert.equal(result.applied[0], null);
+  assert.deepEqual(result.mappings[0], detectSheet(changed, 'list.xlsx'));
 });

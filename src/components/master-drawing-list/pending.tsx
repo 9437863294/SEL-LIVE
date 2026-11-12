@@ -14,11 +14,11 @@ import { TableCard } from '@/components/shared/table-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { cycleAgeDays, drawingStage, formatMdlDate, isApproved, isOverdue, outlineNo, rollup, type DrawingItem, type Rollup, type SubDrawing } from '@/lib/master-drawing-list/drawings';
-import { groupItems, groupTitle, pendingItems, type RegisterGroup } from '@/lib/master-drawing-list/register';
+import { cycleAgeDays, formatMdlDate, isApproved, isOverdue, outlineNo, rollup, type DrawingItem, type Rollup, type SubDrawing } from '@/lib/master-drawing-list/drawings';
+import { courtCounts, groupItems, groupTitle, inCourt, pendingItems, type CourtFilter, type RegisterGroup } from '@/lib/master-drawing-list/register';
 import { cn } from '@/lib/utils';
 
-import { MdlEmpty, MdlStatus } from './mdl-ui';
+import { CourtBadge, CourtChips, MdlEmpty, MdlStatus } from './mdl-ui';
 
 type PendingCardRow = { id: string; item: DrawingItem; rollup: Rollup; outline: number[] };
 type PendingSubCardRow = { id: string; item: DrawingItem; sub: SubDrawing; outline: number[] };
@@ -37,7 +37,10 @@ const onStripKey = (event: KeyboardEvent, action: () => void) => {
 const CycleAge = ({ days }: { days: number | null }) => (days != null ? <span className={days > 30 ? 'font-medium text-amber-600' : ''}>{days}d</span> : <>—</>);
 
 export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; today: string; onSelect: (item: DrawingItem, sub: SubDrawing | null) => void }) {
-  const groups = useMemo(() => groupItems(pendingItems(items, today)), [items, today]);
+  const [court, setCourt] = useState<CourtFilter | null>(null);
+  const open = useMemo(() => pendingItems(items, today), [items, today]);
+  const counts = useMemo(() => courtCounts(open, today), [open, today]);
+  const groups = useMemo(() => groupItems(court ? open.filter((item) => inCourt(item, court, today)) : open), [open, court, today]);
   const total = groups.reduce((sum, group) => sum + group.items.length, 0);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const allGroupKeys = groups.map((group) => group.key);
@@ -98,7 +101,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
         <TableCell className="whitespace-nowrap">
           <CycleAge days={cycleAgeDays(rolled, today)} />
         </TableCell>
-        <TableCell className="whitespace-nowrap">{item.subDrawings.length ? null : <MdlStatus status={drawingStage(item)} />}</TableCell>
+        <TableCell className="whitespace-nowrap">{item.subDrawings.length ? null : <CourtBadge record={item} today={today} />}</TableCell>
         <TableCell className="whitespace-nowrap">
           <MdlStatus status={rolled.status} />
         </TableCell>
@@ -135,7 +138,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
               <CycleAge days={cycleAgeDays(sub, today)} />
             </TableCell>
             <TableCell className="whitespace-nowrap">
-              <MdlStatus status={drawingStage(sub)} />
+              <CourtBadge record={sub} today={today} />
             </TableCell>
             <TableCell className="whitespace-nowrap">
               <MdlStatus status={sub.status} />
@@ -225,7 +228,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
       mobile: 'title',
       cell: ({ sub }) => (
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
-          <MdlStatus status={drawingStage(sub)} />
+          <CourtBadge record={sub} today={today} />
           <MdlStatus status={sub.status} />
           <span className={cn(sub.assignedToName && 'text-foreground')}>{sub.assignedToName || 'Unassigned'}</span>
         </span>
@@ -266,6 +269,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
       description="Every drawing not yet approved — overdue first, then by planned end date."
       count={total}
       noun="item"
+      toolbar={<CourtChips counts={counts} total={open.length} value={court} onChange={setCourt} filters={['sel', 'client', 'not_started', 'overdue']} />}
       actions={
         groups.length ? (
           <>
@@ -280,7 +284,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
       }
     >
       {!groups.length ? (
-        <MdlEmpty title="Nothing pending" description="Every drawing in this list is approved." />
+        <MdlEmpty title={court ? 'Nothing under this filter' : 'Nothing pending'} description={court ? 'Choose All to see every open drawing.' : 'Every drawing in this list is approved.'} />
       ) : (
         <>
           <Table containerClassName="hidden sm:block">
@@ -293,7 +297,7 @@ export function PendingView({ items, today, onSelect }: { items: DrawingItem[]; 
                 <TableHead>Assigned To</TableHead>
                 <TableHead>Planned End</TableHead>
                 <TableHead>Cycle Age</TableHead>
-                <TableHead>Stage</TableHead>
+                <TableHead>Ball in Court</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-20" />
               </TableRow>

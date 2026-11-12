@@ -14,6 +14,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { SettingsNotice, SettingsPage, SettingsSection } from '@/components/settings/settings-ui';
 import { StatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 
@@ -36,6 +37,27 @@ export default function Settings() {
   const [saving, setSaving] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const data = query.data;
+
+  /** Saves a review period when the field is left, if it changed: whole days 1–365, blank for none. */
+  const savePeriod = async (project: MdlProjectView, field: 'reviewDays' | 'resubmitDays', raw: string) => {
+    const value = raw.trim() === '' ? null : Math.round(Number(raw));
+    if (value === (project[field] ?? null)) return;
+    if (value !== null && (!Number.isFinite(value) || value < 1 || value > 365)) {
+      toast({ variant: 'destructive', title: 'Enter whole days from 1 to 365', description: 'Or leave it blank for none.' });
+      return;
+    }
+    setSaving(project.code);
+    try {
+      await mdlFetch('projects/' + encodeURIComponent(project.code), { method: 'PATCH', body: { [field]: value } });
+      toast({ title: 'Saved', description: project.short + ': ' + (field === 'reviewDays' ? 'client review period' : 'resubmission period') + (value ? ' ' + value + ' days.' : ' cleared.') });
+      query.reload();
+      void reloadLookups();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not save', description: error instanceof Error ? error.message : 'Try again.' });
+    } finally {
+      setSaving(null);
+    }
+  };
 
   const link = async (project: MdlProjectView, value: string) => {
     const projectId = value === NONE ? null : value;
@@ -74,6 +96,24 @@ export default function Settings() {
     { header: 'Client', cell: (project) => project.client ?? '—' },
     { header: 'Drg. prefix', cell: (project) => project.drgPrefix ?? '—' },
     {
+      header: 'Client review (days)',
+      cell: (project) =>
+        data?.canManage ? (
+          <Input key={'r-' + project.code + '-' + (project.reviewDays ?? '')} type="number" min={1} max={365} inputMode="numeric" className="h-8 w-24" defaultValue={project.reviewDays ?? ''} placeholder="Days" aria-label={'Client review period for ' + project.short} onBlur={(event) => void savePeriod(project, 'reviewDays', event.target.value)} disabled={saving !== null} />
+        ) : (
+          (project.reviewDays ?? '—')
+        ),
+    },
+    {
+      header: 'Resubmission (days)',
+      cell: (project) =>
+        data?.canManage ? (
+          <Input key={'s-' + project.code + '-' + (project.resubmitDays ?? '')} type="number" min={1} max={365} inputMode="numeric" className="h-8 w-24" defaultValue={project.resubmitDays ?? ''} placeholder="Days" aria-label={'Resubmission period for ' + project.short} onBlur={(event) => void savePeriod(project, 'resubmitDays', event.target.value)} disabled={saving !== null} />
+        ) : (
+          (project.resubmitDays ?? '—')
+        ),
+    },
+    {
       header: 'ERP project',
       mobile: 'footer',
       className: 'min-w-[16rem]',
@@ -109,13 +149,13 @@ export default function Settings() {
 
   return (
     <SettingsPage>
-      <PageHeader icon={Settings2} title="Settings" description="How the Master Drawing List connects to the rest of the ERP." />
+      <PageHeader icon={Settings2} title="Drawing Lists" description="Create drawing lists, link each to its ERP project, and set the client review and resubmission periods." backHref="/master-drawing-list/settings" backLabel="Back to Settings" />
       <MdlError message={query.error} onRetry={query.reload} />
       {data && (
         <SettingsSection
           title="Projects"
           icon={Link2}
-          description="Link each drawing list to its ERP project. Engineers then see the lists of the projects granted to them in Access Management; holders of All Projects see every list, linked or not."
+          description="Link each drawing list to its ERP project: engineers see the lists of the projects granted to them in Access Management, and holders of All Projects see every list. Set the contract's client review period and SEL's resubmission period in days to flag drawings overdue at the client or with SEL."
           action={
             data.canManage ? (
               <Button size="sm" onClick={() => setCreating(true)}>

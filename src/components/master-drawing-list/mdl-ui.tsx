@@ -12,6 +12,8 @@ import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { COURT_LABEL, ballInCourt, formatMdlDate, type Court, type DrawingRecord } from '@/lib/master-drawing-list/drawings';
+import { COURT_FILTERS, type CourtFilter } from '@/lib/master-drawing-list/register';
 import { cn } from '@/lib/utils';
 
 import { useMdl, type MdlProjectView } from './mdl-client';
@@ -32,6 +34,44 @@ export function MdlStatus({ status, children, className, title }: { status?: str
     <StatusBadge status={status ?? undefined} tone={status ? TONE[status] : 'neutral'} className={className} title={title}>
       {children}
     </StatusBadge>
+  );
+}
+
+const COURT_TONE: Record<Court, StatusTone> = { client: 'info', sel: 'warning', not_started: 'neutral', closed: 'success' };
+
+/** Who has to act next on a drawing, and for how many days: "With client · 12 d". */
+export function CourtBadge({ record, today, className }: { record: Pick<DrawingRecord, 'revisions' | 'status'>; today: string; className?: string }) {
+  const state = ballInCourt(record, today);
+  return (
+    <StatusBadge tone={COURT_TONE[state.court]} dot className={className} title={state.since ? `Since ${formatMdlDate(state.since)}${state.round ? ` (${state.round})` : ''}` : undefined}>
+      {COURT_LABEL[state.court]}
+      {state.days !== null && (state.court === 'client' || state.court === 'sel') ? ` · ${state.days} d` : ''}
+    </StatusBadge>
+  );
+}
+
+const CHIP_DOT: Record<CourtFilter, string> = { client: 'bg-blue-500', sel: 'bg-amber-500', not_started: 'bg-slate-400', closed: 'bg-emerald-500', overdue: 'bg-rose-500' };
+const CHIP_LABEL: Record<CourtFilter, string> = { ...COURT_LABEL, overdue: 'Overdue' };
+
+/** The register's quick filters: all, or where the ball is, or overdue — each with its count. */
+export function CourtChips({ counts, total, value, onChange, filters = COURT_FILTERS }: { counts: Record<CourtFilter, number>; total: number; value: CourtFilter | null; onChange: (value: CourtFilter | null) => void; filters?: readonly CourtFilter[] }) {
+  const chip = (active: boolean) =>
+    cn(
+      'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      active ? 'border-primary bg-primary text-primary-foreground' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+    );
+  return (
+    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Quick filters">
+      <button type="button" className={chip(value === null)} aria-pressed={value === null} onClick={() => onChange(null)}>
+        All <span className="tabular-nums opacity-80">{total}</span>
+      </button>
+      {filters.map((filter) => (
+        <button key={filter} type="button" className={chip(value === filter)} aria-pressed={value === filter} onClick={() => onChange(value === filter ? null : filter)}>
+          <span className={cn('h-2 w-2 rounded-full', CHIP_DOT[filter])} aria-hidden="true" />
+          {CHIP_LABEL[filter]} <span className="tabular-nums opacity-80">{counts[filter]}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 

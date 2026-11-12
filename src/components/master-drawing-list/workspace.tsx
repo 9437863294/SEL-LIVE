@@ -19,7 +19,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { canEditSubDrawing, emptySubDrawing, type DrawingItem, type DrawingRevision, type SubDrawing } from '@/lib/master-drawing-list/drawings';
-import { exportFileName, filterItems, isOverallStatus, isSchedule, isScope, registerSheet } from '@/lib/master-drawing-list/register';
+import { exportFileName, filterItems, isCourtFilter, isOverallStatus, isSchedule, isScope, registerSheet } from '@/lib/master-drawing-list/register';
 import { exportWorkbook } from '@/lib/report-excel';
 
 import { CalendarView, GanttView } from './calendar-view';
@@ -86,10 +86,12 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
     if (!open && wantsAdd) params.set({ add: null });
   };
 
+  const courtParam = search.get('court');
   const filters = {
     schedule: isSchedule(params.schedule) ? params.schedule : null,
     scope: isScope(params.scope) ? params.scope : null,
     status: isOverallStatus(params.status) ? params.status : null,
+    court: isCourtFilter(courtParam) ? courtParam : null,
     q: params.q,
   };
   const items = useMemo(() => data?.items ?? [], [data]);
@@ -148,7 +150,7 @@ export default function MdlWorkspace({ view }: { view: MdlView }) {
       {!data ? (
         register.loading ? <MdlLoading /> : null
       ) : view === 'reports' ? (
-        <ReportsView items={items} today={today} onSelect={(item) => openDrawing(item, null)} />
+        <ReportsView items={items} today={today} project={data.project} onSelect={openDrawing} />
       ) : view === 'pending' ? (
         <PendingView items={items} today={today} onSelect={openDrawing} />
       ) : view === 'calendar' ? (

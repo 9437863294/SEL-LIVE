@@ -1,5 +1,5 @@
-import Settings from '@/components/master-drawing-list/settings';
+import SettingsHub from '@/components/master-drawing-list/settings-hub';
 
 export default function Page() {
-  return <Settings />;
+  return <SettingsHub />;
 }
