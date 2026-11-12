@@ -34,6 +34,7 @@ import {
   Check,
   Info,
   Receipt,
+  Landmark,
 } from 'lucide-react';
 import {
   DepPicker,
@@ -154,7 +155,8 @@ import {
   voucherHref,
 } from '@/lib/requisition-progress';
 import { checklistPrintHref } from '@/lib/checklist-print-batch';
-import { ReceiveMultiplePanel, carriedStatutory } from '@/components/daily-requisition/receive-multiple';
+import { ReceiveMultiplePanel, carriedBankDetails, carriedStatutory } from '@/components/daily-requisition/receive-multiple';
+import { maskedAccount, storedBankOf } from '@/lib/expenses-bank';
 import { FORM_LABEL } from '@/components/expenses/statutory-section';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -777,10 +779,14 @@ function EntrySheetPageComponent() {
     // Only a request not yet received can be picked — never another copy of the number already linked.
     const selectedExpenseRequest = unassignedExpenseRequests.find((req) => req.requestNo === data.depNo);
 
+    /** The request as it stands now, for the bank details it carries — not as the list loaded it. */
+    let freshRequest: { bankDetails?: unknown } | undefined;
+
     try {
       if (selectedExpenseRequest) {
         // Re-read before a number is allocated: someone may have received it since the page loaded.
         const fresh = await getDoc(doc(db, 'expenseRequests', selectedExpenseRequest.id));
+        freshRequest = fresh.exists() ? fresh.data() : undefined;
         const receivedAs = fresh.exists() ? String(fresh.data().receptionNo ?? '').trim() : '';
         if (receivedAs) {
           toast({
@@ -833,6 +839,8 @@ function EntrySheetPageComponent() {
         // GST & TDS captured on the expense request travel with it, so verification starts filled in.
         // Gross and net stay as entered on this form (verification flags any mismatch).
         ...(selectedExpenseRequest ? carriedStatutory(selectedExpenseRequest) : {}),
+        // …and so does the account it is paid into, for verification to check.
+        ...(selectedExpenseRequest ? carriedBankDetails(freshRequest ?? selectedExpenseRequest) : {}),
       };
       // Verification steps before Finance: it starts at the first that names someone for it.
       Object.assign(newEntryData, holdForCreate(await readDailyRequisitionWorkflowSteps(), newEntryData, Timestamp.now()));
@@ -2077,6 +2085,7 @@ function EntrySheetPageComponent() {
               const inWords = fields.netAmount.visible ? netNow : grossNow;
               const picked = unassignedExpenseRequests.find((req) => req.requestNo === form.watch('depNo'));
               const carried = picked?.statutory;
+              const carriedBank = storedBankOf(picked?.bankDetails);
               const depOptions: DepOption[] = unassignedExpenseRequests.map((req) => ({
                 id: req.id,
                 requestNo: req.requestNo,
@@ -2396,6 +2405,18 @@ function EntrySheetPageComponent() {
                                   {carried.gstAmount ? ` · GST ${formatCurrency(carried.gstAmount)}` : ''}
                                   {carried.tdsAmount ? ` · TDS ${formatCurrency(carried.tdsAmount)}` : ''} · net payable{' '}
                                   <b>{formatCurrency(carried.netPayable)}</b>
+                                </span>
+                              </div>
+                            ) : null}
+                            {carriedBank ? (
+                              <div className={cn(ef.note, ef.noteGreen, ef.full)}>
+                                <Landmark aria-hidden="true" />
+                                <span>
+                                  Bank details from the request come with it · {carriedBank.accountHolderName || 'no name'} · A/c{' '}
+                                  <b title={carriedBank.accountNumber}>{maskedAccount(carriedBank.accountNumber)}</b>
+                                  {carriedBank.ifscCode ? ` · IFSC ${carriedBank.ifscCode}` : ''}
+                                  {carriedBank.bankName ? ` · ${carriedBank.bankName}` : ''}
+                                  {carriedBank.source === 'employee' ? ` · from the Employee module${carriedBank.edited ? ' (changed on the request)' : ''}` : ''}
                                 </span>
                               </div>
                             ) : null}

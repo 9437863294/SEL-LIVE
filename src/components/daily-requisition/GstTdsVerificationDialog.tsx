@@ -12,14 +12,20 @@
  *   - An approval step with Verify (GST & TDS) ticked (workflow-flow.tsx, `passOn`) records the
  *     figures as it passes the requisition on, and leaves the status and the net amount alone;
  *     figures that do not come to the net cannot go on.
+ *
+ * The bank account carried from the expense request (src/lib/expenses-bank.ts) is shown beside the
+ * tax, to be checked against the bill: when there is one, it must be ticked as checked before the
+ * requisition can be verified. The tick is recorded in the verification's activity log, not on the
+ * requisition — it changes no figure, so the requisition's fields stay exactly what they were.
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { doc, runTransaction } from 'firebase/firestore';
 import { format } from 'date-fns';
-import { Check, ClipboardCheck, ExternalLink, FileText, Info, Loader2, Minus, Percent, TriangleAlert, Undo2, type LucideIcon } from 'lucide-react';
+import { Check, ClipboardCheck, ExternalLink, FileText, Info, Landmark, Loader2, Minus, Percent, TriangleAlert, Undo2, type LucideIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,6 +36,7 @@ import { diffFields } from '@/lib/activity-logger';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { amountInWords } from '@/lib/daily-requisition-print';
 import { db } from '@/lib/firebase';
+import { isIfsc, maskedAccount, storedBankOf } from '@/lib/expenses-bank';
 import { registrationLabel } from '@/lib/gst-registrations';
 import { isPaymentLocked } from '@/lib/requisition-progress';
 import {
@@ -219,6 +226,10 @@ function VerifyEntryForm({
   const [notes, setNotes] = useState(start.notes);
   const [isSaving, setIsSaving] = useState(false);
 
+  /** The account carried from the expense request, and whether the verifier has checked it. */
+  const bank = useMemo(() => storedBankOf(entry.bankDetails), [entry.bankDetails]);
+  const [bankChecked, setBankChecked] = useState(false);
+
   /**
    * Which of the company's registrations this bill belongs to: the choice made here, else the
    * project's state, else the department's, else the default (src/lib/gst-registrations.ts). It is
@@ -279,6 +290,7 @@ function VerifyEntryForm({
     ...(needsGstin ? [{ ok: gstinValid, label: 'Party GSTIN valid for a GST bill', blocking: true }] : []),
     ...(hasGst || tdsCode === '' ? [{ ok: tdsCode !== '' && tdsCode !== 'none', label: 'TDS section chosen', blocking: false }] : []),
     ...(otherOpen && totals.other > 0 ? [{ ok: otherReason.trim().length > 2, label: 'Reason given for other deduction', blocking: true }] : []),
+    ...(bank ? [{ ok: bankChecked, label: 'Bank details checked', blocking: true }] : []),
     { ok: totals.net > 0, label: 'Net payable above zero', blocking: true },
     {
       ok: !amountMismatch,
@@ -338,6 +350,10 @@ function VerifyEntryForm({
     const taxBefore: Record<string, unknown> = {};
     for (const key of Object.keys(taxAfter)) taxBefore[key] = (entry as unknown as Record<string, unknown>)[key] ?? null;
     const registration = bill.canChoose ? { gstRegistration: registrationLabel(bill.registration) } : {};
+    // The account the verifier confirmed — its last digits only; the log has no need of the number.
+    const bankAudit = bank
+      ? { bankDetailsChecked: true, bankAccount: maskedAccount(bank.accountNumber), bankIfsc: bank.ifscCode, bankAccountHolder: bank.accountHolderName }
+      : { bankDetailsChecked: false };
 
     try {
       // At an approval step: the figures go on with the step's pass-on; the status and the net stay.
@@ -353,6 +369,7 @@ function VerifyEntryForm({
             atApprovalStep: true,
             sentTo: passOn.to,
             ...registration,
+            ...bankAudit,
             changes: diffFields(taxBefore, taxAfter),
           },
           { recordId: entry.id, recordRef: entry.receptionNo || undefined },
@@ -394,6 +411,7 @@ function VerifyEntryForm({
           from: entry.status ?? null,
           to: newStatus,
           ...registration,
+          ...bankAudit,
           amountMismatch,
           ...(amountMismatch ? { calculatedNetAmount: totals.net, preservedNetAmount: originalNet } : {}),
           changes: diffFields(taxBefore, taxAfter),
@@ -741,6 +759,41 @@ function VerifyEntryForm({
             />
           </FormSection>
 
+          <FormSection icon={Landmark} from="from-emerald-300" to="to-emerald-700" title="Bank details" hint="Where the payment goes — check it against the bill">
+            {bank ? (
+              <>
+                <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
+                  <BankFact label="Account holder" value={bank.accountHolderName} wide />
+                  <BankFact label="Account number" value={bank.accountNumber} mono />
+                  <BankFact label="IFSC" value={bank.ifscCode} mono warn={bank.ifscCode && !isIfsc(bank.ifscCode) ? 'Not a valid IFSC format' : undefined} />
+                  <BankFact label="Bank" value={bank.bankName} />
+                  <BankFact label="Branch" value={bank.branchName} />
+                </div>
+                <p className="mt-2.5 text-[11.5px] text-muted-foreground">
+                  {bank.source === 'employee'
+                    ? `From the Employee module${bank.employeeNo ? ` (${bank.employeeNo})` : ''}${bank.edited ? ', changed on the expense request' : ''}.`
+                    : 'Entered on the expense request.'}{' '}
+                  If they do not match the bill, do not verify — send it back or raise it with whoever raised the request.
+                </p>
+                <label
+                  htmlFor="verify-bank-checked"
+                  className={cn(
+                    'mt-2.5 flex cursor-pointer items-center gap-2.5 rounded-[11px] border px-3 py-2.5 text-[12.5px] font-semibold transition',
+                    bankChecked ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50/60',
+                  )}
+                >
+                  <Checkbox id="verify-bank-checked" checked={bankChecked} onCheckedChange={(checked) => setBankChecked(checked === true)} />
+                  I have checked these bank details against the bill
+                </label>
+              </>
+            ) : (
+              <p className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+                <Info className="h-3.5 w-3.5 shrink-0" />
+                No bank details came with this requisition — none were entered on its expense request.
+              </p>
+            )}
+          </FormSection>
+
           <FieldTitle htmlFor="verify-notes">
             {passOn ? `Note for ${passOn.to}` : 'Notes'} <em className="font-semibold not-italic text-muted-foreground">(optional)</em>
           </FieldTitle>
@@ -921,6 +974,23 @@ function Fact({ label, value, big }: { label: string; value: string; big?: boole
       <b className={cn('block truncate tabular-nums', big ? 'text-[17px] font-extrabold' : 'text-[13.5px]')} title={value}>
         {value}
       </b>
+    </div>
+  );
+}
+
+/** One line of the bank account, copied as it stands — a number to be read against the bill. */
+function BankFact({ label, value, mono, wide, warn }: { label: string; value: string; mono?: boolean; wide?: boolean; warn?: string }) {
+  return (
+    <div className={cn('min-w-0', wide && 'sm:col-span-2')}>
+      <small className="block text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">{label}</small>
+      <b className={cn('block break-all text-[14px]', mono && 'font-mono tracking-wide', !value && 'font-semibold text-muted-foreground/60')}>
+        {value || '—'}
+      </b>
+      {warn && (
+        <span className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+          <TriangleAlert className="h-3 w-3" /> {warn}
+        </span>
+      )}
     </div>
   );
 }

@@ -3,7 +3,8 @@
 /**
  * Add New Entry › Multiple: receive several expense requests (DEPs) at once.
  *
- * Tick the requests, pick one reception date, and each becomes its own requisition. They are
+ * Tick the requests, pick one reception date, and each becomes its own requisition, carrying the
+ * request's GST & TDS and bank details. They are
  * numbered in DEP order (src/lib/daily-requisition-receive.ts): a department's lowest serial takes
  * the first reception number of the block and its highest the last.
  *
@@ -41,6 +42,7 @@ import {
   type DRDateWindow,
 } from '@/lib/daily-requisition-settings';
 import { requisitionStatutoryFields } from '@/lib/statutory';
+import { storedBankOf } from '@/lib/expenses-bank';
 import type { Department, ExpenseRequest, Project, SerialNumberConfig } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -58,6 +60,15 @@ export function carriedStatutory(request: Pick<ExpenseRequest, 'statutory' | 'gs
   // no value for it, and Firestore rejects the whole write for a single `undefined` — which would
   // fail the receipt rather than carry one field less.
   return { ...chosen, ...Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== undefined)) };
+}
+
+/**
+ * The bank account a requisition inherits from its expense request (src/lib/expenses-bank.ts), so
+ * GST & TDS verification checks it beside the bill. Nothing when the request carries none.
+ */
+export function carriedBankDetails(request: { bankDetails?: unknown } | null | undefined) {
+  const bankDetails = storedBankOf(request?.bankDetails);
+  return bankDetails ? { bankDetails } : {};
 }
 
 /** Gross is the request's taxable value and net what is payable, when GST & TDS were captured on it. */
@@ -234,6 +245,9 @@ export function ReceiveMultiplePanel({
           );
         }
 
+        // The requests as they stand now, for what each carries — not as the list loaded them.
+        const freshById = new Map(requestSnaps.map((snap, index) => [chosen[index].id, snap.data()]));
+
         const { items, update } = planReception(chosen, configSnap.data() as SerialNumberConfig);
         // The counter, and the financial year it numbered in when it restarts each year.
         tx.update(configRef, update);
@@ -260,6 +274,8 @@ export function ReceiveMultiplePanel({
             attachments: [],
             // GST & TDS captured on the request travel with it, so verification starts filled in.
             ...carriedStatutory(request),
+            // …and so does the account it is paid into, for verification to check.
+            ...carriedBankDetails(freshById.get(request.id) ?? request),
           };
           tx.set(entryRef, { ...entry, ...holdForCreate(workflowSteps, entry, Timestamp.now()) });
           tx.update(doc(db, 'expenseRequests', request.id), { receptionNo, receptionDate: receptionKey });

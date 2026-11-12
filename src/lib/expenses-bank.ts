@@ -126,6 +126,31 @@ export function toStoredBank(value: ExpenseBankValue): StoredExpenseBank | null 
 }
 
 /**
+ * Bank details as a stored record carries them — an expense request, or the Daily Requisition it was
+ * received as — read defensively: null when there are none, and never an `undefined` field, which
+ * Firestore would reject when the details are copied onto another document.
+ */
+export function storedBankOf(raw: unknown): StoredExpenseBank | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Partial<StoredExpenseBank>;
+  if (!hasBank(value)) return null;
+  const fromEmployee = value.source === 'employee' && !!value.employeeId;
+  return {
+    ...cleanBank(value),
+    source: fromEmployee ? 'employee' : 'manual',
+    ...(fromEmployee
+      ? { employeeId: String(value.employeeId), employeeNo: String(value.employeeNo ?? ''), edited: Boolean(value.edited) }
+      : {}),
+  };
+}
+
+/** The last four digits only — for logs and summaries, which have no need of the whole number. */
+export const maskedAccount = (accountNumber: unknown): string => {
+  const digits = String(accountNumber ?? '').replace(/\s/g, '');
+  return digits.length > 4 ? `••••${digits.slice(-4)}` : digits;
+};
+
+/**
  * How a party name is compared with an employee's: capitals, and initials written "R.K." or
  * "R K" alike. A party typed in any case matches the employee it names.
  */

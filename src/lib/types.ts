@@ -1024,6 +1024,11 @@ export interface DailyRequisitionEntry {
   taxableValue?: number;
   /** The company GST registration this bill was attributed to; '' lets the chain decide. See src/lib/gst-registrations.ts. */
   gstRegistrationId?: string;
+  /**
+   * The account to pay, carried from the expense request when it was received (src/lib/expenses-bank.ts).
+   * Shown for checking at GST & TDS verification.
+   */
+  bankDetails?: import("@/lib/expenses-bank").StoredExpenseBank;
   // Document Status
   documentStatus: "Pending" | "Uploaded" | "Missing" | "Not Required";
   documentStatusUpdatedAt?: Timestamp;
