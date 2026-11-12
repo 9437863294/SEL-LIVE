@@ -1,12 +1,12 @@
 import { Suspense } from 'react';
 
-import Register from '@/components/master-drawing-list/register';
 import { MdlLoading } from '@/components/master-drawing-list/mdl-ui';
+import MdlWorkspace from '@/components/master-drawing-list/workspace';
 
 export default function Page() {
   return (
     <Suspense fallback={<MdlLoading />}>
-      <Register />
+      <MdlWorkspace view="register" />
     </Suspense>
   );
 }

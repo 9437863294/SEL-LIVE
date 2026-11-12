@@ -1,12 +1,12 @@
 /**
  * What the Master Drawing List API accepts, as zod schemas. The routes parse every body with these,
- * whatever the form already checked. Blank text and blank dates arrive as '' from a form and are
- * stored as null.
+ * whatever the dialog already checked; the record rules themselves are in `steps.ts`.
  */
 
 import { z } from 'zod';
 
 import { isIsoDate } from './derive.ts';
+import { OVERALL_STATUSES, REVISION_ROUNDS, REVISION_STATUSES } from './drawings.ts';
 import { SCHEDULES, SCOPES } from './types.ts';
 
 /** Trimmed text, '' / null / missing → null. */
@@ -18,45 +18,60 @@ const optionalText = (max: number) =>
     .nullish()
     .transform((value) => value || null);
 
-/** 'YYYY-MM-DD', '' / null / missing → null. */
-const optionalDate = z
+/** 'YYYY-MM-DD' or ''. */
+const dateOrEmpty = z
   .string()
   .trim()
-  .nullish()
-  .transform((value) => value || null)
-  .refine((value) => value === null || isIsoDate(value), 'Enter a valid date.');
+  .refine((value) => value === '' || isIsoDate(value), 'Enter a valid date.');
 
-export const isoDateSchema = z.string().trim().refine(isIsoDate, 'Enter a valid date.');
+const text = (max: number) => z.string().max(max, `Keep this under ${max} characters.`);
 
-/** Record a submission: the date, and the transmittal (covering letter) number if there is one. */
-export const submissionInputSchema = z.object({
-  date: isoDateSchema,
-  transmittalNo: optionalText(120),
+export const revisionSchema = z.object({
+  round: z.enum(REVISION_ROUNDS),
+  submissionDate: dateOrEmpty,
+  status: z.union([z.enum(REVISION_STATUSES), z.literal('')]).optional(),
+  comments: text(2000),
+  commentsDate: dateOrEmpty,
+  fileName: text(300).optional(),
+  filePath: text(600).optional(),
 });
 
-/** Record the client's comments, or the approval: the date only. */
-export const datedInputSchema = z.object({ date: isoDateSchema });
-
-/** The fields the item's Edit form changes. Planned and target dates are plans, so they may be ahead. */
-export const detailsInputSchema = z.object({
-  drgNo: optionalText(200),
-  plannedSubmission: optionalDate,
-  targetApproval: optionalDate,
-  remarks: optionalText(2000),
-  vendorFinalised: z.boolean(),
-  onHold: z.boolean(),
+/** The Drawing Details dialog, for an item's own drawing or one of its sub-drawings. */
+export const drawingFormSchema = z.object({
+  title: text(200),
+  assignedToId: text(200),
+  description: text(2000),
+  group: text(200),
+  docNo: text(200),
+  drawingNo: text(200),
+  plannedStartDate: dateOrEmpty,
+  plannedEndDate: dateOrEmpty,
+  revisions: z.array(revisionSchema).max(REVISION_ROUNDS.length),
+  approveDate: dateOrEmpty,
+  status: z.enum(OVERALL_STATUSES),
+  remark: text(2000),
 });
 
+/** Which record a save is for: the item's own drawing, or a sub-drawing (new or existing). */
+export const drawingSaveInputSchema = z.object({
+  target: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('item') }),
+    z.object({ kind: z.literal('sub'), subId: z.string().trim().min(1).max(100), isNew: z.boolean() }),
+  ]),
+  form: drawingFormSchema,
+});
+
+/** Add drawing item. The Sl. No. and position are given by the server. */
 export const newItemInputSchema = z.object({
   projectCode: z.string().trim().min(1, 'Choose a project.'),
   schedule: z.enum(SCHEDULES, { errorMap: () => ({ message: 'Choose a schedule.' }) }),
   scope: z.enum(SCOPES, { errorMap: () => ({ message: 'Choose a scope.' }) }),
   group: optionalText(200),
   description: z.string().trim().min(3, 'Enter a description.').max(2000, 'Keep the description under 2000 characters.'),
-  drgNo: optionalText(200),
-  plannedSubmission: optionalDate,
-  targetApproval: optionalDate,
-  vendorFinalised: z.boolean(),
+  docNo: z.string().trim().max(200).default(''),
+  drawingNo: z.string().trim().max(200).default(''),
+  plannedStartDate: dateOrEmpty.default(''),
+  plannedEndDate: dateOrEmpty.default(''),
 });
 
 /** A new drawing list for an ERP project. The code becomes its document id, so it is kept to safe characters. */
@@ -91,9 +106,7 @@ export const projectLinkInputSchema = z.object({
   projectId: z.string().trim().min(1).max(200).nullable(),
 });
 
-export type SubmissionInput = z.output<typeof submissionInputSchema>;
-export type DatedInput = z.output<typeof datedInputSchema>;
-export type DetailsInput = z.output<typeof detailsInputSchema>;
+export type DrawingSaveInput = z.output<typeof drawingSaveInputSchema>;
 export type NewItemInput = z.output<typeof newItemInputSchema>;
 export type ProjectLinkInput = z.output<typeof projectLinkInputSchema>;
 export type NewProjectInput = z.output<typeof newProjectInputSchema>;

@@ -12,7 +12,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
-import { DraftingCompass, FilePlus2, FileUp, Hourglass, LayoutDashboard, ListTree, Plus, Settings2, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { CalendarDays, DraftingCompass, FileBarChart2, FileUp, GanttChart, ListTodo, Plus, Settings2, ShieldAlert, Table2, type LucideIcon } from 'lucide-react';
 
 import { ModuleShell, type ModuleNavGroup, type ModuleNavTab, type ModuleNavTone } from '@/components/shared/module-shell';
 import { Button } from '@/components/ui/button';
@@ -25,16 +25,19 @@ export const MDL_BASE = '/master-drawing-list';
 
 type NavItem = { href: string; label: string; resource: MdlResource; action: string; icon: LucideIcon; tone: ModuleNavTone; group: string };
 
+// The five views of Project Management's MDL page, each a page here (Reports first: the module
+// opens on its figures), then the module's own data pages.
 const NAV: NavItem[] = [
-  { href: MDL_BASE, label: 'Dashboard', resource: 'Drawings', action: 'View', icon: LayoutDashboard, tone: 'sky', group: 'overview' },
-  { href: `${MDL_BASE}/register`, label: 'Drawing Register', resource: 'Drawings', action: 'View', icon: ListTree, tone: 'blue', group: 'drawings' },
-  { href: `${MDL_BASE}/pending`, label: 'Pending Action', resource: 'Drawings', action: 'View', icon: Hourglass, tone: 'amber', group: 'drawings' },
-  { href: `${MDL_BASE}/new`, label: 'Add Drawing Item', resource: 'Drawings', action: 'Add', icon: FilePlus2, tone: 'emerald', group: 'drawings' },
+  { href: MDL_BASE, label: 'Reports', resource: 'Drawings', action: 'View', icon: FileBarChart2, tone: 'blue', group: 'views' },
+  { href: `${MDL_BASE}/pending`, label: 'Pending Tasks', resource: 'Drawings', action: 'View', icon: ListTodo, tone: 'rose', group: 'views' },
+  { href: `${MDL_BASE}/register`, label: 'Register', resource: 'Drawings', action: 'View', icon: Table2, tone: 'sky', group: 'views' },
+  { href: `${MDL_BASE}/calendar`, label: 'Workplan Calendar', resource: 'Drawings', action: 'View', icon: CalendarDays, tone: 'violet', group: 'views' },
+  { href: `${MDL_BASE}/gantt`, label: 'Gantt Chart', resource: 'Drawings', action: 'View', icon: GanttChart, tone: 'orange', group: 'views' },
   { href: `${MDL_BASE}/import`, label: 'Excel Import', resource: 'Import', action: 'View', icon: FileUp, tone: 'indigo', group: 'data' },
   { href: `${MDL_BASE}/settings`, label: 'Settings', resource: 'Settings', action: 'View', icon: Settings2, tone: 'slate', group: 'data' },
 ];
 
-const GROUP_LABELS: Record<string, string> = { overview: 'Overview', drawings: 'Drawings', data: 'Data & Settings' };
+const GROUP_LABELS: Record<string, string> = { views: 'MDL Views', data: 'Data & Settings' };
 
 const matchesPath = (pathname: string, href: string) => (href === MDL_BASE ? pathname === MDL_BASE : pathname === href || pathname.startsWith(`${href}/`));
 
@@ -65,8 +68,8 @@ function Shell({ children }: { children: React.ReactNode }) {
             <p className="font-semibold text-slate-800">The Master Drawing List is not available</p>
             <p className="text-sm text-muted-foreground">{error ?? 'You do not have access to the Master Drawing List.'}</p>
             <p className="mx-auto max-w-xl text-sm text-muted-foreground">
-              An administrator grants it in Settings › Access Management, on the role or the user: Master Drawing List · View Module, then Drawings (View, Add, Edit, Export),
-              Submissions · Record, Approval · Record, Import (View, Import), Settings (View, Manage) and All Projects · View as needed.
+              An administrator grants it in Settings › Access Management, on the role or the user: Master Drawing List · View Module, then Drawings (View, Add, Edit, Delete,
+              Export), Import (View, Import), Settings (View, Manage) and All Projects · View as needed.
             </p>
             <Button variant="outline" size="sm" onClick={() => void reload()}>
               Try again
@@ -80,10 +83,10 @@ function Shell({ children }: { children: React.ReactNode }) {
   const pageAllowed = navItems.some((item) => matchesPath(pathname, item.href));
   const isVisible = (href: string) => navItems.some((item) => item.href === href);
   const mobileTabs: ModuleNavTab[] = [
-    ...(isVisible(MDL_BASE) ? [{ href: MDL_BASE, label: 'Home', icon: LayoutDashboard, match: (path: string) => path === MDL_BASE }] : []),
-    ...(isVisible(`${MDL_BASE}/register`) ? [{ href: `${MDL_BASE}/register`, label: 'Register', icon: ListTree }] : []),
-    ...(isVisible(`${MDL_BASE}/new`) ? [{ href: `${MDL_BASE}/new`, label: 'Add', icon: Plus, emphasized: true, ariaLabel: 'Add a drawing item' }] : []),
-    ...(isVisible(`${MDL_BASE}/pending`) ? [{ href: `${MDL_BASE}/pending`, label: 'Pending', icon: Hourglass }] : []),
+    ...(isVisible(MDL_BASE) ? [{ href: MDL_BASE, label: 'Reports', icon: FileBarChart2, match: (path: string) => path === MDL_BASE }] : []),
+    ...(isVisible(`${MDL_BASE}/pending`) ? [{ href: `${MDL_BASE}/pending`, label: 'Pending', icon: ListTodo }] : []),
+    ...(can('Drawings', 'Add') ? [{ href: `${MDL_BASE}/register?add=1`, label: 'Add', icon: Plus, emphasized: true, ariaLabel: 'Add a drawing item' }] : []),
+    ...(isVisible(`${MDL_BASE}/register`) ? [{ href: `${MDL_BASE}/register`, label: 'Register', icon: Table2 }] : []),
   ];
   const subtitle = !lookups
     ? 'Drawing approvals'

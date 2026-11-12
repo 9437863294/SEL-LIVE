@@ -1,5 +1,5 @@
-import { mdlRoute } from '@/lib/master-drawing-list/server/context';
-import { pending } from '@/lib/master-drawing-list/server/queries';
+import { NextResponse } from 'next/server';
 
-/** Comments to comply, under review and vendor not finalised — every viewable list, or `?project=<code>`. */
-export const GET = mdlRoute('pending', async ({ context, url }) => pending(context, url.searchParams.get('project') || null));
+/** Retired with the move to Project Management's register flow; every view now reads `items`. */
+export const GET = () => NextResponse.json({ error: 'This endpoint is no longer used.' }, { status: 410 });
+export const POST = GET;

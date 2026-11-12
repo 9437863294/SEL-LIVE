@@ -1,11 +1,43 @@
-import { decodeParam, mdlRoute, readJson } from '@/lib/master-drawing-list/server/context';
-import { updateDetails } from '@/lib/master-drawing-list/server/items';
-import { itemView } from '@/lib/master-drawing-list/server/queries';
-import { detailsInputSchema } from '@/lib/master-drawing-list/schemas';
+import { MdlError, decodeParam, mdlRoute } from '@/lib/master-drawing-list/server/context';
+import { deleteItem, saveDrawing, type UploadedFile } from '@/lib/master-drawing-list/server/items';
+import { itemFor } from '@/lib/master-drawing-list/server/store';
+import { drawingSaveInputSchema } from '@/lib/master-drawing-list/schemas';
 
-export const GET = mdlRoute<{ itemId: string }>('items.get', async ({ context, params }) => itemView(context, decodeParam(params.itemId)));
+export const runtime = 'nodejs';
 
-/** The Edit form: drawing number, planned and target dates, remarks, vendor finalised, on hold. */
-export const PATCH = mdlRoute<{ itemId: string }>('items.update', async ({ request, context, params }) => ({
-  item: await updateDetails(context, decodeParam(params.itemId), detailsInputSchema.parse(await readJson(request))),
-}));
+export const GET = mdlRoute<{ itemId: string }>('items.get', async ({ context, params }) => {
+  const { item, project } = await itemFor(context, decodeParam(params.itemId));
+  context.require('Drawings', 'View', project);
+  return { item, project, today: context.today };
+});
+
+/**
+ * Save the Drawing Details dialog: multipart, `payload` = `{ target, form }` as JSON and one
+ * `file:<round>` part per round with a drawing attached.
+ */
+export const PUT = mdlRoute<{ itemId: string }>('items.save', async ({ request, context, params }) => {
+  let body: FormData;
+  try {
+    body = await request.formData();
+  } catch {
+    throw new MdlError('The request is not a form upload.');
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(String(body.get('payload') ?? ''));
+  } catch {
+    throw new MdlError('The drawing details are missing.');
+  }
+  const files = new Map<string, UploadedFile>();
+  for (const [key, value] of body.entries()) {
+    if (!key.startsWith('file:') || typeof value === 'string') continue;
+    files.set(key.slice(5), { name: value.name, bytes: new Uint8Array(await value.arrayBuffer()) });
+  }
+  return { item: await saveDrawing(context, decodeParam(params.itemId), drawingSaveInputSchema.parse(payload), files) };
+});
+
+/** Delete the item from the register (Drawings · Delete). */
+export const DELETE = mdlRoute<{ itemId: string }>('items.delete', async ({ context, params }) => {
+  await deleteItem(context, decodeParam(params.itemId));
+  return { ok: true };
+});

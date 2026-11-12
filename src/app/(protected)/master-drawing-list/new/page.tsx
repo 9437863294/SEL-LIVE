@@ -1,12 +1,6 @@
-import { Suspense } from 'react';
+import { redirect } from 'next/navigation';
 
-import NewItem from '@/components/master-drawing-list/new-item';
-import { MdlLoading } from '@/components/master-drawing-list/mdl-ui';
-
+/** Items are added from the register's Add Item dialog, as in Project Management. */
 export default function Page() {
-  return (
-    <Suspense fallback={<MdlLoading />}>
-      <NewItem />
-    </Suspense>
-  );
+  redirect('/master-drawing-list/register?add=1');
 }

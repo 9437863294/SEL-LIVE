@@ -1,239 +1,180 @@
 'use client';
 
 /**
- * The Master Drawing List's landing page: figures over every drawing list the user may view —
- * how much is approved, what waits with the client and with SEL and for how long, and each
- * project's status split. Figures only; navigation is the sidebar's job.
- *
- * Charts: segment colours are the status tones (emerald approved, sky with client, amber comments,
- * slate not submitted, rose vendor not finalised, violet on hold), checked with the dataviz
- * validator in light and dark (CVD and normal-vision separation pass; slate is the deliberate
- * neutral). Every chart carries a legend and a table of the same figures, so no value is told by
- * colour alone.
+ * Reports — Project Management's MDL reports for one drawing list, and the module's landing page:
+ * the headline figures, the status split, where drawings sit by revision round, progress per
+ * schedule and scope, and what is overdue or due within two weeks. A row opens its drawing.
  */
 
-import { CircleCheck, Clock, FileStack, LayoutDashboard, MessageSquare, PackageX, Send } from 'lucide-react';
+import { useMemo } from 'react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, FileStack, Layers } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { KpiCard, KpiGrid } from '@/components/shared/kpi-card';
-import { PageHeader, SectionHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatDate } from '@/lib/master-drawing-list/derive';
-import { AGE_BANDS, type ProjectSummary } from '@/lib/master-drawing-list/register';
-import type { DashboardData } from '@/lib/master-drawing-list/server/queries';
-import { STATUS_LABEL, type MdlStatus } from '@/lib/master-drawing-list/types';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
+import { TableCard } from '@/components/shared/table-card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { chartChrome } from '@/components/ui/chart';
+import { OVERALL_STATUSES, REVISION_ROUNDS, formatMdlDate, isApproved, latestRevisionAcrossItem, roundIndex, rollup, type DrawingItem, type OverallStatus, type Rollup } from '@/lib/master-drawing-list/drawings';
 import { cn } from '@/lib/utils';
 
-import { useMdl, useMdlQuery } from './mdl-client';
-import { MdlError, MdlLoading, NoDrawingList, STATUS_ORDER } from './mdl-ui';
+import { MdlStatus, StatCard } from './mdl-ui';
 
-const FILL: Record<MdlStatus, string> = {
-  approved: 'bg-emerald-500',
-  under_review: 'bg-sky-500',
-  comments_received: 'bg-amber-500',
-  not_submitted: 'bg-slate-400',
-  vendor_not_finalised: 'bg-rose-500',
-  on_hold: 'bg-violet-400',
+const STATUS_COLORS: Record<OverallStatus, string> = {
+  Pending: '#94a3b8',
+  'In Progress': '#3b82f6',
+  Approved: '#10b981',
+  'Approved with Comments': '#f59e0b',
+  Rejected: '#ef4444',
 };
 
-const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
-const n = (value: number) => value.toLocaleString('en-IN');
+const UPCOMING_WINDOW_DAYS = 14;
 
-function Legend({ items }: { items: { key: string; label: string; fill: string }[] }) {
-  return (
-    <ul className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-slate-600" aria-label="Legend">
-      {items.map((item) => (
-        <li key={item.key} className="flex items-center gap-1.5">
-          <span className={cn('h-2.5 w-2.5 shrink-0 rounded-sm', item.fill)} aria-hidden="true" />
-          {item.label}
-        </li>
-      ))}
-    </ul>
-  );
-}
+type ReportRow = { id: string; item: DrawingItem; rollup: Rollup };
 
-/** One project's items split by status: thin segments, 2px gaps, rounded ends. */
-function StatusBar({ summary, label }: { summary: ProjectSummary; label: string }) {
-  const parts = STATUS_ORDER.filter((status) => summary.counts[status] > 0);
-  return (
-    <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${label}: ${parts.map((status) => `${STATUS_LABEL[status]} ${summary.counts[status]}`).join(', ')}`}>
-      {parts.map((status) => (
-        <span
-          key={status}
-          className={cn('h-full first:rounded-l-full last:rounded-r-full', FILL[status])}
-          style={{ width: `${(summary.counts[status] / summary.total) * 100}%` }}
-          title={`${STATUS_LABEL[status]}: ${n(summary.counts[status])} (${pct(summary.counts[status], summary.total)}%)`}
-        />
-      ))}
-    </div>
-  );
-}
+const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
-function ByProject({ data }: { data: DashboardData }) {
-  return (
-    <Card className="min-w-0">
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <SectionHeader title="Status by project" description="Every item of each drawing list, by where it stands today." />
-        <Legend items={STATUS_ORDER.map((status) => ({ key: status, label: STATUS_LABEL[status], fill: FILL[status] }))} />
-        <div className="space-y-3">
-          {data.projects.map(({ project, summary }) => (
-            <div key={project.code} className="space-y-1.5">
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate font-medium text-slate-800" title={project.displayName}>
-                  {project.short}
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  {n(summary.counts.approved)} of {n(summary.total)} approved · <b className="font-semibold text-slate-800">{pct(summary.counts.approved, summary.total)}%</b>
-                </span>
-              </div>
-              {summary.total ? <StatusBar summary={summary} label={project.short} /> : <p className="text-xs text-muted-foreground">No items yet.</p>}
-            </div>
-          ))}
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Project</TableHead>
-              {STATUS_ORDER.map((status) => (
-                <TableHead key={status} className="text-right">
-                  {STATUS_LABEL[status]}
-                </TableHead>
-              ))}
-              <TableHead className="text-right">Total</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.projects.map(({ project, summary }) => (
-              <TableRow key={project.code}>
-                <TableCell className="whitespace-nowrap font-medium">{project.short}</TableCell>
-                {STATUS_ORDER.map((status) => (
-                  <TableCell key={status} className="text-right tabular-nums">
-                    {n(summary.counts[status])}
-                  </TableCell>
-                ))}
-                <TableCell className="text-right font-semibold tabular-nums">{n(summary.total)}</TableCell>
-              </TableRow>
-            ))}
-            {data.projects.length > 1 && (
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableCell className="font-semibold">All</TableCell>
-                {STATUS_ORDER.map((status) => (
-                  <TableCell key={status} className="text-right font-semibold tabular-nums">
-                    {n(data.total.counts[status])}
-                  </TableCell>
-                ))}
-                <TableCell className="text-right font-semibold tabular-nums">{n(data.total.total)}</TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
+export function ReportsView({ items, today, onSelect }: { items: DrawingItem[]; today: string; onSelect: (item: DrawingItem) => void }) {
+  const total = items.length;
+  const rows = useMemo<ReportRow[]>(() => items.map((item) => ({ id: item.id, item, rollup: rollup(item, today) })), [items, today]);
 
-/** Items waiting with the client and with SEL, by how long — two thin bars per band on one scale. */
-function Waiting({ data }: { data: DashboardData }) {
-  const { withClient, withSel } = data.total;
-  const max = Math.max(1, ...withClient, ...withSel);
-  const series = [
-    { key: 'client', label: 'With client (under review)', fill: 'bg-sky-500', values: withClient },
-    { key: 'sel', label: 'With SEL (comments to comply)', fill: 'bg-amber-500', values: withSel },
+  const subTotals = useMemo(() => rows.reduce((sum, { rollup: r }) => ({ total: sum.total + r.subTotal, approved: sum.approved + r.subApproved }), { total: 0, approved: 0 }), [rows]);
+
+  const statusCounts = useMemo(() => {
+    const counts = new Map<OverallStatus, number>(OVERALL_STATUSES.map((status) => [status, 0]));
+    for (const { rollup: r } of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+    return counts;
+  }, [rows]);
+  const statusData = useMemo(() => OVERALL_STATUSES.map((status) => ({ name: status, value: statusCounts.get(status) ?? 0 })).filter((entry) => entry.value > 0), [statusCounts]);
+
+  // Rounds beyond R3 are shown only once a drawing has reached them.
+  const stageData = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const { item } of rows) {
+      const round = latestRevisionAcrossItem(item)?.round ?? 'R0';
+      counts.set(round, (counts.get(round) ?? 0) + 1);
+    }
+    const deepest = Math.max(3, ...[...counts.keys()].map(roundIndex));
+    return REVISION_ROUNDS.slice(0, deepest + 1).map((round) => ({ name: round, count: counts.get(round) ?? 0 }));
+  }, [rows]);
+
+  const overdueRows = useMemo(() => rows.filter((row) => row.rollup.overdue).sort((a, b) => a.rollup.plannedEndDate.localeCompare(b.rollup.plannedEndDate)), [rows]);
+  const upcomingRows = useMemo(() => {
+    const horizon = addDays(today, UPCOMING_WINDOW_DAYS);
+    return rows
+      .filter(({ rollup: r }) => !r.overdue && !isApproved(r.status) && r.plannedEndDate && r.plannedEndDate >= today && r.plannedEndDate <= horizon)
+      .sort((a, b) => a.rollup.plannedEndDate.localeCompare(b.rollup.plannedEndDate));
+  }, [rows, today]);
+
+  const scopeProgress = useMemo(() => {
+    const map = new Map<string, { total: number; approved: number }>();
+    for (const { item, rollup: r } of rows) {
+      const key = `${item.schedule} › ${item.scope}`;
+      const entry = map.get(key) ?? { total: 0, approved: 0 };
+      entry.total += 1;
+      if (isApproved(r.status)) entry.approved += 1;
+      map.set(key, entry);
+    }
+    return [...map.entries()].map(([scope, { total: scopeTotal, approved }]) => ({ scope, total: scopeTotal, approved, percent: scopeTotal ? Math.round((approved / scopeTotal) * 100) : 0 }));
+  }, [rows]);
+
+  const approvedCount = (statusCounts.get('Approved') ?? 0) + (statusCounts.get('Approved with Comments') ?? 0);
+  const rejectedCount = statusCounts.get('Rejected') ?? 0;
+  const inProgressCount = (statusCounts.get('Pending') ?? 0) + (statusCounts.get('In Progress') ?? 0);
+
+  const dueColumns = (overdue: boolean): ListColumn<ReportRow>[] => [
+    { header: 'Item', mobile: 'title', className: 'max-w-[200px] truncate', cell: ({ item }) => item.description || '—' },
+    { header: 'Planned End', className: 'whitespace-nowrap', cell: ({ rollup: r }) => <span className={overdue ? 'text-red-600' : undefined}>{formatMdlDate(r.plannedEndDate)}</span> },
+    { header: 'Status', mobile: 'aside', cell: ({ rollup: r }) => <MdlStatus status={r.status} /> },
   ];
-  const anyWaiting = withClient.some(Boolean) || withSel.some(Boolean);
+
   return (
-    <Card className="min-w-0">
-      <CardContent className="space-y-4 p-4 sm:p-5">
-        <SectionHeader title="How long items have waited" description="Days since the last submission (with the client) or the client's last comments (with SEL)." />
-        {!anyWaiting ? (
-          <p className="text-sm text-muted-foreground">Nothing is waiting with the client or with SEL.</p>
-        ) : (
-          <>
-            <Legend items={series} />
-            <div className="space-y-3">
-              {AGE_BANDS.map((band, index) => (
-                <div key={band.label} className="grid grid-cols-[6.5rem,1fr] items-center gap-x-3 gap-y-1 text-xs">
-                  <span className="row-span-2 text-slate-600">{band.label}</span>
-                  {series.map((entry) => (
-                    <span key={entry.key} className="flex min-w-0 items-center gap-2" title={`${entry.label}, ${band.label}: ${entry.values[index]}`}>
-                      <span className="h-2 min-w-0 rounded-r-[4px] bg-slate-100" style={{ width: '100%' }}>
-                        <span className={cn('block h-2 rounded-r-[4px]', entry.fill)} style={{ width: `${(entry.values[index] / max) * 100}%` }} />
-                      </span>
-                      <span className="w-7 shrink-0 text-right tabular-nums text-slate-700">{entry.values[index]}</span>
-                    </span>
-                  ))}
+    <div className="space-y-5">
+      <div className={cn('grid grid-cols-2 gap-3 sm:grid-cols-3', subTotals.total ? 'lg:grid-cols-6' : 'lg:grid-cols-5')}>
+        <StatCard label="Total Items" value={total} icon={FileStack} tone="bg-slate-100 text-slate-700" />
+        {subTotals.total > 0 && <StatCard label="Sub-drawings Approved" value={`${subTotals.approved}/${subTotals.total}`} icon={Layers} tone="bg-sky-100 text-sky-700" />}
+        <StatCard label="Approved" value={approvedCount} icon={CheckCircle2} tone="bg-emerald-100 text-emerald-700" />
+        <StatCard label="Pending / In Progress" value={inProgressCount} icon={Clock} tone="bg-blue-100 text-blue-700" />
+        <StatCard label="Rejected" value={rejectedCount} icon={AlertTriangle} tone="bg-red-100 text-red-700" />
+        <StatCard label="Overdue" value={overdueRows.length} icon={CalendarClock} tone="bg-orange-100 text-orange-700" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Status distribution</CardTitle>
+          </CardHeader>
+          <CardContent className="h-64">
+            {statusData.length ? (
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie stroke={chartChrome.surface} data={statusData} dataKey="value" nameKey="name" outerRadius={85} label>
+                    {statusData.map((entry) => (
+                      <Cell key={entry.name} fill={STATUS_COLORS[entry.name as OverallStatus] ?? '#94a3b8'} />
+                    ))}
+                  </Pie>
+                  <Tooltip {...chartChrome.tooltip} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No data yet</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Current submission stage</CardTitle>
+            <CardDescription>How many drawings are currently sitting at each revision round</CardDescription>
+          </CardHeader>
+          <CardContent className="h-56 sm:h-64">
+            <ResponsiveContainer>
+              <BarChart data={stageData}>
+                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
+                <XAxis stroke={chartChrome.axis} dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis stroke={chartChrome.axis} allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip {...chartChrome.tooltip} />
+                <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Scope-wise progress</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {scopeProgress.length ? (
+            scopeProgress.map(({ scope, total: scopeTotal, approved, percent }) => (
+              <div key={scope}>
+                <div className="mb-1 flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium" title={scope}>
+                    {scope}
+                  </span>
+                  <span className="shrink-0 whitespace-nowrap text-muted-foreground">
+                    {approved}/{scopeTotal} approved · {percent}%
+                  </span>
                 </div>
-              ))}
-            </div>
-          </>
-        )}
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Project</TableHead>
-              <TableHead className="text-right">With client</TableHead>
-              <TableHead className="text-right">Longest (days)</TableHead>
-              <TableHead className="text-right">With SEL</TableHead>
-              <TableHead className="text-right">Longest (days)</TableHead>
-              <TableHead className="text-right">Median days to approval</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.projects.map(({ project, summary }) => (
-              <TableRow key={project.code}>
-                <TableCell className="whitespace-nowrap font-medium">{project.short}</TableCell>
-                <TableCell className="text-right tabular-nums">{n(summary.counts.under_review)}</TableCell>
-                <TableCell className="text-right tabular-nums">{summary.oldestWithClient ?? '—'}</TableCell>
-                <TableCell className="text-right tabular-nums">{n(summary.counts.comments_received)}</TableCell>
-                <TableCell className="text-right tabular-nums">{summary.oldestWithSel ?? '—'}</TableCell>
-                <TableCell className="text-right tabular-nums">{summary.medianCycleDays ?? '—'}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-emerald-500" style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">No data yet.</p>
+          )}
+        </CardContent>
+      </Card>
 
-export default function Dashboard() {
-  const { lookups } = useMdl();
-  const query = useMdlQuery<DashboardData>(lookups ? 'dashboard' : null);
-  const data = query.data;
-
-  if (!lookups || (query.loading && !data)) return <MdlLoading />;
-  const total = data?.total;
-
-  return (
-    <>
-      <PageHeader
-        icon={LayoutDashboard}
-        title="Master Drawing List"
-        description={
-          data
-            ? `${data.projects.length} drawing list${data.projects.length === 1 ? '' : 's'} · figures as of ${formatDate(data.today)}`
-            : 'Drawings and documents submitted to the client for approval.'
-        }
-      />
-      <MdlError message={query.error} onRetry={query.reload} />
-      {data && !data.projects.length ? (
-        <NoDrawingList />
-      ) : total ? (
-        <>
-          <KpiGrid>
-            <KpiCard label="Drawing items" value={n(total.total)} hint={`${data.projects.length} project${data.projects.length === 1 ? '' : 's'}`} icon={FileStack} tone="slate" />
-            <KpiCard label="Approved" value={n(total.counts.approved)} hint={`${pct(total.counts.approved, total.total)}% of all items`} icon={CircleCheck} tone="emerald" />
-            <KpiCard label="With client" value={n(total.counts.under_review)} hint={total.oldestWithClient === null ? 'Under review' : `Longest ${total.oldestWithClient} days`} icon={Send} tone="blue" />
-            <KpiCard label="Comments to comply" value={n(total.counts.comments_received)} hint={total.oldestWithSel === null ? 'With SEL' : `Longest ${total.oldestWithSel} days`} icon={MessageSquare} tone="amber" />
-            <KpiCard label="Not submitted" value={n(total.counts.not_submitted)} hint="Vendor finalised, with SEL" icon={Clock} tone="slate" />
-            <KpiCard label="Vendor not finalised" value={n(total.counts.vendor_not_finalised)} hint="With procurement" icon={PackageX} tone="rose" />
-          </KpiGrid>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <ByProject data={data} />
-            <Waiting data={data} />
-          </div>
-        </>
-      ) : null}
-    </>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <TableCard title="Overdue" description="Planned end date has passed without approval" icon={CalendarClock} count={overdueRows.length} noun="item" scroll="natural">
+          {overdueRows.length ? <DataList rows={overdueRows} columns={dueColumns(true)} onRowClick={({ item }) => onSelect(item)} frameless /> : <p className="p-4 text-sm text-muted-foreground">Nothing overdue.</p>}
+        </TableCard>
+        <TableCard title={`Due in the next ${UPCOMING_WINDOW_DAYS} days`} icon={Clock} count={upcomingRows.length} noun="item" scroll="natural">
+          {upcomingRows.length ? <DataList rows={upcomingRows} columns={dueColumns(false)} onRowClick={({ item }) => onSelect(item)} frameless /> : <p className="p-4 text-sm text-muted-foreground">Nothing due soon.</p>}
+        </TableCard>
+      </div>
+    </div>
   );
 }

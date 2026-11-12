@@ -14,9 +14,9 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import { auth } from '@/lib/firebase';
 import type { MdlResource } from '@/lib/master-drawing-list/access';
-import type { MdlLookups } from '@/lib/master-drawing-list/server/queries';
+import type { MdlLookups, RegisterData } from '@/lib/master-drawing-list/server/queries';
 
-export type { MdlLookups };
+export type { MdlLookups, RegisterData };
 export type { MdlProjectView } from '@/lib/master-drawing-list/server/store';
 
 export class MdlApiError extends Error {
@@ -54,6 +54,107 @@ export async function mdlFetch<T>(path: string, init: { method?: string; body?: 
   }
   if (!response.ok) throw new MdlApiError((data as { error?: string } | null)?.error || `Request failed (${response.status}).`, response.status);
   return data as T;
+}
+
+/** Multipart request (the Drawing Details save, with its round files). */
+export async function mdlSendForm<T>(path: string, method: string, form: FormData): Promise<T> {
+  const user = auth.currentUser;
+  if (!user) throw new MdlApiError('You are signed out. Sign in again.', 401);
+  const response = await fetch(`/api/master-drawing-list/${path.replace(/^\//, '')}`, {
+    method,
+    headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+    body: form,
+    cache: 'no-store',
+  });
+  const text = await response.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
+  if (!response.ok) throw new MdlApiError((data as { error?: string } | null)?.error || `Request failed (${response.status}).`, response.status);
+  return data as T;
+}
+
+/** Opens a round's drawing file in a new tab, fetched through the API (the files are private). */
+export async function openDrawingFile(itemId: string, filePath: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new MdlApiError('You are signed out. Sign in again.', 401);
+  // Opened first, while the click still counts as a user gesture, so pop-up blockers allow it.
+  const tab = window.open('', '_blank');
+  const response = await fetch(`/api/master-drawing-list/items/${encodeURIComponent(itemId)}/file?path=${encodeURIComponent(filePath)}`, {
+    headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+  });
+  if (!response.ok) {
+    tab?.close();
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new MdlApiError(payload.error || 'The file could not be opened.', response.status);
+  }
+  const url = URL.createObjectURL(await response.blob());
+  if (tab) tab.location.href = url;
+  else window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 120_000);
+}
+
+/* ── a drawing list's register ───────────────────────────────────────────── */
+
+/**
+ * Every view (Reports, Pending Tasks, Register, Calendar, Gantt) reads the same register. It is
+ * kept for a minute per drawing list, so moving between views does not reload it; a save replaces
+ * the item in place and `reload` asks the server again.
+ */
+const registerCache = new Map<string, { data: RegisterData; at: number }>();
+const REGISTER_FRESH_MS = 60_000;
+
+export function useProjectRegister(code: string | null) {
+  // What the server last sent for this drawing list (state), else what another view cached.
+  const [state, setState] = useState<{ code: string | null; data: RegisterData | null; error: string | null }>({ code: null, data: null, error: null });
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!code) return;
+    const hit = registerCache.get(code);
+    // Fresh enough: render reads it from the cache, no request.
+    if (hit && Date.now() - hit.at < REGISTER_FRESH_MS && tick === 0) return;
+    const controller = new AbortController();
+    mdlFetch<RegisterData>(`items?project=${encodeURIComponent(code)}`, { signal: controller.signal })
+      .then((data) => {
+        registerCache.set(code, { data, at: Date.now() });
+        setState({ code, data, error: null });
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof DOMException && caught.name === 'AbortError') return;
+        setState({ code, data: null, error: caught instanceof Error ? caught.message : 'Could not load the register.' });
+      });
+    return () => controller.abort();
+  }, [code, tick]);
+
+  const data = (state.code === code ? state.data : null) ?? (code ? (registerCache.get(code)?.data ?? null) : null);
+  const replaceItem = useCallback(
+    (item: RegisterData['items'][number] | { id: string; removed: true }) => {
+      if (!code) return;
+      setState((current) => {
+        const base = (current.code === code ? current.data : null) ?? registerCache.get(code)?.data;
+        if (!base) return current;
+        const items = 'removed' in item ? base.items.filter((entry) => entry.id !== item.id) : base.items.some((entry) => entry.id === item.id) ? base.items.map((entry) => (entry.id === item.id ? item : entry)) : [...base.items, item];
+        const next = { ...base, items };
+        registerCache.set(code, { data: next, at: Date.now() });
+        return { code, data: next, error: null };
+      });
+    },
+    [code],
+  );
+  return {
+    data,
+    loading: Boolean(code) && !data && !(state.code === code && state.error),
+    error: state.code === code ? state.error : null,
+    reload: () => {
+      if (code) registerCache.delete(code);
+      setTick((value) => value + 1);
+    },
+    replaceItem,
+  };
 }
 
 /* ── lookups ─────────────────────────────────────────────────────────────── */

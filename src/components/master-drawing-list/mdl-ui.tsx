@@ -1,120 +1,54 @@
 'use client';
 
 /**
- * Small parts the Master Drawing List screens share: the status badge, dates, the "Days" figure,
- * the revision track, the project picker and the loading / error / empty states. Colours come from
- * the app's status tones (`StatusBadge`), so a status reads the same here as in every module.
+ * Small parts the Master Drawing List screens share: status badges in Project Management's tones,
+ * the stat card, the project picker and the loading / error / empty states.
  */
 
 import Link from 'next/link';
-import { AlertTriangle, Check, FilePlus2, FileStack, FileUp, Inbox, Loader2, MessageSquare } from 'lucide-react';
+import { AlertTriangle, FilePlus2, FileStack, FileUp, Inbox, Loader2, type LucideIcon } from 'lucide-react';
 
 import { StatusBadge, type StatusTone } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { formatDate } from '@/lib/master-drawing-list/derive';
-import { DAYS_HINT, daysFor } from '@/lib/master-drawing-list/register';
-import { STATUS_LABEL, type MdlItem, type MdlStatus } from '@/lib/master-drawing-list/types';
 import { cn } from '@/lib/utils';
 
 import { useMdl, type MdlProjectView } from './mdl-client';
 
-/** The order statuses are listed in: done, with the client, with SEL, not started, parked. */
-export const STATUS_ORDER: MdlStatus[] = ['approved', 'under_review', 'comments_received', 'not_submitted', 'vendor_not_finalised', 'on_hold'];
-
-export const STATUS_TONE: Record<MdlStatus, StatusTone> = {
-  approved: 'success',
-  under_review: 'info',
-  comments_received: 'warning',
-  not_submitted: 'neutral',
-  vendor_not_finalised: 'danger',
-  on_hold: 'neutral',
+/**
+ * The status words that mean more (or otherwise) than the app-wide vocabulary reads them as — the
+ * same choices Project Management makes for its register. Everything else takes its tone from the
+ * word itself.
+ */
+const TONE: Readonly<Record<string, StatusTone>> = {
+  'With Client': 'info',
+  'Approved with Comments': 'warning',
+  'Resubmission Required': 'warning',
 };
 
-/** Who acts next, in words, for a status. */
-export const STATUS_ACTION: Record<MdlStatus, string> = {
-  approved: 'Closed',
-  under_review: 'With client',
-  comments_received: 'With SEL',
-  not_submitted: 'With SEL',
-  vendor_not_finalised: 'With procurement',
-  on_hold: 'Parked',
-};
-
-export function MdlStatusBadge({ status, className }: { status: MdlStatus; className?: string }) {
+export function MdlStatus({ status, children, className, title }: { status?: string | null; children?: React.ReactNode; className?: string; title?: string }) {
   return (
-    <StatusBadge tone={STATUS_TONE[status]} dot className={className}>
-      {STATUS_LABEL[status]}
+    <StatusBadge status={status ?? undefined} tone={status ? TONE[status] : 'neutral'} className={className} title={title}>
+      {children}
     </StatusBadge>
   );
 }
 
-/** DD.MM.YYYY, or a dash. */
-export function DateText({ value, className }: { value: string | null | undefined; className?: string }) {
-  return <span className={cn('tabular-nums', !value && 'text-muted-foreground', className)}>{value ? formatDate(value) : '—'}</span>;
-}
-
-/** The register's "Days": waiting with the client or SEL for an open item, to approval for an approved one. */
-export function DaysText({ item, today, className }: { item: MdlItem; today: string; className?: string }) {
-  const figure = daysFor(item, today);
-  if (!figure) return <span className={cn('text-muted-foreground', className)}>—</span>;
+/** A figure with its icon chip, two to a row on a phone (Project Management's stat card). */
+export function StatCard({ label, value, icon: Icon, tone }: { label: string; value: string | number; icon: LucideIcon; tone: string }) {
   return (
-    <span className={cn('inline-flex flex-col items-end leading-tight', className)} title={`Counted from ${formatDate(figure.since)}`}>
-      <span className={cn('font-semibold tabular-nums', figure.kind === 'cycle' ? 'text-slate-700' : figure.days > 30 ? 'text-rose-700' : 'text-slate-800')}>{figure.days}</span>
-      <span className="text-[11px] text-muted-foreground">{DAYS_HINT[figure.kind]}</span>
-    </span>
-  );
-}
-
-/**
- * One marker per revision submitted (R0, R1 …), a speech mark where the client commented on it, and
- * a tick once approved. Hover (or a screen reader) gives the dates.
- */
-export function RevisionTrack({ item, className }: { item: Pick<MdlItem, 'revisions' | 'approved' | 'approvedOn'>; className?: string }) {
-  const submitted = item.revisions.filter((revision) => revision.submittedOn || revision.commentedOn);
-  if (!submitted.length && !item.approved) return <span className={cn('text-xs text-muted-foreground', className)}>Not submitted</span>;
-  const lastIndex = submitted.length - 1;
-  const description = [
-    ...submitted.map(
-      (revision) =>
-        `R${revision.rev} submitted ${revision.submittedOn ? formatDate(revision.submittedOn) : '(date missing)'}` +
-        (revision.commentedOn ? `, comments ${formatDate(revision.commentedOn)}` : ''),
-    ),
-    ...(item.approved ? [`approved ${item.approvedOn ? formatDate(item.approvedOn) : ''}`.trim()] : []),
-  ].join('; ');
-  return (
-    <span className={cn('inline-flex flex-wrap items-center gap-0.5', className)} title={description}>
-      <span className="sr-only">{description}</span>
-      {submitted.map((revision, index) => {
-        const open = index === lastIndex && !revision.commentedOn && !item.approved;
-        return (
-          <span key={revision.rev} className="inline-flex items-center gap-0.5" aria-hidden="true">
-            {index > 0 && <span className="h-px w-1.5 bg-slate-300" />}
-            <span
-              className={cn(
-                'inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-full border px-1 text-[10px] font-semibold tabular-nums',
-                open ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-slate-50 text-slate-600',
-              )}
-            >
-              R{revision.rev}
-            </span>
-            {revision.commentedOn && (
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-700">
-                <MessageSquare className="h-3 w-3" />
-              </span>
-            )}
-          </span>
-        );
-      })}
-      {item.approved && (
-        <span className="inline-flex items-center gap-0.5" aria-hidden="true">
-          {submitted.length > 0 && <span className="h-px w-1.5 bg-slate-300" />}
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">
-            <Check className="h-3 w-3" />
-          </span>
-        </span>
-      )}
-    </span>
+    <Card>
+      <CardContent className="flex items-center gap-2.5 p-3 sm:gap-3 sm:p-4">
+        <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10', tone)}>
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+        </div>
+        <div className="min-w-0">
+          <p className="break-words text-lg font-bold leading-tight sm:text-2xl">{value}</p>
+          <p className="text-xs text-muted-foreground">{label}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -122,25 +56,21 @@ export function ProjectSelect({
   projects,
   value,
   onChange,
-  allowAll = false,
   className,
   id,
 }: {
   projects: MdlProjectView[];
   value: string | null;
-  onChange: (code: string | null) => void;
-  /** Offer "All projects" (value null). */
-  allowAll?: boolean;
+  onChange: (code: string) => void;
   className?: string;
   id?: string;
 }) {
   return (
-    <Select value={value ?? 'all'} onValueChange={(next) => onChange(next === 'all' ? null : next)}>
-      <SelectTrigger id={id} className={cn('min-w-0 text-left', className)} aria-label="Project">
-        <SelectValue placeholder="Choose a project" />
+    <Select value={value ?? undefined} onValueChange={onChange}>
+      <SelectTrigger id={id} className={cn('min-w-0 text-left', className)} aria-label="Drawing list">
+        <SelectValue placeholder="Choose a drawing list" />
       </SelectTrigger>
       <SelectContent className="max-h-72">
-        {allowAll && <SelectItem value="all">All projects</SelectItem>}
         {projects.map((project) => (
           <SelectItem key={project.code} value={project.code}>
             <span className="truncate">{project.short}</span>
@@ -173,6 +103,17 @@ export function MdlError({ message, onRetry }: { message: string | null | undefi
           Retry
         </Button>
       ) : null}
+    </div>
+  );
+}
+
+export function MdlEmpty({ title, description, icon: Icon = Inbox, action }: { title: string; description?: string; icon?: React.ElementType; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
+      <Icon className="h-9 w-9 text-muted-foreground/60" aria-hidden="true" />
+      <p className="font-medium text-slate-700">{title}</p>
+      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
+      {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );
 }
@@ -217,16 +158,5 @@ export function NoDrawingList() {
         ) : undefined
       }
     />
-  );
-}
-
-export function MdlEmpty({ title, description, icon: Icon = Inbox, action }: { title: string; description?: string; icon?: React.ElementType; action?: React.ReactNode }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
-      <Icon className="h-9 w-9 text-muted-foreground/60" aria-hidden="true" />
-      <p className="font-medium text-slate-700">{title}</p>
-      {description ? <p className="max-w-md text-sm text-muted-foreground">{description}</p> : null}
-      {action ? <div className="mt-2">{action}</div> : null}
-    </div>
   );
 }

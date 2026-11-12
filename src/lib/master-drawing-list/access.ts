@@ -15,14 +15,12 @@ import type { MdlProject } from './types.ts';
 
 export const MDL_MODULE = 'Master Drawing List';
 
-export type MdlResource = 'All Projects' | 'Drawings' | 'Submissions' | 'Approval' | 'Import' | 'Settings';
+export type MdlResource = 'All Projects' | 'Drawings' | 'Import' | 'Settings';
 
 /** Every action the module checks, by resource — the lookups report which of these the user holds. */
 export const MDL_ACTIONS: Record<MdlResource, readonly string[]> = {
   'All Projects': ['View'],
-  Drawings: ['View', 'Add', 'Edit', 'Export'],
-  Submissions: ['Record'],
-  Approval: ['Record'],
+  Drawings: ['View', 'Add', 'Edit', 'Delete', 'Export'],
   Import: ['View', 'Import'],
   Settings: ['View', 'Manage'],
 };

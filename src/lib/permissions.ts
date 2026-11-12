@@ -960,14 +960,13 @@ export const permissionModules = {
   },
   // Master Drawing List: drawings and documents submitted to the client for approval, revision by
   // revision. Separate from Project Management's BOQ-driven MDL. "All Projects" sees every drawing
-  // list; without it a holder sees the lists linked to ERP projects granted to them. Recording a
-  // submission or the client's comments is Submissions · Record; the approval has its own permission.
+  // list; without it a holder sees the lists linked to ERP projects granted to them. Drawings · Edit
+  // updates any drawing (rounds, statuses, files); whoever a sub-drawing is assigned to may update
+  // that one without it.
   "Master Drawing List": {
     "View Module": [],
     "All Projects": ["View"],
-    Drawings: ["View", "Add", "Edit", "Export"],
-    Submissions: ["Record"],
-    Approval: ["Record"],
+    Drawings: ["View", "Add", "Edit", "Delete", "Export"],
     // View previews a workbook (writes nothing); Import loads it.
     Import: ["View", "Import"],
     Settings: ["View", "Manage"],

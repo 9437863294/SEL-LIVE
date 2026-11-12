@@ -26,13 +26,17 @@ import { useToast } from '@/hooks/use-toast';
 import { exportWorkbook } from '@/lib/report-excel';
 import { ITEM_COLUMNS, PROJECT_COLUMNS, REVISION_COLUMNS, gridFromWorkbook, type ImportGrid } from '@/lib/master-drawing-list/import';
 import type { ImportResult } from '@/lib/master-drawing-list/server/import';
-import { STATUS_LABEL } from '@/lib/master-drawing-list/types';
+import { OVERALL_STATUSES } from '@/lib/master-drawing-list/drawings';
+import { STATUS_LABEL, type MdlStatus } from '@/lib/master-drawing-list/types';
 
 import { mdlFetch, useMdl } from './mdl-client';
-import { MdlError, STATUS_ORDER } from './mdl-ui';
+import { MdlError } from './mdl-ui';
 import { MDL_BASE } from './module-layout-shell';
 
 const SHOWN = 50;
+
+/** The workbook's own classification, from its dates — the totals to check the file against. */
+const DATE_STATUSES: MdlStatus[] = ['approved', 'under_review', 'comments_received', 'not_submitted', 'vendor_not_finalised'];
 
 function Lines({ title, lines, tone }: { title: string; lines: string[]; tone: 'amber' | 'slate' }) {
   const [all, setAll] = useState(false);
@@ -159,7 +163,7 @@ export default function ExcelImport() {
             <KpiCard label="Projects" value={summary.projects.length.toLocaleString('en-IN')} icon={FileSpreadsheet} tone="slate" />
             <KpiCard label="Items" value={summary.itemCount.toLocaleString('en-IN')} tone="blue" />
             <KpiCard label="Revisions" value={summary.revisionCount.toLocaleString('en-IN')} tone="indigo" />
-            {STATUS_ORDER.filter((status) => status !== 'on_hold').map((status) => (
+            {DATE_STATUSES.map((status) => (
               <KpiCard key={status} label={STATUS_LABEL[status]} value={summary.totals[status].toLocaleString('en-IN')} tone={status === 'approved' ? 'emerald' : status === 'under_review' ? 'blue' : status === 'comments_received' ? 'amber' : status === 'vendor_not_finalised' ? 'rose' : 'slate'} />
             ))}
           </KpiGrid>
@@ -167,13 +171,23 @@ export default function ExcelImport() {
           <Card className="min-w-0">
             <CardContent className="space-y-4 p-4 sm:p-5">
               <SectionHeader title={done ? 'Imported' : 'Dry run'} description={done ? 'What the import read and wrote.' : 'What the import would write. Nothing has been written yet.'} />
+              <p className="text-sm text-muted-foreground">
+                The figures above are the workbook&apos;s statuses, read from its dates. In the register each item gets an overall status:{' '}
+                {OVERALL_STATUSES.filter((status) => summary.overall[status]).map((status, index) => (
+                  <span key={status}>
+                    {index ? ' · ' : ''}
+                    <b className="font-medium text-slate-700">{status}</b> {summary.overall[status].toLocaleString('en-IN')}
+                  </span>
+                ))}
+                . Each round&apos;s status is set from its dates too, and can be changed in the register.
+              </p>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Code</TableHead>
                     <TableHead>Project</TableHead>
                     <TableHead className="text-right">Items</TableHead>
-                    {STATUS_ORDER.filter((status) => status !== 'on_hold').map((status) => (
+                    {DATE_STATUSES.map((status) => (
                       <TableHead key={status} className="text-right">
                         {STATUS_LABEL[status]}
                       </TableHead>
@@ -189,7 +203,7 @@ export default function ExcelImport() {
                         <span className="block text-xs text-muted-foreground">{project.name}</span>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{project.items.toLocaleString('en-IN')}</TableCell>
-                      {STATUS_ORDER.filter((status) => status !== 'on_hold').map((status) => (
+                      {DATE_STATUSES.map((status) => (
                         <TableCell key={status} className="text-right tabular-nums">
                           {project.counts[status].toLocaleString('en-IN')}
                         </TableCell>

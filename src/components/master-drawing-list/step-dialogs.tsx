@@ -1,153 +1,117 @@
 'use client';
 
 /**
- * The item page's next-step forms: record a submission (date, optional transmittal number), the
- * client's comments, or the approval. Each checks the date with `derive.ts`'s own rule as you type —
- * not in the future (India time), not earlier than the last recorded date — and the API checks it
- * again inside its transaction.
+ * The register's two confirmations, as in Project Management's: remove a sub-drawing, and remove an
+ * item from the register (here the item itself is deleted — there is no BOQ item behind it).
  */
 
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useState } from 'react';
+import { Loader2 } from 'lucide-react';
 
-import { FormDialog } from '@/components/shared/form-dialog';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { formatDate, isIsoDate } from '@/lib/master-drawing-list/derive';
-import { lastEventDate, nextRevision, stepError, type MdlStep } from '@/lib/master-drawing-list/steps';
-import type { MdlItem } from '@/lib/master-drawing-list/types';
+import type { DrawingItem, SubDrawing } from '@/lib/master-drawing-list/drawings';
 
 import { mdlFetch } from './mdl-client';
 
-const formSchema = z.object({
-  date: z.string().refine(isIsoDate, 'Enter a valid date.'),
-  transmittalNo: z.string().trim().max(120, 'Keep the transmittal number under 120 characters.'),
-});
-type StepForm = z.infer<typeof formSchema>;
+export type SubDrawingRef = { item: DrawingItem; sub: SubDrawing };
 
-function copy(step: MdlStep, item: MdlItem) {
-  const last = item.revisions[item.revisions.length - 1];
-  if (step === 'submission') {
-    const rev = nextRevision(item);
-    return {
-      title: `Record submission — R${rev}`,
-      description: rev === 0 ? 'The first submission of this drawing to the client.' : `A revised drawing after the client's comments on R${rev - 1}.`,
-      dateLabel: 'Submitted on',
-      submit: `Save R${rev} submission`,
-    };
-  }
-  if (step === 'comments') {
-    return {
-      title: `Record comments on R${last?.rev ?? 0}`,
-      description: `The date the client returned comments on R${last?.rev ?? 0}. The drawing then waits with SEL for a revision.`,
-      dateLabel: 'Comments received on',
-      submit: 'Save comments',
-    };
-  }
-  return {
-    title: 'Record approval',
-    description: `The client's approval of ${last ? `R${last.rev}` : 'the drawing'}. This closes the item: no further submissions or comments can be recorded.`,
-    dateLabel: 'Approved on',
-    submit: 'Save approval',
+export function RemoveSubDrawingDialog({ target, onClose, onRemoved }: { target: SubDrawingRef | null; onClose: () => void; onRemoved: (item: DrawingItem) => void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const remove = async () => {
+    if (!target) return;
+    setBusy(true);
+    try {
+      await mdlFetch(`items/${encodeURIComponent(target.item.id)}/sub-drawings/${encodeURIComponent(target.sub.id)}`, { method: 'DELETE' });
+      toast({ title: 'Sub-drawing removed' });
+      onRemoved({ ...target.item, subDrawings: target.item.subDrawings.filter((sub) => sub.id !== target.sub.id) });
+      onClose();
+    } catch (error) {
+      toast({ title: 'Unable to remove sub-drawing', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+    } finally {
+      setBusy(false);
+    }
   };
+  return (
+    <AlertDialog open={Boolean(target)} onOpenChange={(open) => !open && !busy && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove this sub-drawing?</AlertDialogTitle>
+          <AlertDialogDescription>
+            “{target?.sub.title || 'Untitled drawing'}” and its submission history will be removed from {target?.item.description}. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              void remove();
+            }}
+            disabled={busy}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
-export function StepDialog({
-  item,
-  step,
-  today,
-  open,
-  onOpenChange,
-  onSaved,
-}: {
-  item: MdlItem;
-  step: MdlStep;
-  today: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaved: (item: MdlItem) => void;
-}) {
+export function DeleteItemDialog({ target, onClose, onDeleted }: { target: DrawingItem | null; onClose: () => void; onDeleted: (id: string) => void }) {
   const { toast } = useToast();
-  const text = copy(step, item);
-  const earliest = lastEventDate(item);
-  const form = useForm<StepForm>({
-    resolver: zodResolver(
-      formSchema.superRefine((values, context) => {
-        if (!isIsoDate(values.date)) return;
-        const error = stepError(item, step, values.date, today);
-        if (error) context.addIssue({ code: z.ZodIssueCode.custom, path: ['date'], message: error });
-      }),
-    ),
-    defaultValues: { date: today, transmittalNo: '' },
-  });
-
-  // A fresh form each time it opens, dated today.
-  useEffect(() => {
-    if (open) form.reset({ date: today, transmittalNo: '' });
-  }, [open, today, form]);
-
-  const submit = form.handleSubmit(async (values) => {
+  const [busy, setBusy] = useState(false);
+  const remove = async () => {
+    if (!target) return;
+    setBusy(true);
     try {
-      const body = step === 'submission' ? { date: values.date, transmittalNo: values.transmittalNo } : { date: values.date };
-      const result = await mdlFetch<{ item: MdlItem }>(`items/${encodeURIComponent(item.id)}/${step}`, { method: 'POST', body });
-      toast({ title: 'Saved', description: `${text.dateLabel} ${formatDate(values.date)}.` });
-      onSaved(result.item);
-      onOpenChange(false);
+      await mdlFetch(`items/${encodeURIComponent(target.id)}`, { method: 'DELETE' });
+      toast({ title: 'Item removed from the register' });
+      onDeleted(target.id);
+      onClose();
     } catch (error) {
-      form.setError('root', { message: error instanceof Error ? error.message : 'Could not save.' });
+      toast({ title: 'Unable to remove item', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+    } finally {
+      setBusy(false);
     }
-  });
-
+  };
   return (
-    <FormDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={text.title}
-      description={text.description}
-      size="sm"
-      onSubmit={submit}
-      submitLabel={text.submit}
-      submitting={form.formState.isSubmitting}
-    >
-      <Form {...form}>
-        <FormField
-          control={form.control}
-          name="date"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{text.dateLabel}</FormLabel>
-              <FormControl>
-                <Input type="date" max={today} min={earliest ?? undefined} {...field} />
-              </FormControl>
-              <FormDescription>{earliest ? `Between ${formatDate(earliest)} (the last recorded date) and today.` : 'Today or earlier.'}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        {step === 'submission' && (
-          <FormField
-            control={form.control}
-            name="transmittalNo"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Transmittal no. (optional)</FormLabel>
-                <FormControl>
-                  <Input autoComplete="off" placeholder="Covering letter reference" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-        {form.formState.errors.root?.message && (
-          <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {form.formState.errors.root.message}
-          </p>
-        )}
-      </Form>
-    </FormDialog>
+    <AlertDialog open={Boolean(target)} onOpenChange={(open) => !open && !busy && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove this item from the MDL register?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {target?.slNo ? `Sl. No. ${target.slNo} · ` : ''}
+            {target?.description} — with its drawing record, every sub-drawing and their submission history. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              void remove();
+            }}
+            disabled={busy}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

@@ -1,12 +1,5 @@
-import { decodeParam, mdlRoute, readJson } from '@/lib/master-drawing-list/server/context';
-import { recordStep } from '@/lib/master-drawing-list/server/items';
-import { stepOf } from '@/lib/master-drawing-list/server/queries';
-import { datedInputSchema, submissionInputSchema } from '@/lib/master-drawing-list/schemas';
+import { NextResponse } from 'next/server';
 
-/** Record a submission, the client's comments, or the approval: POST …/items/<id>/<submission|comments|approval>. */
-export const POST = mdlRoute<{ itemId: string; step: string }>('items.step', async ({ request, context, params }) => {
-  const step = stepOf(params.step);
-  const body = await readJson(request);
-  const input = step === 'submission' ? submissionInputSchema.parse(body) : datedInputSchema.parse(body);
-  return { item: await recordStep(context, decodeParam(params.itemId), step, input) };
-});
+/** Retired with the move to Project Management's register flow; every view now reads `items`. */
+export const GET = () => NextResponse.json({ error: 'This endpoint is no longer used.' }, { status: 410 });
+export const POST = GET;

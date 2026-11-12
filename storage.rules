@@ -114,6 +114,15 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    // Master Drawing List round files: master-drawing-list/{list}/{item}/{item|sub-drawing}/…
+    //
+    // Written and read only by the server (Admin SDK): the Drawing Details dialog uploads through
+    // PUT /api/master-drawing-list/items/[id] and files open through …/items/[id]/file, which checks
+    // the caller may view that drawing list. Closed to clients and kept out of the catch-all below.
+    match /master-drawing-list/{allPaths=**} {
+      allow read, write: if false;
+    }
+
     // Profile photos: profile-photos/{uid}/{file}, written by Settings → Profile.
     //
     // Only the owner writes their own folder (keyed by auth uid), and only a JPEG, PNG or WebP under
@@ -150,6 +159,7 @@ service firebase.storage {
         && !allPaths.matches('mail-hub/.*')
         && !allPaths.matches('bill-tracking/.*')
         && !allPaths.matches('fleet/.*')
+        && !allPaths.matches('master-drawing-list/.*')
         && !allPaths.matches('branding/.*')
         && !allPaths.matches('profile-photos/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')

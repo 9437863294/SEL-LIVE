@@ -1,322 +1,611 @@
 'use client';
 
 /**
- * Drawing Register (`/master-drawing-list/register`): one project's drawing list under schedule ›
- * scope › group headings, with a status summary whose counts filter the table, schedule / scope /
- * status filters, a search over description, drawing number and group, and an Excel export of the
- * view on screen. Filters live in the URL, so Back from an item returns to the same view.
- *
- * Desktop: one table with full-width heading rows. Phone: the same headings over `DataList` cards.
+ * Register — Project Management's MDL register on its own: collapsible groups (Schedule › Scope ›
+ * Group, where PM groups by purchase order), an item row per drawing item with its sub-drawings
+ * nested beneath, and the same columns, actions and phone cards. A filter bar narrows it; any
+ * filter opens every group that still has rows.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { CircleCheck, CirclePause, Download, FileStack, ListTree, MessageSquare, PackageX, Plus, Send, type LucideIcon } from 'lucide-react';
+import { Fragment, useMemo, useState, type KeyboardEvent } from 'react';
+import { CheckCircle2, ChevronRight, Layers, Paperclip, Pencil, Plus, Trash2 } from 'lucide-react';
 
-import { DataList, CellLink, type ListColumn } from '@/components/shared/data-list';
+import { DataList, type ListColumn } from '@/components/shared/data-list';
 import { FilterBar } from '@/components/shared/filter-bar';
-import { KpiCard, KpiGrid, type Tone } from '@/components/shared/kpi-card';
-import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
-import { exportWorkbook } from '@/lib/report-excel';
 import {
-  countByStatus,
-  exportFileName,
-  filterItems,
-  filterWithoutStatus,
-  groupForRegister,
-  isSchedule,
-  isScope,
-  isStatus,
-  registerSheet,
-  type RegisterFilters,
-} from '@/lib/master-drawing-list/register';
-import { SCHEDULES, SCOPES, STATUS_LABEL, type MdlItem, type MdlStatus } from '@/lib/master-drawing-list/types';
+  OVERALL_STATUSES,
+  canEditSubDrawing,
+  cycleAgeDays,
+  drawingStage,
+  formatMdlDate,
+  isApproved,
+  isOverdue,
+  latestRevision,
+  latestRevisionAcrossItem,
+  outlineNo,
+  rollup,
+  summariseItems,
+  type DrawingItem,
+  type DrawingRevision,
+  type Rollup,
+  type SubDrawing,
+} from '@/lib/master-drawing-list/drawings';
+import { filterItems, groupItems, groupTitle, isOverallStatus, isSchedule, isScope, type RegisterGroup } from '@/lib/master-drawing-list/register';
+import { SCHEDULES, SCOPES } from '@/lib/master-drawing-list/types';
 import { cn } from '@/lib/utils';
 
-import { useDebounced, useMdl, useMdlQuery, useRegisterParams, type MdlProjectView } from './mdl-client';
-import { DateText, DaysText, MdlEmpty, MdlError, MdlLoading, MdlStatusBadge, NoDrawingList, ProjectSelect, RevisionTrack, STATUS_ORDER } from './mdl-ui';
-import { MDL_BASE } from './module-layout-shell';
+import { MdlEmpty, MdlStatus } from './mdl-ui';
 
-interface RegisterData {
-  project: MdlProjectView;
-  items: MdlItem[];
-  today: string;
+export interface RegisterActions {
+  /** Drawings · Edit on this drawing list. */
+  canEdit: boolean;
+  canDelete: boolean;
+  userId: string | undefined;
+  onEdit: (item: DrawingItem, sub: SubDrawing | null) => void;
+  onAddSub: (item: DrawingItem) => void;
+  onRemoveSub: (item: DrawingItem, sub: SubDrawing) => void;
+  onDelete: (item: DrawingItem) => void;
+  onOpenFile: (item: DrawingItem, revision: DrawingRevision) => void;
 }
 
-const SUMMARY: Record<MdlStatus, { tone: Tone; icon: LucideIcon; hint: string }> = {
-  approved: { tone: 'emerald', icon: CircleCheck, hint: 'Closed' },
-  under_review: { tone: 'blue', icon: Send, hint: 'With client' },
-  comments_received: { tone: 'amber', icon: MessageSquare, hint: 'With SEL' },
-  not_submitted: { tone: 'slate', icon: FileStack, hint: 'With SEL' },
-  vendor_not_finalised: { tone: 'rose', icon: PackageX, hint: 'With procurement' },
-  on_hold: { tone: 'violet', icon: CirclePause, hint: 'Parked' },
+export interface RegisterFilterState {
+  schedule: string | null;
+  scope: string | null;
+  status: string | null;
+  q: string;
+  set: (changes: Record<string, string | null>) => void;
+}
+
+const NESTED_CARD_CLASS = 'border-border bg-muted/30 p-2.5 shadow-none';
+
+/** Enter/Space on a `role="button"` strip — but not when the key was meant for a link inside it. */
+const onStripKey = (event: KeyboardEvent, action: () => void) => {
+  if (event.target !== event.currentTarget) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    action();
+  }
 };
 
-const COLUMN_COUNT = 7;
+function RevisionBadge({ revision }: { revision: DrawingRevision | null }) {
+  if (!revision) return <>—</>;
+  return (
+    <MdlStatus status={revision.status || undefined}>
+      {revision.round}
+      {revision.status ? ` · ${revision.status}` : ''}
+    </MdlStatus>
+  );
+}
 
-export const itemHref = (id: string) => `${MDL_BASE}/register/${encodeURIComponent(id)}`;
+function CycleAge({ days }: { days: number | null }) {
+  return days != null ? <span className={days > 30 ? 'font-medium text-amber-600' : ''}>{days}d</span> : <>—</>;
+}
 
-export default function Register() {
-  const { lookups, can } = useMdl();
-  const params = useRegisterParams();
-  const router = useRouter();
-  const pathname = usePathname() ?? `${MDL_BASE}/register`;
-  const { toast } = useToast();
-  const query = useMdlQuery<RegisterData>(params.project ? `items?project=${encodeURIComponent(params.project)}` : null);
+/** The latest round's drawing, as a paperclip link beside the revision. */
+function LatestFile({ item, revision, onOpenFile }: { item: DrawingItem; revision: DrawingRevision | null; onOpenFile: RegisterActions['onOpenFile'] }) {
+  if (!revision?.filePath) return null;
+  return (
+    <button
+      type="button"
+      className="ml-1.5 inline-flex items-center text-primary"
+      title={`Open ${revision.fileName || 'the drawing'}`}
+      aria-label={`Open the ${revision.round} drawing`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenFile(item, revision);
+      }}
+    >
+      <Paperclip className="h-3.5 w-3.5" />
+    </button>
+  );
+}
 
-  // The search box types into local state; the URL follows once typing pauses.
-  const [search, setSearch] = useState(params.q);
-  const settledSearch = useDebounced(search);
-  const { q: urlSearch, set } = params;
-  useEffect(() => {
-    if (settledSearch !== urlSearch) set({ q: settledSearch.trim() || null });
-  }, [settledSearch, urlSearch, set]);
+type CardRow = { id: string; item: DrawingItem; outline: number[]; rollup: Rollup };
+type SubCardRow = { id: string; item: DrawingItem; sub: SubDrawing; outline: number[] };
 
-  const filters: RegisterFilters = {
-    schedule: isSchedule(params.schedule) ? params.schedule : null,
-    scope: isScope(params.scope) ? params.scope : null,
-    status: isStatus(params.status) ? params.status : null,
-    q: settledSearch,
+const COLUMN_COUNT = 16;
+
+export function RegisterView({ items, today, filters, actions }: { items: DrawingItem[]; today: string; filters: RegisterFilterState; actions: RegisterActions }) {
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState(filters.q);
+
+  const active = {
+    schedule: isSchedule(filters.schedule) ? filters.schedule : null,
+    scope: isScope(filters.scope) ? filters.scope : null,
+    status: isOverallStatus(filters.status) ? filters.status : null,
+    q: search,
   };
-  const items = useMemo(() => query.data?.items ?? [], [query.data]);
-  const today = query.data?.today ?? lookups?.today ?? '';
-  const project = query.data?.project ?? lookups?.projects.find((entry) => entry.code === params.project) ?? null;
-  const counts = countByStatus(filterWithoutStatus(items, filters));
-  const shown = filterItems(items, filters);
-  const sections = groupForRegister(shown);
-  const activeCount = [filters.schedule, filters.scope, filters.status].filter(Boolean).length;
+  const filtering = Boolean(active.schedule || active.scope || active.status || search.trim());
+  const shown = useMemo(() => filterItems(items, active, today), [items, active.schedule, active.scope, active.status, active.q, today]); // eslint-disable-line react-hooks/exhaustive-deps
+  const groups = useMemo(() => groupItems(shown), [shown]);
+  const allGroupKeys = groups.map((group) => group.key);
+  const isGroupOpen = (key: string) => filtering || expandedGroups.has(key);
 
-  const statusHref = (status: MdlStatus | null) => {
-    const next = new URLSearchParams(params.search);
-    if (status && status !== filters.status) next.set('status', status);
-    else next.delete('status');
-    const text = next.toString();
-    return text ? `${pathname}?${text}` : pathname;
-  };
+  const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) =>
+    set((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const toggleExpanded = (id: string) => toggle(setExpandedItems, id);
+  const toggleGroup = (key: string) => toggle(setExpandedGroups, key);
 
-  const exportView = async () => {
-    if (!project) return;
-    try {
-      await exportWorkbook(exportFileName(project, today), [registerSheet(shown, project, today)]);
-    } catch (error) {
-      toast({ variant: 'destructive', title: 'Export failed', description: error instanceof Error ? error.message : 'The workbook could not be built.' });
-    }
-  };
+  const registerHead = (
+    <TableHeader>
+      <TableRow>
+        <TableHead className="w-16">SL NO</TableHead>
+        <TableHead>Sl. No.</TableHead>
+        <TableHead className="min-w-[200px]">Item Description</TableHead>
+        <TableHead>Drawings</TableHead>
+        <TableHead>Stage</TableHead>
+        <TableHead>Assigned To</TableHead>
+        <TableHead>Doc No.</TableHead>
+        <TableHead>Drawing No.</TableHead>
+        <TableHead>Planned Start</TableHead>
+        <TableHead>Planned End</TableHead>
+        <TableHead>Revision</TableHead>
+        <TableHead>Cycle Age</TableHead>
+        <TableHead>Approve Date</TableHead>
+        <TableHead>Status</TableHead>
+        <TableHead>Remark</TableHead>
+        <TableHead className="w-24" />
+      </TableRow>
+    </TableHeader>
+  );
 
-  if (!lookups) return <MdlLoading />;
-  if (!lookups.projects.length) {
+  const itemRows = (rows: DrawingItem[], prefix: number[]) =>
+    rows.map((item, index) => {
+      const rolled = rollup(item, today);
+      const latest = latestRevisionAcrossItem(item);
+      const subDrawings = item.subDrawings;
+      const isExpanded = expandedItems.has(item.id);
+      const approvedPct = rolled.subTotal ? Math.round((rolled.subApproved / rolled.subTotal) * 100) : 0;
+      return [
+        <TableRow
+          key={item.id}
+          className={cn(subDrawings.length && 'cursor-pointer', subDrawings.length && isExpanded && 'border-b-0 bg-muted/30')}
+          onClick={subDrawings.length ? () => toggleExpanded(item.id) : undefined}
+        >
+          <TableCell className="whitespace-nowrap font-medium">{outlineNo(...prefix, index)}.</TableCell>
+          <TableCell className="whitespace-nowrap">{item.slNo || '—'}</TableCell>
+          <TableCell className="max-w-[220px]">
+            <div className="flex items-center gap-1">
+              {subDrawings.length ? <ChevronRight aria-hidden className={cn('h-4 w-4 shrink-0 transition-transform', isExpanded && 'rotate-90')} /> : <span className="w-4 shrink-0" />}
+              <span className="truncate" title={item.description}>
+                {item.description || '—'}
+              </span>
+            </div>
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            {subDrawings.length > 0 ? (
+              <div className="flex items-center gap-1.5">
+                <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${rolled.subApproved} of ${rolled.subTotal} drawings approved`}>
+                  <div className="h-full bg-emerald-500" style={{ width: `${approvedPct}%` }} />
+                </div>
+                <span className="flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                  <Layers className="h-2.5 w-2.5" />
+                  {rolled.subApproved}/{rolled.subTotal}
+                </span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">{subDrawings.length === 0 ? <MdlStatus status={drawingStage(item)} /> : <span className="text-muted-foreground">—</span>}</TableCell>
+          <TableCell>—</TableCell>
+          <TableCell className="whitespace-nowrap">{item.docNo || '—'}</TableCell>
+          <TableCell className="max-w-xs truncate" title={item.drawingNo}>
+            {item.drawingNo || '—'}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">{formatMdlDate(rolled.plannedStartDate)}</TableCell>
+          <TableCell className="whitespace-nowrap">
+            <span className={rolled.overdue ? 'font-medium text-red-600' : ''}>{formatMdlDate(rolled.plannedEndDate)}</span>
+            {rolled.overdue && <MdlStatus status="Overdue" className="ml-1.5" title={rolled.subTotal ? 'This item has a drawing past its planned end date — expand to see which' : undefined} />}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            <RevisionBadge revision={latest} />
+            <LatestFile item={item} revision={latestRevision(item.revisions)} onOpenFile={actions.onOpenFile} />
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            <CycleAge days={cycleAgeDays(rolled, today)} />
+          </TableCell>
+          <TableCell className="whitespace-nowrap">{formatMdlDate(rolled.approveDate)}</TableCell>
+          <TableCell className="whitespace-nowrap">
+            <MdlStatus status={rolled.status} />
+          </TableCell>
+          <TableCell className="max-w-xs truncate" title={item.remark}>
+            {item.remark || '—'}
+          </TableCell>
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onEdit(item, null)} disabled={!actions.canEdit} aria-label={`Edit ${item.description}`}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              {actions.canEdit && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onAddSub(item)} aria-label={`Add a sub-drawing to ${item.description}`} title="Add sub-drawing">
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              {actions.canDelete && (
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onDelete(item)} aria-label={`Remove ${item.description} from the MDL register`} title="Remove from MDL register">
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              )}
+            </div>
+          </TableCell>
+        </TableRow>,
+        ...(isExpanded
+          ? subDrawings.map((sub, subIndex) => {
+              const subLatest = latestRevision(sub.revisions ?? []);
+              const subOverdue = isOverdue(sub, today);
+              const canEditThisSub = canEditSubDrawing(sub, actions.userId, actions.canEdit);
+              return (
+                <TableRow key={`${item.id}-${sub.id}`} className="border-b-0 last:border-b">
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    <span className="pl-3">{outlineNo(...prefix, index, subIndex)}.</span>
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="max-w-[220px]">
+                    <div className="flex items-center gap-1.5 border-l-2 border-muted pl-3">
+                      {isApproved(sub.status) && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                      <span className="truncate text-sm" title={sub.title}>
+                        {sub.title || 'Untitled drawing'}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>—</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <MdlStatus status={drawingStage(sub)} />
+                  </TableCell>
+                  <TableCell className="max-w-[140px] whitespace-nowrap">
+                    <span className={cn('truncate text-xs', !sub.assignedToName && 'text-muted-foreground')}>{sub.assignedToName || 'Unassigned'}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{sub.docNo || '—'}</TableCell>
+                  <TableCell className="max-w-xs truncate" title={sub.drawingNo}>
+                    {sub.drawingNo || '—'}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{formatMdlDate(sub.plannedStartDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <span className={subOverdue ? 'font-medium text-red-600' : ''}>{formatMdlDate(sub.plannedEndDate)}</span>
+                    {subOverdue && <MdlStatus status="Overdue" className="ml-1.5" />}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <RevisionBadge revision={subLatest} />
+                    <LatestFile item={item} revision={subLatest} onOpenFile={actions.onOpenFile} />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <CycleAge days={cycleAgeDays(sub, today)} />
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{formatMdlDate(sub.approveDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <MdlStatus status={sub.status} />
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate" title={sub.remark}>
+                    {sub.remark || '—'}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onEdit(item, sub)} disabled={!canEditThisSub} aria-label={`Edit sub-drawing ${sub.title || 'untitled'}`}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {actions.canEdit && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => actions.onRemoveSub(item, sub)} aria-label={`Remove sub-drawing ${sub.title || 'untitled'}`} title="Remove sub-drawing">
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          : []),
+      ];
+    });
+
+  /** A group's heading: outline number, title, its schedule and scope, items and how many drawings are approved. */
+  const groupHeading = (group: RegisterGroup<DrawingItem>, groupIndex: number, isOpen: boolean) => {
+    const summary = summariseItems(group.items);
+    const approvedPct = summary.drawings ? Math.round((summary.approved / summary.drawings) * 100) : 0;
     return (
-      <>
-        <PageHeader icon={ListTree} title="Drawing Register" />
-        <NoDrawingList />
-      </>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <ChevronRight aria-hidden className={cn('h-4 w-4 shrink-0 transition-transform', isOpen && 'rotate-90')} />
+        <span className="text-xs font-medium tabular-nums text-muted-foreground">{outlineNo(groupIndex)}.</span>
+        <Layers className="h-4 w-4 shrink-0 text-sky-600" />
+        <span className="font-semibold">{groupTitle(group)}</span>
+        {group.group && (
+          <span className="text-sm text-muted-foreground">
+            {group.schedule} · {group.scope}
+          </span>
+        )}
+        <span className="text-xs text-muted-foreground">
+          {group.items.length} item{group.items.length === 1 ? '' : 's'}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${summary.approved} of ${summary.drawings} drawings approved`}>
+            <div className="h-full bg-emerald-500" style={{ width: `${approvedPct}%` }} />
+          </div>
+          <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+            {summary.approved}/{summary.drawings} approved
+          </span>
+        </div>
+      </div>
     );
-  }
+  };
 
-  const columns: ListColumn<MdlItem>[] = [
-    { header: 'Description', mobile: 'title', cell: (item) => <span className="line-clamp-3">{item.description}</span> },
-    { header: 'Status', mobile: 'aside', cell: (item) => <MdlStatusBadge status={item.status} /> },
-    { header: 'Sl. No.', cell: (item) => item.slNo || '—' },
-    { header: 'Drawing No.', cell: (item) => item.drgNo || '—' },
-    { header: 'Revisions', cell: (item) => <RevisionTrack item={item} /> },
-    { header: 'Approved on', cell: (item) => <DateText value={item.approvedOn} /> },
-    { header: 'Days', align: 'right', cell: (item) => <DaysText item={item} today={today} /> },
+  /* ── Phone: groups become tappable strips; an open group lists its items as cards, sub-drawings nested. */
+  const cardColumns: ListColumn<CardRow>[] = [
+    {
+      header: 'Item Description',
+      mobile: 'title',
+      cell: ({ item, outline }) => (
+        <>
+          <span className="mr-1 tabular-nums text-muted-foreground">{outlineNo(...outline)}.</span>
+          {item.description || '—'}
+        </>
+      ),
+    },
+    { header: 'Sl. No.', mobile: 'title', cell: ({ item }) => `Sl. No. ${item.slNo || '—'}` },
+    { header: 'Remark', mobile: 'title', cell: ({ item }) => item.remark || null },
+    { header: 'Status', mobile: 'aside', cell: ({ rollup: rolled }) => <MdlStatus status={rolled.status} /> },
+    { header: 'Overdue', mobile: 'aside', cell: ({ rollup: rolled }) => (rolled.overdue ? <MdlStatus status="Overdue" /> : null) },
+    {
+      header: 'Drawings',
+      cell: ({ item, rollup: rolled }) =>
+        item.subDrawings.length > 0 ? (
+          <span className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-muted-foreground">
+            <Layers className="h-3 w-3" />
+            {rolled.subApproved}/{rolled.subTotal} approved
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    { header: 'Stage', cell: ({ item }) => (item.subDrawings.length ? <span className="text-muted-foreground">—</span> : <MdlStatus status={drawingStage(item)} />) },
+    { header: 'Doc No.', cell: ({ item }) => item.docNo || '—' },
+    { header: 'Drawing No.', cell: ({ item }) => <span title={item.drawingNo}>{item.drawingNo || '—'}</span> },
+    { header: 'Planned Start', cell: ({ rollup: rolled }) => formatMdlDate(rolled.plannedStartDate) },
+    { header: 'Planned End', cell: ({ rollup: rolled }) => <span className={rolled.overdue ? 'font-medium text-red-600' : ''}>{formatMdlDate(rolled.plannedEndDate)}</span> },
+    { header: 'Revision', cell: ({ item }) => <RevisionBadge revision={latestRevisionAcrossItem(item)} /> },
+    { header: 'Cycle Age', cell: ({ rollup: rolled }) => <CycleAge days={cycleAgeDays(rolled, today)} /> },
+    { header: 'Approve Date', cell: ({ rollup: rolled }) => formatMdlDate(rolled.approveDate) },
+    {
+      header: 'Actions',
+      mobile: 'footer',
+      cell: ({ item }) => {
+        const isExpanded = expandedItems.has(item.id);
+        return (
+          <div className="flex w-full flex-col gap-2">
+            {item.subDrawings.length > 0 && (
+              <div className="flex">
+                <Button variant="outline" size="sm" onClick={() => toggleExpanded(item.id)} aria-expanded={isExpanded}>
+                  <ChevronRight className={cn('mr-1.5 h-4 w-4 transition-transform', isExpanded && 'rotate-90')} />
+                  {isExpanded ? 'Hide' : 'Show'} {item.subDrawings.length} drawing{item.subDrawings.length === 1 ? '' : 's'}
+                </Button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => actions.onEdit(item, null)} disabled={!actions.canEdit} aria-label={`Edit ${item.description}`}>
+                <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+              </Button>
+              {actions.canEdit && (
+                <Button variant="outline" size="sm" onClick={() => actions.onAddSub(item)} aria-label={`Add a sub-drawing to ${item.description}`}>
+                  <Plus className="mr-1.5 h-3.5 w-3.5" /> Sub-drawing
+                </Button>
+              )}
+              {actions.canDelete && (
+                <Button variant="outline" size="sm" onClick={() => actions.onDelete(item)} aria-label={`Remove ${item.description} from the MDL register`}>
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      },
+    },
   ];
 
-  return (
-    <>
-      <PageHeader
-        icon={ListTree}
-        title="Drawing Register"
-        description={project ? [project.displayName, project.displayClient].filter(Boolean).join(' · ') : 'Every drawing and document submitted to the client for approval.'}
-        actions={
-          <>
-            <ProjectSelect projects={lookups.projects} value={params.project} onChange={(code) => set({ project: code, status: null })} className="sm:w-56" />
-            {can('Drawings', 'Export') && (
-              <Button variant="outline" onClick={() => void exportView()} disabled={!shown.length}>
-                <Download className="mr-2 h-4 w-4" aria-hidden="true" />
-                Export
-              </Button>
-            )}
-            {can('Drawings', 'Add') && (
-              <Button asChild>
-                <Link href={`${MDL_BASE}/new${params.project ? `?project=${encodeURIComponent(params.project)}` : ''}`}>
-                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Add item
-                </Link>
-              </Button>
-            )}
-          </>
-        }
-      />
+  const subCardColumns: ListColumn<SubCardRow>[] = [
+    {
+      header: 'Drawing',
+      mobile: 'title',
+      cell: ({ sub, outline }) => (
+        <span className="flex items-start gap-1.5">
+          <span className="text-xs tabular-nums text-muted-foreground">{outlineNo(...outline)}.</span>
+          {isApproved(sub.status) && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+          <span className="min-w-0 break-words">{sub.title || 'Untitled drawing'}</span>
+        </span>
+      ),
+    },
+    {
+      header: 'Stage',
+      mobile: 'title',
+      cell: ({ sub }) => (
+        <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+          <MdlStatus status={drawingStage(sub)} />
+          <MdlStatus status={sub.status} />
+          <span className={cn(sub.assignedToName && 'text-foreground')}>{sub.assignedToName || 'Unassigned'}</span>
+        </span>
+      ),
+    },
+    { header: 'Remark', mobile: 'title', cell: ({ sub }) => sub.remark || null },
+    { header: 'Doc No.', cell: ({ sub }) => sub.docNo || '—' },
+    { header: 'Drawing No.', cell: ({ sub }) => <span title={sub.drawingNo}>{sub.drawingNo || '—'}</span> },
+    { header: 'Planned Start', cell: ({ sub }) => formatMdlDate(sub.plannedStartDate) },
+    {
+      header: 'Planned End',
+      cell: ({ sub }) => (
+        <>
+          <span className={isOverdue(sub, today) ? 'font-medium text-red-600' : ''}>{formatMdlDate(sub.plannedEndDate)}</span>
+          {isOverdue(sub, today) && <MdlStatus status="Overdue" className="ml-1.5" />}
+        </>
+      ),
+    },
+    { header: 'Revision', cell: ({ sub }) => <RevisionBadge revision={latestRevision(sub.revisions ?? [])} /> },
+    { header: 'Cycle Age', cell: ({ sub }) => <CycleAge days={cycleAgeDays(sub, today)} /> },
+    { header: 'Approve Date', cell: ({ sub }) => formatMdlDate(sub.approveDate) },
+    {
+      header: 'Actions',
+      mobile: 'footer',
+      cell: ({ item, sub }) => (
+        <>
+          <Button variant="outline" size="sm" onClick={() => actions.onEdit(item, sub)} disabled={!canEditSubDrawing(sub, actions.userId, actions.canEdit)} aria-label={`Edit sub-drawing ${sub.title || 'untitled'}`}>
+            <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit
+          </Button>
+          {actions.canEdit && (
+            <Button variant="outline" size="sm" onClick={() => actions.onRemoveSub(item, sub)} aria-label={`Remove sub-drawing ${sub.title || 'untitled'}`}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5 text-destructive" /> Remove
+            </Button>
+          )}
+        </>
+      ),
+    },
+  ];
 
-      <MdlError message={query.error} onRetry={query.reload} />
-
-      <KpiGrid>
-        {STATUS_ORDER.map((status) => (
-          <KpiCard
-            key={status}
-            label={STATUS_LABEL[status]}
-            value={query.loading && !query.data ? '…' : counts[status].toLocaleString('en-IN')}
-            hint={SUMMARY[status].hint}
-            icon={SUMMARY[status].icon}
-            tone={SUMMARY[status].tone}
-            href={statusHref(status)}
-            accent={filters.status === status}
-            className={cn(filters.status === status && 'ring-2 ring-primary/60')}
+  const phoneCards = (rows: DrawingItem[], prefix: number[]) => {
+    const cardRows: CardRow[] = rows.map((item, index) => ({ id: item.id, item, outline: [...prefix, index], rollup: rollup(item, today) }));
+    return (
+      <DataList
+        cardsOnly
+        rows={cardRows}
+        columns={cardColumns}
+        expandedIds={new Set(cardRows.filter((row) => row.item.subDrawings.length && expandedItems.has(row.id)).map((row) => row.id))}
+        renderExpanded={(row) => (
+          <DataList
+            cardsOnly
+            rows={row.item.subDrawings.map((sub, subIndex) => ({ id: sub.id, item: row.item, sub, outline: [...row.outline, subIndex] }))}
+            columns={subCardColumns}
+            rowClassName={() => NESTED_CARD_CLASS}
           />
-        ))}
-      </KpiGrid>
-
-      <TableCard
-        title={filters.status ? STATUS_LABEL[filters.status] : 'All drawings'}
-        count={shown.length}
-        total={items.length}
-        noun="item"
-        toolbar={
-          <FilterBar
-            search={{ value: search, onChange: setSearch, placeholder: 'Search description, drawing no., group…' }}
-            activeCount={activeCount}
-            onClear={() => {
-              setSearch('');
-              set({ schedule: null, scope: null, status: null, q: null });
-            }}
-          >
-            <Select value={filters.schedule ?? 'all'} onValueChange={(value) => set({ schedule: value === 'all' ? null : value })}>
-              <SelectTrigger aria-label="Schedule" className="text-left">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All schedules</SelectItem>
-                {SCHEDULES.map((schedule) => (
-                  <SelectItem key={schedule} value={schedule}>
-                    {schedule}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filters.scope ?? 'all'} onValueChange={(value) => set({ scope: value === 'all' ? null : value })}>
-              <SelectTrigger aria-label="Scope" className="text-left">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All scopes</SelectItem>
-                {SCOPES.map((scope) => (
-                  <SelectItem key={scope} value={scope}>
-                    {scope}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={filters.status ?? 'all'} onValueChange={(value) => set({ status: value === 'all' ? null : value })}>
-              <SelectTrigger aria-label="Status" className="text-left">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {STATUS_ORDER.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {STATUS_LABEL[status]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterBar>
-        }
-      >
-        {query.loading && !query.data ? (
-          <MdlLoading />
-        ) : !shown.length ? (
-          <MdlEmpty
-            title={items.length ? 'No item matches these filters' : 'This drawing list has no items yet'}
-            description={items.length ? 'Clear a filter or the search to see more.' : undefined}
-          />
-        ) : (
-          <>
-            <Table containerClassName="hidden sm:block">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-16">Sl. No.</TableHead>
-                  <TableHead className="min-w-[18rem]">Description</TableHead>
-                  <TableHead className="min-w-[10rem]">Drawing No.</TableHead>
-                  <TableHead>Revisions</TableHead>
-                  <TableHead className="whitespace-nowrap">Approved on</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Days</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sections.flatMap((section) => [
-                  <TableRow key={section.key} className="bg-muted/60 hover:bg-muted/60">
-                    <TableCell colSpan={COLUMN_COUNT} className="py-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                        {section.schedule} › {section.scope}
-                      </span>
-                      <span className="ml-2 text-xs text-muted-foreground">{section.count}</span>
-                    </TableCell>
-                  </TableRow>,
-                  ...section.groups.flatMap((group) => [
-                    ...(group.group
-                      ? [
-                          <TableRow key={group.key} className="bg-muted/25 hover:bg-muted/25">
-                            <TableCell colSpan={COLUMN_COUNT} className="py-1.5 pl-6 text-[13px] font-medium text-slate-700">
-                              {group.group}
-                            </TableCell>
-                          </TableRow>,
-                        ]
-                      : []),
-                    ...group.items.map((item) => (
-                      <TableRow key={item.id} className="cursor-pointer" onClick={() => router.push(itemHref(item.id))}>
-                        <TableCell className="tabular-nums text-muted-foreground">{item.slNo || '—'}</TableCell>
-                        <TableCell className="max-w-[28rem]">
-                          <CellLink href={itemHref(item.id)} className="line-clamp-2 font-medium text-slate-800 hover:underline">
-                            {item.description}
-                          </CellLink>
-                        </TableCell>
-                        <TableCell className="break-words text-slate-700">{item.drgNo || <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell>
-                          <RevisionTrack item={item} />
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <DateText value={item.approvedOn} />
-                        </TableCell>
-                        <TableCell>
-                          <MdlStatusBadge status={item.status} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DaysText item={item} today={today} />
-                        </TableCell>
-                      </TableRow>
-                    )),
-                  ]),
-                ])}
-              </TableBody>
-            </Table>
-
-            <div className="divide-y sm:hidden">
-              {sections.map((section) => (
-                <section key={section.key} className="space-y-2 px-3 py-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                    {section.schedule} › {section.scope} <span className="ml-1 font-normal normal-case text-muted-foreground">{section.count}</span>
-                  </h3>
-                  {section.groups.map((group) => (
-                    <div key={group.key} className="space-y-2">
-                      {group.group && <p className="text-[13px] font-medium text-slate-600">{group.group}</p>}
-                      <DataList cardsOnly rows={group.items} columns={columns} cardHref={(item) => itemHref(item.id)} />
-                    </div>
-                  ))}
-                </section>
-              ))}
-            </div>
-          </>
         )}
-      </TableCard>
-    </>
+      />
+    );
+  };
+
+  return (
+    <TableCard
+      description={
+        <>
+          {groups.length} group{groups.length === 1 ? '' : 's'} · {shown.length} of {items.length} item{items.length === 1 ? '' : 's'}
+        </>
+      }
+      actions={
+        filtering ? undefined : (
+          <>
+            <Button variant="ghost" size="sm" className="h-9 px-2 text-xs sm:h-7" onClick={() => setExpandedGroups(new Set(allGroupKeys))} disabled={allGroupKeys.every((key) => expandedGroups.has(key))}>
+              Expand all
+            </Button>
+            <Button variant="ghost" size="sm" className="h-9 px-2 text-xs sm:h-7" onClick={() => setExpandedGroups(new Set())} disabled={expandedGroups.size === 0}>
+              Collapse all
+            </Button>
+          </>
+        )
+      }
+      toolbar={
+        <FilterBar
+          search={{
+            value: search,
+            onChange: (value) => {
+              setSearch(value);
+              filters.set({ q: value.trim() || null });
+            },
+            placeholder: 'Search description, numbers, group, remark…',
+          }}
+          activeCount={[active.schedule, active.scope, active.status].filter(Boolean).length}
+          onClear={() => {
+            setSearch('');
+            filters.set({ schedule: null, scope: null, status: null, q: null });
+          }}
+        >
+          <Select value={active.schedule ?? 'all'} onValueChange={(value) => filters.set({ schedule: value === 'all' ? null : value })}>
+            <SelectTrigger aria-label="Schedule" className="text-left">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All schedules</SelectItem>
+              {SCHEDULES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={active.scope ?? 'all'} onValueChange={(value) => filters.set({ scope: value === 'all' ? null : value })}>
+            <SelectTrigger aria-label="Scope" className="text-left">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All scopes</SelectItem>
+              {SCOPES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={active.status ?? 'all'} onValueChange={(value) => filters.set({ status: value === 'all' ? null : value })}>
+            <SelectTrigger aria-label="Status" className="text-left">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              {OVERALL_STATUSES.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterBar>
+      }
+    >
+      {!groups.length ? (
+        <MdlEmpty title={items.length ? 'No item matches these filters' : 'No items in this drawing list yet'} description={items.length ? 'Clear a filter or the search to see more.' : 'Add an item, or load the workbook on the Excel Import page.'} />
+      ) : (
+        <>
+          <Table containerClassName="hidden sm:block">
+            {registerHead}
+            <TableBody>
+              {groups.map((group, groupIndex) => {
+                const isOpen = isGroupOpen(group.key);
+                return (
+                  <Fragment key={group.key}>
+                    <TableRow className={cn('cursor-pointer bg-muted/40', isOpen && 'border-b-0')} onClick={() => !filtering && toggleGroup(group.key)}>
+                      <TableCell colSpan={COLUMN_COUNT}>{groupHeading(group, groupIndex, isOpen)}</TableCell>
+                    </TableRow>
+                    {isOpen ? itemRows(group.items, [groupIndex]) : null}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <div className="divide-y sm:hidden">
+            {groups.map((group, groupIndex) => {
+              const isOpen = isGroupOpen(group.key);
+              return (
+                <div key={group.key}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isOpen}
+                    onClick={() => !filtering && toggleGroup(group.key)}
+                    onKeyDown={(event) => onStripKey(event, () => !filtering && toggleGroup(group.key))}
+                    className="cursor-pointer bg-muted/40 px-3 py-3"
+                  >
+                    {groupHeading(group, groupIndex, isOpen)}
+                  </div>
+                  {isOpen && <div className="border-t bg-muted/30 p-2.5">{phoneCards(group.items, [groupIndex])}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </TableCard>
   );
 }

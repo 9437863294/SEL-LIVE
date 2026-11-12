@@ -17,6 +17,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 
 import { derive, isIsoDate } from './derive.ts';
+import { OVERALL_STATUSES, REVISION_ROUNDS, earliestSubmissionDate, type DrawingItem, type DrawingRevision, type OverallStatus, type RevisionStatus } from './drawings.ts';
 import { COLLECTIONS, SCHEDULES, SCOPES, STATUSES, STATUS_LABEL, type MdlItemCore, type MdlProject, type MdlRevision, type MdlSchedule, type MdlScope, type MdlStatus } from './types.ts';
 
 /* ── the grid ────────────────────────────────────────────────────────────── */
@@ -239,7 +240,10 @@ export interface ImportSummary {
   projects: { code: string; short: string; name: string; items: number; counts: Record<MdlStatus, number> }[];
   itemCount: number;
   revisionCount: number;
+  /** Status from the dates (the workbook's own classification): Approved, Under review, Comments received… */
   totals: Record<MdlStatus, number>;
+  /** The overall status each item gets in the register (Pending, In Progress, Approved…). */
+  overall: Record<OverallStatus, number>;
   /** Items whose ERP status differs from the workbook's "Status (derived from dates)". */
   differs: string[];
   problems: string[];
@@ -249,11 +253,13 @@ const zeroCounts = () => Object.fromEntries(STATUSES.map((status) => [status, 0]
 
 export function summariseImport(parsed: ParsedImport): ImportSummary {
   const totals = zeroCounts();
+  const overall = Object.fromEntries(OVERALL_STATUSES.map((status) => [status, 0])) as Record<OverallStatus, number>;
   const byProject = new Map(parsed.projects.map((p) => [p.code, { code: p.code, short: p.short, name: p.name, items: 0, counts: zeroCounts() }]));
   const differs: string[] = [];
   for (const item of parsed.items) {
     const status = derive(item.core).status;
     totals[status] += 1;
+    overall[toDrawingItem(item.core).status] += 1;
     const project = byProject.get(item.core.projectCode);
     if (project) {
       project.items += 1;
@@ -269,6 +275,7 @@ export function summariseImport(parsed: ParsedImport): ImportSummary {
     itemCount: parsed.items.length,
     revisionCount: parsed.revisionCount,
     totals,
+    overall,
     differs,
     problems: parsed.problems,
   };
@@ -282,8 +289,10 @@ export function summaryLines(summary: ImportSummary): string[] {
       if (project.counts[status]) lines.push(`  ${project.code} | ${STATUS_LABEL[status]}: ${project.counts[status]}`);
     }
   }
-  lines.push('Totals:');
+  lines.push('Totals (status from dates):');
   for (const status of STATUSES) lines.push(`  ${STATUS_LABEL[status]}: ${summary.totals[status]}`);
+  lines.push('Overall status in the register:');
+  for (const status of OVERALL_STATUSES) lines.push(`  ${status}: ${summary.overall[status]}`);
   if (summary.differs.length) {
     lines.push('', `${summary.differs.length} items get a different status from the ERP rule than the workbook column shows:`);
     summary.differs.forEach((line) => lines.push(`  ${line}`));
@@ -293,6 +302,54 @@ export function summaryLines(summary: ImportSummary): string[] {
     summary.problems.forEach((line) => lines.push(`  ${line}`));
   }
   return lines;
+}
+
+/* ── the register's record ───────────────────────────────────────────────── */
+
+/**
+ * A workbook row as the register stores it. The workbook has dates only, so each round's status is
+ * read from them: a round followed by another was kicked back (Resubmission Required); the last
+ * round is Approved when the item is, Resubmission Required when the client's comments came back,
+ * else Under Review. Overall: Approved, In Progress once anything was submitted, else Pending.
+ * Planning date → planned start, proposed approval date → planned end.
+ */
+export function toDrawingItem(core: MdlItemCore): Omit<DrawingItem, 'id' | 'updatedAt' | 'updatedBy'> {
+  const sent = [...core.revisions].filter((r) => r.rev < REVISION_ROUNDS.length).sort((a, b) => a.rev - b.rev);
+  const revisions: DrawingRevision[] = sent.map((r, index) => {
+    const last = index === sent.length - 1;
+    let status: RevisionStatus | '' = '';
+    if (r.submittedOn || r.commentedOn) {
+      if (!last) status = 'Resubmission Required';
+      else if (core.approved) status = 'Approved';
+      else status = r.commentedOn ? 'Resubmission Required' : 'Under Review';
+    }
+    const revision: DrawingRevision = { round: REVISION_ROUNDS[r.rev], submissionDate: r.submittedOn ?? '', comments: '', commentsDate: r.commentedOn ?? '' };
+    if (status) revision.status = status;
+    return revision;
+  });
+  const anySubmitted = revisions.some((r) => r.submissionDate);
+  const status: OverallStatus = core.approved ? 'Approved' : anySubmitted ? 'In Progress' : 'Pending';
+  const firstSubmittedOn = earliestSubmissionDate(revisions);
+  return {
+    projectCode: core.projectCode,
+    schedule: core.schedule,
+    scope: core.scope,
+    group: core.group,
+    order: core.order,
+    slNo: core.slNo,
+    description: core.description,
+    docNo: '',
+    drawingNo: core.drgNo ?? '',
+    plannedStartDate: core.plannedSubmission ?? '',
+    plannedEndDate: core.targetApproval ?? '',
+    revisions,
+    approveDate: core.approvedOn ?? '',
+    status,
+    remark: core.remarks ?? '',
+    ...(firstSubmittedOn ? { firstSubmittedOn } : {}),
+    subDrawings: [],
+    legacy: core.legacy,
+  };
 }
 
 /* ── writing ─────────────────────────────────────────────────────────────── */
@@ -331,8 +388,7 @@ export async function writeImport(db: Firestore, parsed: ParsedImport, options: 
         return;
       }
       batch.set(col.doc(it.id), {
-        ...it.core,
-        ...derive(it.core),
+        ...toDrawingItem(it.core),
         updatedAt: options.timestamp(),
         updatedBy: 'import',
         updatedByName: options.importedByName ?? null,

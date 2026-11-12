@@ -1,4 +1,5 @@
-import { mdlRoute } from '@/lib/master-drawing-list/server/context';
-import { dashboard } from '@/lib/master-drawing-list/server/queries';
+import { NextResponse } from 'next/server';
 
-export const GET = mdlRoute('dashboard', async ({ context }) => dashboard(context));
+/** Retired with the move to Project Management's register flow; every view now reads `items`. */
+export const GET = () => NextResponse.json({ error: 'This endpoint is no longer used.' }, { status: 410 });
+export const POST = GET;

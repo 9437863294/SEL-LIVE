@@ -9,7 +9,8 @@ import type { DocumentData } from 'firebase-admin/firestore';
 
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 
-import { COLLECTIONS, type MdlItem, type MdlProject } from '../types.ts';
+import { emptyRevisions, type DrawingItem, type DrawingRevision, type OverallStatus, type SubDrawing } from '../drawings.ts';
+import { COLLECTIONS, type MdlProject } from '../types.ts';
 import { MdlError, type MdlContext } from './context.ts';
 
 export const db = () => getFirebaseAdminFirestore();
@@ -34,15 +35,67 @@ function isoOf(value: unknown): string | null {
   return null;
 }
 
-/** Firestore document to the plain object the screens receive. */
-export function toItem(id: string, data: DocumentData): MdlItem {
-  const { updatedAt, ...rest } = data;
+const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+function toRevisions(value: unknown): DrawingRevision[] {
+  if (!Array.isArray(value) || !value.length) return emptyRevisions();
+  return value.map((raw) => {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const revision: DrawingRevision = { round: str(r.round) as DrawingRevision['round'], submissionDate: str(r.submissionDate), comments: str(r.comments), commentsDate: str(r.commentsDate) };
+    if (r.status) revision.status = str(r.status) as DrawingRevision['status'];
+    if (r.fileName) revision.fileName = str(r.fileName);
+    if (r.filePath) revision.filePath = str(r.filePath);
+    return revision;
+  });
+}
+
+function toSub(raw: unknown): SubDrawing {
+  const d = (raw ?? {}) as Record<string, unknown>;
   return {
-    ...(rest as Omit<MdlItem, 'id' | 'updatedAt'>),
+    id: str(d.id),
+    title: str(d.title),
+    docNo: str(d.docNo),
+    drawingNo: str(d.drawingNo),
+    plannedStartDate: str(d.plannedStartDate),
+    plannedEndDate: str(d.plannedEndDate),
+    revisions: toRevisions(d.revisions),
+    approveDate: str(d.approveDate),
+    status: (str(d.status) || 'Pending') as OverallStatus,
+    remark: str(d.remark),
+    ...(d.firstSubmittedOn ? { firstSubmittedOn: str(d.firstSubmittedOn) } : {}),
+    ...(d.assignedToId ? { assignedToId: str(d.assignedToId), assignedToName: str(d.assignedToName) } : {}),
+    ...(d.createdAt ? { createdAt: str(d.createdAt), createdBy: str(d.createdBy), createdByName: str(d.createdByName) } : {}),
+    ...(d.updatedAt ? { updatedAt: str(d.updatedAt), updatedBy: str(d.updatedBy), updatedByName: str(d.updatedByName) } : {}),
+  };
+}
+
+/** Firestore document to the plain object the screens receive, with every field present. */
+export function toItem(id: string, data: DocumentData): DrawingItem {
+  return {
     id,
-    updatedAt: isoOf(updatedAt),
-    updatedBy: typeof rest.updatedBy === 'string' ? rest.updatedBy : null,
-    updatedByName: typeof rest.updatedByName === 'string' ? rest.updatedByName : null,
+    projectCode: str(data.projectCode),
+    schedule: data.schedule,
+    scope: data.scope,
+    group: typeof data.group === 'string' && data.group ? data.group : null,
+    order: typeof data.order === 'number' ? data.order : 0,
+    slNo: str(data.slNo),
+    description: str(data.description),
+    docNo: str(data.docNo),
+    drawingNo: str(data.drawingNo),
+    plannedStartDate: str(data.plannedStartDate),
+    plannedEndDate: str(data.plannedEndDate),
+    revisions: toRevisions(data.revisions),
+    approveDate: str(data.approveDate),
+    status: (str(data.status) || 'Pending') as OverallStatus,
+    remark: str(data.remark),
+    ...(data.firstSubmittedOn ? { firstSubmittedOn: str(data.firstSubmittedOn) } : {}),
+    subDrawings: Array.isArray(data.subDrawings) ? data.subDrawings.map(toSub) : [],
+    legacy: data.legacy ?? null,
+    createdAt: isoOf(data.createdAt),
+    createdBy: typeof data.createdBy === 'string' ? data.createdBy : null,
+    updatedAt: isoOf(data.updatedAt),
+    updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : null,
+    updatedByName: typeof data.updatedByName === 'string' ? data.updatedByName : null,
   };
 }
 
@@ -104,14 +157,14 @@ export async function projectFor(context: MdlContext, code: string): Promise<Mdl
 }
 
 /** A project's items in register order. */
-export async function listItems(projectCode: string): Promise<MdlItem[]> {
+export async function listItems(projectCode: string): Promise<DrawingItem[]> {
   const snap = await itemsCol().where('projectCode', '==', projectCode).get();
   return snap.docs.map((doc) => toItem(doc.id, doc.data())).sort((a, b) => a.order - b.order);
 }
 
 /** Items of several projects (Firestore takes up to 30 values per `in`). */
-export async function listItemsOf(projectCodes: string[]): Promise<MdlItem[]> {
-  const out: MdlItem[] = [];
+export async function listItemsOf(projectCodes: string[]): Promise<DrawingItem[]> {
+  const out: DrawingItem[] = [];
   for (let index = 0; index < projectCodes.length; index += 30) {
     const chunk = projectCodes.slice(index, index + 30);
     const snap = await itemsCol().where('projectCode', 'in', chunk).get();
@@ -121,7 +174,7 @@ export async function listItemsOf(projectCodes: string[]): Promise<MdlItem[]> {
 }
 
 /** One item with its drawing list; 404 when missing, 403 outside the caller's scope. */
-export async function itemFor(context: MdlContext, itemId: string): Promise<{ item: MdlItem; project: MdlProjectView }> {
+export async function itemFor(context: MdlContext, itemId: string): Promise<{ item: DrawingItem; project: MdlProjectView }> {
   const snap = await itemsCol().doc(itemId).get();
   if (!snap.exists) throw new MdlError('This drawing item does not exist.', 404);
   const item = toItem(snap.id, snap.data() as DocumentData);
