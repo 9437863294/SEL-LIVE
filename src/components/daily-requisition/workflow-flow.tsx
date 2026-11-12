@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
+import { InfoTip } from '@/components/shared/info-tip';
 import { TableCard } from '@/components/shared/table-card';
 import { dailyPageContainerClass, dailySurfaceCardClass, DAILY_STATUS_TONE } from '@/components/daily-requisition/module-shell';
 import { BANNER_DIALOG_CLASS, GstTdsVerificationDialog } from '@/components/daily-requisition/GstTdsVerificationDialog';
@@ -1548,11 +1549,11 @@ function HandOverForm({
           <span className="ml-auto text-[15px] font-extrabold tabular-nums text-foreground">{formatCurrency(amount)}</span>
         </div>
 
-        <div className="mb-2 mt-4 flex flex-wrap items-center justify-between gap-1 text-[11.5px] font-bold text-muted-foreground">
+        <div className="mb-2 mt-4 flex flex-wrap items-center gap-1.5 text-[11.5px] font-bold text-muted-foreground">
           Hand to
-          <small className="font-semibold">
+          <InfoTip label="About “Hand to”">
             {(step.handOverUserIds?.length ?? 0) > 0 ? 'People set for this step in Workflow Configuration' : 'Anyone in the company'}
-          </small>
+          </InfoTip>
         </div>
         <label className="mb-2 flex items-center gap-2 rounded-[11px] border px-2.5 py-1.5 text-muted-foreground focus-within:border-violet-400">
           <Search className="h-4 w-4 shrink-0" />

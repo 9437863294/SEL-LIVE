@@ -9,7 +9,8 @@ import { db } from '@/lib/firebase';
 import type { DailyRequisitionEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { InfoTip } from '@/components/shared/info-tip';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { KpiCard } from '@/components/shared/kpi-card';
@@ -294,10 +295,10 @@ export default function MonthlyTrendReportPage() {
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-violet-500" />
             <CardTitle className="text-base">{span}-Month Trend</CardTitle>
+            <InfoTip label={`About “${span}-Month Trend”`}>
+              Count (violet) and Net Amount (cyan) — stacked bars scaled to monthly maximum.
+            </InfoTip>
           </div>
-          <CardDescription>
-            Count (violet) and Net Amount (cyan) — stacked bars scaled to monthly maximum.
-          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {trends.map((row) => (
@@ -346,6 +347,7 @@ export default function MonthlyTrendReportPage() {
       <TableCard
         title="Month-by-Month Summary"
         description={`Gross, net, and average net per entry for the last ${span} months.`}
+        descriptionAs="info"
         scroll="natural"
       >
           {trends.every((r) => r.count === 0) ? (

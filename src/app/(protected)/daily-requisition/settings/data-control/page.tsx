@@ -55,6 +55,7 @@ import { saveDailyRequisitionSettings, useDailyRequisitionSettings } from '@/com
 import { IssueList, SettingsAccessDenied, SettingsSkeleton, describeLastUpdate } from '@/components/daily-requisition/settings-controls';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { Avatar } from '@/components/daily-requisition/workflow-editor-parts';
+import { InfoTip } from '@/components/shared/info-tip';
 import { db } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 
@@ -168,9 +169,9 @@ function Card({ id, icon: Icon, from, to, title, description, aside, children }:
         <span className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px] text-white" style={{ background: `linear-gradient(145deg, ${from}, ${to})` }}>
           <Icon className="h-4 w-4" />
         </span>
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <b className="block text-[14.5px] leading-tight">{title}</b>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <InfoTip label={`About “${title}”`}>{description}</InfoTip>
         </div>
         {aside}
       </header>
@@ -179,12 +180,16 @@ function Card({ id, icon: Icon, from, to, title, description, aside, children }:
   );
 }
 
-function Row({ title, hint, control, risky, children }: { title: string; hint: ReactNode; control?: ReactNode; risky?: boolean; children?: ReactNode }) {
+/** `tip` is the setting's explanation, behind an (i); `hint` stays open — for what the current value does. */
+function Row({ title, hint, tip, control, risky, children }: { title: string; hint?: ReactNode; tip?: ReactNode; control?: ReactNode; risky?: boolean; children?: ReactNode }) {
   return (
     <div className={cn('flex flex-wrap items-start gap-3.5 border-t px-[18px] py-3 first:border-t-0', risky && 'bg-gradient-to-r from-orange-50 to-transparent')}>
       <div className="min-w-0 flex-1">
-        <b className="block text-[13.5px]">{title}</b>
-        <small className="block text-xs text-muted-foreground">{hint}</small>
+        <div className="flex items-center gap-1.5">
+          <b className="block text-[13.5px]">{title}</b>
+          {tip ? <InfoTip label={`About “${title}”`}>{tip}</InfoTip> : null}
+        </div>
+        {hint ? <small className="block text-xs text-muted-foreground">{hint}</small> : null}
         {children}
       </div>
       {control ? <div className="flex items-center gap-2.5">{control}</div> : null}
@@ -556,7 +561,7 @@ export default function DailyRequisitionDataControlPage() {
             </div>
             <Row
               title="Apply to bulk import"
-              hint="Imported rows dated outside the window are skipped. Turn off to import old registers."
+              tip="Imported rows dated outside the window are skipped. Turn off to import old registers."
               control={<Switch aria-label="Apply to import" checked={dc.applyToImport} disabled={readOnly || !dc.enabled} onCheckedChange={(applyToImport) => setDate({ applyToImport })} />}
             />
           </Card>
@@ -639,8 +644,8 @@ export default function DailyRequisitionDataControlPage() {
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold">
                         <i className="h-[9px] w-[9px] rounded-full" style={{ background: row.colour }} />
                         {row.label}
+                        <InfoTip label={`About “${row.label}”`}>{row.hint}</InfoTip>
                       </span>
-                      <small className="block text-[11.5px] font-medium text-muted-foreground">{row.hint}</small>
                     </td>
                     <td className="border-t px-2 py-2.5 text-center">{row.edit}</td>
                     <td className="border-t px-2 py-2.5 text-center">{row.del}</td>
@@ -661,7 +666,7 @@ export default function DailyRequisitionDataControlPage() {
           <Card id="rules" icon={ShieldCheck} from="#86efac" to="#15803d" title="Entry rules" description="Checks applied when an entry is added or edited">
             <Row
               title="Require an expense request (DEP No.)"
-              hint="New entries must be received from an expense request. Imports are not affected."
+              tip="New entries must be received from an expense request. Imports are not affected."
               control={<Switch aria-label="Require expense request" checked={current.requireExpenseRequest} disabled={readOnly} onCheckedChange={(requireExpenseRequest) => set({ requireExpenseRequest })} />}
             />
             <Row
@@ -670,7 +675,7 @@ export default function DailyRequisitionDataControlPage() {
               risky={current.netMayExceedGross}
               control={<Switch aria-label="Net may exceed gross" checked={current.netMayExceedGross} disabled={readOnly} onCheckedChange={(netMayExceedGross) => set({ netMayExceedGross })} />}
             />
-            <Row title="High-value flag" hint="Rows at or above this amount are highlighted in the register.">
+            <Row title="High-value flag" tip="Rows at or above this amount are highlighted in the register.">
               <div className="mt-2.5 flex flex-wrap items-center gap-3">
                 <div className="flex w-[160px] items-center rounded-[11px] border px-2.5">
                   <span className="font-extrabold text-muted-foreground">₹</span>
@@ -717,7 +722,7 @@ export default function DailyRequisitionDataControlPage() {
           <Card id="register" icon={Upload} from="#7dd3fc" to="#0369a1" title="Register & import" description="Defaults for the Entry Sheet list and its bulk import">
             <Row
               title="Default date range"
-              hint="What the Entry Sheet's list is filtered to when it opens. People can change it there; a link to one entry always shows it."
+              tip="What the Entry Sheet's list is filtered to when it opens. People can change it there; a link to one entry always shows it."
               control={
                 <div className="inline-flex flex-wrap gap-0.5 rounded-[11px] bg-muted p-[3px]">
                   {DR_DATE_PRESETS.map((preset) => (
@@ -736,7 +741,7 @@ export default function DailyRequisitionDataControlPage() {
             />
             <Row
               title="Detect duplicates on import"
-              hint="Skip rows that repeat an entry already recorded. Reception numbers are always unique."
+              tip="Skip rows that repeat an entry already recorded. Reception numbers are always unique."
               control={<Switch aria-label="Detect duplicates" checked={current.importDuplicateDetection} disabled={readOnly} onCheckedChange={(importDuplicateDetection) => set({ importDuplicateDetection })} />}
             >
               <div className={cn('mt-2 flex flex-wrap gap-1.5', !current.importDuplicateDetection && 'opacity-40')}>

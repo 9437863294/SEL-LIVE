@@ -37,6 +37,13 @@ test('the original document still reads, and what it lacks takes the default', (
   assert.deepEqual(s.sections, defaultPrintSettings().sections);
 });
 
+test('bank details print unless Printing Setup turns them off', () => {
+  // A document saved before the section existed has no `bank` key, and still prints them.
+  assert.equal(resolvePrintSettings({ sections: { details: true, amounts: true, trail: true } }).sections.bank, true);
+  assert.equal(resolvePrintSettings({ sections: { bank: false } }).sections.bank, false);
+  assert.equal(resolvePrintSettings({ sections: { bank: 'no' } }).sections.bank, true, 'a malformed value takes the default');
+});
+
 test('malformed values fall back rather than break the print', () => {
   const s = resolvePrintSettings({ paperSize: 'B9', copies: 7, fontScale: 'huge', watermark: 1, documentTitle: '   ', signatureLabels: ['A', '', 3, 'B'] });
   assert.equal(s.paperSize, 'a4');

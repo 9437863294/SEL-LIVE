@@ -301,6 +301,7 @@ export default function StatusOverviewReportPage() {
         icon={Workflow}
         title="Summary by Workflow Step"
         description="Where each requisition is now — the approval step holding it, the finance step working it, or payment."
+        descriptionAs="info"
         scroll="natural"
       >
         {grand.count === 0 ? (
@@ -357,7 +358,7 @@ export default function StatusOverviewReportPage() {
       </TableCard>
 
       {/* Summary table */}
-      <TableCard icon={BarChart3} title="Summary by Status" description="Each status's share of the net amount." scroll="natural">
+      <TableCard icon={BarChart3} title="Summary by Status" description="Each status's share of the net amount." descriptionAs="info" scroll="natural">
           {grand.count === 0 ? (
             <div className="px-4 py-10 text-center text-muted-foreground">
               No data found for the selected period.

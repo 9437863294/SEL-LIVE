@@ -71,6 +71,7 @@ import {
 } from '@/lib/daily-requisition-import';
 import { resolveDateWindow, todayLocal, validateReceptionDate } from '@/lib/daily-requisition-settings';
 import { useDailyRequisitionSettings } from '@/components/daily-requisition/use-daily-requisition-settings';
+import { InfoTip } from '@/components/shared/info-tip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -631,13 +632,15 @@ export function DailyRequisitionImportDialog({
           {step === 'input' && (
             <>
               <div>
-                <Label className="flex items-center gap-1.5 text-xs font-semibold">
-                  <ClipboardPaste className="h-3.5 w-3.5" /> Paste the register
-                </Label>
-                <p className="mb-1.5 mt-0.5 text-[11px] text-muted-foreground">
-                  Select the heading row and the entries in Excel, copy, and paste here. Tabs and commas both
-                  work, and a project name containing a comma survives either way.
-                </p>
+                <div className="mb-1.5 flex items-center gap-1">
+                  <Label className="flex items-center gap-1.5 text-xs font-semibold">
+                    <ClipboardPaste className="h-3.5 w-3.5" /> Paste the register
+                  </Label>
+                  <InfoTip label="About “Paste the register”">
+                    Select the heading row and the entries in Excel, copy, and paste here. Tabs and commas both
+                    work, and a project name containing a comma survives either way.
+                  </InfoTip>
+                </div>
                 <Textarea
                   value={pasted}
                   onChange={(event) => setPasted(event.target.value)}
@@ -678,11 +681,11 @@ export function DailyRequisitionImportDialog({
                   <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => void downloadTemplate()}>
                     <Download className="h-3.5 w-3.5" /> Download template
                   </Button>
+                  <InfoTip label="About the template">
+                    The template carries the headings this reads, an Instructions sheet documenting every
+                    column, and the project and department names that will resolve.
+                  </InfoTip>
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  The template carries the headings this reads, an Instructions sheet documenting every
-                  column, and the project and department names that will resolve.
-                </p>
               </div>
             </>
           )}
@@ -754,32 +757,37 @@ export function DailyRequisitionImportDialog({
                     onValueChange={(next) => setReceptionNoSource(next as ReceptionNoSource)}
                     className="mt-1.5 space-y-1.5"
                   >
-                    <label className="flex cursor-pointer items-start gap-2 text-xs">
-                      <RadioGroupItem value="file" className="mt-0.5" />
-                      <span>
-                        From the file
-                        <span className="block text-[11px] text-muted-foreground">
-                          Keeps the numbers the register already has. The counter is left alone.
-                        </span>
-                      </span>
-                    </label>
-                    <label className="flex cursor-pointer items-start gap-2 text-xs">
-                      <RadioGroupItem value="generate" className="mt-0.5" />
-                      <span>
-                        Allocate new ones
-                        <span className="block text-[11px] text-muted-foreground">
-                          Takes a block from the serial configuration and advances it past them.
-                        </span>
-                      </span>
-                    </label>
+                    <div className="flex items-start gap-1">
+                      <label className="flex cursor-pointer items-start gap-2 text-xs">
+                        <RadioGroupItem value="file" className="mt-0.5" />
+                        <span>From the file</span>
+                      </label>
+                      <InfoTip label="About “From the file”">
+                        Keeps the numbers the register already has. The counter is left alone.
+                      </InfoTip>
+                    </div>
+                    <div className="flex items-start gap-1">
+                      <label className="flex cursor-pointer items-start gap-2 text-xs">
+                        <RadioGroupItem value="generate" className="mt-0.5" />
+                        <span>Allocate new ones</span>
+                      </label>
+                      <InfoTip label="About “Allocate new ones”">
+                        Takes a block from the serial configuration and advances it past them.
+                      </InfoTip>
+                    </div>
                   </RadioGroup>
                 </div>
 
                 <div className="space-y-2">
                   <div>
-                    <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Status for every imported entry
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Status for every imported entry
+                      </Label>
+                      <InfoTip label="About “Status for every imported entry”">
+                        History that has already been paid should not land in the Finance queue as Pending.
+                      </InfoTip>
+                    </div>
                     <Select value={status} onValueChange={(next) => setStatus(next as RequisitionStatus)}>
                       <SelectTrigger className="mt-1 h-8 text-xs">
                         <SelectValue />
@@ -792,27 +800,30 @@ export function DailyRequisitionImportDialog({
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {status === 'Paid'
-                        ? 'Recorded as paid in full outside Bank Balance — no payment voucher will be expected for these.'
-                        : 'History that has already been paid should not land in the Finance queue as Pending.'}
-                    </p>
+                    {status === 'Paid' && (
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Recorded as paid in full outside Bank Balance — no payment voucher will be expected for these.
+                      </p>
+                    )}
                   </div>
                   {!columnMap.partyName && (
-                    <label className="flex cursor-pointer items-start gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={partyFromDescription}
-                        onChange={(event) => setPartyFromDescription(event.target.checked)}
-                        className="mt-0.5"
-                      />
-                      <span>
-                        Use the narration as the party name
-                        <span className="block text-[11px] text-muted-foreground">
-                          There is no party column. The party-analysis report groups on the party name.
+                    <div className="flex items-start gap-1">
+                      <label className="flex cursor-pointer items-start gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={partyFromDescription}
+                          onChange={(event) => setPartyFromDescription(event.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          Use the narration as the party name
+                          <span className="block text-[11px] text-muted-foreground">There is no party column.</span>
                         </span>
-                      </span>
-                    </label>
+                      </label>
+                      <InfoTip label="About “Use the narration as the party name”">
+                        The party-analysis report groups on the party name.
+                      </InfoTip>
+                    </div>
                   )}
                 </div>
               </section>

@@ -2,7 +2,7 @@
 
 /**
  * Add New Entry's parts (entry-form.module.css): the Single / Multiple switch, the reception number
- * pill, numbered sections, a label with its required star and AUTO mark, the searchable DEP picker,
+ * pill, numbered sections, a label with its required star, AUTO mark and (i) note, the searchable DEP picker,
  * the file drop zone, and the keyboard hint. Presentational only — the page owns the form.
  */
 
@@ -10,6 +10,7 @@ import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { ChevronsUpDown, Hash, Paperclip, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { InfoTip } from '@/components/shared/info-tip';
 import { cn } from '@/lib/utils';
 import styles from './entry-form.module.css';
 
@@ -42,8 +43,8 @@ export function ReceptionPill({ value }: { value: string }) {
   );
 }
 
-/** A numbered group of fields. */
-export function Section({ n, title, note, children }: { n: number; title: string; note?: string; children: ReactNode }) {
+/** A numbered group of fields; `tip` is what the group is for, behind an (i) after the title. */
+export function Section({ n, title, note, tip, children }: { n: number; title: string; note?: string; tip?: ReactNode; children: ReactNode }) {
   return (
     <fieldset className={styles.section}>
       <legend className={styles.legend}>
@@ -52,6 +53,7 @@ export function Section({ n, title, note, children }: { n: number; title: string
         </span>
         {title}
         {note ? <span className={styles.legendNote}>— {note}</span> : null}
+        {tip ? <InfoTip label={`About “${title}”`}>{tip}</InfoTip> : null}
       </legend>
       {children}
     </fieldset>
@@ -74,6 +76,20 @@ export function LabelText({ children, required, auto }: { children: ReactNode; r
         </span>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A field's label and, when it has one, its (i) note: what the field is for, opened on click or tap
+ * rather than sitting open under it. Beside the label, not inside it — a <label> may hold no other
+ * control. Errors and live feedback (the gross–net difference) still show under the field.
+ */
+export function LabelRow({ children, tip, about }: { children: ReactNode; tip?: ReactNode; about: string }) {
+  return (
+    <div className={styles.labelRow}>
+      {children}
+      {tip ? <InfoTip label={`About “${about}”`}>{tip}</InfoTip> : null}
+    </div>
   );
 }
 

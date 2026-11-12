@@ -26,6 +26,12 @@ export interface ProgressRequisition {
   payments?: RequisitionPaymentRef[];
   manualPaid?: boolean;
   createdAt?: unknown;
+  /**
+   * The Workflow Configuration approval step holding it (`heldStep` in daily-requisition-flow.ts),
+   * by name, when the reader resolved one. Its status alone ("Pending") would read "At finance"
+   * while Daily Requisition shows it waiting at, say, Verification.
+   */
+  heldStepName?: string;
 }
 
 export type ProgressStage =
@@ -97,7 +103,10 @@ export const REQUISITION_STAGES: ReadonlyArray<{ stage: ProgressStage; label: st
 export function requisitionProgress(req: ProgressRequisition | undefined): RequisitionProgress {
   if (!req) return { stage: 'not-received', label: 'Not received', tone: 'neutral', net: 0, paid: 0, balance: 0 };
   const known = STAGES[req.status ?? ''] ?? { stage: 'pending' as const, label: req.status || 'Pending', tone: 'neutral' as const };
-  return { ...known, net: round2(Number(req.netAmount) || 0), paid: paidOf(req), balance: balanceOf(req) };
+  // Held at an approval step: named as Daily Requisition names it. The stage stays the status's.
+  const held = (req.heldStepName || '').trim();
+  const label = held && req.status !== 'Cancelled' ? `At ${held}` : known.label;
+  return { ...known, label, net: round2(Number(req.netAmount) || 0), paid: paidOf(req), balance: balanceOf(req) };
 }
 
 const createdMillis = (value: unknown): number => {

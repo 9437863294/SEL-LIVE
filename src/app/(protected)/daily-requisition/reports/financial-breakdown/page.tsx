@@ -216,7 +216,7 @@ export default function FinancialBreakdownReportPage() {
 
       {/* Deduction breakdown */}
       <section className="rounded-xl border bg-card px-4 py-3 shadow-sm sm:px-5 sm:py-4">
-        <SectionHeader title="Deduction Breakdown" description="Each deduction component as a share of total gross." />
+        <SectionHeader title="Deduction Breakdown" description="Each deduction component as a share of total gross." descriptionAs="info" />
         <div className="space-y-2">
           {deductionRows.map((row) => {
             const pct = totals.gross > 0 ? (row.value / totals.gross) * 100 : 0;
@@ -246,6 +246,7 @@ export default function FinancialBreakdownReportPage() {
       <TableCard
         title="Entry-level Detail"
         description="Full deduction breakdown per requisition entry."
+        descriptionAs="info"
       >
           {filtered.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">

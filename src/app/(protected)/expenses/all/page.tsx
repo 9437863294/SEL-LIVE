@@ -80,6 +80,7 @@ import {
   type RegisterFlag,
 } from '@/components/expenses/consolidated-insights';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import { useLiveRequisitions } from '@/components/expenses/use-live-requisitions';
 import { applyColumnSettings } from '@/lib/expenses-settings';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import {
@@ -344,9 +345,6 @@ export default function AllExpensesPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
-  const [requisitions, setRequisitions] = useState<DailyRequisitionEntry[]>([]);
-  // "Could not read Daily Requisition" — progress is unknown, which must not read as "Not received".
-  const [requisitionsUnavailable, setRequisitionsUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [detailsExpense, setDetailsExpense] = useState<ExpenseRequest | null>(null);
 
@@ -359,6 +357,14 @@ export default function AllExpensesPage() {
 
   const canViewPage = can('View All', 'Expenses.Expense Requests');
   const canConfigure = can('View', 'Expenses.Settings');
+  // Where each request has got to lives in Daily Requisition — read live, so a request received or
+  // moved on there since this page opened shows its stage now rather than "Not received". Someone
+  // who cannot read it still gets the register; only its progress goes blank.
+  const {
+    requisitions,
+    unavailable: requisitionsUnavailable,
+    loaded: requisitionsLoaded,
+  } = useLiveRequisitions(!isAuthLoading && canViewPage);
 
   const setFilter = <K extends keyof typeof EMPTY_FILTERS>(field: K, value: (typeof EMPTY_FILTERS)[K]) =>
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -370,26 +376,14 @@ export default function AllExpensesPage() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const [projectsSnap, expensesSnap, deptsSnap, requisitionsSnap] = await Promise.all([
+        const [projectsSnap, expensesSnap, deptsSnap] = await Promise.all([
           getDocs(collection(db, 'projects')),
           getDocs(collection(db, 'expenseRequests')),
           getDocs(collection(db, 'departments')),
-          // Where each request has got to lives in Daily Requisition. Someone who cannot read it
-          // still gets the register; only its progress goes blank.
-          getDocs(collection(db, 'dailyRequisitions')).catch(error => {
-            console.error('Could not read Daily Requisition:', error);
-            return null;
-          }),
         ]);
         setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
         setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
         setExpenses(expensesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExpenseRequest)));
-        setRequisitions(
-          requisitionsSnap
-            ? requisitionsSnap.docs.map(doc => ({ ...(doc.data() as DailyRequisitionEntry), id: doc.id }))
-            : [],
-        );
-        setRequisitionsUnavailable(!requisitionsSnap);
       } catch (error: unknown) {
         console.error('Error fetching data:', error);
         toast({ title: 'Error', description: 'Failed to fetch consolidated expenses.', variant: 'destructive' });
@@ -697,7 +691,7 @@ export default function AllExpensesPage() {
 
   /* ── loading and access ── */
 
-  if (isAuthLoading || (canViewPage && isLoading)) {
+  if (isAuthLoading || (canViewPage && (isLoading || !requisitionsLoaded))) {
     return (
       <div className="w-full space-y-3.5">
         <Skeleton className="h-[184px] w-full rounded-[22px]" />

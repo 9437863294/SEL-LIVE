@@ -37,6 +37,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/shared/page-header';
+import { InfoTip } from '@/components/shared/info-tip';
 import { dailyPageContainerClass, dailySurfaceCardClass } from '@/components/daily-requisition/module-shell';
 import { useDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
 import { useDailyRequisitionSettings } from '@/components/daily-requisition/use-daily-requisition-settings';
@@ -205,10 +206,10 @@ function SectionHead({ icon: Icon, from, to, title, description }: { icon: Lucid
       <span className="grid h-[30px] w-[30px] place-items-center rounded-[9px] text-white" style={{ background: `linear-gradient(145deg, ${from}, ${to})` }}>
         <Icon className="h-[15px] w-[15px]" />
       </span>
-      <div>
-        <h2 className="text-base font-extrabold">{title}</h2>
-        <p className="text-[12.5px] text-muted-foreground">{description}</p>
-      </div>
+      <h2 className="flex items-center gap-1.5 text-base font-extrabold">
+        {title}
+        <InfoTip label={`About “${title}”`}>{description}</InfoTip>
+      </h2>
       <span className="h-px flex-1 bg-border" />
     </div>
   );

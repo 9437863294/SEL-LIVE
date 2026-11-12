@@ -51,6 +51,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { chartChrome } from '@/components/ui/chart';
 import { BtToolbar, ToolbarDate, ToolbarSearch, ToolbarSelect } from '@/components/bill-tracking/bt-toolbar';
+import { InfoTip } from '@/components/shared/info-tip';
 import { KpiCard } from '@/components/shared/kpi-card';
 import { PageHeader } from '@/components/shared/page-header';
 import { TableCard } from '@/components/shared/table-card';
@@ -731,7 +732,7 @@ export default function GstByRegistrationReportPage() {
         <KpiCard
           label="TDS deducted"
           value={inrWhole(company.tds)}
-          hint="Withheld from suppliers, to deposit"
+          info="Withheld from suppliers, to deposit"
           icon={Receipt}
           tone="violet"
           accent
@@ -750,11 +751,13 @@ export default function GstByRegistrationReportPage() {
       <Card className={cn(dailySurfaceCardClass, 'mb-5')}>
         <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-slate-300 to-orange-400 opacity-80" />
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">The two sides of GST on this register</CardTitle>
-          <CardDescription>
-            Credit the company takes and tax the company pays are opposite sides of GSTR-3B. They are never added together —
-            one total would read as credit that does not exist.
-          </CardDescription>
+          <div className="flex items-center gap-1">
+            <CardTitle className="text-base">The two sides of GST on this register</CardTitle>
+            <InfoTip label="About “The two sides of GST on this register”">
+              Credit the company takes and tax the company pays are opposite sides of GSTR-3B. They are never added together —
+              one total would read as credit that does not exist.
+            </InfoTip>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -764,11 +767,14 @@ export default function GstByRegistrationReportPage() {
                   <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
                 </span>
                 <span className="text-sm font-semibold text-emerald-900">Input credit (ITC) — comes back</span>
+                <InfoTip label="About “Input credit (ITC)”">
+                  The company claims this back, provided the supplier&rsquo;s GSTIN and invoice are on the bill.
+                </InfoTip>
               </div>
               <div className="mt-2 text-2xl font-semibold tabular-nums text-emerald-950">{inr(company.itc)}</div>
               <div className="mt-1 text-xs leading-relaxed text-emerald-900/80">
                 GST the suppliers charged on {itcBills} purchase bill{itcBills === 1 ? '' : 's'} ({inrWhole(company.taxable - company.rcmTaxable)}{' '}
-                taxable). The company claims this back, provided the supplier&rsquo;s GSTIN and invoice are on the bill.
+                taxable).
               </div>
             </div>
             <div className="min-w-0 rounded-xl border border-orange-200 bg-orange-50/60 p-3.5">
@@ -777,11 +783,14 @@ export default function GstByRegistrationReportPage() {
                   <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
                 </span>
                 <span className="text-sm font-semibold text-orange-900">Output payable (RCM) — goes out</span>
+                <InfoTip label="About “Output payable (RCM)”">
+                  The company deposits this GST itself, in cash, and may then claim it as credit.
+                </InfoTip>
               </div>
               <div className="mt-2 text-2xl font-semibold tabular-nums text-orange-950">{inr(company.rcmOutput)}</div>
               <div className="mt-1 text-xs leading-relaxed text-orange-900/80">
                 On {rcmBills} reverse-charge bill{rcmBills === 1 ? '' : 's'} ({inrWhole(company.rcmTaxable)} taxable) the supplier charged
-                nothing. The company deposits this GST itself, in cash, and may then claim it as credit.
+                nothing.
               </div>
             </div>
           </div>
@@ -789,10 +798,12 @@ export default function GstByRegistrationReportPage() {
             <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-700">
               <Receipt className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
-            <div className="min-w-0 text-xs leading-relaxed text-violet-900/90">
-              <span className="font-semibold text-violet-900">TDS deducted {inr(company.tds)}</span> — a third kind of money
-              again: income tax withheld from the suppliers&rsquo; payments, which the company deposits on their behalf and
-              reports in its TDS return. It is not GST and belongs on neither side above.
+            <div className="flex min-w-0 items-center gap-1 text-xs leading-relaxed text-violet-900/90">
+              <span className="font-semibold text-violet-900">TDS deducted {inr(company.tds)}</span>
+              <InfoTip label="About “TDS deducted”">
+                A third kind of money again: income tax withheld from the suppliers&rsquo; payments, which the company deposits on
+                their behalf and reports in its TDS return. It is not GST and belongs on neither side above.
+              </InfoTip>
             </div>
           </div>
         </CardContent>
@@ -935,6 +946,7 @@ export default function GstByRegistrationReportPage() {
         className="mb-5"
         title="Registration comparison"
         description="Every registration side by side. Click a column to sort."
+        descriptionAs="info"
         icon={Building2}
         count={comparisonRows.length}
         noun="registration"
@@ -1020,16 +1032,18 @@ export default function GstByRegistrationReportPage() {
       {/* Data quality: what blocks a claim, and which bills. */}
       <Card className={cn(dailySurfaceCardClass, 'mb-5')}>
         <CardHeader className="pb-2">
-          <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-            Data quality
-            <Badge variant={totalFlags > 0 ? 'warning' : 'success'}>
-              {totalFlags === 0 ? 'All clear' : `${totalFlags} issue${totalFlags === 1 ? '' : 's'}`}
-            </Badge>
-          </CardTitle>
-          <CardDescription>
-            Each of these is something the return itself will not accept. Fixing them at GST &amp; TDS verification is cheaper
-            than reversing a claim later.
-          </CardDescription>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+              Data quality
+              <Badge variant={totalFlags > 0 ? 'warning' : 'success'}>
+                {totalFlags === 0 ? 'All clear' : `${totalFlags} issue${totalFlags === 1 ? '' : 's'}`}
+              </Badge>
+            </CardTitle>
+            <InfoTip label="About “Data quality”">
+              Each of these is something the return itself will not accept. Fixing them at GST &amp; TDS verification is cheaper
+              than reversing a claim later.
+            </InfoTip>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -1049,7 +1063,10 @@ export default function GstByRegistrationReportPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-slate-900">{note.title}</div>
+                      <div className="flex min-w-0 items-center gap-1">
+                        <div className="truncate text-sm font-semibold text-slate-900">{note.title}</div>
+                        <InfoTip label={`About “${note.title}”`}>{note.why}</InfoTip>
+                      </div>
                       <Badge variant={count === 0 ? 'neutral' : note.tone === 'blocks' ? 'danger' : 'warning'} className="mt-1">
                         {count === 0 ? 'None' : note.tone === 'blocks' ? 'Blocks the claim' : 'Puts the claim at risk'}
                       </Badge>
@@ -1058,7 +1075,6 @@ export default function GstByRegistrationReportPage() {
                       {count}
                     </span>
                   </div>
-                  <div className="mt-2 text-xs leading-relaxed text-muted-foreground">{note.why}</div>
                 </div>
               );
             })}
@@ -1234,12 +1250,12 @@ function TdsSection({
         <CardTitle className="flex items-center gap-2 text-base">
           <Receipt className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           TDS deducted
+          <InfoTip label="About “TDS deducted”">
+            {grouping === 'registration'
+              ? 'Each registration files its own TDS return, so the deduction is totalled per TAN — that is the figure the challan is paid against.'
+              : 'TDS is filed for the company as a whole, under one TAN. The per-registration split below is for information only — it is not what the return is filed on.'}
+          </InfoTip>
         </CardTitle>
-        <CardDescription>
-          {grouping === 'registration'
-            ? 'Each registration files its own TDS return, so the deduction is totalled per TAN — that is the figure the challan is paid against.'
-            : 'TDS is filed for the company as a whole, under one TAN. The per-registration split below is for information only — it is not what the return is filed on.'}
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {grouping === 'registration' ? (
@@ -1346,6 +1362,7 @@ function BillTable({
         </span>
       }
       description="Every bill this registration carries, as it will read in the return."
+      descriptionAs="info"
       icon={FileText}
       count={bills.length}
       noun="bill"

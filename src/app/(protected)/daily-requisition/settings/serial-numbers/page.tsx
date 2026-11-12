@@ -36,6 +36,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/shared/page-header';
+import { InfoTip } from '@/components/shared/info-tip';
 import { dailyPageContainerClass, dailySurfaceCardClass } from '@/components/daily-requisition/module-shell';
 import { Segmented } from '@/components/daily-requisition/workflow-editor-parts';
 import { LEGACY_SERIAL_RESOURCE } from '@/components/settings/serial-number-page';
@@ -155,9 +156,9 @@ function PartRow({
       )}
       style={{ borderLeftColor: on ? PART_LOOK[kind].colour : '#e2e8f0' }}
     >
-      <div>
+      <div className="flex items-center gap-1.5">
         <b className="block text-[13px]">{title}</b>
-        <small className="text-[11.5px] text-muted-foreground">{hint}</small>
+        <InfoTip label={`About “${title}”`}>{hint}</InfoTip>
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
       {locked ? (
@@ -475,9 +476,9 @@ export default function DailyRequisitionSerialNumbersPage() {
               <span className="grid h-8 w-8 place-items-center rounded-[10px] text-white" style={{ background: 'linear-gradient(145deg, #c4b5fd, #6d28d9)' }}>
                 <Type className="h-4 w-4" />
               </span>
-              <div>
+              <div className="flex items-center gap-1.5">
                 <b className="block text-[14.5px] leading-tight">Number format</b>
-                <p className="text-xs text-muted-foreground">The parts that make up the number, in order. Turn parts on or off.</p>
+                <InfoTip label="About “Number format”">The parts that make up the number, in order. Turn parts on or off.</InfoTip>
               </div>
             </header>
             <div className="space-y-2 px-4 py-4 sm:px-[18px]">
@@ -541,6 +542,7 @@ export default function DailyRequisitionSerialNumbersPage() {
               </PartRow>
               <div className="flex flex-wrap items-center gap-2 pt-2">
                 <span className="text-[11.5px] font-bold text-slate-600">Separator between parts</span>
+                <InfoTip label="About “Separator between parts”">Added for you, so you don&apos;t type it into each part.</InfoTip>
                 <Segmented<Separator>
                   value={design.separator}
                   disabled={disabled}
@@ -553,7 +555,6 @@ export default function DailyRequisitionSerialNumbersPage() {
                     { value: '', label: 'none' },
                   ]}
                 />
-                <span className="text-[11.5px] text-muted-foreground">Added for you, so you don&apos;t type it into each part.</span>
               </div>
             </div>
           </section>
@@ -564,9 +565,9 @@ export default function DailyRequisitionSerialNumbersPage() {
               <span className="grid h-8 w-8 place-items-center rounded-[10px] text-white" style={{ background: 'linear-gradient(145deg, #7dd3fc, #0369a1)' }}>
                 <ListOrdered className="h-4 w-4" />
               </span>
-              <div>
+              <div className="flex items-center gap-1.5">
                 <b className="block text-[14.5px] leading-tight">Running number</b>
-                <p className="text-xs text-muted-foreground">The counter that goes up by one with every requisition</p>
+                <InfoTip label="About “Running number”">The counter that goes up by one with every requisition</InfoTip>
               </div>
             </header>
             <div className="px-4 py-4 sm:px-[18px]">
@@ -672,9 +673,9 @@ export default function DailyRequisitionSerialNumbersPage() {
         <aside className="flex flex-col gap-3.5 xl:sticky xl:top-4">
           <section className="rounded-[20px] border bg-card">
             <header className="flex items-center gap-2 border-b px-[18px] py-3.5">
-              <div>
+              <div className="flex items-center gap-1.5">
                 <b className="block text-[14.5px] leading-tight">Recently issued</b>
-                <p className="text-xs text-muted-foreground">The latest Reception Nos</p>
+                <InfoTip label="About “Recently issued”">The latest Reception Nos</InfoTip>
               </div>
               <span className="flex-1" />
               {recentInSeries.length > 1 && (

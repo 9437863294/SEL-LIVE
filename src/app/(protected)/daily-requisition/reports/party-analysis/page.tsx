@@ -159,7 +159,7 @@ export default function PartyAnalysisReportPage() {
 
       <ReportPeriodFilter state={period} />
 
-      <TableCard icon={Users} title="Party Breakdown" description="Largest net amount first; the bar compares each with the largest.">
+      <TableCard icon={Users} title="Party Breakdown" description="Largest net amount first; the bar compares each with the largest." descriptionAs="info">
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No entries found for the selected period.

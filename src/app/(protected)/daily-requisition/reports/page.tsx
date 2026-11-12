@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { InfoTip } from '@/components/shared/info-tip';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { inrShort } from '@/components/daily-requisition/dashboard-overview';
 import { useDailyRequisitionWorkflowSteps } from '@/components/daily-requisition/nav';
@@ -578,11 +579,11 @@ export default function DailyRequisitionReportsHubPage() {
                   <span className="grid h-7 w-7 place-items-center rounded-[9px] text-white" style={{ backgroundImage: `linear-gradient(145deg, ${g.from}, ${g.to})` }}>
                     <g.icon className="h-3.5 w-3.5" />
                   </span>
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-1">
                     <h2 id={`reports-${g.key}`} className="text-[15.5px] font-extrabold">
                       {g.title}
                     </h2>
-                    <p className="text-[12.5px] text-muted-foreground">{g.hint}</p>
+                    <InfoTip label={`About “${g.title}”`}>{g.hint}</InfoTip>
                   </div>
                   <span className="h-px flex-1 bg-border" aria-hidden />
                 </div>

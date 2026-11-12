@@ -40,6 +40,7 @@ import {
   DepPicker,
   FileDrop,
   KeyHint,
+  LabelRow,
   LabelText,
   ModeSwitch,
   ReceptionPill,
@@ -163,6 +164,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { PageHeader } from '@/components/shared/page-header';
+import { InfoTip } from '@/components/shared/info-tip';
 import { useDailyRequisitionSettings } from '@/components/daily-requisition/use-daily-requisition-settings';
 import {
   DR_DATE_PRESETS,
@@ -1433,6 +1435,13 @@ function EntrySheetPageComponent() {
   // enforces the same); the form shows those fields read-only and says which voucher holds them.
   const editLocked = editingEntry ? isPaymentLocked(editingEntry) : false;
   const lockedFieldClass = 'cursor-not-allowed bg-muted text-muted-foreground';
+  // The reception date's (i) note: what it is, and the dates the Data Control window allows today.
+  const dateTip = (
+    <>
+      {fields.receptionDate.helpText}
+      {dateWindowHint ? <span className="mt-1 block font-medium text-slate-800">{dateWindowHint}.</span> : null}
+    </>
+  );
   const editVouchers = Array.from(
     new Map(
       (editingEntry?.payments ?? [])
@@ -2119,9 +2128,11 @@ function EntrySheetPageComponent() {
                               name="depNo"
                               render={({ field, fieldState }) => (
                                 <FormItem className={item}>
-                                  <FormLabel className={ef.label}>
-                                    <LabelText required={dataControl.requireExpenseRequest || fields.depNo.required}>{fields.depNo.label}</LabelText>
-                                  </FormLabel>
+                                  <LabelRow about={fields.depNo.label} tip={fields.depNo.helpText || 'Choosing a request fills in the details below'}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={dataControl.requireExpenseRequest || fields.depNo.required}>{fields.depNo.label}</LabelText>
+                                    </FormLabel>
+                                  </LabelRow>
                                   <FormControl>
                                     <DepPicker
                                       options={depOptions}
@@ -2134,11 +2145,7 @@ function EntrySheetPageComponent() {
                                       formatAmount={formatCurrency}
                                     />
                                   </FormControl>
-                                  {fieldState.error ? (
-                                    <FormMessage className={ef.err} />
-                                  ) : (
-                                    <p className={ef.help}>{fields.depNo.helpText || 'Choosing a request fills in the details below'}</p>
-                                  )}
+                                  {fieldState.error ? <FormMessage className={ef.err} /> : null}
                                 </FormItem>
                               )}
                             />
@@ -2148,9 +2155,11 @@ function EntrySheetPageComponent() {
                             name="date"
                             render={({ field, fieldState }) => (
                               <FormItem className={item}>
-                                <FormLabel className={ef.label}>
-                                  <LabelText required={fields.receptionDate.required}>{fields.receptionDate.label}</LabelText>
-                                </FormLabel>
+                                <LabelRow about={fields.receptionDate.label} tip={dateTip}>
+                                  <FormLabel className={ef.label}>
+                                    <LabelText required={fields.receptionDate.required}>{fields.receptionDate.label}</LabelText>
+                                  </FormLabel>
+                                </LabelRow>
                                 <Popover>
                                   <PopoverTrigger asChild>
                                     <FormControl>
@@ -2164,11 +2173,7 @@ function EntrySheetPageComponent() {
                                     <Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus />
                                   </PopoverContent>
                                 </Popover>
-                                {fieldState.error ? (
-                                  <FormMessage className={ef.err} />
-                                ) : dateWindowHint || fields.receptionDate.helpText ? (
-                                  <p className={ef.help}>{fields.receptionDate.helpText || dateWindowHint}</p>
-                                ) : null}
+                                {fieldState.error ? <FormMessage className={ef.err} /> : null}
                               </FormItem>
                             )}
                           />
@@ -2178,11 +2183,13 @@ function EntrySheetPageComponent() {
                               name="departmentId"
                               render={({ field, fieldState }) => (
                                 <FormItem className={item}>
-                                  <FormLabel className={ef.label}>
-                                    <LabelText required={fields.departmentId.required} auto={autoFilled.has('departmentId')}>
-                                      {fields.departmentId.label}
-                                    </LabelText>
-                                  </FormLabel>
+                                  <LabelRow about={fields.departmentId.label} tip={fields.departmentId.helpText}>
+                                    <FormLabel className={ef.label}>
+                                      <LabelText required={fields.departmentId.required} auto={autoFilled.has('departmentId')}>
+                                        {fields.departmentId.label}
+                                      </LabelText>
+                                    </FormLabel>
+                                  </LabelRow>
                                   <Select
                                     value={field.value}
                                     onValueChange={(value) => {
@@ -2203,11 +2210,7 @@ function EntrySheetPageComponent() {
                                       ))}
                                     </SelectContent>
                                   </Select>
-                                  {fieldState.error ? (
-                                    <FormMessage className={ef.err} />
-                                  ) : fields.departmentId.helpText ? (
-                                    <p className={ef.help}>{fields.departmentId.helpText}</p>
-                                  ) : null}
+                                  {fieldState.error ? <FormMessage className={ef.err} /> : null}
                                 </FormItem>
                               )}
                             />
@@ -2224,11 +2227,13 @@ function EntrySheetPageComponent() {
                                 name="partyName"
                                 render={({ field, fieldState }) => (
                                   <FormItem className={item}>
-                                    <FormLabel className={ef.label}>
-                                      <LabelText required={fields.partyName.required} auto={autoFilled.has('partyName')}>
-                                        {fields.partyName.label}
-                                      </LabelText>
-                                    </FormLabel>
+                                    <LabelRow about={fields.partyName.label} tip={fields.partyName.helpText}>
+                                      <FormLabel className={ef.label}>
+                                        <LabelText required={fields.partyName.required} auto={autoFilled.has('partyName')}>
+                                          {fields.partyName.label}
+                                        </LabelText>
+                                      </FormLabel>
+                                    </LabelRow>
                                     <FormControl>
                                       <input
                                         {...field}
@@ -2241,11 +2246,7 @@ function EntrySheetPageComponent() {
                                         }}
                                       />
                                     </FormControl>
-                                    {fieldState.error ? (
-                                      <FormMessage className={ef.err} />
-                                    ) : fields.partyName.helpText ? (
-                                      <p className={ef.help}>{fields.partyName.helpText}</p>
-                                    ) : null}
+                                    {fieldState.error ? <FormMessage className={ef.err} /> : null}
                                   </FormItem>
                                 )}
                               />
@@ -2256,11 +2257,13 @@ function EntrySheetPageComponent() {
                                 name="projectId"
                                 render={({ field, fieldState }) => (
                                   <FormItem className={item}>
-                                    <FormLabel className={ef.label}>
-                                      <LabelText required={fields.projectId.required} auto={autoFilled.has('projectId')}>
-                                        {fields.projectId.label}
-                                      </LabelText>
-                                    </FormLabel>
+                                    <LabelRow about={fields.projectId.label} tip={fields.projectId.helpText}>
+                                      <FormLabel className={ef.label}>
+                                        <LabelText required={fields.projectId.required} auto={autoFilled.has('projectId')}>
+                                          {fields.projectId.label}
+                                        </LabelText>
+                                      </FormLabel>
+                                    </LabelRow>
                                     <Select
                                       value={field.value}
                                       onValueChange={(value) => {
@@ -2281,11 +2284,7 @@ function EntrySheetPageComponent() {
                                         ))}
                                       </SelectContent>
                                     </Select>
-                                    {fieldState.error ? (
-                                      <FormMessage className={ef.err} />
-                                    ) : fields.projectId.helpText ? (
-                                      <p className={ef.help}>{fields.projectId.helpText}</p>
-                                    ) : null}
+                                    {fieldState.error ? <FormMessage className={ef.err} /> : null}
                                   </FormItem>
                                 )}
                               />
@@ -2303,11 +2302,13 @@ function EntrySheetPageComponent() {
                                 name="grossAmount"
                                 render={({ field, fieldState }) => (
                                   <FormItem className={item}>
-                                    <FormLabel className={ef.label}>
-                                      <LabelText required={fields.grossAmount.required} auto={autoFilled.has('grossAmount')}>
-                                        {fields.grossAmount.label}
-                                      </LabelText>
-                                    </FormLabel>
+                                    <LabelRow about={fields.grossAmount.label} tip={fields.grossAmount.helpText || 'The bill amount, before deductions'}>
+                                      <FormLabel className={ef.label}>
+                                        <LabelText required={fields.grossAmount.required} auto={autoFilled.has('grossAmount')}>
+                                          {fields.grossAmount.label}
+                                        </LabelText>
+                                      </FormLabel>
+                                    </LabelRow>
                                     <div className={ef.money}>
                                       <span className={ef.moneySign} aria-hidden="true">
                                         ₹
@@ -2328,11 +2329,7 @@ function EntrySheetPageComponent() {
                                         />
                                       </FormControl>
                                     </div>
-                                    {fieldState.error ? (
-                                      <FormMessage className={ef.err} />
-                                    ) : (
-                                      <p className={ef.help}>{fields.grossAmount.helpText || 'The bill amount, before deductions'}</p>
-                                    )}
+                                    {fieldState.error ? <FormMessage className={ef.err} /> : null}
                                   </FormItem>
                                 )}
                               />
@@ -2343,11 +2340,13 @@ function EntrySheetPageComponent() {
                                 name="netAmount"
                                 render={({ field, fieldState }) => (
                                   <FormItem className={item}>
-                                    <FormLabel className={ef.label}>
-                                      <LabelText required={fields.netAmount.required} auto={autoFilled.has('netAmount')}>
-                                        {fields.netAmount.label}
-                                      </LabelText>
-                                    </FormLabel>
+                                    <LabelRow about={fields.netAmount.label} tip={fields.netAmount.helpText || 'What the bank pays the party'}>
+                                      <FormLabel className={ef.label}>
+                                        <LabelText required={fields.netAmount.required} auto={autoFilled.has('netAmount')}>
+                                          {fields.netAmount.label}
+                                        </LabelText>
+                                      </FormLabel>
+                                    </LabelRow>
                                     <div className={ef.money}>
                                       <span className={ef.moneySign} aria-hidden="true">
                                         ₹
@@ -2370,11 +2369,10 @@ function EntrySheetPageComponent() {
                                     </div>
                                     {fieldState.error ? (
                                       <FormMessage className={ef.err} />
-                                    ) : (
+                                    ) : !grossNow || !netNow || !fields.grossAmount.visible ? null : (
+                                      // Live: how net compares with gross as they are typed.
                                       <p className={ef.help}>
-                                        {!grossNow || !netNow || !fields.grossAmount.visible ? (
-                                          fields.netAmount.helpText || 'What the bank pays the party'
-                                        ) : netNow < grossNow ? (
+                                        {netNow < grossNow ? (
                                           <span className={ef.helpAmber}>{formatCurrency(grossNow - netNow)} less than gross</span>
                                         ) : netNow > grossNow ? (
                                           <span className={ef.helpBlue}>{formatCurrency(netNow - grossNow)} more than gross</span>
@@ -2426,11 +2424,13 @@ function EntrySheetPageComponent() {
                                 name="description"
                                 render={({ field, fieldState }) => (
                                   <FormItem className={cn(item, ef.full)}>
-                                    <FormLabel className={ef.label}>
-                                      <LabelText required={fields.description.required} auto={autoFilled.has('description')}>
-                                        {fields.description.label}
-                                      </LabelText>
-                                    </FormLabel>
+                                    <LabelRow about={fields.description.label} tip={fields.description.helpText}>
+                                      <FormLabel className={ef.label}>
+                                        <LabelText required={fields.description.required} auto={autoFilled.has('description')}>
+                                          {fields.description.label}
+                                        </LabelText>
+                                      </FormLabel>
+                                    </LabelRow>
                                     <FormControl>
                                       <textarea
                                         {...field}
@@ -2443,11 +2443,7 @@ function EntrySheetPageComponent() {
                                         }}
                                       />
                                     </FormControl>
-                                    {fieldState.error ? (
-                                      <FormMessage className={ef.err} />
-                                    ) : fields.description.helpText ? (
-                                      <p className={ef.help}>{fields.description.helpText}</p>
-                                    ) : null}
+                                    {fieldState.error ? <FormMessage className={ef.err} /> : null}
                                   </FormItem>
                                 )}
                               />
@@ -2457,17 +2453,19 @@ function EntrySheetPageComponent() {
                       )}
 
                       {fields.attachments.visible && (
-                        <Section n={++section} title={fields.attachments.label} note={fields.attachments.required ? undefined : 'optional'}>
+                        <Section
+                          n={++section}
+                          title={fields.attachments.label}
+                          note={fields.attachments.required ? 'required' : 'optional'}
+                          tip={fields.attachments.helpText || 'Bill, invoice or approval.'}
+                        >
                           <FileDrop
                             id="attachments"
                             files={selectedFiles}
                             onAdd={addFiles}
                             onRemove={(index) => setSelectedFiles((current) => current.filter((_, i) => i !== index))}
                             invalid={Boolean(attachmentError)}
-                            hint={
-                              fields.attachments.helpText ||
-                              `Bill, invoice or approval — drag and drop here${fields.attachments.required ? '. At least one file is needed.' : ''}`
-                            }
+                            hint="or drag and drop them here"
                           />
                           {attachmentError ? <p className={cn(ef.err, 'mt-2')}>{attachmentError}</p> : null}
                         </Section>
@@ -2544,13 +2542,13 @@ function EntrySheetPageComponent() {
             <form onSubmit={editForm.handleSubmit(handleUpdateEntry)}>
               {/* 4 columns: who and where · when, which department, how much · what for */}
               <div className={cn(ENTRY_GRID, 'border-t pt-4')}>
-                 {fields.partyName.visible && (<FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.partyName)}</FormLabel><FormControl><Input {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                 {fields.projectId.visible && (<FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.projectId)}</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fields.receptionDate.label}</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} disabled={editLocked} className={cn('h-9 w-full justify-start px-3 text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus /></PopoverContent></Popover>{dateWindowHint ? <p className="text-[11px] text-muted-foreground">{dateWindowHint}</p> : null}<FormMessage className="text-[11px]" /></FormItem>)}/>
-                 {fields.departmentId.visible && (<FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.departmentId)}</FormLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                 {fields.grossAmount.visible && (<FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.grossAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} readOnly={editLocked} className={cn('pl-7 text-right tabular-nums', editLocked && lockedFieldClass)} /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                 {fields.netAmount.visible && (<FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-1.5"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.netAmount)}</FormLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} readOnly={editLocked} className={cn('pl-7 text-right font-semibold tabular-nums', editLocked && lockedFieldClass)} /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
-                 {fields.description.visible && (<FormField control={editForm.control} name="description" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2 md:col-span-4"><FormLabel className={FORM_LABEL}>{fieldLabel(fields.description)}</FormLabel><FormControl><Input {...field} placeholder="What the payment is for" /></FormControl><FormMessage className="text-[11px]"/></FormItem>)}/>)}
+                 {fields.partyName.visible && (<FormField control={editForm.control} name="partyName" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><EditLabel about={fields.partyName.label} tip={fields.partyName.helpText}>{fieldLabel(fields.partyName)}</EditLabel><FormControl><Input {...field} readOnly={editLocked} className={cn(editLocked && lockedFieldClass)} /></FormControl><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.projectId.visible && (<FormField control={editForm.control} name="projectId" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2"><EditLabel about={fields.projectId.label} tip={fields.projectId.helpText}>{fieldLabel(fields.projectId)}</EditLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{projects.map((p) => (<SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 <FormField control={editForm.control} name="date" render={({ field }) => (<FormItem className="space-y-1.5"><EditLabel about={fields.receptionDate.label} tip={dateTip}>{fields.receptionDate.label}</EditLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={'outline'} disabled={editLocked} className={cn('h-9 w-full justify-start px-3 text-left font-normal', !field.value && 'text-muted-foreground')}><CalendarIcon className="mr-2 h-4 w-4 text-slate-400" />{field.value ? format(field.value, 'dd MMM yyyy') : <span>Pick a date</span>}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={calendarDisabled} defaultMonth={field.value} initialFocus /></PopoverContent></Popover><FormMessage className="text-[11px]" /></FormItem>)}/>
+                 {fields.departmentId.visible && (<FormField control={editForm.control} name="departmentId" render={({ field }) => (<FormItem className="space-y-1.5"><EditLabel about={fields.departmentId.label} tip={fields.departmentId.helpText}>{fieldLabel(fields.departmentId)}</EditLabel><Select onValueChange={field.onChange} value={field.value} disabled={editLocked}><FormControl><SelectTrigger><SelectValue/></SelectTrigger></FormControl><SelectContent>{departments.map((d) => (<SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>))}</SelectContent></Select><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.grossAmount.visible && (<FormField control={editForm.control} name="grossAmount" render={({ field }) => (<FormItem className="space-y-1.5"><EditLabel about={fields.grossAmount.label} tip={fields.grossAmount.helpText}>{fieldLabel(fields.grossAmount)}</EditLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} readOnly={editLocked} className={cn('pl-7 text-right tabular-nums', editLocked && lockedFieldClass)} /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.netAmount.visible && (<FormField control={editForm.control} name="netAmount" render={({ field }) => (<FormItem className="space-y-1.5"><EditLabel about={fields.netAmount.label} tip={fields.netAmount.helpText}>{fieldLabel(fields.netAmount)}</EditLabel><div className="relative"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">₹</span><FormControl><Input type="number" inputMode="decimal" placeholder="0.00" {...field} readOnly={editLocked} className={cn('pl-7 text-right font-semibold tabular-nums', editLocked && lockedFieldClass)} /></FormControl></div><FormMessage className="text-[11px]" /></FormItem>)}/>)}
+                 {fields.description.visible && (<FormField control={editForm.control} name="description" render={({ field }) => (<FormItem className="space-y-1.5 sm:col-span-2 md:col-span-4"><EditLabel about={fields.description.label} tip={fields.description.helpText}>{fieldLabel(fields.description)}</EditLabel><FormControl><Input {...field} placeholder="What the payment is for" /></FormControl><FormMessage className="text-[11px]"/></FormItem>)}/>)}
               </div>
               <DialogFooter className="mt-4 gap-2 border-t pt-4">
                 <DialogClose asChild>
@@ -2593,6 +2591,16 @@ function EntrySheetPageComponent() {
         onImported={fetchAllData}
       />
     </>
+  );
+}
+
+/** An Edit dialog label with its (i) note beside it — the Add dialog's LabelRow in this dialog's styling. */
+function EditLabel({ children, about, tip }: { children: React.ReactNode; about: string; tip?: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <FormLabel className={cn(FORM_LABEL, 'min-w-0')}>{children}</FormLabel>
+      {tip ? <InfoTip label={`About “${about}”`}>{tip}</InfoTip> : null}
+    </div>
   );
 }
 

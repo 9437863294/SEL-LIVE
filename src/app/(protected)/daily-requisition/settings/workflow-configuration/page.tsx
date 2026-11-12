@@ -48,6 +48,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/shared/page-header';
+import { InfoTip } from '@/components/shared/info-tip';
 import {
   ActionPicker,
   AssigneePreview,
@@ -709,6 +710,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                   </button>
                 </div>
                 <span className="font-bold text-muted-foreground">working hours</span>
+                <InfoTip label="About working hours">Counted in working hours, so nights, Sundays and holidays don&apos;t count.</InfoTip>
                 <div className="flex flex-wrap gap-1.5 sm:ml-2">
                   {TAT_PRESETS.map((h) => (
                     <button
@@ -727,8 +729,7 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                 </div>
               </div>
               <Hint>
-                ≈ {((Number(sel.tat) || 0) / 8).toFixed((Number(sel.tat) || 0) % 8 ? 1 : 0)} working day{(Number(sel.tat) || 0) > 8 ? 's' : ''}. Counted in working hours, so nights,
-                Sundays and holidays don&apos;t count.
+                ≈ {((Number(sel.tat) || 0) / 8).toFixed((Number(sel.tat) || 0) % 8 ? 1 : 0)} working day{(Number(sel.tat) || 0) > 8 ? 's' : ''}.
               </Hint>
             </EditorSection>
 
@@ -738,9 +739,29 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
               from="#93c5fd"
               to="#1d4ed8"
               title={isVerification ? 'Who approves' : 'Who acts on this step'}
-              description="Everyone you add can act on it — add as many people as you need"
+              description={
+                <>
+                  Everyone you add can act on it — add as many people as you need
+                  {!isVerification && stagePermissions && (
+                    <span className="mt-1.5 block">
+                      Who may open this step and do its work follows the <b>{stagePermissions}</b> permissions (User Management →
+                      Roles), whatever the step is named; the people here may too.
+                    </span>
+                  )}
+                </>
+              }
             >
-              <FieldLabel>Assign by</FieldLabel>
+              <FieldLabel
+                tip={
+                  sel.assignmentType === 'User-based'
+                    ? 'The same people, whichever project or department raised the requisition.'
+                    : sel.assignmentType === 'Project-based'
+                      ? "The people set for the requisition's project. A project with nobody set skips a Verification step."
+                      : "The people set for the department that raised the requisition. A department with nobody set skips a Verification step."
+                }
+              >
+                Assign by
+              </FieldLabel>
               <Segmented<AssignBy>
                 value={sel.assignmentType as AssignBy}
                 disabled={disabled}
@@ -751,13 +772,6 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                   { value: 'Department-based', label: 'By department', icon: Building2 },
                 ]}
               />
-              <Hint>
-                {sel.assignmentType === 'User-based'
-                  ? 'The same people, whichever project or department raised the requisition.'
-                  : sel.assignmentType === 'Project-based'
-                    ? "The people set for the requisition's project. A project with nobody set skips a Verification step."
-                    : "The people set for the department that raised the requisition. A department with nobody set skips a Verification step."}
-              </Hint>
 
               {isUserBased(sel) && (
                 <div className="mt-3">
@@ -807,13 +821,6 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                   </div>
                 </div>
               )}
-
-              {!isVerification && stagePermissions && (
-                <Hint>
-                  Who may open this step and do its work follows the <b>{stagePermissions}</b> permissions (User Management →
-                  Roles), whatever the step is named; the people here may too.
-                </Hint>
-              )}
             </EditorSection>
 
             {/* Actions: one list for every step; what is ticked decides the step. */}
@@ -822,7 +829,15 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
               from="#86efac"
               to="#15803d"
               title="Actions"
-              description="Tick what the assignee can do at this step"
+              description={
+                <>
+                  Tick what the assignee can do at this step
+                  <span className="mt-1.5 block">
+                    The step&apos;s page shows exactly the actions ticked here — {PAYMENT_PAGE_NAME}, after the last step, pays what was
+                    sent for payment.
+                  </span>
+                </>
+              }
               aside={
                 <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11.5px] font-bold text-violet-700">
                   {previewButtons.length} on the page
@@ -854,10 +869,6 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                 idle={idleActions}
               />
               {!isVerification && !hasForward && <Hint tone="warn">No action moves the requisition forward. Tick at least one that does.</Hint>}
-              <Hint>
-                The step&apos;s page shows exactly the actions ticked here — {PAYMENT_PAGE_NAME}, after the last step, pays what was
-                sent for payment.
-              </Hint>
             </EditorSection>
 
             {/* Passing work on */}
@@ -868,18 +879,30 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                   <div className="rounded-xl border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <FieldLabel htmlFor="handover-on">Allow hand over to someone else</FieldLabel>
-                        <p className="-mt-1 text-xs text-muted-foreground">
-                          {isVerification
-                            ? 'The assignee can approve, or hand it to someone else, whose decision then counts.'
-                            : "A requisition here can be handed to a person, who then does this step's work on it — even without its permissions."}
-                        </p>
+                        <FieldLabel
+                          htmlFor="handover-on"
+                          tip={
+                            isVerification
+                              ? 'The assignee can approve, or hand it to someone else, whose decision then counts.'
+                              : "A requisition here can be handed to a person, who then does this step's work on it — even without its permissions."
+                          }
+                        >
+                          Allow hand over to someone else
+                        </FieldLabel>
                       </div>
                       <Switch id="handover-on" checked={handOverOn} onCheckedChange={() => toggleAction(sel.id, HAND_OVER_ACTION)} disabled={disabled} />
                     </div>
                     {handOverOn && (
                       <div className="mt-3">
-                        <FieldLabel>Who it can be handed to</FieldLabel>
+                        <FieldLabel
+                          tip={
+                            isVerification
+                              ? undefined
+                              : 'The people named on this step can hand over; so can anyone with the "Hand Over" permission on it, and the person a requisition was handed to.'
+                          }
+                        >
+                          Who it can be handed to
+                        </FieldLabel>
                         <PeoplePicker
                           users={users}
                           value={sel.handOverUserIds ?? []}
@@ -887,12 +910,6 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                           disabled={disabled}
                           placeholder="Anyone — or pick people to limit it"
                         />
-                        {!isVerification && (
-                          <Hint>
-                            The people named on this step can hand over; so can anyone with the &quot;Hand Over&quot; permission on it, and the person a
-                            requisition was handed to.
-                          </Hint>
-                        )}
                       </div>
                     )}
                   </div>
@@ -901,14 +918,22 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                   <div className={cn('rounded-xl border p-3', role !== 'other' && 'mt-3')}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <FieldLabel htmlFor="take-on">
+                        <FieldLabel
+                          htmlFor="take-on"
+                          about="Take requests early"
+                          tip={
+                            <>
+                              Take a requisition before it arrives — from the step just before, or the earlier steps you tick. The steps in between are skipped.
+                              <span className="mt-1.5 block">
+                                {isVerification ? "This step's people can take them." : 'People also need the "Take Early" permission on this stage.'}
+                              </span>
+                            </>
+                          }
+                        >
                           <span className="inline-flex items-center gap-1.5">
                             <FastForward className="h-3.5 w-3.5" /> Take requests early
                           </span>
                         </FieldLabel>
-                        <p className="-mt-1 text-xs text-muted-foreground">
-                          Take a requisition before it arrives — from the step just before, or the earlier steps you tick. The steps in between are skipped.
-                        </p>
                       </div>
                       <Switch
                         id="take-on"
@@ -944,9 +969,6 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
                             );
                           })}
                         </div>
-                        <Hint>
-                          {isVerification ? "This step's people can take them." : 'People also need the "Take Early" permission on this stage.'}
-                        </Hint>
                       </>
                     )}
                   </div>

@@ -52,6 +52,7 @@ import {
 } from '@/components/expenses/expense-details-dialog';
 import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
 import { useExpensesActor } from '@/components/expenses/use-expenses-actor';
+import { useLiveRequisitions } from '@/components/expenses/use-live-requisitions';
 import { applyColumnSettings, resolveDatePreset, type ExpenseDataControl } from '@/lib/expenses-settings';
 import { formatInr } from '@/lib/bank-balance-ledger';
 import { isPaymentLocked, requisitionsByRequestNo } from '@/lib/requisition-progress';
@@ -139,9 +140,6 @@ export default function DepartmentExpensesPage() {
   const [department, setDepartment] = useState<Department | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
-  const [requisitions, setRequisitions] = useState<DailyRequisitionEntry[]>([]);
-  // "Could not read Daily Requisition" — progress is unknown, which must not read as "Not received".
-  const [requisitionsUnavailable, setRequisitionsUnavailable] = useState(false);
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -186,6 +184,14 @@ export default function DepartmentExpensesPage() {
   // Settings › User Roles places the user in.
   const canViewPage = canViewDepartment(departmentId);
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
+  // Where each request has got to lives in Daily Requisition — read live, so a request received or
+  // moved on there since this page opened shows its stage now rather than "Not received". Someone
+  // who cannot read it still gets the register; only its progress goes blank.
+  const {
+    requisitions,
+    unavailable: requisitionsUnavailable,
+    loaded: requisitionsLoaded,
+  } = useLiveRequisitions(!isAuthLoading && !isActorLoading && canViewPage);
 
   /**
    * Editing and importing go through the module's own assignment as well as the permission —
@@ -268,18 +274,12 @@ export default function DepartmentExpensesPage() {
   const fetchData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) setIsLoading(true);
     try {
-      const [deptDocSnap, projectsSnap, expensesSnap, headsSnap, subHeadsSnap, requisitionsSnap] = await Promise.all([
+      const [deptDocSnap, projectsSnap, expensesSnap, headsSnap, subHeadsSnap] = await Promise.all([
         getDoc(doc(db, 'departments', departmentId)),
         getDocs(collection(db, 'projects')),
         getDocs(query(collection(db, 'expenseRequests'), where('departmentId', '==', departmentId))),
         getDocs(collection(db, 'accountHeads')),
         getDocs(collection(db, 'subAccountHeads')),
-        // Where each request has got to lives in Daily Requisition. Someone who cannot read it
-        // still gets the register; only its progress goes blank.
-        getDocs(collection(db, 'dailyRequisitions')).catch(error => {
-          console.error('Could not read Daily Requisition:', error);
-          return null;
-        }),
       ]);
 
       if (deptDocSnap.exists()) {
@@ -296,12 +296,6 @@ export default function DepartmentExpensesPage() {
       fetchedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setExpenses(fetchedExpenses);
 
-      setRequisitions(
-        requisitionsSnap
-          ? requisitionsSnap.docs.map(d => ({ ...(d.data() as DailyRequisitionEntry), id: d.id }))
-          : [],
-      );
-      setRequisitionsUnavailable(!requisitionsSnap);
     } catch (error: any) {
       console.error('Error fetching data:', error);
       if (error.code === 'failed-precondition') {
@@ -583,7 +577,7 @@ export default function DepartmentExpensesPage() {
     }
   };
 
-  if (isLoading || isAuthLoading || isActorLoading) {
+  if (isLoading || isAuthLoading || isActorLoading || (canViewPage && !requisitionsLoaded)) {
     return (
       <div className="w-full space-y-4">
         <div className="flex items-center justify-between">

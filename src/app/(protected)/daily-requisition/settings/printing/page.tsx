@@ -12,7 +12,7 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import {
   AlignCenter,
@@ -36,6 +36,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { PageHeader } from '@/components/shared/page-header';
+import { InfoTip } from '@/components/shared/info-tip';
 import { dailyPageContainerClass, dailySurfaceCardClass } from '@/components/daily-requisition/module-shell';
 import {
   ChecklistSheet,
@@ -87,6 +88,7 @@ const SECTION_TOGGLES: Array<{ key: keyof PrintSections; title: string; hint: st
   { key: 'details', title: 'Reception & project', hint: 'Reception No and date, DEP No, project' },
   { key: 'amounts', title: 'Party & amounts', hint: 'Party name, gross and net amount' },
   { key: 'accounts', title: 'Head of account', hint: 'Head and sub-head of A/c' },
+  { key: 'bank', title: 'Bank details', hint: 'Account holder, number, IFSC, bank and branch — where the payment goes' },
   { key: 'description', title: 'Description', hint: 'What the requisition is for' },
   { key: 'amountInWords', title: 'Amount in words', hint: 'Net amount, Indian numbering' },
   { key: 'trail', title: 'Trail', hint: 'Received, verified, handed over, paid — who and when' },
@@ -100,9 +102,9 @@ function SettingsCard({ icon: Icon, from, to, title, description, aside, childre
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] text-white" style={{ background: `linear-gradient(145deg, ${from}, ${to})` }}>
           <Icon className="h-4 w-4" />
         </span>
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
           <b className="block text-[14.5px] leading-tight">{title}</b>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <InfoTip label={`About “${title}”`}>{description}</InfoTip>
         </div>
         {aside ? <div className="ml-auto">{aside}</div> : null}
       </header>
@@ -111,29 +113,41 @@ function SettingsCard({ icon: Icon, from, to, title, description, aside, childre
   );
 }
 
-function Lbl({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+/** A field's label; `tip` puts its explanation behind an (i) beside it — outside the label. */
+function Lbl({ children, htmlFor, tip }: { children: ReactNode; htmlFor?: string; tip?: ReactNode }) {
+  if (!tip) {
+    return (
+      <label htmlFor={htmlFor} className="mb-1.5 block text-[11.5px] font-bold text-slate-600">
+        {children}
+      </label>
+    );
+  }
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-[11.5px] font-bold text-slate-600">
-      {children}
-    </label>
+    <div className="mb-1.5 flex items-center gap-1.5">
+      <label htmlFor={htmlFor} className="block text-[11.5px] font-bold text-slate-600">
+        {children}
+      </label>
+      <InfoTip label={`About “${typeof children === 'string' ? children : 'this setting'}”`}>{tip}</InfoTip>
+    </div>
   );
 }
 
 function ToggleTile({ title, hint, checked, onChange, disabled }: { title: string; hint: string; checked: boolean; onChange: (on: boolean) => void; disabled?: boolean }) {
+  const id = useId();
   return (
-    <label
+    <div
       className={cn(
-        'flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 transition hover:border-slate-300',
+        'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 transition hover:border-slate-300',
         checked && 'border-violet-200 bg-violet-50/40',
         disabled && 'cursor-not-allowed opacity-60',
       )}
     >
-      <span className="min-w-0">
+      <label htmlFor={id} className={cn('min-w-0 cursor-pointer', disabled && 'cursor-not-allowed')}>
         <b className="block text-[12.5px] leading-tight">{title}</b>
-        <small className="text-[11px] text-muted-foreground">{hint}</small>
-      </span>
-      <Switch className="ml-auto" checked={checked} onCheckedChange={onChange} disabled={disabled} />
-    </label>
+      </label>
+      <InfoTip label={`About “${title}”`}>{hint}</InfoTip>
+      <Switch id={id} className="ml-auto" checked={checked} onCheckedChange={onChange} disabled={disabled} />
+    </div>
   );
 }
 
@@ -514,9 +528,9 @@ export default function PrintingSetupPage() {
                       <b className="text-[13px] font-black italic text-rose-700">{profile.shortName || 'Logo'}</b>
                     )}
                   </span>
-                  <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-1.5">
                     <b className="block truncate text-[12.5px]">{profile.legalName}</b>
-                    <small className="block text-[11.5px] text-muted-foreground">Name, address and logo from Company Profile</small>
+                    <InfoTip label="About the letterhead">Name, address and logo from Company Profile</InfoTip>
                   </div>
                   <Link href="/settings/company-profile" className="ml-auto shrink-0 rounded-lg border px-2.5 py-1 text-xs font-semibold hover:bg-muted">
                     Change
@@ -567,7 +581,9 @@ export default function PrintingSetupPage() {
             </div>
             {settings.sections.signatures && (
               <div className="mt-3">
-                <Lbl htmlFor="sig-labels">Signature captions — separated by commas, up to 8</Lbl>
+                <Lbl htmlFor="sig-labels" tip="Leave empty for the usual six.">
+                  Signature captions — separated by commas, up to 8
+                </Lbl>
                 <input
                   id="sig-labels"
                   className={inputClass}
@@ -585,7 +601,6 @@ export default function PrintingSetupPage() {
                   }
                   onBlur={() => set({ signatureLabels: settings.signatureLabels.map((l) => l.trim()).filter(Boolean) })}
                 />
-                <p className="mt-1 text-[11.5px] text-muted-foreground">Leave empty for the usual six.</p>
               </div>
             )}
           </SettingsCard>
@@ -622,7 +637,7 @@ export default function PrintingSetupPage() {
                 />
               </div>
               <div>
-                <Lbl>Watermark</Lbl>
+                <Lbl tip="By status: DRAFT until GST & TDS verified, PAID once paid, CANCELLED if cancelled.">Watermark</Lbl>
                 <Segmented
                   value={settings.watermark}
                   disabled={disabled}
@@ -633,7 +648,6 @@ export default function PrintingSetupPage() {
                     { value: 'copy', label: 'Always "COPY"' },
                   ]}
                 />
-                <p className="mt-1 text-[11.5px] text-muted-foreground">By status: DRAFT until GST &amp; TDS verified, PAID once paid, CANCELLED if cancelled.</p>
               </div>
             </div>
           </SettingsCard>
@@ -643,6 +657,10 @@ export default function PrintingSetupPage() {
         <aside className="xl:sticky xl:top-4">
           <div className="mb-2.5 flex items-center gap-2">
             <b className="text-sm">Live preview</b>
+            <InfoTip label="About “Live preview”">
+              The preview uses a sample requisition. The test page prints it with the settings above, saved or not; use your browser&apos;s print dialog to save it as a
+              PDF.
+            </InfoTip>
             <span className="text-xs text-muted-foreground">
               · {PAPER_SIZES[settings.paperSize].label} {settings.orientation} · {settings.copies} {settings.copies === 1 ? 'copy' : 'copies'}
             </span>
@@ -705,10 +723,6 @@ export default function PrintingSetupPage() {
               <RotateCcw className="mr-1.5 h-4 w-4" /> Reset to default
             </Button>
           </div>
-          <p className="mt-2 text-[11.5px] text-muted-foreground">
-            The preview uses a sample requisition. The test page prints it with the settings above, saved or not; use your browser&apos;s
-            print dialog to save it as a PDF.
-          </p>
         </aside>
       </div>
 

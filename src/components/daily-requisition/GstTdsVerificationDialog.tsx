@@ -30,6 +30,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { RegistrationSelect, useBillRegistration } from '@/components/expenses/bill-registration';
+import { InfoTip } from '@/components/shared/info-tip';
 import { useToast } from '@/hooks/use-toast';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { diffFields } from '@/lib/activity-logger';
@@ -737,7 +738,7 @@ function VerifyEntryForm({
             />
             <DeductionRow
               title="Other deduction"
-              hint="Penalty, advance recovery, short supply…"
+              tip="Penalty, advance recovery, short supply…"
               on={otherOpen}
               offLabel="None"
               onLabel="Deduct"
@@ -769,11 +770,13 @@ function VerifyEntryForm({
                   <BankFact label="Bank" value={bank.bankName} />
                   <BankFact label="Branch" value={bank.branchName} />
                 </div>
-                <p className="mt-2.5 text-[11.5px] text-muted-foreground">
+                <p className="mt-2.5 flex items-center gap-1 text-[11.5px] text-muted-foreground">
                   {bank.source === 'employee'
                     ? `From the Employee module${bank.employeeNo ? ` (${bank.employeeNo})` : ''}${bank.edited ? ', changed on the expense request' : ''}.`
-                    : 'Entered on the expense request.'}{' '}
-                  If they do not match the bill, do not verify — send it back or raise it with whoever raised the request.
+                    : 'Entered on the expense request.'}
+                  <InfoTip label="About checking the bank details">
+                    If they do not match the bill, do not verify — send it back or raise it with whoever raised the request.
+                  </InfoTip>
                 </p>
                 <label
                   htmlFor="verify-bank-checked"
@@ -1017,7 +1020,7 @@ function FormSection({
           <Icon className="h-3.5 w-3.5" />
         </span>
         <b className="text-sm">{title}</b>
-        <small className="text-xs text-muted-foreground">{hint}</small>
+        <InfoTip label={`About “${title}”`}>{hint}</InfoTip>
       </div>
       <div className="rounded-2xl border p-3.5">{children}</div>
     </section>
@@ -1107,6 +1110,7 @@ function TaxLine({ label, value, highlight }: { label: string; value: number; hi
 function DeductionRow({
   title,
   hint,
+  tip,
   on,
   offLabel,
   onLabel,
@@ -1115,7 +1119,10 @@ function DeductionRow({
   amount,
 }: {
   title: string;
-  hint: string;
+  /** Where it stands with the current choices — kept open under the title. */
+  hint?: string;
+  /** What the deduction is — behind an (i) beside the title. */
+  tip?: string;
   on: boolean;
   offLabel: string;
   onLabel: string;
@@ -1127,8 +1134,11 @@ function DeductionRow({
     <div className="border-t border-dashed py-2.5 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div className="min-w-0">
-          <b className="block text-[13px]">{title}</b>
-          <small className="block text-[11.5px] text-muted-foreground">{hint}</small>
+          <b className="flex items-center gap-1 text-[13px]">
+            {title}
+            {tip ? <InfoTip label={`About “${title}”`}>{tip}</InfoTip> : null}
+          </b>
+          {hint ? <small className="block text-[11.5px] text-muted-foreground">{hint}</small> : null}
         </div>
         <Segmented
           value={on ? 'on' : 'off'}

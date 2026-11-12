@@ -355,6 +355,7 @@ export default function AgeingReportPage() {
       <TableCard
         title="Open Requisitions"
         description="Sorted oldest first. Age calculated from created date to today; Outstanding is the net less any part payment."
+        descriptionAs="info"
         count={rows.length}
       >
           {rows.length === 0 ? (

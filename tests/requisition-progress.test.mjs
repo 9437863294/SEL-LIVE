@@ -27,6 +27,16 @@ test('paid, part paid and balance', () => {
   assert.equal(p.tone, 'warning');
 });
 
+test('a requisition held at an approval step is named by it, its stage unchanged', () => {
+  const held = requisitionProgress({ status: 'Pending', heldStepName: 'Verification', netAmount: 5000 });
+  assert.equal(held.label, 'At Verification');
+  assert.equal(held.stage, 'pending');
+  assert.equal(held.net, 5000);
+  assert.equal(requisitionProgress({ status: 'Pending' }).label, 'At finance');
+  assert.equal(requisitionProgress({ status: 'Pending', heldStepName: '  ' }).label, 'At finance');
+  assert.equal(requisitionProgress({ status: 'Cancelled', heldStepName: 'Verification' }).label, 'Cancelled');
+});
+
 test('any payment locks a requisition', () => {
   assert.equal(isPaymentLocked({ status: 'Received for Payment' }), false);
   assert.equal(isPaymentLocked({ status: 'Received for Payment', paidAmount: 10 }), true);

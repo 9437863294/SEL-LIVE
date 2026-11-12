@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { chartChrome } from '@/components/ui/chart';
+import { InfoTip } from '@/components/shared/info-tip';
 import { useTheme } from '@/components/theme/ThemeProvider';
 import { compactInr, formatInr } from '@/lib/bank-balance-ledger';
 import type { MonthPoint, WaitBandKey } from '@/lib/daily-requisition-dashboard';
@@ -78,13 +79,14 @@ export function DashboardPanel({
 }) {
   return (
     <section className={cn('min-w-0 overflow-hidden rounded-xl border bg-card shadow-sm', className)}>
-      {/* The tools and the link stay on the title's line, top right, however narrow the panel; the
-          legend sits at the end of the description's line and wraps under it when there is no room. */}
+      {/* The tools and the link stay on the title's line, top right, however narrow the panel; what
+          the panel shows is behind an (i) beside the title, and the legend sits on the line under it. */}
       <div className="border-b px-4 py-3">
         <div className="flex items-start justify-between gap-3">
           <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-foreground">
             {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
             {title}
+            {description ? <InfoTip label={`About “${title}”`}>{description}</InfoTip> : null}
           </h2>
           {tools || action ? (
             <div className="flex shrink-0 items-center gap-3">
@@ -98,12 +100,7 @@ export function DashboardPanel({
             </div>
           ) : null}
         </div>
-        {description || legend ? (
-          <div className="mt-0.5 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
-            {description && <p className="min-w-0 text-xs text-muted-foreground">{description}</p>}
-            {legend ? <div className="ml-auto">{legend}</div> : null}
-          </div>
-        ) : null}
+        {legend ? <div className="mt-0.5">{legend}</div> : null}
       </div>
       <div className={cn('p-4', contentClassName)}>{children}</div>
     </section>

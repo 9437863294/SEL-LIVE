@@ -45,6 +45,7 @@ import { saveDailyRequisitionSettings, useDailyRequisitionSettings } from '@/com
 import { IssueList, SettingsAccessDenied, SettingsSkeleton, describeLastUpdate } from '@/components/daily-requisition/settings-controls';
 import { dailyPageContainerClass } from '@/components/daily-requisition/module-shell';
 import { Segmented } from '@/components/daily-requisition/workflow-editor-parts';
+import { InfoTip } from '@/components/shared/info-tip';
 import { cn } from '@/lib/utils';
 
 type Draft = { fields: Record<DRFieldKey, DRFieldSetting>; columns: DRColumnSetting[] };
@@ -305,9 +306,9 @@ export default function DailyRequisitionFieldControlPage() {
           {/* Field rows */}
           <section className="overflow-hidden rounded-[20px] border bg-card">
             <header className="flex flex-wrap items-center gap-3 border-b px-[18px] py-3.5">
-              <div>
+              <div className="flex items-center gap-1.5">
                 <b className="block text-[14.5px]">Entry form fields</b>
-                <p className="text-xs text-muted-foreground">The Add Entry and Edit Entry dialogs. Leave a label blank to keep the default.</p>
+                <InfoTip label="About “Entry form fields”">The Add Entry and Edit Entry dialogs. Leave a label blank to keep the default.</InfoTip>
               </div>
               <span className="flex-1" />
               <div className="flex flex-wrap gap-2.5 text-[11.5px] font-bold text-muted-foreground">
@@ -334,6 +335,11 @@ export default function DailyRequisitionFieldControlPage() {
                     <span className="row-span-4 self-stretch rounded-r lg:row-span-1" style={{ background: STATE_LOOK[state].bar }} />
                     <div className="min-w-0">
                       <b className="mr-1.5 text-[13.5px]">{def.defaultLabel}</b>
+                      {def.helpText ? (
+                        <InfoTip label={`About “${def.defaultLabel}”`} className="mr-1.5 align-[-1px]">
+                          {def.helpText}
+                        </InfoTip>
+                      ) : null}
                       <span className="inline-flex flex-wrap gap-1 align-[1px]">
                         <span className="rounded-full bg-muted px-2 py-px text-[11px] font-bold text-muted-foreground">{def.forms.length === 2 ? 'Add · Edit' : 'Add only'}</span>
                         {def.locked && (
@@ -352,7 +358,6 @@ export default function DailyRequisitionFieldControlPage() {
                           </Link>
                         )}
                       </span>
-                      {def.helpText ? <small className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">{def.helpText}</small> : null}
                     </div>
                     <input
                       aria-label={`${def.defaultLabel} label`}
@@ -489,13 +494,14 @@ export default function DailyRequisitionFieldControlPage() {
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
           {/* Column rows */}
           <section className="overflow-hidden rounded-[20px] border bg-card">
-            <header className="border-b px-[18px] py-3.5">
+            <header className="flex items-center gap-1.5 border-b px-[18px] py-3.5">
               <b className="block text-[14.5px]">Register columns</b>
-              <p className="text-xs text-muted-foreground">The Entry Sheet table. Reception No., Status and Actions are always shown; Actions stays last.</p>
+              <InfoTip label="About “Register columns”">The Entry Sheet table. Reception No., Status and Actions are always shown; Actions stays last.</InfoTip>
             </header>
             <div className="border-b px-[18px] py-3.5">
               <div className="mb-2 flex flex-wrap items-center gap-2.5 text-[12.5px] font-bold">
                 About {needed.toLocaleString('en-IN')} px needed of {available.toLocaleString('en-IN')} px on a {screenPx} px screen
+                <InfoTip label="About the widths">Widths are estimates from the register&apos;s column caps.</InfoTip>
                 <span className="flex-1" />
                 {overBy > 0 ? (
                   <span className="rounded-full bg-amber-100 px-2 py-px text-[11px] font-bold text-amber-800">Scrolls sideways · {overBy.toLocaleString('en-IN')} px too wide</span>
@@ -528,10 +534,9 @@ export default function DailyRequisitionFieldControlPage() {
                       {drColumnDef(c.key)?.label} ✕
                     </button>
                   ))}
-                  <span className="font-medium text-muted-foreground">Their details are still in the row when opened.</span>
+                  <InfoTip label="About hiding columns">Their details are still in the row when opened.</InfoTip>
                 </div>
               )}
-              <p className="mt-2 text-[11px] text-muted-foreground">Widths are estimates from the register&apos;s column caps.</p>
             </div>
             <ol>
               {current.columns.map((column, index) => {

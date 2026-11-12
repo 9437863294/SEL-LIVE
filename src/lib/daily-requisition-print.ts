@@ -25,6 +25,11 @@ export interface PrintSections {
   amounts: boolean;
   /** Head and sub-head of account. */
   accounts: boolean;
+  /**
+   * The account the payment goes to — holder, number, IFSC, bank, branch — as the requisition
+   * carried it from its expense request (src/lib/expenses-bank.ts). On unless turned off.
+   */
+  bank: boolean;
   description: boolean;
   /** The net amount in words (Indian numbering). */
   amountInWords: boolean;
@@ -88,7 +93,7 @@ export function defaultPrintSettings(): DRPrintSettings {
     fontScale: 'normal',
     letterheadAlign: 'profile',
     documentTitle: DEFAULT_DOCUMENT_TITLE,
-    sections: { details: true, amounts: true, accounts: true, description: true, amountInWords: false, trail: false, signatures: true },
+    sections: { details: true, amounts: true, accounts: true, bank: true, description: true, amountInWords: false, trail: false, signatures: true },
     signatureLabels: [],
     footer: { printedBy: true, sheetNumbers: false, note: '' },
     watermark: 'none',
@@ -134,6 +139,7 @@ export function resolvePrintSettings(raw: unknown): DRPrintSettings {
       details: bool(s.details, d.sections.details),
       amounts: bool(s.amounts, d.sections.amounts),
       accounts: bool(s.accounts, d.sections.accounts),
+      bank: bool(s.bank, d.sections.bank),
       description: bool(s.description, d.sections.description),
       amountInWords: bool(s.amountInWords, d.sections.amountInWords),
       trail: bool(s.trail, d.sections.trail),

@@ -174,7 +174,7 @@ export default function DepartmentAnalysisPage() {
 
       <ReportPeriodFilter state={period} />
 
-      <TableCard icon={Layers} title="Department Breakdown" description="Most requisitions first; the bar compares each with the busiest.">
+      <TableCard icon={Layers} title="Department Breakdown" description="Most requisitions first; the bar compares each with the busiest." descriptionAs="info">
           {rows.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">
               No entries found for the selected period.

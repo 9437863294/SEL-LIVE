@@ -24,6 +24,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { KeyHint, ef } from '@/components/daily-requisition/entry-form-ui';
+import { InfoTip } from '@/components/shared/info-tip';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -381,7 +382,7 @@ export function ReceiveMultiplePanel({
               </SelectContent>
             </Select>
           </div>
-          <div className={ef.toolDate}>
+          <div className={cn(ef.toolDate, 'flex items-center gap-1.5')}>
             <Popover>
               <PopoverTrigger asChild>
                 <button
@@ -399,13 +400,13 @@ export function ReceiveMultiplePanel({
                 <Calendar mode="single" selected={receptionDate} onSelect={(date) => date && setReceptionDate(date)} disabled={calendarDisabled} initialFocus />
               </PopoverContent>
             </Popover>
+            <InfoTip label="About the reception date">
+              Every entry received here takes this reception date.
+              {windowHint ? <span className="mt-1 block font-medium text-slate-800">{windowHint}.</span> : null}
+            </InfoTip>
           </div>
         </div>
-        {!dateCheck.ok ? (
-          <p className={cn(ef.err, 'mt-1.5')}>{dateCheck.reason}</p>
-        ) : windowHint ? (
-          <p className={cn(ef.help, 'mt-1.5')}>{windowHint}</p>
-        ) : null}
+        {!dateCheck.ok ? <p className={cn(ef.err, 'mt-1.5')}>{dateCheck.reason}</p> : null}
 
         {/* The requests, in the order they will be numbered */}
         <div className={ef.tableWrap}>
@@ -507,6 +508,11 @@ export function ReceiveMultiplePanel({
                           <ListOrdered aria-hidden="true" />
                           {showOrder ? 'Hide order' : 'Show order'}
                         </button>
+                        {config ? (
+                          <InfoTip label="About the reception numbers">
+                            Reception numbers are confirmed when you save — if someone adds an entry first, the block moves up by one.
+                          </InfoTip>
+                        ) : null}
                       </span>
                     )}
                   </td>
@@ -528,9 +534,6 @@ export function ReceiveMultiplePanel({
               </li>
             ))}
           </ol>
-        )}
-        {config && chosen.length > 0 && (
-          <p className={cn(ef.help, 'mt-2')}>Reception numbers are confirmed when you save — if someone adds an entry first, the block moves up by one.</p>
         )}
       </div>
 

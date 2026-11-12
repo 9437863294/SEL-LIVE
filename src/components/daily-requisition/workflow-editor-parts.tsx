@@ -11,6 +11,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, Info, Paperclip, Search, X, type LucideIcon } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { InfoTip } from '@/components/shared/info-tip';
 import { personOptionLabel } from '@/lib/people-directory';
 import type { User } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -189,7 +190,8 @@ export function EditorSection({
   from: string;
   to: string;
   title: string;
-  description: string;
+  /** What the section is for, behind an (i) beside the title. */
+  description: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
 }) {
@@ -197,9 +199,9 @@ export function EditorSection({
     <section className="border-b px-4 py-4 last:border-b-0 sm:px-5 sm:py-5">
       <div className="mb-3 flex items-center gap-2.5">
         <IconTile icon={icon} from={from} to={to} size="sm" />
-        <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
           <h3 className="text-sm font-bold leading-tight">{title}</h3>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <InfoTip label={`About “${title}”`}>{description}</InfoTip>
         </div>
         {aside ? <div className="ml-auto shrink-0">{aside}</div> : null}
       </div>
@@ -208,11 +210,22 @@ export function EditorSection({
   );
 }
 
-export function FieldLabel({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+/** A field's label; `tip` puts its explanation behind an (i) beside it — outside the label. */
+export function FieldLabel({ children, htmlFor, tip, about }: { children: ReactNode; htmlFor?: string; tip?: ReactNode; about?: string }) {
+  if (!tip) {
+    return (
+      <label htmlFor={htmlFor} className="mb-1.5 block text-[11.5px] font-bold text-slate-600">
+        {children}
+      </label>
+    );
+  }
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-[11.5px] font-bold text-slate-600">
-      {children}
-    </label>
+    <div className="mb-1.5 flex items-center gap-1.5">
+      <label htmlFor={htmlFor} className="block text-[11.5px] font-bold text-slate-600">
+        {children}
+      </label>
+      <InfoTip label={`About “${about ?? (typeof children === 'string' ? children : 'this setting')}”`}>{tip}</InfoTip>
+    </div>
   );
 }
 
@@ -323,36 +336,42 @@ export function ActionPicker({
           const on = selected.has(action);
           const isIdle = on && idle?.has(action);
           const info = ACTION_INFO[action];
+          // What the action does sits behind an (i) laid over the tile's corner — beside the button, not in it.
           return (
-            <button
-              key={action}
-              type="button"
-              disabled={disabled}
-              aria-pressed={on}
-              onClick={() => onToggle(action)}
-              title={isIdle ? idle?.get(action) : info?.hint}
-              className={cn(
-                'flex min-w-0 items-start gap-2 rounded-[11px] border bg-card px-2.5 py-2 text-left transition hover:border-violet-300 disabled:cursor-not-allowed disabled:opacity-60',
-                on && 'border-violet-500 bg-violet-50',
-                isIdle && 'border-dashed border-amber-400 bg-amber-50',
-              )}
-            >
-              <span
+            <div key={action} className="relative min-w-0">
+              <button
+                type="button"
+                disabled={disabled}
+                aria-pressed={on}
+                onClick={() => onToggle(action)}
+                title={isIdle ? idle?.get(action) : info?.hint}
                 className={cn(
-                  'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border-2 border-slate-300 text-white',
-                  on && 'border-violet-600 bg-violet-600',
-                  isIdle && 'border-amber-500 bg-amber-500',
+                  'flex w-full min-w-0 items-start gap-2 rounded-[11px] border bg-card py-2 pl-2.5 pr-8 text-left transition hover:border-violet-300 disabled:cursor-not-allowed disabled:opacity-60',
+                  on && 'border-violet-500 bg-violet-50',
+                  isIdle && 'border-dashed border-amber-400 bg-amber-50',
                 )}
               >
-                {on ? <Check className="h-2.5 w-2.5" strokeWidth={3.4} /> : null}
-              </span>
-              <span className="min-w-0">
-                <b className={cn('block text-[12.5px] font-semibold text-muted-foreground', on && 'text-foreground', isIdle && 'line-through')}>
-                  {info?.label ?? action}
-                </b>
-                <span className="block text-[11.5px] leading-snug text-muted-foreground">{info?.hint}</span>
-              </span>
-            </button>
+                <span
+                  className={cn(
+                    'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-[5px] border-2 border-slate-300 text-white',
+                    on && 'border-violet-600 bg-violet-600',
+                    isIdle && 'border-amber-500 bg-amber-500',
+                  )}
+                >
+                  {on ? <Check className="h-2.5 w-2.5" strokeWidth={3.4} /> : null}
+                </span>
+                <span className="min-w-0">
+                  <b className={cn('block text-[12.5px] font-semibold text-muted-foreground', on && 'text-foreground', isIdle && 'line-through')}>
+                    {info?.label ?? action}
+                  </b>
+                </span>
+              </button>
+              {info?.hint ? (
+                <InfoTip label={`About “${info.label ?? action}”`} className="absolute right-2.5 top-2.5">
+                  {info.hint}
+                </InfoTip>
+              ) : null}
+            </div>
           );
         })}
       </div>
