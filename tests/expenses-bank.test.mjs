@@ -7,7 +7,9 @@ import {
   employeeNameKey,
   hasBank,
   isIfsc,
+  maskedAccount,
   sameBank,
+  storedBankOf,
   toStoredBank,
 } from '../src/lib/expenses-bank.ts';
 
@@ -75,4 +77,28 @@ test('a party name matches an employee whatever its case, spacing or dotted init
   assert.equal(employeeNameKey(' Ramesh Kumar '), 'RAMESH KUMAR');
   assert.notEqual(employeeNameKey('RAMESH KUMAR'), employeeNameKey('RAMESH KUMARI'));
   assert.equal(employeeNameKey(undefined), '');
+});
+
+test('stored details are read back safely for carrying onto a requisition', () => {
+  assert.equal(storedBankOf(undefined), null);
+  assert.equal(storedBankOf('nonsense'), null);
+  assert.equal(storedBankOf({ source: 'manual' }), null);
+
+  const fromEmployee = storedBankOf({ ...complete, source: 'employee', employeeId: '208', employeeNo: undefined });
+  assert.equal(fromEmployee.source, 'employee');
+  assert.equal(fromEmployee.employeeNo, '');
+  assert.equal(fromEmployee.edited, false);
+  // Firestore rejects a write holding a single undefined, so none may be carried.
+  assert.equal(Object.values(fromEmployee).includes(undefined), false);
+
+  // "From the Employee module" with no employee named is treated as typed in.
+  const orphan = storedBankOf({ ...complete, source: 'employee' });
+  assert.equal(orphan.source, 'manual');
+  assert.equal('employeeId' in orphan, false);
+});
+
+test('logs and summaries show only the last four digits of an account', () => {
+  assert.equal(maskedAccount('123456789012'), '••••9012');
+  assert.equal(maskedAccount('1234'), '1234');
+  assert.equal(maskedAccount(undefined), '');
 });

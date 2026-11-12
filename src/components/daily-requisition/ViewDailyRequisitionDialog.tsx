@@ -74,6 +74,7 @@ import { db } from '@/lib/firebase';
 import { personOptionLabel } from '@/lib/people-directory';
 import { balanceOf, isPaymentLocked, paidOf, voucherHref } from '@/lib/requisition-progress';
 import { registrationLabel } from '@/lib/gst-registrations';
+import { storedBankOf } from '@/lib/expenses-bank';
 import { treatmentWarning, useBillRegistration } from '@/components/expenses/bill-registration';
 import type { BankAccount, DailyRequisitionEntry, Department, ExpenseRequest, Project, WorkflowStep } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -743,6 +744,36 @@ export default function ViewDailyRequisitionDialog({
                 )}
               </dl>
             )}
+
+            {/* The account carried from the expense request when it was received (src/lib/expenses-bank.ts). */}
+            {(() => {
+              const bank = storedBankOf(entry.bankDetails);
+              if (!bank) return null;
+              return (
+                <>
+                  <Heading
+                    aside={
+                      <span className="text-[11.5px] font-semibold text-muted-foreground">
+                        {bank.source === 'employee'
+                          ? `From the Employee module${bank.employeeNo ? ` · ${bank.employeeNo}` : ''}${bank.edited ? ' · changed on the request' : ''}`
+                          : 'Entered on the request'}
+                      </span>
+                    }
+                  >
+                    Bank details
+                  </Heading>
+                  <dl className="grid grid-cols-2 gap-2.5 md:grid-cols-3">
+                    <div className="col-span-2 md:col-span-1">
+                      <Fact label="Account holder">{bank.accountHolderName || '—'}</Fact>
+                    </div>
+                    <Fact label="Account number" mono>{bank.accountNumber || '—'}</Fact>
+                    <Fact label="IFSC" mono>{bank.ifscCode || '—'}</Fact>
+                    <Fact label="Bank">{bank.bankName || '—'}</Fact>
+                    <Fact label="Branch">{bank.branchName || '—'}</Fact>
+                  </dl>
+                </>
+              );
+            })()}
 
             {showPayment && (
               <>
