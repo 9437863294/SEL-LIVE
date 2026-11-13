@@ -249,8 +249,9 @@ export default function DprReportsPage() {
                 description="Change the period or scope, or record a day's progress."
               />
             ) : (
-              <Table {...TABLE_PROPS} className="min-w-[1200px] table-fixed">
+              <Table {...TABLE_PROPS} className="min-w-[1272px] table-fixed">
                 <colgroup>
+                  <col className="w-[72px]" />
                   <col />
                   <col className="w-[68px]" />
                   <col className="w-[100px]" />
@@ -266,6 +267,7 @@ export default function DprReportsPage() {
                 </colgroup>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="truncate">SL No</TableHead>
                     <TableHead className="truncate">BOQ line</TableHead>
                     <TableHead className="truncate">Unit</TableHead>
                     <TableHead className="truncate text-right">BOQ qty</TableHead>
@@ -299,13 +301,13 @@ export default function DprReportsPage() {
                 <TableBody>
                   {report.rows.map((row) => {
                     const qty = (value: number) => formatQtyAt(value, decimalsFor(row.unit));
-                    const label = `${row.boqSlNo ? `${row.boqSlNo} · ` : ""}${row.description || "BOQ line"}`;
                     const variance = `${row.varianceQty > 0 ? "+" : ""}${qty(row.varianceQty)}`;
                     return (
                       <TableRow key={row.id}>
-                        <TableCell className={lineCell} title={label}>
-                          {row.boqSlNo ? <span className="font-semibold">{row.boqSlNo}</span> : null}
-                          {row.boqSlNo ? " · " : null}
+                        <TableCell className="truncate text-sm font-semibold tabular-nums" title={row.boqSlNo}>
+                          {row.boqSlNo || "—"}
+                        </TableCell>
+                        <TableCell className={lineCell} title={row.description}>
                           {row.description || "BOQ line"}
                         </TableCell>
                         <TableCell className={lineCell} title={row.unit}>

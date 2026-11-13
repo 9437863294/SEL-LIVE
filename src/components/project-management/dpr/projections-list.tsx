@@ -158,12 +158,13 @@ export function ProjectionList({
               <Table
                 stickyHeader
                 containerClassName="max-h-[65vh]"
-                className="min-w-[1210px] table-fixed"
+                className="min-w-[1282px] table-fixed"
               >
                 <colgroup>
                   <col className="w-[210px]" />
                   <col className="w-[64px]" />
                   <col className="w-[76px]" />
+                  <col className="w-[72px]" />
                   <col />
                   <col className="w-[80px]" />
                   <col className="w-[80px]" />
@@ -180,6 +181,7 @@ export function ProjectionList({
                       Days
                     </TableHead>
                     <TableHead className="truncate">Scope</TableHead>
+                    <TableHead className="truncate">SL No</TableHead>
                     <TableHead className="truncate">BOQ line</TableHead>
                     <TableHead className="truncate">Unit</TableHead>
                     <TableHead className="truncate text-right" title="Quantity">
@@ -205,7 +207,6 @@ export function ProjectionList({
                     const revisionNo = target.revisionNo ?? 0;
                     const ended = target.endDate < today;
                     const range = formatRangeCompact(target.startDate, target.endDate);
-                    const boqLabel = `${target.boqSlNo ? `${target.boqSlNo} · ` : ""}${target.description || "BOQ line"}`;
                     const spread = DPR_DISTRIBUTION_LABELS[target.distribution ?? "even"] ?? "Even";
                     return (
                       <TableRow key={target.id}>
@@ -226,9 +227,13 @@ export function ProjectionList({
                         <TableCell className="py-1.5">
                           <ScopeBadge scope={target.scope} />
                         </TableCell>
-                        <TableCell className="truncate text-sm" title={boqLabel}>
-                          {target.boqSlNo ? <span className="font-semibold">{target.boqSlNo}</span> : null}
-                          {target.boqSlNo ? " · " : null}
+                        <TableCell
+                          className="truncate text-sm font-semibold tabular-nums"
+                          title={target.boqSlNo}
+                        >
+                          {target.boqSlNo || "—"}
+                        </TableCell>
+                        <TableCell className="truncate text-sm" title={target.description}>
                           {target.description || "BOQ line"}
                         </TableCell>
                         <TableCell className="truncate text-sm" title={unit}>

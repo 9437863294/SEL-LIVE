@@ -126,9 +126,10 @@ export function ProjectionLookAhead({
             <Table
               stickyHeader
               containerClassName="max-h-[65vh]"
-              className="min-w-[1060px] table-fixed"
+              className="min-w-[1132px] table-fixed"
             >
               <colgroup>
+                <col className="w-[72px]" />
                 <col />
                 <col className="w-[88px]" />
                 {lookAhead.weeks.map((week) => (
@@ -137,6 +138,7 @@ export function ProjectionLookAhead({
               </colgroup>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="truncate">SL No</TableHead>
                   <TableHead className="truncate">BOQ line</TableHead>
                   <TableHead className="truncate">Unit</TableHead>
                   {lookAhead.weeks.map((week) => (
@@ -154,12 +156,12 @@ export function ProjectionLookAhead({
               <TableBody>
                 {rows.map(({ item, cells }) => {
                   const decimals = data.decimalsFor(item.unit);
-                  const boqLabel = `${item.boqSlNo ? `${item.boqSlNo} · ` : ""}${item.description || "BOQ line"}`;
                   return (
                     <TableRow key={item.id}>
-                      <TableCell className="truncate text-sm" title={boqLabel}>
-                        {item.boqSlNo ? <span className="font-semibold">{item.boqSlNo}</span> : null}
-                        {item.boqSlNo ? " · " : null}
+                      <TableCell className="truncate text-sm font-semibold tabular-nums" title={item.boqSlNo}>
+                        {item.boqSlNo || "—"}
+                      </TableCell>
+                      <TableCell className="truncate text-sm" title={item.description}>
                         {item.description || "BOQ line"}
                       </TableCell>
                       <TableCell className="truncate text-sm" title={item.unit}>

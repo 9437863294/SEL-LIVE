@@ -257,12 +257,19 @@ function LineBarTooltip({
 }) {
   const bar = active ? payload?.[0]?.payload : undefined;
   if (!bar) return null;
+  const slNo = bar.boqSlNo;
   return (
     <div
       className="max-w-xs rounded-lg border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
     >
-      <div className="font-semibold">{bar.label}</div>
-      <div className="line-clamp-2 text-muted-foreground">{bar.description}</div>
+      <div>
+        <span className="text-muted-foreground">SL No </span>
+        <span className="font-semibold tabular-nums">{slNo || "—"}</span>
+      </div>
+      <div className="line-clamp-2">
+        <span className="text-muted-foreground">Description </span>
+        {bar.description || "—"}
+      </div>
       <div className="mt-1 tabular-nums">
         {formatQty(bar.actual, bar.unit)} of {formatQty(bar.planToDate, bar.unit)} {bar.unit} due ·{" "}
         {pctText(bar.pct)}

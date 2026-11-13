@@ -459,9 +459,10 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                   <Table
                     stickyHeader
                     containerClassName="max-h-[65vh]"
-                    className="min-w-[1180px] table-fixed"
+                    className="min-w-[1252px] table-fixed"
                   >
                     <colgroup>
+                      <col className="w-[72px]" />
                       <col />
                       <col className="w-[76px]" />
                       <col className="w-[88px]" />
@@ -474,6 +475,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                     </colgroup>
                     <TableHeader>
                       <TableRow>
+                        <TableHead className="truncate">SL No</TableHead>
                         <TableHead className="truncate">BOQ line</TableHead>
                         <TableHead className="truncate">Unit</TableHead>
                         <TableHead className="truncate text-right">BOQ qty</TableHead>
@@ -502,12 +504,15 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                         );
                         const hasErrors = Boolean(check && check.errors.length > 0);
                         const hasWarnings = Boolean(check && check.warnings.length > 0);
-                        const label = `${item.boqSlNo ? `${item.boqSlNo} · ` : ""}${item.description || "BOQ line"}`;
                         return (
                           <TableRow key={item.id}>
-                            <TableCell className="truncate text-sm" title={label}>
-                              {item.boqSlNo ? <span className="font-semibold">{item.boqSlNo}</span> : null}
-                              {item.boqSlNo ? " · " : null}
+                            <TableCell
+                              className="truncate text-sm font-semibold tabular-nums"
+                              title={item.boqSlNo}
+                            >
+                              {item.boqSlNo || "—"}
+                            </TableCell>
+                            <TableCell className="truncate text-sm" title={item.description}>
                               {item.description || "BOQ line"}
                             </TableCell>
                             <TableCell className="truncate text-sm" title={item.unit}>

@@ -67,6 +67,8 @@ export interface DprLineAchievementBar {
   id: string;
   /** A short axis label: the BOQ number, else the start of the description. */
   label: string;
+  /** The BOQ SL No itself ("" when the line has none), for the tooltip's own SL No line. */
+  boqSlNo: string;
   description: string;
   unit: string;
   /** actual ÷ plan to date, in percent. */
@@ -97,6 +99,7 @@ export function lineAchievementBars(board: DprBoard, limit = 10): DprLineAchieve
     .map((row) => ({
       id: row.item.id,
       label: shortLabel(row),
+      boqSlNo: row.item.boqSlNo || row.item.erpSlNo || "",
       description: row.item.description,
       unit: row.item.unit,
       pct: tidy(row.achievementPct ?? 0),

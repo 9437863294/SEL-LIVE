@@ -28,6 +28,7 @@ import {
 } from "@/lib/project-management-dpr-plan";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import {
+  DprBoqSummary,
   DprMessages,
   formatDisplayDate,
   formatQtyAt,
@@ -197,11 +198,12 @@ function ReviseBody({
       <DialogHeader>
         <DialogTitle>Revise projection</DialogTitle>
         <DialogDescription>
-          {target.boqSlNo ? `${target.boqSlNo} · ` : ""}
           {DPR_PERIOD_LABELS[target.periodType] ?? "Custom"} {formatDisplayDate(target.startDate)} –{" "}
           {formatDisplayDate(target.endDate)} · baseline {formatQtyAt(baseline, decimals)} {unit}
         </DialogDescription>
       </DialogHeader>
+
+      <DprBoqSummary boqSlNo={target.boqSlNo} description={target.description} unit={unit} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -370,11 +372,12 @@ function PlanWeekBody({
       <DialogHeader>
         <DialogTitle>Plan this week</DialogTitle>
         <DialogDescription>
-          {item.boqSlNo ? `${item.boqSlNo} · ` : ""}
           {formatDisplayDate(week.startDate)} – {formatDisplayDate(week.endDate)} · currently{" "}
           {formatQtyAt(current, decimals)} {item.unit} from longer projections
         </DialogDescription>
       </DialogHeader>
+
+      <DprBoqSummary boqSlNo={item.boqSlNo} description={item.description} unit={item.unit} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">

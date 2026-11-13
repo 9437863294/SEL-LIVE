@@ -11,7 +11,7 @@ import type { DprBoardRow } from "@/lib/project-management-dpr-plan";
 import type { DprComingUp, DprScopeSplitRow } from "@/lib/project-management-dpr-dashboard";
 import type { DprHindranceRow } from "@/lib/project-management-dpr";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
-import { DprBoqText, formatDisplayDate, formatPct } from "@/components/project-management/dpr/dpr-shell";
+import { formatDisplayDate, formatPct } from "@/components/project-management/dpr/dpr-shell";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -51,9 +51,15 @@ export function DprFurthestBehindList({
       {rows.map((row) => {
         const { item } = row;
         return (
-          <li key={item.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5 first:pt-0 last:pb-0">
-            <div className="min-w-0 flex-1 basis-56">
-              <DprBoqText boqSlNo={item.boqSlNo} description={item.description} className="min-w-0 max-w-none" />
+          <li key={item.id} className="flex items-start gap-x-3 py-2.5 first:pt-0 last:pb-0">
+            {/* The BOQ number is its own fixed-width column, aligned down the list. */}
+            <span className="w-16 shrink-0 truncate text-sm font-semibold tabular-nums" title={item.boqSlNo}>
+              {item.boqSlNo || "—"}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm" title={item.description}>
+                {item.description || "BOQ line"}
+              </div>
               <div className="mt-0.5 text-xs text-muted-foreground tabular-nums">
                 {qty(row.actual, item.unit)} of {qty(row.planToDate, item.unit)} {item.unit} due ·{" "}
                 {formatPct(row.achievementPct)}
@@ -163,9 +169,19 @@ export function DprComingUpTable({
   }
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border border-border/60">
-      <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[720px]">
+      <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[792px]">
+        <colgroup>
+          <col className="w-[72px]" />
+          <col />
+          <col />
+          {comingUp.days.map((day) => (
+            <col key={day.date} />
+          ))}
+          <col />
+        </colgroup>
         <TableHeader>
           <TableRow>
+            <TableHead className="truncate">SL No</TableHead>
             <TableHead>BOQ line</TableHead>
             <TableHead>Unit</TableHead>
             {comingUp.days.map((day) => (
@@ -183,8 +199,13 @@ export function DprComingUpTable({
         <TableBody>
           {comingUp.rows.map((row) => (
             <TableRow key={row.item.id}>
+              <TableCell className="truncate text-sm font-semibold tabular-nums" title={row.item.boqSlNo}>
+                {row.item.boqSlNo || "—"}
+              </TableCell>
               <TableCell>
-                <DprBoqText boqSlNo={row.item.boqSlNo} description={row.item.description} />
+                <div className="min-w-[160px] max-w-[320px] truncate text-sm" title={row.item.description}>
+                  {row.item.description || "BOQ line"}
+                </div>
               </TableCell>
               <TableCell className="whitespace-nowrap text-sm">{row.item.unit || "—"}</TableCell>
               {row.perDay.map((value, index) => (

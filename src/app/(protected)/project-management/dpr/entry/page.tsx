@@ -749,9 +749,10 @@ export default function RecordDailyProgressPage() {
                 <Table
                   stickyHeader
                   containerClassName="max-h-[65vh]"
-                  className="min-w-[1180px] table-fixed"
+                  className="min-w-[1252px] table-fixed"
                 >
                   <colgroup>
+                    <col className="w-[72px]" />
                     <col />
                     <col className="w-[76px]" />
                     <col className="w-[100px]" />
@@ -764,6 +765,7 @@ export default function RecordDailyProgressPage() {
                   </colgroup>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="truncate">SL No</TableHead>
                       <TableHead className="truncate">BOQ line</TableHead>
                       <TableHead className="truncate">Unit</TableHead>
                       <TableHead className="truncate text-right">Planned today</TableHead>
@@ -782,7 +784,7 @@ export default function RecordDailyProgressPage() {
                   <TableBody>
                     {sheet.rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                        <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
                           No lines yet. Add the BOQ lines worked on this day.
                         </TableCell>
                       </TableRow>
@@ -795,9 +797,16 @@ export default function RecordDailyProgressPage() {
                         const label = item?.boqSlNo || `row ${index + 1}`;
                         return (
                           <TableRow key={row.id}>
+                            <TableCell
+                              className="truncate text-sm font-semibold tabular-nums"
+                              title={item?.boqSlNo}
+                            >
+                              {item?.boqSlNo || "—"}
+                            </TableCell>
                             <TableCell className="py-1.5">
                               <DprBoqPicker
                                 compact
+                                showSlNo={false}
                                 items={scopeItems}
                                 value={row.boqItemId}
                                 disabled={!editable}

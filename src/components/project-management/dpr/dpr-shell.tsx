@@ -523,28 +523,6 @@ export function DprStatTile({
   );
 }
 
-/** A BOQ line in a cell: number in bold, description clamped to two lines, full text on hover. */
-export function DprBoqText({
-  boqSlNo,
-  description,
-  className,
-}: {
-  boqSlNo?: string;
-  description?: string;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn("line-clamp-2 min-w-[200px] max-w-[420px] text-sm", className)}
-      title={description}
-    >
-      {boqSlNo ? <span className="font-semibold">{boqSlNo}</span> : null}
-      {boqSlNo && description ? " · " : null}
-      {description || (boqSlNo ? "" : "BOQ line")}
-    </div>
-  );
-}
-
 /** Errors that block, then warnings that need a second look. Always visible, never behind a tip. */
 export function DprMessages({
   errors,
@@ -613,6 +591,43 @@ export function DprRowMessages({
           {message}
         </p>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The BOQ line a dialog is about, as a one-row table: SL No, description and unit each in a column
+ * of its own, the way every DPR table shows them.
+ */
+export function DprBoqSummary({
+  boqSlNo,
+  description,
+  unit,
+  className,
+}: {
+  boqSlNo?: string;
+  description?: string;
+  unit?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("overflow-hidden rounded-lg border border-border/60 text-sm", className)}>
+      <div className="flex gap-3 bg-muted/40 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="w-16 shrink-0">SL No</span>
+        <span className="min-w-0 flex-1">BOQ line</span>
+        <span className="w-20 shrink-0 text-right">Unit</span>
+      </div>
+      <div className="flex items-start gap-3 px-3 py-2">
+        <span className="w-16 shrink-0 truncate font-semibold tabular-nums" title={boqSlNo}>
+          {boqSlNo || "—"}
+        </span>
+        <span className="line-clamp-2 min-w-0 flex-1" title={description}>
+          {description || "BOQ line"}
+        </span>
+        <span className="w-20 shrink-0 truncate text-right text-muted-foreground" title={unit}>
+          {unit || "—"}
+        </span>
+      </div>
     </div>
   );
 }
@@ -691,11 +706,14 @@ export function DprBoqPicker({
               <span className="min-w-0 flex-1 truncate">{selected.description || "BOQ line"}</span>
             </span>
           ) : selected ? (
-            <DprBoqText
-              boqSlNo={selected.boqSlNo}
-              description={selected.description}
-              className="min-w-0 max-w-none whitespace-normal"
-            />
+            <span className="flex min-w-0 flex-1 items-start gap-2 whitespace-normal text-sm">
+              {showSlNo ? (
+                <span className="w-14 shrink-0 truncate font-semibold tabular-nums">
+                  {selected.boqSlNo || "—"}
+                </span>
+              ) : null}
+              <span className="line-clamp-2 min-w-0 flex-1">{selected.description || "BOQ line"}</span>
+            </span>
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
           )}
