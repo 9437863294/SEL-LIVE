@@ -24,8 +24,10 @@
   --ef-on-primary: hsl(var(--primary-foreground));
   --ef-soft: color-mix(in srgb, hsl(var(--primary)) 10%, hsl(var(--card)));
   --ef-ink: color-mix(in srgb, hsl(var(--primary)) 78%, #000);
+  --ef-primary-hover: color-mix(in srgb, hsl(var(--primary)) 88%, #fff);
   --ef-green: #047857;
   --ef-green-soft: #e3f8ef;
+  --ef-green-line: color-mix(in srgb, var(--ef-green) 30%, var(--ef-surface));
   --ef-red: #c62828;
   --ef-red-soft: #fdecec;
   --ef-amber: #b45309;
@@ -50,6 +52,31 @@
   --ef-amber-soft: #2b2210;
   --ef-blue: #60a5fa;
   color-scheme: dark;
+}
+
+/*
+ * Chrome before 111 has no color-mix(), and the office PCs still on Windows 7 stop at Chrome 109.
+ * There every rule using a mixed token above is dropped: focus rings, selected tints and row lines
+ * vanish, and the primary button loses its fill on hover (white text on the card). These stand-ins
+ * are the same colours as transparency over the card, or the default theme's mix as a plain colour.
+ */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .dlg {
+    --ef-s2: hsl(var(--muted) / 0.5);
+    --ef-line-2: hsl(var(--border) / 0.6);
+    --ef-soft: hsl(var(--primary) / 0.1);
+    --ef-ink: hsl(var(--primary));
+    --ef-primary-hover: hsl(var(--primary));
+    --ef-green-line: #b4d7cd;
+  }
+
+  :global(.dark) .dlg {
+    --ef-control-hover: #707074;
+    --ef-soft: hsl(var(--primary) / 0.2);
+    /* The dark accent is too dim to read as text unmixed with white. */
+    --ef-ink: var(--ef-text);
+    --ef-green-line: #245444;
+  }
 }
 
 /* ── Header and the bar under it ──────────────────────────────────────────────────────────────── */
@@ -510,7 +537,7 @@
 
 .noteGreen {
   border-style: solid;
-  border-color: color-mix(in srgb, var(--ef-green) 30%, var(--ef-surface));
+  border-color: var(--ef-green-line);
   background: var(--ef-green-soft);
 }
 
@@ -665,11 +692,12 @@
   border-color: var(--ef-primary);
   background: var(--ef-primary);
   color: var(--ef-on-primary);
-  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--ef-primary) 60%, transparent);
+  /* Primary at 60% opacity: the same colour as mixing it with transparent, in every browser. */
+  box-shadow: 0 6px 16px -6px hsl(var(--primary) / 0.6);
 }
 
 .btnPrimary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ef-primary) 88%, #fff);
+  background: var(--ef-primary-hover);
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────────────────────────────── */
