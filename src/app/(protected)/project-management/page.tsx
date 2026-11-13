@@ -462,7 +462,7 @@ export default function ProjectManagementPage() {
               {isLoadingProjects ? (
                 <Skeleton className="h-10 w-full rounded-xl" />
               ) : (
-                <Select value={selectedProjectId || undefined} onValueChange={handleProjectChange}>
+                <Select value={selectedProjectId} onValueChange={handleProjectChange}>
                   <SelectTrigger className="h-11 rounded-xl border-border/50 bg-background/80 text-left">
                     <div className="flex min-w-0 items-center gap-2">
                       <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
