@@ -84,6 +84,8 @@ export const billInputSchema = z.object({
   description: optionalText(1000),
   billTypeId: z.string().min(1, 'Choose a sub category.').max(64),
   taxableAmount: money,
+  /** Retention bill only: the retention it claims back — with no taxable or GST (`retention-bill.ts`). */
+  retentionClaimed: money.optional(),
   /**
    * Invoice only: the value of the work executed and the terms (`value-basis.ts`). The taxable must be
    * the share of the value it says; "% of Value" deductions are taken of it. Absent = none.
@@ -150,6 +152,8 @@ export const certificationInputSchema = z.object({
   reference: optionalText(120),
   certifiedBy: optionalText(120),
   taxableAmount: money,
+  /** Retention bill only: the claim as the client certified it. It applies directly — no note. */
+  retentionClaimed: money.optional(),
   /** Total GST — used only when no GST type is given (a raised bill imported unsplit, kept unsplit). */
   gstAmount: money.default(0),
   /** Omitted = the raised bill's type. */

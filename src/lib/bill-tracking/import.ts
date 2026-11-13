@@ -25,6 +25,7 @@
 
 import { compareNet, computePaymentStatus, netReceivable, financialYearOf, legacyStatusMismatch, normaliseWeekKey, toDateKey } from './calculations.ts';
 import { roundMoney, subtractMoney, sumMoney, toPaise, withinTolerance } from './money.ts';
+import { splitLegacyClaim } from './retention-bill.ts';
 import { categoryName, inferBillCategory, inferCategoryId, isEnabledForProject } from './categories.ts';
 import type {
   BillCategory,
@@ -552,7 +553,13 @@ export interface ParsedImportRow {
   transactionType: BillTransactionType;
   taxableAmount: number;
   gstAmount: number;
+  /** The row's own deductions — a retention bill's claim is not among them (`retentionClaimed`). */
   deductions: ParsedDeduction[];
+  /**
+   * Retention bill only: the retention it claims back. The sheet writes it as a negative retention
+   * line; it is read out of the deductions so the retention held is not counted off twice.
+   */
+  retentionClaimed?: number;
   receiptDate?: string;
   legacyStatus?: string;
   legacyTimestamp?: string;
@@ -775,21 +782,38 @@ export function parseImportRow(
   const importedDifference = amount('importedDifference');
   const receiptDate = date('receiptDate');
 
+  // A retention bill claims back retention billed on earlier invoices. The sheet writes the claim as a
+  // negative retention line; read as the claim (`retention-bill.ts`), the retention held is not counted
+  // off here and again when the receipt on it releases the retention.
+  const claimSplit = isRetentionBill ? splitLegacyClaim(deductions, (line) => line.code.startsWith('RET_')) : { claim: 0, lines: deductions };
+  const retentionClaimed = claimSplit.claim > 0 ? claimSplit.claim : undefined;
+  const ownDeductions = claimSplit.lines;
+  if (isRetentionBill && (toPaise(taxableAmount) !== 0 || toPaise(gstAmount) !== 0)) {
+    issues.push({
+      level: 'warning',
+      field: 'taxableAmount',
+      code: 'retention_bill_taxable',
+      message: `A retention bill (${billTypeName ?? 'retention sub category'}) with a taxable or GST: retention bills claim retention already billed and carry neither. If this sub category bills new value, untick “retention bill” for it in Settings → Bill categories before importing.`,
+    });
+  }
+
   const gross = sumMoney([taxableAmount, gstAmount]);
-  const calcDeduction = sumMoney(deductions.map((line) => line.amount));
-  const net = netReceivable(gross, calcDeduction, masters.roundNetToRupee);
+  const calcDeduction = sumMoney(ownDeductions.map((line) => line.amount));
+  // The sheet's own figure: its deduction columns, the claim's negative line included.
+  const sheetDeduction = sumMoney([calcDeduction, -(retentionClaimed ?? 0)]);
+  const net = netReceivable(sumMoney([gross, retentionClaimed ?? 0]), calcDeduction, masters.roundNetToRupee);
   const received = importedReceived ?? 0;
   const status = computePaymentStatus(net, received, masters.tolerance);
   const outstanding = status === 'received' ? 0 : subtractMoney(net, received);
 
   /* financial validation */
   let netMismatch = false;
-  if (importedTotalDeduction !== undefined && !withinTolerance(importedTotalDeduction, calcDeduction, masters.tolerance)) {
+  if (importedTotalDeduction !== undefined && !withinTolerance(importedTotalDeduction, sheetDeduction, masters.tolerance)) {
     issues.push({
       level: 'warning',
       field: 'importedTotalDeduction',
       code: 'deduction_mismatch',
-      message: `Total Deduction on the sheet (${importedTotalDeduction}) differs from the sum of deduction columns (${calcDeduction}).`,
+      message: `Total Deduction on the sheet (${importedTotalDeduction}) differs from the sum of deduction columns (${sheetDeduction}).`,
     });
   }
   if (importedNetAmount !== undefined) {
@@ -880,7 +904,8 @@ export function parseImportRow(
     transactionType,
     taxableAmount,
     gstAmount,
-    deductions,
+    deductions: ownDeductions,
+    retentionClaimed,
     receiptDate,
     legacyStatus,
     legacyTimestamp: typeof legacyTimestamp === 'string' ? legacyTimestamp : undefined,
@@ -1099,12 +1124,13 @@ export function excelTotals(rows: readonly ParsedImportRow[]): ImportReconciliat
     add('taxable', row.taxableAmount);
     add('gst', row.gstAmount);
     add('gross', sumMoney([row.taxableAmount, row.gstAmount]));
-    add('deduction', row.imported.totalDeduction ?? row.calculated.totalDeduction);
+    // As the sheet adds them up: a retention bill's claim is its negative retention line there.
+    add('deduction', row.imported.totalDeduction ?? sumMoney([row.calculated.totalDeduction, -(row.retentionClaimed ?? 0)]));
     const net = row.imported.netAmount ?? row.calculated.net;
     add('net', net);
     add('received', row.imported.received ?? 0);
     add('outstanding', row.imported.difference ?? subtractMoney(net, row.imported.received ?? 0));
-    add('retention', sumMoney(row.deductions.filter((line) => RETENTION_CODES.includes(line.code)).map((line) => line.amount)));
+    add('retention', sumMoney([...row.deductions.filter((line) => RETENTION_CODES.includes(line.code)).map((line) => line.amount), -(row.retentionClaimed ?? 0)]));
   }
   return totals;
 }

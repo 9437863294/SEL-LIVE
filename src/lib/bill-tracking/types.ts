@@ -619,9 +619,11 @@ export interface BillCertification {
    * (`certifiedValueBase`). Absent when the bill has no basis — the certified taxable then.
    */
   valueBase?: number;
+  /** Retention bill only: the claim as certified. It applies directly (no note). Absent = as raised. */
+  retentionClaimed?: number;
   deductions: BillDeduction[];
   totalDeduction: number;
-  /** Gross less deductions, rounded like a bill's net. */
+  /** Gross (plus a retention bill's claim) less deductions, rounded like a bill's net. */
   netAmount: number;
   remarks?: string;
   /** 1 on first record, +1 on every change. */
@@ -726,6 +728,12 @@ export interface Bill {
    */
   releasesRetention?: { deductionTypeId: string; rate: number | null };
   /**
+   * Retention bill only: the retention it claims back (`retention-bill.ts`). It was billed and taxed
+   * on the original invoices, so the bill carries no taxable or GST; its net is this less what the
+   * client deducts on it. Absent on other bills.
+   */
+  retentionClaimed?: number;
+  /**
    * The client's certified figures, once recorded (invoices and retention bills — never notes). Its
    * deductions replace the raised ones in every total below; a change of taxable or GST is settled
    * by a credit / debit note against the bill instead.
@@ -738,7 +746,7 @@ export interface Bill {
   totalDeduction: number;
   statutoryDeduction: number;
   retentionDeducted: number;
-  /** Gross less the effective deductions. */
+  /** Gross (plus a retention bill's effective claim) less the effective deductions. */
   netReceivable: number;
   /**
    * The raised deductions' total and the net they give. Equal to the two above until the bill is

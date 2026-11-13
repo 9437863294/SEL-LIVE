@@ -21,6 +21,7 @@ import { roundMoney, toPaise } from '../money.ts';
 import { projectDeductionTypes } from '../deduction-types.ts';
 import { baseBesidesNote, ruleHeadsOf, withNoteFigures, type BaseBesidesNote } from '../note-rules.ts';
 import { certifiedValueBase } from '../value-basis.ts';
+import { claimedGross, effectiveRetentionClaim, isRetentionBillOf, retentionBillProblem } from '../retention-bill.ts';
 import type { CertificationInput } from '../schemas';
 import type { Bill, BillCertification, BillTrackingConfig } from '../types';
 import { certificationAdvances, certificationBlocked } from '../workflow.ts';
@@ -109,6 +110,13 @@ export async function recordCertification(context: BtContext, billId: string, in
     const deductions = resolveDeductions(input.deductions, config, bill.projectId, { taxable: input.taxableAmount, gross: roundMoney(input.taxableAmount + gst.gstAmount), value: valueBase, gstType: gst.gstType, invoiceBase }, [...(previous?.deductions ?? []), ...(bill.deductions ?? [])]);
     const gross = grossAmount(input.taxableAmount, gst.gstAmount);
     const deducted = totalDeduction(deductions);
+    // A retention bill is certified for the retention it releases — no taxable or GST; the certified
+    // claim applies directly, as deductions do. Left out, the claim as raised.
+    const retentionClaimed = isRetentionBillOf(bill.transactionType, bill) ? roundMoney(input.retentionClaimed ?? effectiveRetentionClaim(bill)) : undefined;
+    if (retentionClaimed !== undefined) {
+      const problem = retentionBillProblem({ taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount, retentionClaimed, deductions: deductions.map((line) => ({ kind: line.kind, name: line.deductionTypeName })) }, { allowNil: true });
+      if (problem) throw new BtError(problem);
+    }
     revision = (previous?.revision ?? 0) + 1;
     const now = nowIso();
     const certification: BillCertification = clean({
@@ -119,9 +127,10 @@ export async function recordCertification(context: BtContext, billId: string, in
       ...gst,
       grossAmount: gross,
       valueBase,
+      retentionClaimed,
       deductions,
       totalDeduction: deducted,
-      netAmount: netReceivable(gross, deducted, config.settings.roundNetToRupee),
+      netAmount: netReceivable(claimedGross(gross, retentionClaimed ?? 0), deducted, config.settings.roundNetToRupee),
       remarks: input.remarks,
       revision,
       recordedBy: previous?.recordedBy ?? context.userId,

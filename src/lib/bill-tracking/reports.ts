@@ -527,7 +527,8 @@ const kindSum = (bill: Bill, kinds: readonly DeductionKind[]) => sumBy(effective
  * shortfalls under that heading, which double counts with "Difference").
  *
  * The deduction columns read a certified bill's certified deductions, as its net does, so a month's
- * taxable + GST − deductions still comes to its net.
+ * taxable + GST − deductions still comes to its net — plus what its retention bills claim, which
+ * carry no taxable or GST (`retention-bill.ts`) and show as "Retention raised".
  */
 export function monthlySummary(bills: readonly Bill[], financialYear: string, categories: readonly Pick<BillCategoryMaster, 'id' | 'summaryColumn'>[] = []): MonthlySummaryRow[] {
   const columnOf = (bill: Bill) => summaryColumnOf(bill.billCategory, categories);

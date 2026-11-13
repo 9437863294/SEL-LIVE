@@ -33,6 +33,7 @@ import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking
 import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { withNoteFigures, type BaseBesidesNote } from '@/lib/bill-tracking/note-rules';
 import { certifiedValueBase, describeTerms, valueHeads } from '@/lib/bill-tracking/value-basis';
+import { claimOfRetentionBill, claimedGross, isRetentionBillOf, isRetentionDeductionKind } from '@/lib/bill-tracking/retention-bill';
 import { GST_RATES } from '@/lib/statutory';
 import { GST_TYPE_LABELS, type Bill, type BillTrackingConfig, type GstType } from '@/lib/bill-tracking/types';
 import { cn } from '@/lib/utils';
@@ -55,6 +56,8 @@ interface FormState {
   certifiedBy: string;
   remarks: string;
   taxableAmount: string;
+  /** Retention bill only: the claim the client certified (`retention-bill.ts`) — in place of a taxable. */
+  retentionClaimed: string;
   gstRate: string;
   gstRateCustom: boolean;
   /** Component amounts typed from the certificate instead of computed from the rate. */
@@ -94,6 +97,28 @@ function splitTotal(total: number, type: GstChoice) {
  * split by the suggested type, its total divided between the parts so nothing changes until typed.
  */
 function fromRaised(bill: Bill, config: BillTrackingConfig, today: string, suggestedType: GstType): FormState {
+  // A retention bill is certified for the retention it releases: no taxable or GST (one saved before
+  // it had a claim of its own is read as one).
+  if (isRetentionBillOf(bill.transactionType, bill)) {
+    const raised = claimOfRetentionBill(bill);
+    return {
+      certifiedDate: today,
+      reference: '',
+      certifiedBy: '',
+      remarks: '',
+      taxableAmount: '0',
+      retentionClaimed: str(raised.claim),
+      gstType: 'none',
+      gstRate: str(config.settings.defaultGstRate),
+      gstRateCustom: false,
+      gstManual: false,
+      cgstAmount: '',
+      sgstAmount: '',
+      igstAmount: '',
+      legacyGstAmount: '0',
+      deductions: rowsFromDeductions(raised.lines, projectDeductionTypes(config, bill.projectId)),
+    };
+  }
   const legacy = !bill.gstType;
   const gstType: GstChoice = bill.gstType ?? (bill.gstAmount ? suggestedType : 'none');
   const rate = bill.gstPercent ?? impliedRate(bill.taxableAmount, bill.gstAmount) ?? config.settings.defaultGstRate;
@@ -104,6 +129,7 @@ function fromRaised(bill: Bill, config: BillTrackingConfig, today: string, sugge
     certifiedBy: '',
     remarks: '',
     taxableAmount: String(bill.taxableAmount),
+    retentionClaimed: '',
     gstType,
     gstRate: str(rate),
     gstRateCustom: !isStandardRate(rate),
@@ -122,12 +148,28 @@ function fromRaised(bill: Bill, config: BillTrackingConfig, today: string, sugge
 function fromCertification(bill: Bill, config: BillTrackingConfig): FormState {
   const certification = bill.certification as NonNullable<Bill['certification']>;
   const rate = certification.gstPercent ?? bill.gstPercent ?? impliedRate(certification.taxableAmount, certification.gstAmount) ?? config.settings.defaultGstRate;
+  // A retention bill certified before certifications carried a claim: read like the raised bill.
+  const certifiedClaim = isRetentionBillOf(bill.transactionType, bill)
+    ? claimOfRetentionBill({ retentionClaimed: certification.retentionClaimed, taxableAmount: certification.taxableAmount, deductions: certification.deductions })
+    : null;
+  if (certifiedClaim) {
+    return {
+      ...fromRaised(bill, config, certification.certifiedDate, 'none'),
+      certifiedDate: certification.certifiedDate,
+      reference: certification.reference ?? '',
+      certifiedBy: certification.certifiedBy ?? '',
+      remarks: certification.remarks ?? '',
+      retentionClaimed: str(certifiedClaim.claim ?? claimOfRetentionBill(bill).claim),
+      deductions: rowsFromDeductions(certifiedClaim.lines, projectDeductionTypes(config, bill.projectId)),
+    };
+  }
   return {
     certifiedDate: certification.certifiedDate,
     reference: certification.reference ?? '',
     certifiedBy: certification.certifiedBy ?? '',
     remarks: certification.remarks ?? '',
     taxableAmount: String(certification.taxableAmount),
+    retentionClaimed: '',
     gstType: certification.gstType ?? bill.gstType ?? 'legacy',
     gstRate: str(rate),
     gstRateCustom: !isStandardRate(rate),
@@ -168,11 +210,15 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const usedTypeIds = new Set([...(bill.deductions ?? []), ...(existing?.deductions ?? [])].map((line) => line.deductionTypeId));
   // The deduction heads as the bill’s project uses them: the master, with any settings of its own.
   const deductionTypes = projectDeductionTypes(config, bill.projectId);
-  const activeTypes = deductionTypes.filter((type) => type.active || usedTypeIds.has(type.id));
+  // A retention bill is certified for the retention it releases: no taxable, no GST, no retention lines.
+  const claimBill = isRetentionBillOf(bill.transactionType, bill);
+  const activeTypes = deductionTypes.filter((type) => (type.active || usedTypeIds.has(type.id)) && !(claimBill && isRetentionDeductionKind(type.kind)));
+  const raisedClaim = claimBill ? (claimOfRetentionBill(bill).claim ?? 0) : 0;
+  const claim = claimBill ? num(form.retentionClaimed) : undefined;
 
   /* ── GST: type, rate and components, as on the bill form ─────────────── */
-  const gstChoice = form.gstType;
-  const taxable = num(form.taxableAmount);
+  const gstChoice = claimBill ? 'none' : form.gstType;
+  const taxable = claimBill ? 0 : num(form.taxableAmount);
   const rate = gstChoice === 'none' || gstChoice === 'legacy' ? 0 : num(form.gstRate);
   const computedGst = splitGst(taxable, gstChoice === 'legacy' ? 'none' : gstChoice, rate);
   const components =
@@ -213,7 +259,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
   const valueBase = bill.valueBasis ? certifiedValueBase(bill, taxable) : undefined;
   const lines = computeDeductions(inputs, deductionTypes, { taxable, gross, value: valueBase, roundToRupee: config.settings.roundDeductionsToRupee, gstType: deductionGstType, invoiceBase: ruleBase });
   const deducted = totalDeduction(lines);
-  const net = netReceivable(gross, deducted, config.settings.roundNetToRupee);
+  const net = netReceivable(claimedGross(gross, claim ?? 0), deducted, config.settings.roundNetToRupee);
   const raisedByType = useMemo(() => new Map([...deductionsByType(bill.deductions ?? []).entries()].map(([id, entry]) => [id, entry.amount])), [bill.deductions]);
   const setRows = (update: (rows: DeductionRow[]) => DeductionRow[]) => setForm((current) => ({ ...current, deductions: update(current.deductions) }));
 
@@ -251,6 +297,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
           certifiedBy: form.certifiedBy,
           remarks: form.remarks,
           taxableAmount: taxable,
+          retentionClaimed: claim,
           gstType: gstChoice === 'legacy' ? undefined : gstChoice,
           gstPercent: gstChoice === 'legacy' || gstChoice === 'none' ? undefined : rate,
           gstAmount: gstTotal,
@@ -312,7 +359,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
         <dl className="grid grid-cols-2 border-t border-slate-200 sm:grid-cols-4">
           {(
             [
-              [bill.transactionType === 'debit_note' ? 'Debit note' : 'Invoice', <span key="ref" className="break-all">{reference}</span>],
+              [bill.transactionType === 'debit_note' ? 'Debit note' : claimBill ? 'Retention bill' : 'Invoice', <span key="ref" className="break-all">{reference}</span>],
               ['Bill date', dateText(bill.billDate)],
               ['Raised net', <Amount key="net" value={raised.net} signed />],
               ['Stage', <WorkflowStatusBadge key="stage" status={bill.workflowStatus} />],
@@ -375,6 +422,22 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
             left to right: taxable, each GST component, total GST and the gross they make, each a
             right-aligned rupee figure with the raised one under it.
           */}
+          {claimBill ? (
+            <FormSection step={2} title="Certified retention release" description="The retention the client releases. No taxable or GST — it applies directly, no note needed.">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <FormField label="Certified retention claimed *" htmlFor="certified-claim" hint={<RaisedHint raised={raisedClaim} value={claim ?? 0} />}>
+                    <RupeeInput id="certified-claim" required value={form.retentionClaimed} onChange={(value) => set('retentionClaimed', value)} />
+                  </FormField>
+                  <FormField label="Certified net" hint="The claim certified, less the deductions below.">
+                    <div className="flex h-10 items-center justify-end rounded-md border border-emerald-200 bg-emerald-50/50 px-3 text-sm font-bold tabular-nums text-slate-900">
+                      <Amount value={net} signed />
+                    </div>
+                  </FormField>
+                </div>
+              </div>
+            </FormSection>
+          ) : (
           <FormSection step={2} title="Certified amount & GST" description="Type over any figure to match the certificate. A taxable or GST that differs from the raised bill needs a credit / debit note.">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.7fr)]">
               <FormField label="SEL GST registration" hint="As on the raised bill.">
@@ -478,6 +541,7 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
               </div>
             </div>
           </FormSection>
+          )}
 
           <FormSection
             step={3}
@@ -519,9 +583,15 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
         <div className="space-y-3 xl:sticky xl:top-[calc(var(--app-header-offset,4rem)+1rem)] xl:self-start">
           <FormSection icon={Scale} title="Raised vs certified" description="Certified figure on the right; the raised one and the change beneath it." className="border-emerald-200" bodyClassName="px-4 pb-4 pt-1 text-sm">
             <div className="divide-y divide-slate-100">
-              <CompareRow label="Taxable" raised={raised.taxableAmount} certified={taxable} />
-              <CompareRow label="GST" raised={raised.gstAmount} certified={gstTotal} />
-              <CompareRow label="Gross" raised={raised.grossAmount} certified={gross} strong />
+              {claimBill ? (
+                <CompareRow label="Retention claimed" raised={raisedClaim} certified={claim ?? 0} strong />
+              ) : (
+                <>
+                  <CompareRow label="Taxable" raised={raised.taxableAmount} certified={taxable} />
+                  <CompareRow label="GST" raised={raised.gstAmount} certified={gstTotal} />
+                  <CompareRow label="Gross" raised={raised.grossAmount} certified={gross} strong />
+                </>
+              )}
               {/* More deducted means less to receive, so an increase here reads red. */}
               <CompareRow label="Deductions" raised={raised.totalDeduction} certified={deducted} inverse />
               <CompareRow label="Net receivable" raised={raised.net} certified={net} strong />
@@ -548,7 +618,10 @@ function CertificationFormInner({ detail }: { detail: Detail }) {
                 <>
                   <div className="font-semibold">No note needed</div>
                   <div className="mt-0.5">
-                    {invoiceAsRaised ? 'The certified taxable and GST are the same as the raised bill.' : notesCount ? 'The notes already raised cover the taxable and GST difference.' : 'The taxable and GST are within the amount tolerance of the raised bill.'}
+                    {claimBill
+                      ? 'A retention bill has no taxable or GST: the certified claim and deductions apply to it directly.'
+                      : invoiceAsRaised
+                        ? 'The certified taxable and GST are the same as the raised bill.' : notesCount ? 'The notes already raised cover the taxable and GST difference.' : 'The taxable and GST are within the amount tolerance of the raised bill.'}
                   </div>
                 </>
               )}

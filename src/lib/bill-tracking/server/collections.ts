@@ -29,6 +29,7 @@ import { dispatchNotificationServer } from '@/lib/notifications-server';
 import { bankCreditForCollection } from '../bank-posting.ts';
 import { deriveBillTotals, financialYearOf } from '../calculations.ts';
 import { subtractMoney, sumMoney, toPaise } from '../money.ts';
+import { releasedByReceipt } from '../retention-bill.ts';
 import type { CollectionInput } from '../schemas';
 import type { Bill, BillCollection, BillCollectionRef, BillTrackingConfig, CollectionStatus, RetentionRelease } from '../types';
 import { isNoteType, receiptBlockReason } from '../certification.ts';
@@ -130,9 +131,11 @@ async function readBills(transaction: Transaction, context: BtContext, billIds: 
 }
 
 /**
- * The release written when a receipt on a retention bill is verified. A bill that names the slab it
- * releases passes that slab (head, rate and the head's kind) on, so the release reduces that slab's
- * balance; otherwise it stays a project-level release of invoice retention.
+ * The release written when a receipt on a retention bill is verified: the receipt's share of the
+ * retention the bill claims (`releasedByReceipt` — the whole claim once the bill is paid in full, even
+ * when the client deducted something on it). A bill that names the slab it releases passes that slab
+ * (head, rate and the head's kind) on, so the release reduces that slab's balance; otherwise it stays
+ * a project-level release of invoice retention.
  */
 function retentionReleaseFor(context: BtContext, collection: StoredCollection, bill: StoredBill, amount: number, config: BillTrackingConfig): Omit<RetentionRelease, 'id'> & { organizationId: string } {
   const slab = bill.releasesRetention;
@@ -148,7 +151,7 @@ function retentionReleaseFor(context: BtContext, collection: StoredCollection, b
     deductionTypeId: slab?.deductionTypeId,
     rate: slab?.rate,
     releaseDate: collection.receiptDate,
-    amount,
+    amount: releasedByReceipt(bill, amount),
     remarks: `Receipt against retention bill ${bill.gstInvoiceNumber || bill.billSerialNumber || bill.id}`,
     status: 'active',
     createdBy: context.userId,

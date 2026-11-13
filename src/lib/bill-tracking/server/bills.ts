@@ -33,6 +33,7 @@ import { formatBillNumber } from '../defaults.ts';
 import { projectDeductionTypes } from '../deduction-types.ts';
 import { noteDeductionBase } from '../note-rules.ts';
 import { billValueBase, isAsIs, takesValueBasis, valueBasisProblem } from '../value-basis.ts';
+import { isRetentionBillOf, retentionBillProblem } from '../retention-bill.ts';
 import { roundMoney, toPaise } from '../money.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { BillInput, WorkflowAction } from '../schemas';
@@ -97,6 +98,7 @@ const AUDITED_FIELDS = [
   'retentionExpectedReleaseDate',
   'retentionDisputed',
   'releasesRetention',
+  'retentionClaimed',
 ] as const;
 
 export const calculationOptions = (config: BillTrackingConfig) => ({
@@ -287,8 +289,11 @@ export function composeBill({ context, input, config, project, client, existing,
     throw new BtError(`Sub category ${billType.name} is not enabled for ${project.name}. Enable it in Settings → Bill categories, or choose another.`);
   }
   const category = config.billCategories.find((entry) => entry.id === billType.categoryId);
-  const isRetentionBill = billType.isRetentionBill || input.transactionType === 'retention_bill';
+  const isRetentionBill = isRetentionBillOf(input.transactionType, billType);
   const releasesRetention = composeReleasesRetention(input, config, isRetentionBill);
+  // A retention bill claims back retention billed and taxed on the original invoices: its amount is
+  // the claim, never a taxable (`retention-bill.ts`). Every other bill claims nothing.
+  const retentionClaimed = isRetentionBill ? roundMoney(input.retentionClaimed ?? 0) : undefined;
 
   const derivedFy = financialYearOf(input.billDate);
   const financialYear = input.financialYear && input.financialYear !== derivedFy ? input.financialYear : derivedFy;
@@ -313,7 +318,7 @@ export function composeBill({ context, input, config, project, client, existing,
   }
   // An invoice's value basis (`value-basis.ts`): its taxable must be the share of the value it says, and
   // "% of Value" heads are taken of its V. Any other bill, or terms that change nothing, carry none.
-  const valueBasis = input.valueBasis && takesValueBasis(input.transactionType) && !isAsIs(input.valueBasis) ? clean({ ...input.valueBasis }) : undefined;
+  const valueBasis = input.valueBasis && takesValueBasis(input.transactionType) && !isRetentionBill && !isAsIs(input.valueBasis) ? clean({ ...input.valueBasis }) : undefined;
   if (valueBasis) {
     const problem = valueBasisProblem(valueBasis, input.taxableAmount);
     if (problem) throw new BtError(problem);
@@ -364,11 +369,16 @@ export function composeBill({ context, input, config, project, client, existing,
   // rule — it carries lines taken of the invoice plus its notes. A note raised to match the client's
   // certification carries none, so it counts there like any other.
   const outsideCertification = noteBase && !noteBase.rule.countInCertification && deductions.some((line) => line.invoiceBase !== undefined) ? true : undefined;
+  if (isRetentionBill) {
+    const problem = retentionBillProblem({ taxableAmount: input.taxableAmount, gstAmount: gst.gstAmount, retentionClaimed, deductions: deductions.map((line) => ({ kind: line.kind, name: line.deductionTypeName })) });
+    if (problem) throw new BtError(problem);
+  }
   const collections = existing?.collections ?? [];
   const totals = deriveBillTotals(
     {
       taxableAmount: input.taxableAmount,
       gstAmount: gst.gstAmount,
+      retentionClaimed,
       deductions,
       collections,
       paymentStatusOverride: existing?.paymentStatusOverride,
@@ -417,6 +427,8 @@ export function composeBill({ context, input, config, project, client, existing,
     billCategoryName: category?.name ?? existing?.billCategoryName,
     isRetentionBill,
     taxableAmount: roundMoney(input.taxableAmount),
+    // Always present (possibly undefined): `updateBill` rewrites the whole document.
+    retentionClaimed,
     // Always present (possibly undefined): `updateBill` rewrites the whole document, so a removed basis goes.
     valueBasis,
     valueBase,

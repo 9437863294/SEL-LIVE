@@ -46,6 +46,7 @@ import {
 } from '../import.ts';
 import { deductionsByType } from '../certification.ts';
 import { roundMoney, subtractMoney, sumMoney, toPaise } from '../money.ts';
+import { releasedByReceipt } from '../retention-bill.ts';
 import { buildSearchTokens } from '../reports.ts';
 import type { ImportPreviewInput } from '../schemas';
 import type {
@@ -123,10 +124,12 @@ function applyColumnOverrides(map: ImportColumnMap, overrides: Record<string, nu
  */
 const asRaised = (bill: Bill) => {
   const net = bill.raisedNetReceivable ?? bill.netReceivable;
+  // The sheet writes a retention bill's claim as a negative retention line: compare like with like.
+  const claim = bill.retentionClaimed ?? 0;
   return {
-    deduction: bill.raisedTotalDeduction ?? bill.totalDeduction,
+    deduction: sumMoney([bill.raisedTotalDeduction ?? bill.totalDeduction, -claim]),
     net,
-    retention: deductionsOfKind(bill.deductions ?? [], RETENTION_KINDS),
+    retention: sumMoney([deductionsOfKind(bill.deductions ?? [], RETENTION_KINDS), -claim]),
     shortfall: subtractMoney(net, bill.totalReceived),
   };
 };
@@ -179,11 +182,12 @@ const calculatedTotalsOf = (rows: readonly ParsedImportRow[]): ImportReconciliat
   taxable: sumMoney(rows.map((row) => row.taxableAmount)),
   gst: sumMoney(rows.map((row) => row.gstAmount)),
   gross: sumMoney(rows.map((row) => row.calculated.gross)),
-  deduction: sumMoney(rows.map((row) => row.calculated.totalDeduction)),
+  // Deductions and retention as the sheet adds them up: a retention bill's claim is its negative retention line there.
+  deduction: sumMoney(rows.map((row) => sumMoney([row.calculated.totalDeduction, -(row.retentionClaimed ?? 0)]))),
   net: sumMoney(rows.map((row) => row.calculated.net)),
   received: sumMoney(rows.map((row) => row.calculated.received)),
   outstanding: sumMoney(rows.map((row) => row.calculated.outstanding)),
-  retention: sumMoney(rows.flatMap((row) => row.deductions.filter((line) => line.code.startsWith('RET_')).map((line) => line.amount))),
+  retention: sumMoney(rows.flatMap((row) => [...row.deductions.filter((line) => line.code.startsWith('RET_')).map((line) => line.amount), -(row.retentionClaimed ?? 0)])),
 });
 
 interface Analysis {
@@ -471,7 +475,7 @@ function deductionsOf(row: StoredRow['parsed'], config: BillTrackingConfig): Bil
  * workflow, never the transaction type (SEL LIVE knows a debit note or an advance better than the
  * sheet does, and a certified invoice may not become a note). The GST parts follow the GST total.
  */
-const SOURCE_FIELDS = ['taxableAmount', 'gstAmount', 'gstType', 'cgstAmount', 'sgstAmount', 'igstAmount', 'deductions', 'gstInvoiceNumber', 'billSerialNumber', 'serialNumber', 'billDate', 'financialYear', 'description', 'billTypeId', 'billTypeName', 'billCategory', 'billCategoryName', 'isRetentionBill', 'legacyStatus', 'importedNetAmount', 'importedTotalDeduction', 'importedReceived', 'targetWeek', 'receivedWeek', 'currentStage', 'remarks', 'typeV2', 'taxableOrAdvance', 'netMismatch'] as const;
+const SOURCE_FIELDS = ['taxableAmount', 'retentionClaimed', 'gstAmount', 'gstType', 'cgstAmount', 'sgstAmount', 'igstAmount', 'deductions', 'gstInvoiceNumber', 'billSerialNumber', 'serialNumber', 'billDate', 'financialYear', 'description', 'billTypeId', 'billTypeName', 'billCategory', 'billCategoryName', 'isRetentionBill', 'legacyStatus', 'importedNetAmount', 'importedTotalDeduction', 'importedReceived', 'targetWeek', 'receivedWeek', 'currentStage', 'remarks', 'typeV2', 'taxableOrAdvance', 'netMismatch'] as const;
 
 export async function processImport(context: BtContext, jobId: string, chunkSize: number, retryFailed = false): Promise<{ job: BillImportJob; processed: number }> {
   context.require('Import', 'Import');
@@ -535,6 +539,8 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
         billCategoryName: category?.name,
         isRetentionBill: billType?.isRetentionBill ?? row.isRetentionBill,
         taxableAmount: row.taxableAmount,
+        // A retention bill's claim — the sheet's negative retention line, read as one (`parseImportRows`).
+        retentionClaimed: row.retentionClaimed,
         gstAmount: row.gstAmount,
         deductions,
         targetWeek: row.targetWeek,
@@ -591,6 +597,7 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
             ...('gstType' in update && update.gstType === undefined ? { gstType: FieldValue.delete() } : {}),
             ...(dropsBasis ? { valueBasis: FieldValue.delete(), valueBase: FieldValue.delete() } : {}),
             netMismatch: sourceValues.netMismatch ?? FieldValue.delete(),
+            retentionClaimed: sourceValues.retentionClaimed ?? FieldValue.delete(),
             ...derivedFields(totals),
             searchTokens: buildSearchTokens(merged),
             importJobId: jobId,
@@ -631,7 +638,7 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
         context.require('Bills', 'Add', project.id);
         const receiptDate = row.receiptDate ?? row.billDate as string;
         const collections = hasReceipt ? [clean({ collectionId: collectionRef.id, receiptDate, amount: row.calculated.received, status: 'verified' as const })] : [];
-        const totals = deriveBillTotals({ taxableAmount: row.taxableAmount, gstAmount: row.gstAmount, deductions, collections }, options);
+        const totals = deriveBillTotals({ taxableAmount: row.taxableAmount, gstAmount: row.gstAmount, retentionClaimed: row.retentionClaimed, deductions, collections }, options);
         const dueDate = computeDueDate(row.billDate as string, project, client, config);
         const bill: Omit<StoredBill, 'id'> = clean({
           ...sourceValues,
@@ -694,7 +701,7 @@ export async function processImport(context: BtContext, jobId: string, chunkSize
           if (bill.isRetentionBill) {
             transaction.set(firestore.collection(BT_COLLECTIONS.retention).doc(`${billId}-r`), clean({
               organizationId: context.organizationId, projectId: project.id, projectNameSnapshot: project.name, retentionBillId: billId, collectionId: collectionRef.id,
-              kind: 'retention_invoice', releaseDate: receiptDate, amount: row.calculated.received, remarks: `Imported receipt on retention bill (row ${row.row})`,
+              kind: 'retention_invoice', releaseDate: receiptDate, amount: releasedByReceipt({ retentionClaimed: row.retentionClaimed, netReceivable: totals.netReceivable }, row.calculated.received), remarks: `Imported receipt on retention bill (row ${row.row})`,
               status: 'active', createdBy: context.userId, createdByName: context.userName, createdAt: nowIso(),
             }));
           }

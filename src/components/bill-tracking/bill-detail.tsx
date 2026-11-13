@@ -76,6 +76,7 @@ import { availableActions, certificationBlocked, certificationNotDue, isAfterPay
 import { formatINR, subtractMoney, sumMoney, toPaise } from '@/lib/bill-tracking/money';
 import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { describeTerms, valueFigures } from '@/lib/bill-tracking/value-basis';
+import { claimOfRetentionBill, isRetentionBillOf } from '@/lib/bill-tracking/retention-bill';
 import { ValueBuildUp } from './value-basis-ui';
 import { billRetentionSlabs, formatRate, releaseSlabKey, retentionSource, type BillSlab, type LineBasis } from '@/lib/bill-tracking/retention';
 import {
@@ -435,6 +436,9 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
   // Once certified, the stored deduction total and net are the certified deductions' — what the bill
   // is paid — with the raised ones kept beside them (a bill stored before 2026-10-27 has one pair).
   const raisedNet = bill.raisedNetReceivable ?? bill.netReceivable;
+  // A retention bill's claim — the certified one once certified; one saved in an older layout read as a claim.
+  const claimBill = isRetentionBillOf(bill.transactionType, bill);
+  const shownClaim = claimBill ? (bill.certification?.retentionClaimed ?? claimOfRetentionBill(bill).claim ?? 0) : 0;
   const comparison = detail.certification;
 
   // Settings → Workflow: the stages in use and who may move this bill on (named people or permission holders).
@@ -585,14 +589,25 @@ function DetailBody({ detail, reload, tab, setTab }: { detail: Detail; reload: (
 
       <StatStrip
         items={[
-          {
-            label: 'Taxable',
-            value: <Amount value={bill.taxableAmount} signed />,
-            // A value basis: the share of the value billed (the build-up is on the Deductions tab).
-            hint: bill.valueBasis ? <span title={describeTerms(bill.valueBasis)}>{`${bill.valueBasis.taxableShare}% of ${formatINR(valueFigures(bill.valueBasis).discountedValue)}`}</span> : undefined,
-          },
-          { label: 'GST', value: <Amount value={bill.gstAmount} signed />, hint: bill.gstType === 'cgst-sgst' ? 'CGST + SGST' : bill.gstType === 'igst' ? 'IGST' : undefined },
-          { label: 'Gross', value: <Amount value={bill.grossAmount} signed /> },
+          // A retention bill claims retention back: no taxable or GST (`retention-bill.ts`).
+          ...(claimBill
+            ? [
+                {
+                  label: 'Retention claimed',
+                  value: <Amount value={shownClaim} signed />,
+                  hint: bill.retentionClaimed === undefined ? 'Saved in the old layout — edit and save the bill' : bill.certification ? 'As certified · no taxable or GST' : 'No taxable or GST',
+                },
+              ]
+            : [
+                {
+                  label: 'Taxable',
+                  value: <Amount value={bill.taxableAmount} signed />,
+                  // A value basis: the share of the value billed (the build-up is on the Deductions tab).
+                  hint: bill.valueBasis ? <span title={describeTerms(bill.valueBasis)}>{`${bill.valueBasis.taxableShare}% of ${formatINR(valueFigures(bill.valueBasis).discountedValue)}`}</span> : undefined,
+                },
+                { label: 'GST', value: <Amount value={bill.gstAmount} signed />, hint: bill.gstType === 'cgst-sgst' ? 'CGST + SGST' : bill.gstType === 'igst' ? 'IGST' : undefined },
+                { label: 'Gross', value: <Amount value={bill.grossAmount} signed /> },
+              ]),
           {
             label: 'Deduction',
             value: <Amount value={bill.totalDeduction} signed />,

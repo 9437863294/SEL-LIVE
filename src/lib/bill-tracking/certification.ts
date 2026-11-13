@@ -90,6 +90,8 @@ export interface ComparableFigures {
   sgstAmount: number;
   igstAmount: number;
   grossAmount: number;
+  /** A retention bill's claim (`retention-bill.ts`): no taxable or GST, so no note — it applies as certified. */
+  retentionClaimed: number;
   deductions: readonly BillDeduction[];
   totalDeduction: number;
   net: number;
@@ -102,6 +104,7 @@ export const raisedFigures = (bill: Bill): ComparableFigures => ({
   sgstAmount: bill.sgstAmount ?? 0,
   igstAmount: bill.igstAmount ?? 0,
   grossAmount: bill.grossAmount,
+  retentionClaimed: bill.retentionClaimed ?? 0,
   deductions: bill.deductions ?? [],
   // Once certified, `totalDeduction` / `netReceivable` are the certified deductions'; the raised ones
   // are stored beside them (a bill stored before they were still had the raised figures there).
@@ -116,6 +119,7 @@ export const certifiedFigures = (certification: BillCertification): ComparableFi
   sgstAmount: certification.sgstAmount ?? 0,
   igstAmount: certification.igstAmount ?? 0,
   grossAmount: certification.grossAmount,
+  retentionClaimed: certification.retentionClaimed ?? 0,
   deductions: certification.deductions ?? [],
   totalDeduction: certification.totalDeduction,
   net: certification.netAmount,
@@ -139,6 +143,7 @@ function notesFigures(live: readonly Bill[]): ComparableFigures {
     sgstAmount: sumBy(live, (note) => note.sgstAmount ?? 0),
     igstAmount: sumBy(live, (note) => note.igstAmount ?? 0),
     grossAmount: sumBy(live, (note) => note.grossAmount),
+    retentionClaimed: 0,
     deductions: live.flatMap((note) => note.deductions ?? []),
     totalDeduction: sumBy(live, (note) => note.totalDeduction),
     net: sumBy(live, (note) => note.netReceivable),
@@ -318,15 +323,27 @@ export function compareCertification(bill: Bill, notes: readonly Bill[], toleran
   // the GST total alone.
   const certifiedType = bill.certification?.gstType;
   const gstType = bill.gstType && (!certifiedType || certifiedType === bill.gstType) ? bill.gstType : undefined;
-  const lines: ComparisonLine[] = [line('taxable', 'Taxable', 'amount', (figures) => figures.taxableAmount)];
-  if (gstType === 'cgst-sgst') {
+  // A retention bill claims retention back: no taxable or GST to compare, only the claim — which the
+  // certification applies itself, as it does deductions (there is no GST document to correct).
+  const claims = toPaise(raised.retentionClaimed) !== 0 || (certified !== null && toPaise(certified.retentionClaimed) !== 0);
+  const valueless = claims && [raised, certified].every((figures) => !figures || (toPaise(figures.taxableAmount) === 0 && toPaise(figures.gstAmount) === 0));
+  const lines: ComparisonLine[] = valueless ? [] : [line('taxable', 'Taxable', 'amount', (figures) => figures.taxableAmount)];
+  if (valueless) {
+    // No taxable, GST or gross lines: they are nil on both sides.
+  } else if (gstType === 'cgst-sgst') {
     lines.push(line('cgst', `CGST${bill.cgstRate ? ` @ ${bill.cgstRate}%` : ''}`, 'amount', (figures) => figures.cgstAmount));
     lines.push(line('sgst', `SGST${bill.sgstRate ? ` @ ${bill.sgstRate}%` : ''}`, 'amount', (figures) => figures.sgstAmount));
   } else if (gstType === 'igst') {
     lines.push(line('igst', `IGST${bill.igstRate ? ` @ ${bill.igstRate}%` : ''}`, 'amount', (figures) => figures.igstAmount));
   }
-  lines.push(line('gst', 'GST', 'amount', (figures) => figures.gstAmount));
-  lines.push(line('gross', 'Gross', 'total', (figures) => figures.grossAmount));
+  if (!valueless) {
+    lines.push(line('gst', 'GST', 'amount', (figures) => figures.gstAmount));
+    lines.push(line('gross', 'Gross', 'total', (figures) => figures.grossAmount));
+  }
+  if (claims) {
+    const claimed = line('retentionClaimed', 'Retention claimed', 'amount', (figures) => figures.retentionClaimed);
+    lines.push({ ...claimed, settledBy: 'certification', pending: null, matched: true });
+  }
 
   // Every deduction type that appears anywhere, in the order first met (raised, then certified, then notes).
   const raisedByType = deductionsByType(raised.deductions);

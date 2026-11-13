@@ -372,6 +372,41 @@ plain amount. Every retention line is therefore placed in a **slab**: its head p
     the invoice plus its notes, which has one). A certified bill's raised lines, edited on the bill
     form, no longer count in the slabs: the certified ones do.
 
+### Retention bills (2026-11-13)
+
+A retention bill claims back retention the client deducted from earlier bills. That retention was
+billed — and taxed — on those bills, so a retention bill is not a new supply
+(`src/lib/bill-tracking/retention-bill.ts`).
+
+- **What it carries.** A **Retention claimed** amount (`retentionClaimed`) and nothing as taxable or
+  GST. Its net is the claim less whatever the client deducts on it (TDS, a penalty). It cannot
+  carry a retention line: it claims retention, it does not deduct it. The bill form shows the claim
+  in place of the Amount & GST step; the server refuses a retention bill with a taxable or GST, with
+  a retention line, or without a claim.
+- **Which bills.** A bill entered as a retention bill, or under a sub category marked as one
+  (Settings → Bill categories). A bill that charges new value under such a name — the rest of the
+  contract value, with GST — is an invoice: untick "retention bill" on its sub category.
+- **Totals.** Nothing in taxable or GST totals (dashboard, register, month-wise summary). The
+  month-wise summary's net includes the claim, shown as *Retention raised*.
+- **Retention held.** Raising the bill releases nothing. A receipt on it releases its share of the
+  claim (`releasedByReceipt`), so a bill paid in full releases the whole claim even when the client
+  deducted something on it.
+- **Certification.** The client certifies the claim (*Certified retention release*). Like deductions,
+  the certified claim applies directly — no note — so a short release leaves the rest held.
+- **Before 2026-11-13** a retention bill was saved one of two ways, both wrong:
+  - with the retention typed as its *taxable* (and GST added by default): counted as new taxable value;
+  - as the workbook writes it — taxable 0 and a *negative* retention line: counted off the
+    retention held when raised, and again when its receipts released it.
+
+  The importer now reads the workbook's negative line as the claim (the reconciliation still
+  compares with the sheet as the sheet adds it up). Opening an old retention bill in the bill form
+  proposes the claim from either layout, with a notice; save to store it.
+  `scripts/bill-tracking-recompute-totals.mjs` converts stored bills in the workbook layout (dry run
+  by default; `--write` with the owner's approval, after deploy) and lists those saved with a
+  taxable, to correct by hand.
+- **Tests.** `tests/bill-tracking-retention-bill.test.mjs`, and an import case in
+  `tests/bill-tracking-import.test.mjs`.
+
 ### Note rules: deductions of the invoice plus its notes
 
 Some supply invoices bill part of the value and carry no retention: a SUPPLY-60% or SUPPLY-70%

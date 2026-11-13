@@ -27,6 +27,7 @@
  */
 
 import { roundMoney, subtractMoney, sumBy, sumMoney, toPaise, withinTolerance } from './money.ts';
+import { claimedGross, effectiveRetentionClaim } from './retention-bill.ts';
 import type {
   AgeingBucketConfig,
   Bill,
@@ -131,8 +132,10 @@ export interface BillSourceValues {
   transactionType?: Bill['transactionType'];
   paymentStatusOverride?: Bill['paymentStatusOverride'];
   isDeleted?: boolean;
-  /** The client's certification, once recorded — its deductions replace the raised ones (`effectiveDeductions`). */
-  certification?: Pick<BillCertification, 'deductions'> | null;
+  /** Retention bill only: the retention it claims back — its amount, in place of a taxable (`retention-bill.ts`). */
+  retentionClaimed?: number | null;
+  /** The client's certification, once recorded — its deductions (and a retention bill's claim) replace the raised ones (`effectiveDeductions`). */
+  certification?: Pick<BillCertification, 'deductions' | 'retentionClaimed'> | null;
 }
 
 /**
@@ -177,7 +180,10 @@ export function deriveBillTotals(source: BillSourceValues, options: CalculationO
   const deductions = effectiveDeductions(source);
   const deduction = totalDeduction(deductions);
   const raisedDeduction = totalDeduction(source.deductions ?? []);
-  const net = netReceivable(gross, deduction, options.roundNetToRupee);
+  // A retention bill has no taxable or GST: it is paid the retention it claims (the certified claim
+  // once certified) less what the client deducts on it. Every other bill claims nothing.
+  const net = netReceivable(claimedGross(gross, effectiveRetentionClaim(source)), deduction, options.roundNetToRupee);
+  const raisedGross = claimedGross(gross, roundMoney(source.retentionClaimed ?? 0));
   const received = totalReceived(source.collections);
   const shortfall = subtractMoney(net, received);
   const computed = computePaymentStatus(net, received, tolerance);
@@ -194,7 +200,7 @@ export function deriveBillTotals(source: BillSourceValues, options: CalculationO
     retentionDeducted: deductionsOfKind(deductions, RETENTION_KINDS),
     netReceivable: net,
     raisedTotalDeduction: raisedDeduction,
-    raisedNetReceivable: netReceivable(gross, raisedDeduction, options.roundNetToRupee),
+    raisedNetReceivable: netReceivable(raisedGross, raisedDeduction, options.roundNetToRupee),
     totalReceived: received,
     outstandingAmount: roundMoney(outstanding),
     shortfallSurplus: shortfall,
@@ -539,7 +545,7 @@ export const resubmitTarget = (returnedFrom: BillWorkflowStatus | undefined): Bi
 };
 
 /** The bill fields that lock at the amount-lock step: changing one needs Edit After Approval and a reason. */
-export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'valueBasis', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId', 'adjustsNoteId'] as const;
+export const PROTECTED_BILL_FIELDS = ['taxableAmount', 'retentionClaimed', 'valueBasis', 'gstType', 'gstAmount', 'cgstAmount', 'sgstAmount', 'igstAmount', 'gstRegistrationId', 'deductions', 'gstInvoiceNumber', 'billDate', 'projectId', 'transactionType', 'againstBillId', 'adjustsNoteId'] as const;
 export type ProtectedBillField = (typeof PROTECTED_BILL_FIELDS)[number];
 
 /** A deduction line as the lock sees it: what it deducts, never its name, remarks or the order of its keys. */
@@ -564,7 +570,7 @@ export function protectedChanges(before: Partial<Pick<Bill, ProtectedBillField>>
     if (key === 'deductions') return lines(before.deductions) !== lines(after.deductions);
     if (key === 'valueBasis') return basis(before.valueBasis) !== basis(after.valueBasis);
     if (key === 'gstType') return gstType(before) !== gstType(after);
-    if (key === 'taxableAmount' || key === 'gstAmount' || key === 'cgstAmount' || key === 'sgstAmount' || key === 'igstAmount') return money(before[key]) !== money(after[key]);
+    if (key === 'taxableAmount' || key === 'retentionClaimed' || key === 'gstAmount' || key === 'cgstAmount' || key === 'sgstAmount' || key === 'igstAmount') return money(before[key]) !== money(after[key]);
     return text(before[key]) !== text(after[key]);
   });
 }

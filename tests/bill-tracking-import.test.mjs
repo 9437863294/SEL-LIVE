@@ -234,6 +234,26 @@ test('duplicates: exact, possible and statement lines that are not duplicates', 
   assert.equal(classifyDuplicate(rows[0], [{ ...existing[0], importFingerprint: rows[0].fingerprint }], []).kind, 'exact');
 });
 
+test('a retention bill’s negative retention line is read as its claim; the sheet totals still match', () => {
+  const sheet = grid(
+    row({ 'Sl. No.': 75, Date: { date: '2026-08-13' }, 'Project Name': 'BAGWWADDI,VIJAPURA & TARAVI', 'Type of Bill Status': 'SUPPLY-20%', 'Taxable Amount': 0, 'RETENTION AGAINST INVOICE': -1148064, 'Income TDS': 1000, 'Total Deduction': -1147064, 'Net Amount': 1147064 }),
+    row({ 'Sl. No.': 76, Date: { date: '2026-08-14' }, 'Project Name': 'BAGWWADDI,VIJAPURA & TARAVI', 'Type of Bill Status': 'SUPPLY-10%', 'Taxable Amount': 50000, 'GST Amount': 9000 }),
+  );
+  const { rows } = parseImportRows(sheet, readSheetLayout(sheet), masters);
+  const [claim, taxed] = rows;
+  assert.equal(claim.transactionType, 'retention_bill');
+  assert.equal(claim.retentionClaimed, 1148064);
+  assert.deepEqual(claim.deductions.map((line) => [line.code, line.amount]), [['ITDS', 1000]], 'the claim is not a deduction');
+  assert.deepEqual([claim.calculated.totalDeduction, claim.calculated.net], [1000, 1147064]);
+  assert.ok(!claim.issues.some((issue) => issue.code === 'deduction_mismatch' || issue.code === 'net_mismatch'), 'checked against the sheet as the sheet adds it up');
+  // Excel totals as the sheet adds them up: the claim is its negative retention line there.
+  const totals = excelTotals([claim]);
+  assert.deepEqual([totals.deduction, totals.retention, totals.net], [-1147064, -1148064, 1147064]);
+  // A retention bill with a taxable is flagged: retention bills carry none.
+  assert.ok(taxed.issues.some((issue) => issue.code === 'retention_bill_taxable'));
+  assert.equal(taxed.retentionClaimed, undefined);
+});
+
 test('excel totals use the sheet’s own computed columns', () => {
   const sheet = grid(row({ Date: { date: '2026-04-24' }, 'Project Name': 'BAGWWADDI,VIJAPURA & TARAVI', 'Taxable Amount': 100, 'GST Amount': 18, 'Total Deduction': 0, 'Net Amount': 120, 'Net Amount Received': 20, 'Shortfall/ Surplus (Difference in Net Amount)': 100 }));
   const totals = excelTotals(parseImportRows(sheet, readSheetLayout(sheet), masters).rows);

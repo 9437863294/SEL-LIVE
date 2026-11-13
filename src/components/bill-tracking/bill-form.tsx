@@ -38,6 +38,7 @@ import { projectDeductionTypes } from '@/lib/bill-tracking/deduction-types';
 import { VALUE_BASIS_AS_IS, billValueBase, isAsIs, takesValueBasis, taxableFromValue, termsProblem, valueBasisRuleFor, valueFromTaxable, valueHeads } from '@/lib/bill-tracking/value-basis';
 import { noteDeductionBase, type GroupNote } from '@/lib/bill-tracking/note-rules';
 import { formatRate } from '@/lib/bill-tracking/retention';
+import { claimOfRetentionBill, isRetentionBillOf } from '@/lib/bill-tracking/retention-bill';
 import { GST_RATES } from '@/lib/statutory';
 import { cn } from '@/lib/utils';
 import { GST_TYPE_LABELS, TRANSACTION_TYPE_LABELS, TRANSACTION_TYPES, type Bill, type BillDeduction, type BillTrackingConfig, type BillTransactionType, type BillValueBasis, type GstType, type ValueBasisTerms } from '@/lib/bill-tracking/types';
@@ -123,6 +124,8 @@ interface FormState {
   releasesTypeId: string;
   /** …and the rate it was held at; '' = the head's fixed amounts. */
   releasesRate: string;
+  /** Retention bill only: the retention it claims back — in place of a taxable (`retention-bill.ts`). */
+  retentionClaimed: string;
   taxableOrAdvance: string;
   changeReason: string;
 }
@@ -222,8 +225,18 @@ function withBasisRule(state: FormState, config: BillTrackingConfig): FormState 
   });
 }
 
+/**
+ * A retention bill's claim as the form starts it. One saved before retention bills had a claim of
+ * their own is read as one (`claimOfRetentionBill`): the workbook's negative retention line, or a
+ * taxable typed for the retention, becomes the claim — shown, so it is checked before saving.
+ */
+const retentionClaimOf = (bill: Bill): ReturnType<typeof claimOfRetentionBill<BillDeduction>> =>
+  isRetentionBillOf(bill.transactionType, bill) ? claimOfRetentionBill(bill) : { claim: undefined, lines: bill.deductions ?? [], from: null };
+
 function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups, 'projects' | 'gstSetup'>): FormState {
   const project = lookups.projects.find((entry) => entry.id === bill.projectId);
+  const retention = retentionClaimOf(bill);
+  const claimBill = isRetentionBillOf(bill.transactionType, bill);
   return {
     billSerialNumber: bill.billSerialNumber ?? '',
     autoNumber: false,
@@ -247,12 +260,13 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     description: bill.description ?? '',
     categoryId: config.billTypes.find((type) => type.id === bill.billTypeId)?.categoryId ?? bill.billCategory ?? '',
     billTypeId: bill.billTypeId ?? '',
-    taxableAmount: String(bill.taxableAmount ?? ''),
+    // A retention bill has no taxable or GST: what was typed there earlier is its claim now.
+    taxableAmount: claimBill ? '0' : String(bill.taxableAmount ?? ''),
     // The basis as saved — never the rule's terms now, so an edit leaves the bill's figures as issued.
     ...basisFields(bill.valueBasis),
     // A bill saved without a GST type keeps its single figure (none, for a non-GST row): never the
     // suggested type and rate, which would change it on a save that only meant to edit remarks.
-    gstType: bill.gstType ?? 'legacy',
+    gstType: claimBill ? 'none' : (bill.gstType ?? 'legacy'),
     gstRate: str(bill.gstPercent ?? config.settings.defaultGstRate),
     // The registration that raised it stays chosen (if still set up), so a save keeps it.
     gstRegistrationId: bill.gstRegistrationId && lookups.gstSetup?.registrations.some((entry) => entry.id === bill.gstRegistrationId) ? bill.gstRegistrationId : '',
@@ -261,8 +275,8 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     cgstAmount: str(bill.cgstAmount),
     sgstAmount: str(bill.sgstAmount),
     igstAmount: str(bill.igstAmount),
-    legacyGstAmount: String(bill.gstAmount ?? 0),
-    deductions: rowsFromDeductions(bill.deductions ?? [], projectDeductionTypes(config, bill.projectId)),
+    legacyGstAmount: claimBill ? '0' : String(bill.gstAmount ?? 0),
+    deductions: rowsFromDeductions(retention.lines, projectDeductionTypes(config, bill.projectId)),
     targetWeek: bill.targetWeek ?? '',
     collectionOwnerId: bill.collectionOwnerId ?? '',
     currentStage: bill.currentStage ?? '',
@@ -271,6 +285,7 @@ function fromBill(bill: Bill, config: BillTrackingConfig, lookups: Pick<Lookups,
     // Loaded so a save sends it back — an update rewrites the whole bill.
     releasesTypeId: bill.releasesRetention?.deductionTypeId ?? '',
     releasesRate: str(bill.releasesRetention?.rate ?? undefined),
+    retentionClaimed: str(retention.claim),
     taxableOrAdvance: bill.taxableOrAdvance ?? '',
     changeReason: '',
   };
@@ -393,6 +408,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
           retentionExpectedReleaseDate: '',
           releasesTypeId: '',
           releasesRate: '',
+          retentionClaimed: '',
           taxableOrAdvance: '',
           changeReason: '',
         };
@@ -436,9 +452,18 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       });
     });
 
+  /* ── retention bill: a claim, not a taxable ──────────────────────────── */
+  // The server's own test: the sub category is a retention bill, or the bill is entered as one.
+  const billType = config.billTypes.find((type) => type.id === form.billTypeId);
+  const isRetention = isRetentionBillOf(form.transactionType, billType);
+  // It claims back retention billed and taxed on the original invoices: no taxable, no GST.
+  const retentionClaimed = isRetention ? roundMoney(num(form.retentionClaimed)) : undefined;
+  // How a retention bill saved before it had a claim was read (said above the claim, to be checked).
+  const claimSource = existing && isRetention && existing.retentionClaimed === undefined ? retentionClaimOf(existing).from : null;
+
   /* ── value basis (invoices) ───────────────────────────────────────────── */
-  const taxable = num(form.taxableAmount);
-  const basisAllowed = takesValueBasis(form.transactionType);
+  const taxable = isRetention ? 0 : num(form.taxableAmount);
+  const basisAllowed = takesValueBasis(form.transactionType) && !isRetention;
   const termsNow = basisTerms(form);
   const termsWrong = termsProblem(termsNow);
   const basisProblemText = form.basisOn && basisAllowed ? (termsWrong ? `Value basis: ${termsWrong}` : num(form.basisExecuted) > 0 ? null : 'Value basis: enter the value of the work executed (100%), or the taxable.') : null;
@@ -451,7 +476,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
 
   /* ── GST ──────────────────────────────────────────────────────────────── */
   const suggestion = suggestGst(lookups.gstSetup, { projectId: form.projectId || undefined, chosenRegistrationId: form.gstRegistrationId || undefined, clientGstin: client?.gstin });
-  const gstChoice: GstChoice = form.gstType || suggestion.gstType;
+  const gstChoice: GstChoice = isRetention ? 'none' : form.gstType || suggestion.gstType;
   const rate = gstChoice === 'none' || gstChoice === 'legacy' ? 0 : num(form.gstRate);
   const computedGst = splitGst(taxable, gstChoice === 'legacy' ? 'none' : gstChoice, rate);
   const components =
@@ -530,7 +555,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   // deductions apply instead, so the net and outstanding previewed follow them, as the server's will.
   const certification = existing?.certification;
   const totals = deriveBillTotals(
-    { taxableAmount: taxable, gstAmount: gstTotal, deductions: deductionLines, collections: existing?.collections ?? [], certification, paymentStatusOverride: existing?.paymentStatusOverride },
+    { taxableAmount: taxable, gstAmount: gstTotal, retentionClaimed, deductions: deductionLines, collections: existing?.collections ?? [], certification, paymentStatusOverride: existing?.paymentStatusOverride },
     { tolerance: config.settings.tolerance, roundNetToRupee: config.settings.roundNetToRupee },
   );
 
@@ -589,9 +614,6 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   };
 
   /* ── retention bill: the retention it releases ────────────────────────── */
-  // The server's own test: the sub category is a retention bill, or the bill is entered as one.
-  const billType = config.billTypes.find((type) => type.id === form.billTypeId);
-  const isRetention = form.transactionType === 'retention_bill' || Boolean(billType?.isRetentionBill);
   const savedReleaseTypeId = existing?.releasesRetention?.deductionTypeId;
   const retentionTypes = deductionTypes.filter((type) => isRetentionKind(type.kind) && (type.active || type.id === savedReleaseTypeId)).sort((a, b) => a.sequence - b.sequence);
   const releaseType = deductionTypes.find((type) => type.id === form.releasesTypeId);
@@ -615,6 +637,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
   const locked = Boolean(existing && amountsLocked(existing, config.settings));
   const preview = {
     taxableAmount: taxable,
+    retentionClaimed,
     valueBasis,
     gstType: gstChoice === 'legacy' ? undefined : gstChoice,
     gstAmount: gstTotal,
@@ -644,6 +667,10 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       setSaveError(basisProblemText);
       return;
     }
+    if (isRetention && !(toPaise(retentionClaimed ?? 0) > 0)) {
+      setSaveError('Enter the retention this bill claims back (Retention claimed).');
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     const body = {
@@ -666,6 +693,7 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
       description: form.description,
       billTypeId: form.billTypeId,
       taxableAmount: taxable,
+      retentionClaimed,
       valueBasis,
       gstType: gstChoice === 'legacy' ? undefined : gstChoice,
       gstPercent: gstChoice === 'legacy' ? undefined : rate,
@@ -1019,7 +1047,45 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
             reads them, left to right: taxable, each GST component, total GST and the gross they
             make, each a right-aligned rupee figure.
           */}
-          <FormSection step={3} title="Amount & GST" description="The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the invoice.">
+          <FormSection
+            step={3}
+            title={isRetention ? 'Retention claimed' : 'Amount & GST'}
+            description={isRetention ? 'No taxable or GST: the retention was billed and taxed on the original invoices.' : 'The registration and client GSTIN decide CGST + SGST or IGST; type over a component to match the invoice.'}
+          >
+            {isRetention ? (
+              <div className="space-y-3">
+                {claimSource === 'taxable' && existing ? (
+                  <Notice tone="amber" title="Check the amount claimed">
+                    This retention bill was saved with a taxable of {formatINR(existing.taxableAmount)}
+                    {toPaise(existing.gstAmount) !== 0 ? ` and GST of ${formatINR(existing.gstAmount)}` : ''}, which counted it as new taxable value. A retention bill carries neither, so the taxable is taken as the retention claimed — correct it if it differs, then save.
+                  </Notice>
+                ) : claimSource === 'lines' && existing ? (
+                  <Notice tone="amber" title="Check the amount claimed">
+                    This retention bill was saved as a negative retention deduction (the workbook’s layout), which counted the retention off twice — once here and again on receipt. It is now the retention claimed; save to store it that way.
+                  </Notice>
+                ) : null}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+                  <div className={AMOUNT_GRID.other}>
+                    {field(
+                      'Retention claimed *',
+                      <RupeeInput id="retention-claimed" required aria-label="Retention claimed" value={form.retentionClaimed} onChange={(value) => set('retentionClaimed', value)} />,
+                      undefined,
+                      'retention-claimed',
+                      'medium',
+                      'The retention the client deducted from earlier bills that this bill claims back. It adds nothing to taxable or GST; receipts on this bill release it.',
+                    )}
+                    {field(
+                      certification ? 'Net as raised' : 'Net receivable',
+                      <div className="flex h-10 items-center justify-end rounded-md border border-emerald-200 bg-emerald-50/50 px-3 text-sm font-bold tabular-nums text-slate-900">
+                        <Amount value={totals.raisedNetReceivable} signed />
+                      </div>,
+                      'Claimed less the deductions below.',
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
               <div className={FORM_GRID}>
                 {field(
                   'SEL GST registration',
@@ -1164,6 +1230,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
                   )}
                 </div>
               </div>
+              </>
+            )}
           </FormSection>
 
           <FormSection
@@ -1196,7 +1264,8 @@ function BillFormInner({ existing, prefill }: { existing?: Bill; prefill?: { not
               rows={form.deductions}
               setRows={setDeductionRows}
               lines={deductionLines}
-              activeTypes={activeTypes}
+              // A retention bill claims retention back; it never deducts retention.
+              activeTypes={isRetention ? activeTypes.filter((type) => !isRetentionKind(type.kind)) : activeTypes}
               deductionTypes={deductionTypes}
               gstType={deductionGstType}
               totalDeduction={totals.raisedTotalDeduction}
