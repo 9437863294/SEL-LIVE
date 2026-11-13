@@ -20,6 +20,13 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // The build's static worker ("Collecting page data", then prerendering) loads every route's server
+  // code — ~1,000 pages and API routes — in one process. With source maps on there, Node also reads
+  // and keeps a source map for each file it loads, and from 2026-11-12 the App Hosting build machine
+  // ran out of memory at that step (process Killed, exit 137) and no deploy went out. Off, only build-
+  // time error traces lose their original file and line; the deployed app is unaffected.
+  // (node_modules/next/dist/docs/01-app/02-guides/memory-usage.md › Disable source maps)
+  enablePrerenderSourceMaps: false,
   async redirects() {
     return [
       // Driver Management held copies of other pages. Each now lives in one place; these keep old
