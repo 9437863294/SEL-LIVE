@@ -18,6 +18,7 @@ import {
   formatQtyAt,
   formatRangeCompact,
 } from "@/components/project-management/dpr/dpr-shell";
+import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
 import type { ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { SectionHeader } from "@/components/shared/page-header";
@@ -161,8 +162,8 @@ export function ProjectionLookAhead({
                       <TableCell className="truncate text-sm font-semibold tabular-nums" title={item.boqSlNo}>
                         {item.boqSlNo || "—"}
                       </TableCell>
-                      <TableCell className="truncate text-sm" title={item.description}>
-                        {item.description || "BOQ line"}
+                      <TableCell className="text-sm" title={breakdownTitle(item)}>
+                        <DprIndentedText text={item.description} depth={item.depth ?? 0} />
                       </TableCell>
                       <TableCell className="truncate text-sm" title={item.unit}>
                         {item.unit || "—"}

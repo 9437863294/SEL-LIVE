@@ -30,6 +30,7 @@ import {
   type DprPlanReader,
   type DprTarget,
 } from "./project-management-dpr.ts";
+import type { DprBreakdown } from "./project-management-dpr-breakdown.ts";
 import {
   civilBoqKey,
   readBoqSlNo,
@@ -45,12 +46,55 @@ import {
  * spread, shorter period owning overlapped days) the figure matches Daily Progress exactly; without
  * it, projections are spread evenly over calendar days and overlaps add up.
  */
+/**
+ * A Daily Progress work-breakdown sub-item, as the part of its BOQ line it stands for: a quantity
+ * booked on the sub-item × `factor` is the equivalent quantity of the BOQ line (its share of the
+ * line ÷ its own quantity × the line's quantity). So sub-item progress lands on its line here, in
+ * the line's unit, and is priced at the line's rate.
+ */
+export interface CivilSubItemLink {
+  boqItemId: string;
+  factor: number;
+}
+export type CivilSubItemLinks = ReadonlyMap<string, CivilSubItemLink>;
+
+/** The link for every leaf sub-item in a work breakdown. */
+export function civilSubItemLinks(breakdown: DprBreakdown): Map<string, CivilSubItemLink> {
+  const links = new Map<string, CivilSubItemLink>();
+  for (const leaf of breakdown.leaves) {
+    if (leaf.kind !== "sub") continue;
+    const lineQty = breakdown.nodes.get(leaf.boqItemId)?.qty ?? 0;
+    links.set(leaf.id, {
+      boqItemId: leaf.boqItemId,
+      factor: leaf.qty > 0 ? (leaf.shareOfLine * lineQty) / leaf.qty : 0,
+    });
+  }
+  return links;
+}
+
+/** A quantity booked against `id`, carried onto its BOQ line when `id` is a sub-item. */
+const toLineQty = (id: string, qty: number, links?: CivilSubItemLinks): [string, number] => {
+  const link = links?.get(id);
+  return link ? [link.boqItemId, qty * link.factor] : [id, qty];
+};
+
 const civilPlanned = (
   targets: readonly DprTarget[],
   range: DprDateRange,
   plan: DprPlanReader | undefined,
-): Map<string, number> =>
-  plan ? plan.byItemInRange(range, { scope: "Civil" }) : plannedQtyByBoqItem(targets, range, { scope: "Civil" });
+  links?: CivilSubItemLinks,
+): Map<string, number> => {
+  const planned = plan
+    ? plan.byItemInRange(range, { scope: "Civil" })
+    : plannedQtyByBoqItem(targets, range, { scope: "Civil" });
+  if (!links || links.size === 0) return planned;
+  const onLines = new Map<string, number>();
+  for (const [id, qty] of planned) {
+    const [lineId, lineQty] = toLineQty(id, qty, links);
+    onLines.set(lineId, (onLines.get(lineId) ?? 0) + lineQty);
+  }
+  return onLines;
+};
 
 /** A civil BOQ line, priced, with the composite key JMC measurement items join on. */
 export interface CivilBoqLine {
@@ -175,15 +219,17 @@ export interface CivilProgressPoint {
 const share = (value: number, total: number): number | null =>
   total > 0 ? Math.round((value / total) * 1000) / 10 : null;
 
-/** Σ of a DPR entry's lines, priced at each line's BOQ rate. */
+/** Σ of a DPR entry's lines, priced at each line's BOQ rate (a sub-item at its line's). */
 const entryValue = (
   entry: DprEntry,
   rates: Map<string, number>,
   pick: (line: DprEntry["lines"][number]) => number,
+  links?: CivilSubItemLinks,
 ): number => {
   let total = 0;
   for (const line of entry.lines ?? []) {
-    total += pick(line) * (rates.get(line.boqItemId) ?? 0);
+    const [lineId, lineQty] = toLineQty(line.boqItemId, pick(line), links);
+    total += lineQty * (rates.get(lineId) ?? 0);
   }
   return total;
 };
@@ -204,8 +250,11 @@ export function buildCivilProgressCurve(input: {
   includeDrafts?: boolean;
   /** The DPR planning engine, so planned value agrees with Daily Progress. */
   plan?: DprPlanReader;
+  /** Work-breakdown sub-items, so their progress counts on their BOQ lines. */
+  subItemLinks?: CivilSubItemLinks;
 }): CivilProgressPoint[] {
-  const { lines, entries, targets, certifiedEvents, periodType, range, includeDrafts, plan } = input;
+  const { lines, entries, targets, certifiedEvents, periodType, range, includeDrafts, plan, subItemLinks } =
+    input;
   const total = civilBoqValue(lines);
   const rates = rateByBoqItemId(lines);
   const buckets = bucketsInRange(periodType, range.startDate, range.endDate);
@@ -220,12 +269,12 @@ export function buildCivilProgressCurve(input: {
     let actualValue = 0;
     for (const entry of civilEntries) {
       if (!isDateInRange(entry.date, toDate)) continue;
-      actualValue += entryValue(entry, rates, (line) => dprNumber(line.actualQty));
+      actualValue += entryValue(entry, rates, (line) => dprNumber(line.actualQty), subItemLinks);
     }
 
     // Projections are pro-rated by day, so a month's plan contributes only its elapsed share.
     let plannedValue = 0;
-    const plannedQty = civilPlanned(targets, { startDate: "", endDate: upTo }, plan);
+    const plannedQty = civilPlanned(targets, { startDate: "", endDate: upTo }, plan, subItemLinks);
     for (const [boqItemId, qty] of plannedQty) {
       plannedValue += qty * (rates.get(boqItemId) ?? 0);
     }
@@ -279,8 +328,9 @@ export function buildCivilHeadline(input: {
   today: string;
   includeDrafts?: boolean;
   plan?: DprPlanReader;
+  subItemLinks?: CivilSubItemLinks;
 }): CivilHeadline {
-  const { lines, entries, targets, jmcEntries, today, includeDrafts, plan } = input;
+  const { lines, entries, targets, jmcEntries, today, includeDrafts, plan, subItemLinks } = input;
   const boqValue = civilBoqValue(lines);
   const rates = rateByBoqItemId(lines);
   const toToday: DprDateRange = { startDate: "", endDate: today };
@@ -288,11 +338,11 @@ export function buildCivilHeadline(input: {
   let actualValue = 0;
   for (const entry of filterDprEntries(entries, { scope: "Civil", includeDrafts })) {
     if (!isDateInRange(entry.date, toToday)) continue;
-    actualValue += entryValue(entry, rates, (line) => dprNumber(line.actualQty));
+    actualValue += entryValue(entry, rates, (line) => dprNumber(line.actualQty), subItemLinks);
   }
 
   let plannedToDateValue = 0;
-  for (const [boqItemId, qty] of civilPlanned(targets, toToday, plan)) {
+  for (const [boqItemId, qty] of civilPlanned(targets, toToday, plan, subItemLinks)) {
     plannedToDateValue += qty * (rates.get(boqItemId) ?? 0);
   }
 
@@ -392,22 +442,23 @@ export function buildCivilWorkItems(input: {
   today: string;
   includeDrafts?: boolean;
   plan?: DprPlanReader;
+  subItemLinks?: CivilSubItemLinks;
 }): CivilWorkItem[] {
-  const { lines, entries, targets, jmcEntries, workOrders, today, includeDrafts, plan } = input;
+  const { lines, entries, targets, jmcEntries, workOrders, today, includeDrafts, plan, subItemLinks } =
+    input;
   const toToday: DprDateRange = { startDate: "", endDate: today };
 
   const doneByItem = new Map<string, number>();
   for (const entry of filterDprEntries(entries, { scope: "Civil", includeDrafts })) {
     if (!isDateInRange(entry.date, toToday)) continue;
     for (const line of entry.lines ?? []) {
-      doneByItem.set(
-        line.boqItemId,
-        (doneByItem.get(line.boqItemId) ?? 0) + dprNumber(line.actualQty),
-      );
+      // A sub-item's quantity lands on its BOQ line, in the line's unit.
+      const [lineId, lineQty] = toLineQty(line.boqItemId, dprNumber(line.actualQty), subItemLinks);
+      doneByItem.set(lineId, (doneByItem.get(lineId) ?? 0) + lineQty);
     }
   }
 
-  const plannedByItem = civilPlanned(targets, toToday, plan);
+  const plannedByItem = civilPlanned(targets, toToday, plan, subItemLinks);
 
   // JMC items join on the composite key, not on a boqItemId.
   const certifiedByKey = new Map<string, number>();

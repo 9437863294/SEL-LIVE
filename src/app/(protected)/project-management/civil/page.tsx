@@ -93,6 +93,11 @@ import {
   type DprSettings,
 } from "@/lib/project-management-dpr-plan";
 import {
+  DPR_SUB_ITEM_COLLECTION,
+  buildDprBreakdown,
+  type DprSubItem,
+} from "@/lib/project-management-dpr-breakdown";
+import {
   JMC_ENTRY_COLLECTION,
   SUBCONTRACTOR_BILL_COLLECTION,
   WORK_ORDER_COLLECTION,
@@ -109,6 +114,7 @@ import {
   buildCivilSubcontractors,
   buildCivilToday,
   buildCivilWorkItems,
+  civilSubItemLinks,
   type CivilStatusTone,
 } from "@/lib/project-management-civil-progress";
 
@@ -215,6 +221,8 @@ export default function CivilPage() {
   const [entries, setEntries] = useState<DprEntry[]>([]);
   const [targets, setTargets] = useState<DprTarget[]>([]);
   const [dprSettings, setDprSettings] = useState<DprSettings>(() => defaultDprSettings());
+  /** Daily Progress's work breakdown: sub-items whose progress belongs to their BOQ lines. */
+  const [dprSubItems, setDprSubItems] = useState<DprSubItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<MeasurementEntryLike[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderLike[]>([]);
   const [bills, setBills] = useState<SubcontractorBillLike[]>([]);
@@ -289,7 +297,7 @@ export default function CivilPage() {
     setLoadError("");
     try {
       const path = ["projects", globalProjectId] as const;
-      const [boqSnap, entrySnap, targetSnap, jmcSnap, workOrderSnap, billSnap, dprSettingsSnap] = await Promise.all([
+      const [boqSnap, entrySnap, targetSnap, jmcSnap, workOrderSnap, billSnap, dprSettingsSnap, subItemSnap] = await Promise.all([
         getDocs(collection(db, ...path, "boqItems")),
         getDocs(collection(db, ...path, DPR_ENTRY_COLLECTION)),
         getDocs(collection(db, ...path, DPR_TARGET_COLLECTION)),
@@ -302,7 +310,15 @@ export default function CivilPage() {
           console.error("Failed to read the DPR settings; using the defaults:", error);
           return null;
         }),
+        // Without the breakdown, sub-item progress would simply be missing here, not wrong.
+        getDocs(collection(db, ...path, DPR_SUB_ITEM_COLLECTION)).catch((error: unknown) => {
+          console.error("Failed to read the DPR work breakdown:", error);
+          return null;
+        }),
       ]);
+      setDprSubItems(
+        (subItemSnap?.docs ?? []).map((entry) => ({ id: entry.id, ...entry.data() }) as DprSubItem),
+      );
       const records = <T,>(snapshot: typeof boqSnap) =>
         snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
 
@@ -338,22 +354,47 @@ export default function CivilPage() {
    * The same planning engine Daily Progress reads: working days only, the projection's spread, and
    * the shorter of two overlapping projections owning the shared days.
    */
+  /**
+   * Daily Progress's work breakdown over the civil lines. Sub-item progress is carried onto its
+   * BOQ line, as the share of the line it stands for, so it counts here in the line's unit and value.
+   */
+  const breakdown = useMemo(
+    () =>
+      buildDprBreakdown(
+        lines.map((line) => ({
+          id: line.id,
+          scope: "Civil" as const,
+          boqSlNo: line.boqSlNo,
+          erpSlNo: line.erpSlNo,
+          description: line.description,
+          unit: line.unit,
+          boqQty: line.boqQty,
+          rate: line.rate,
+        })),
+        dprSubItems,
+      ),
+    [lines, dprSubItems],
+  );
+  const subItemLinks = useMemo(() => civilSubItemLinks(breakdown), [breakdown]);
+
   const plan = useMemo(() => {
-    const unitById = new Map(lines.map((line) => [line.id, line.unit]));
+    // Projections on sub-items are spread at the sub-item's unit, those on lines at the line's.
+    const unitById = new Map([...breakdown.nodes.values()].map((node) => [node.id, node.unit]));
     return buildDprPlan(targets, {
       calendar: dprCalendar(dprSettings),
       decimalsFor: (target) => dprUnitDecimals(unitById.get(target.boqItemId) || target.unit, dprSettings),
     });
-  }, [targets, lines, dprSettings]);
+  }, [targets, breakdown, dprSettings]);
 
   const headline = useMemo(
-    () => buildCivilHeadline({ lines, entries, targets, jmcEntries, today, plan }),
-    [lines, entries, targets, jmcEntries, today, plan],
+    () => buildCivilHeadline({ lines, entries, targets, jmcEntries, today, plan, subItemLinks }),
+    [lines, entries, targets, jmcEntries, today, plan, subItemLinks],
   );
 
   const workItems = useMemo(
-    () => buildCivilWorkItems({ lines, entries, targets, jmcEntries, workOrders, today, plan }),
-    [lines, entries, targets, jmcEntries, workOrders, today, plan],
+    () =>
+      buildCivilWorkItems({ lines, entries, targets, jmcEntries, workOrders, today, plan, subItemLinks }),
+    [lines, entries, targets, jmcEntries, workOrders, today, plan, subItemLinks],
   );
 
   const todaySnapshot = useMemo(() => buildCivilToday(entries, today), [entries, today]);
@@ -399,8 +440,9 @@ export default function CivilPage() {
         periodType: "Week",
         range: curveRange,
         plan,
+        subItemLinks,
       }),
-    [lines, entries, targets, certifiedEvents, curveRange, plan],
+    [lines, entries, targets, certifiedEvents, curveRange, plan, subItemLinks],
   );
 
   const curveHasData = curve.some(

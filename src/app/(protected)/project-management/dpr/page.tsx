@@ -112,6 +112,7 @@ export default function DailyProgressDashboardPage() {
     isResolving,
     notFound,
     boqItems,
+    breakdown,
     entries,
     settings,
     plan,
@@ -441,7 +442,7 @@ export default function DailyProgressDashboardPage() {
                 action={projectionsLink}
               />
             ) : (
-              <DprBoardTable rows={board.rows} qty={qty} rate={rate} />
+              <DprBoardTable rows={board.rows} qty={qty} rate={rate} breakdown={breakdown} />
             )}
           </DprDashboardCard>
         </>

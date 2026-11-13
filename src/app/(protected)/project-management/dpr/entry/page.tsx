@@ -77,6 +77,7 @@ import {
   formatQtyAt,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
+import { DprBranchMark, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { SectionHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -804,15 +805,25 @@ export default function RecordDailyProgressPage() {
                               {item?.boqSlNo || "—"}
                             </TableCell>
                             <TableCell className="py-1.5">
-                              <DprBoqPicker
-                                compact
-                                showSlNo={false}
-                                items={scopeItems}
-                                value={row.boqItemId}
-                                disabled={!editable}
-                                ariaLabel={`BOQ line for ${label}`}
-                                onChange={(boqItemId) => editRow(row.id, { boqItemId })}
-                              />
+                              {/* A sub-item sits indented by its depth, its parents in the tooltip. */}
+                              <div
+                                className="flex min-w-0 items-center gap-1"
+                                style={(item?.depth ?? 0) > 0 ? { paddingLeft: (item?.depth ?? 0) * 16 } : undefined}
+                                title={item?.path ? breakdownTitle(item) : undefined}
+                              >
+                                {(item?.depth ?? 0) > 0 ? <DprBranchMark /> : null}
+                                <div className="min-w-0 flex-1">
+                                  <DprBoqPicker
+                                    compact
+                                    showSlNo={false}
+                                    items={scopeItems}
+                                    value={row.boqItemId}
+                                    disabled={!editable}
+                                    ariaLabel={`BOQ line for ${label}`}
+                                    onChange={(boqItemId) => editRow(row.id, { boqItemId })}
+                                  />
+                                </div>
+                              </div>
                             </TableCell>
                             <TableCell className="truncate text-sm" title={item?.unit}>
                               {item?.unit || "—"}

@@ -18,6 +18,7 @@ import {
   ClipboardList,
   FileBarChart2,
   History,
+  ListTree,
   Settings2,
   ShieldAlert,
   Target,
@@ -363,7 +364,14 @@ export function DprScopeTabs({
 
 /* ── Module navigation ──────────────────────────────────────────────────────────────────────── */
 
-export type DprTabKey = "dashboard" | "projections" | "record" | "log" | "reports" | "settings";
+export type DprTabKey =
+  | "dashboard"
+  | "projections"
+  | "record"
+  | "breakdown"
+  | "log"
+  | "reports"
+  | "settings";
 
 export const DPR_TABS: ReadonlyArray<{
   key: DprTabKey;
@@ -401,6 +409,15 @@ export const DPR_TABS: ReadonlyArray<{
     icon: ClipboardList,
     description:
       "One sheet per scope per day: what was planned, what was done, and the site diary behind it.",
+  },
+  {
+    key: "breakdown",
+    tone: "teal",
+    label: "BOQ register",
+    path: `${DPR_BASE_PATH}/boq`,
+    icon: ListTree,
+    description:
+      "This project's Civil and Erection BOQ lines, with the sub-items each is broken into — down to sub-items of sub-items — so work is planned and recorded at the level it is done.",
   },
   {
     key: "log",
@@ -669,7 +686,7 @@ export function DprBoqPicker({
       new Map(
         items.map((item) => [
           item.id,
-          `${item.boqSlNo} ${item.erpSlNo ?? ""} ${item.description} ${item.unit}`.toLowerCase(),
+          `${item.boqSlNo} ${item.erpSlNo ?? ""} ${item.description} ${item.unit} ${item.path ?? ""}`.toLowerCase(),
         ]),
       ),
     [items],
@@ -686,7 +703,7 @@ export function DprBoqPicker({
           disabled={disabled}
           title={
             selected
-              ? `${selected.boqSlNo ? `${selected.boqSlNo} · ` : ""}${selected.description}`
+              ? `${selected.path ? `${selected.path} › ` : ""}${selected.boqSlNo ? `${selected.boqSlNo} · ` : ""}${selected.description}`
               : undefined
           }
           className={cn(
@@ -756,7 +773,13 @@ export function DprBoqPicker({
                   <span className="w-16 shrink-0 truncate font-semibold tabular-nums" title={item.boqSlNo}>
                     {item.boqSlNo || "—"}
                   </span>
-                  <span className="line-clamp-2 min-w-0 flex-1" title={item.description}>
+                  {/* A sub-item sits indented under its parents, with the path on hover. */}
+                  <span
+                    className="line-clamp-2 min-w-0 flex-1"
+                    style={item.depth ? { paddingLeft: `${item.depth * 12}px` } : undefined}
+                    title={item.path ? `${item.path} › ${item.description}` : item.description}
+                  >
+                    {item.depth ? <span className="text-muted-foreground">↳ </span> : null}
                     {item.description || "BOQ line"}
                   </span>
                   <span className="w-16 shrink-0 truncate text-right text-xs text-muted-foreground" title={item.unit}>

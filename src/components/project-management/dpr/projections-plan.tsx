@@ -7,11 +7,14 @@
  */
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   CircleAlert,
   ClipboardPaste,
   Copy,
+  ListPlus,
   Loader2,
+  Pencil,
   Save,
   Search,
   Sigma,
@@ -21,12 +24,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
+  DPR_BASE_PATH,
   DPR_SCOPES,
   daysInRange,
   type DprDistribution,
   type DprProjectionPeriod,
   type DprScope,
 } from "@/lib/project-management-dpr";
+import type { DprBreakdownNode } from "@/lib/project-management-dpr-breakdown";
 import {
   DPR_DISTRIBUTIONS,
   DPR_DISTRIBUTION_LABELS,
@@ -45,11 +50,18 @@ import {
   DprMessages,
   DprPeriodPicker,
   defaultPeriodSelection,
+  dprHref,
   formatDisplayDate,
   formatQtyAt,
   resolvePeriodRange,
   type DprPeriodSelection,
 } from "@/components/project-management/dpr/dpr-shell";
+import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
+import {
+  SubItemDialog,
+  addBlockersFor,
+  type SubItemDialogRequest,
+} from "@/components/project-management/dpr/breakdown-dialogs";
 import { PasteQuantitiesDialog } from "@/components/project-management/dpr/projections-dialogs";
 import {
   candidateFor,
@@ -90,6 +102,20 @@ interface PlanRow {
 
 const EMPTY_ROW: PlanRow = { qty: "", remarks: "" };
 
+/** A row of the planner: a leaf, which takes a quantity, or a group heading over its sub-items. */
+interface PlanDisplayRow {
+  node: DprBreakdownNode;
+  /** The leaf's plannable item; null for a group. */
+  item: DprBoqItem | null;
+}
+
+/** A group's tooltip: the lines above it, then its own description. */
+const nodeTitle = (node: DprBreakdownNode): string =>
+  [
+    ...node.ancestors.map((ancestor) => `${ancestor.slNo} ${ancestor.description}`.trim()),
+    node.description,
+  ].join(" › ");
+
 /** Rounds down to a unit's precision, so a filled balance never overshoots it. */
 const floorToDecimals = (value: number, decimals: number): number => {
   const scale = 10 ** decimals;
@@ -108,6 +134,8 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
   const [filter, setFilter] = useState("");
   const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  /** The add / edit sub-item dialog, opened from a row's actions. */
+  const [subItemRequest, setSubItemRequest] = useState<SubItemDialogRequest | null>(null);
 
   const range = useMemo(() => resolvePeriodRange(period), [period]);
   const rangeOk = isValidRange(range);
@@ -121,13 +149,53 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     () => data.boqItems.filter((item) => item.scope === scope),
     [data.boqItems, scope],
   );
-  const visibleItems = useMemo(() => {
+  /**
+   * The rows in breakdown order: a BOQ line with sub-items is a read-only heading over them, and
+   * only leaves take a quantity. A filter match keeps the lines above it (so it reads in context)
+   * and everything under it.
+   */
+  const displayRows = useMemo<PlanDisplayRow[]>(() => {
+    const { breakdown } = data;
+    const itemById = new Map(scopeItems.map((item) => [item.id, item]));
+    const inScope = breakdown.ordered.filter((node) => node.scope === scope);
     const needle = filter.trim().toLowerCase();
-    if (!needle) return scopeItems;
-    return scopeItems.filter((item) =>
-      `${item.boqSlNo} ${item.erpSlNo ?? ""} ${item.description}`.toLowerCase().includes(needle),
-    );
-  }, [scopeItems, filter]);
+    let visible: Set<string> | null = null;
+    if (needle) {
+      visible = new Set<string>();
+      for (const node of inScope) {
+        if (!`${node.slNo} ${node.erpSlNo ?? ""} ${node.description}`.toLowerCase().includes(needle)) continue;
+        visible.add(node.id);
+        for (let parentId = node.parentId; parentId; parentId = breakdown.nodes.get(parentId)?.parentId ?? null) {
+          visible.add(parentId);
+        }
+        for (const id of breakdown.descendantIds(node.id)) visible.add(id);
+      }
+    }
+    return inScope
+      .filter((node) => !visible || visible.has(node.id))
+      .map((node) => ({ node, item: node.isLeaf ? (itemById.get(node.id) ?? null) : null }))
+      .filter((row) => !row.node.isLeaf || row.item !== null);
+  }, [data, scopeItems, scope, filter]);
+
+  /** Done and planned rolled up to every group, in the group's own unit. */
+  const rolledDone = useMemo(
+    () => data.breakdown.rollUp((id) => actuals.total(id)),
+    [data.breakdown, actuals],
+  );
+  const rolledPlanned = useMemo(
+    () =>
+      rangeOk
+        ? data.breakdown.rollUp((id) => data.plan.qtyInRange(id, range))
+        : new Map<string, number>(),
+    [data.breakdown, data.plan, range, rangeOk],
+  );
+
+  /** Why a sub-item cannot be added under a row (depth limit, records already booked), if it can't. */
+  const addBlockers = useMemo(() => {
+    const blockers = new Map<string, string[]>();
+    for (const row of displayRows) blockers.set(row.node.id, addBlockersFor(row.node, data));
+    return blockers;
+  }, [displayRows, data]);
 
   const rowOf = (id: string): PlanRow => rows[id] ?? EMPTY_ROW;
   const setRow = (id: string, patch: Partial<PlanRow>) =>
@@ -407,15 +475,30 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
       <Card className="border-border/60">
         <CardContent className="space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              {rangeOk
-                ? `${formatDisplayDate(range.startDate)} – ${formatDisplayDate(range.endDate)} · ${daysInRange(
-                    range.startDate,
-                    range.endDate,
-                  )}d, ${workingDays} working · ${filledCount} line${filledCount === 1 ? "" : "s"} filled`
-                : "Pick a valid from and to date"}
-              {blockedCount > 0 ? ` · ${blockedCount} need attention` : ""}
-            </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-sm text-muted-foreground">
+                {rangeOk
+                  ? `${formatDisplayDate(range.startDate)} – ${formatDisplayDate(range.endDate)} · ${daysInRange(
+                      range.startDate,
+                      range.endDate,
+                    )}d, ${workingDays} working · ${filledCount} line${filledCount === 1 ? "" : "s"} filled`
+                  : "Pick a valid from and to date"}
+                {blockedCount > 0 ? ` · ${blockedCount} need attention` : ""}
+              </p>
+              <span className="flex items-center gap-1.5">
+                <InfoTip label="About sub-items">
+                  A BOQ line can be split into sub-items (and those into their own) with + — once
+                  split, it is planned on its sub-items, and its figures roll up. Manage the whole
+                  breakdown in BOQ register.
+                </InfoTip>
+                <Link
+                  href={dprHref(`${DPR_BASE_PATH}/boq`, data.mappingId)}
+                  className="text-sm text-primary underline-offset-2 hover:underline"
+                >
+                  Open BOQ register
+                </Link>
+              </span>
+            </div>
             <div className="relative w-full sm:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -440,7 +523,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
               title={`No ${scope} BOQ lines on this project`}
               description={`BOQ items are read as ${scope} when their Scope 2 column says so.`}
             />
-          ) : visibleItems.length === 0 ? (
+          ) : displayRows.length === 0 ? (
             <PmEmptyState icon={Search} title="No BOQ line matches the filter" />
           ) : (
             // One line per BOQ line, every cell single-line, and all of it inside the table: a
@@ -459,7 +542,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                   <Table
                     stickyHeader
                     containerClassName="max-h-[65vh]"
-                    className="min-w-[1252px] table-fixed"
+                    className="min-w-[1336px] table-fixed"
                   >
                     <colgroup>
                       <col className="w-[72px]" />
@@ -472,6 +555,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                       <col className="w-[160px]" />
                       <col className="w-[150px]" />
                       <col className="w-[150px]" />
+                      <col className="w-[84px]" />
                     </colgroup>
                     <TableHeader>
                       <TableRow>
@@ -487,10 +571,97 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                         <TableHead className="truncate text-right">Plan for this period</TableHead>
                         <TableHead className="truncate">Works out at</TableHead>
                         <TableHead className="truncate">Remarks</TableHead>
+                        <TableHead className="text-right">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {visibleItems.map((item) => {
+                      {displayRows.map(({ node, item }) => {
+                        const blockers = addBlockers.get(node.id) ?? [];
+                        const sl = node.slNo || "this line";
+                        // Add a sub-item under any row; edit one that already is a sub-item.
+                        const actions = (
+                          <TableCell className="py-1.5">
+                            {canEdit ? (
+                              <div className="flex items-center justify-end gap-1">
+                                {/* A disabled button takes no pointer events, so its reason sits on a wrapper. */}
+                                <span
+                                  className="inline-flex"
+                                  title={blockers.length > 0 ? blockers.join(" ") : `Add a sub-item under ${sl}`}
+                                >
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    aria-label={`Add a sub-item under ${sl}`}
+                                    disabled={blockers.length > 0}
+                                    onClick={() => setSubItemRequest({ mode: "add", parentId: node.id })}
+                                  >
+                                    <ListPlus className="h-4 w-4" />
+                                  </Button>
+                                </span>
+                                {node.kind === "sub" ? (
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8"
+                                    aria-label={`Edit sub-item ${sl}`}
+                                    title={`Edit sub-item ${sl}`}
+                                    onClick={() => setSubItemRequest({ mode: "edit", id: node.id })}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </TableCell>
+                        );
+
+                        if (!item) {
+                          // A group: read-only, its figures rolled up from the sub-items under it.
+                          const done = rolledDone.get(node.id) ?? 0;
+                          const leafCount = data.breakdown.leavesUnder(node.id).length;
+                          return (
+                            <TableRow key={node.id} className="bg-muted/40 hover:bg-muted/40">
+                              <TableCell
+                                className="truncate text-sm font-semibold tabular-nums"
+                                title={node.slNo}
+                              >
+                                {node.slNo || "—"}
+                              </TableCell>
+                              <TableCell className="text-sm" title={nodeTitle(node)}>
+                                <DprIndentedText text={node.description} depth={node.depth} strong />
+                              </TableCell>
+                              <TableCell className="truncate text-sm" title={node.unit}>
+                                {node.unit || "—"}
+                              </TableCell>
+                              <TableCell className="truncate text-right text-sm tabular-nums">
+                                {node.qty > 0 ? formatQtyAt(node.qty, data.decimalsFor(node.unit)) : "—"}
+                              </TableCell>
+                              <TableCell className="truncate text-right text-sm tabular-nums">
+                                {formatQtyAt(done, 3)}
+                              </TableCell>
+                              <TableCell className="truncate text-right text-sm font-medium tabular-nums">
+                                {node.qty > 0 ? formatQtyAt(node.qty - done, 3) : "—"}
+                              </TableCell>
+                              <TableCell className="truncate text-right text-sm tabular-nums">
+                                {rangeOk ? formatQtyAt(rolledPlanned.get(node.id) ?? 0, 3) : "—"}
+                              </TableCell>
+                              <TableCell
+                                colSpan={3}
+                                className="truncate text-xs text-muted-foreground"
+                                title="A line with sub-items is planned on them; its figures roll up from theirs."
+                              >
+                                Plan on its sub-items · {leafCount} below
+                              </TableCell>
+                              {actions}
+                            </TableRow>
+                          );
+                        }
+
                         const decimals = data.decimalsFor(item.unit);
                         const executed = actuals.total(item.id);
                         const row = rowOf(item.id);
@@ -512,8 +683,8 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                             >
                               {item.boqSlNo || "—"}
                             </TableCell>
-                            <TableCell className="truncate text-sm" title={item.description}>
-                              {item.description || "BOQ line"}
+                            <TableCell className="text-sm" title={breakdownTitle(item)}>
+                              <DprIndentedText text={item.description} depth={item.depth ?? 0} />
                             </TableCell>
                             <TableCell className="truncate text-sm" title={item.unit}>
                               {item.unit || "—"}
@@ -589,6 +760,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                                 onChange={(event) => setRow(item.id, { remarks: event.target.value })}
                               />
                             </TableCell>
+                            {actions}
                           </TableRow>
                         );
                       })}
@@ -619,6 +791,13 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
       </Card>
 
       <PasteQuantitiesDialog open={isPasteOpen} onOpenChange={setIsPasteOpen} onApply={applyPaste} />
+      {/* The BOQ register's own add / edit dialog, so a sub-item made here is the same record. */}
+      <SubItemDialog
+        request={subItemRequest}
+        data={data}
+        user={context.user}
+        onClose={() => setSubItemRequest(null)}
+      />
     </div>
   );
 }

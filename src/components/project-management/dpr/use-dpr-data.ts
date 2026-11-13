@@ -45,11 +45,25 @@ import {
   type DprPlan,
   type DprSettings,
 } from "@/lib/project-management-dpr-plan";
+import {
+  DPR_SUB_ITEM_COLLECTION,
+  buildDprBreakdown,
+  type DprBreakdown,
+  type DprSubItem,
+} from "@/lib/project-management-dpr-breakdown";
 
 /** A BOQ line with the raw document kept alongside, for screens that need other columns. */
 export interface DprBoqItem extends DprBoqLike {
   scope: DprScope;
   raw: Record<string, unknown>;
+  /** "sub" for a work-breakdown sub-item standing in for part of a BOQ line. */
+  kind?: "boq" | "sub";
+  /** The BOQ line a sub-item belongs to. */
+  rootBoqItemId?: string;
+  /** 0 for a BOQ line, 1 for its sub-items, 2 for theirs… */
+  depth?: number;
+  /** "7 Earthing system › 7.2 GI strip" — the lines above a sub-item, for its tooltip. */
+  path?: string;
 }
 
 export interface DprDataState {
@@ -71,7 +85,16 @@ export interface DprDataState {
   decimalsFor: (unit: string) => number;
   isResolving: boolean;
   notFound: boolean;
+  /**
+   * What progress is planned and recorded against: BOQ lines with no sub-items, and the lowest
+   * sub-items of those that have them. A BOQ line with sub-items is a group and is not listed here.
+   */
   boqItems: DprBoqItem[];
+  /** Every Civil/Erection BOQ line, groups included — the roots of the work breakdown. */
+  boqLines: DprBoqItem[];
+  subItems: DprSubItem[];
+  /** The work breakdown: the tree, each node's share, and the roll-up of leaf figures to groups. */
+  breakdown: DprBreakdown;
   entries: DprEntry[];
   targets: DprTarget[];
   isLoading: boolean;
@@ -141,7 +164,8 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
    */
   const [resolvedFor, setResolvedFor] = useState("");
 
-  const [boqItems, setBoqItems] = useState<DprBoqItem[]>([]);
+  const [boqLines, setBoqLines] = useState<DprBoqItem[]>([]);
+  const [subItems, setSubItems] = useState<DprSubItem[]>([]);
   const [entries, setEntries] = useState<DprEntry[]>([]);
   const [targets, setTargets] = useState<DprTarget[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -195,7 +219,7 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
     setIsLoading(true);
     setLoadError("");
     try {
-      const [boqSnapshot, entrySnapshot, targetSnapshot, settingsSnapshot] = await Promise.all([
+      const [boqSnapshot, entrySnapshot, targetSnapshot, settingsSnapshot, subItemSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION)),
         getDocs(collection(db, "projects", globalProjectId, DPR_TARGET_COLLECTION)),
@@ -207,7 +231,19 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
             return null;
           },
         ),
+        // Likewise the work breakdown: without it every BOQ line is simply its own leaf.
+        getDocs(collection(db, "projects", globalProjectId, DPR_SUB_ITEM_COLLECTION)).catch(
+          (error: unknown) => {
+            console.error("Failed to read the DPR work breakdown:", error);
+            return null;
+          },
+        ),
       ]);
+      setSubItems(
+        (subItemSnapshot?.docs ?? []).map(
+          (subDoc) => ({ id: subDoc.id, ...subDoc.data() }) as DprSubItem,
+        ),
+      );
       setSettings(sanitizeDprSettings(settingsSnapshot?.exists() ? settingsSnapshot.data() : null));
       setSettingsSaved(Boolean(settingsSnapshot?.exists()));
 
@@ -234,7 +270,7 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
       }
       items.sort(compareByErpSlNo);
 
-      setBoqItems(items);
+      setBoqLines(items);
       setEntries(
         entrySnapshot.docs
           .map((entryDoc) => ({ id: entryDoc.id, ...entryDoc.data() }) as DprEntry)
@@ -256,6 +292,38 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
   const isResolving = Boolean(mappingId) && mappingId !== resolvedFor;
 
   const decimalsFor = useCallback((unit: string) => dprUnitDecimals(unit, settings), [settings]);
+
+  const breakdown = useMemo(() => buildDprBreakdown(boqLines, subItems), [boqLines, subItems]);
+
+  /** The leaves, as BOQ items: a sub-item stands in for its share of its BOQ line. */
+  const boqItems = useMemo<DprBoqItem[]>(() => {
+    const lineById = new Map(boqLines.map((line) => [line.id, line]));
+    return breakdown.leaves.flatMap((node): DprBoqItem[] => {
+      const line = lineById.get(node.boqItemId);
+      if (!line) return [];
+      if (node.kind === "boq") return [{ ...line, kind: "boq", rootBoqItemId: line.id, depth: 0 }];
+      return [
+        {
+          id: node.id,
+          kind: "sub",
+          scope: line.scope,
+          boqSlNo: node.slNo,
+          erpSlNo: line.erpSlNo,
+          description: node.description,
+          unit: node.unit,
+          boqQty: node.qty,
+          // Its share of the line's value, so value-weighted figures still add up to the line.
+          rate: node.rate,
+          raw: line.raw,
+          rootBoqItemId: line.id,
+          depth: node.depth,
+          path: node.ancestors
+            .map((ancestor) => `${ancestor.slNo} ${ancestor.description}`.trim())
+            .join(" › "),
+        },
+      ];
+    });
+  }, [boqLines, breakdown]);
 
   const plan = useMemo(() => {
     // A projection is spread at its BOQ line's current unit, falling back to the unit it was saved with.
@@ -296,6 +364,9 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
       // No project in the URL, or one whose mapping did not resolve to a global project.
       notFound: !mappingId || (!isResolving && !globalProjectId),
       boqItems,
+      boqLines,
+      subItems,
+      breakdown,
       entries,
       targets,
       // The initial `true` means "a load is coming"; where none is, the screens must not be left
@@ -317,6 +388,9 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
       decimalsFor,
       isResolving,
       boqItems,
+      boqLines,
+      subItems,
+      breakdown,
       entries,
       targets,
       isLoading,

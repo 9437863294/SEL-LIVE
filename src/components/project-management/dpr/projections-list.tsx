@@ -29,6 +29,7 @@ import {
   formatQtyAt,
   formatRangeCompact,
 } from "@/components/project-management/dpr/dpr-shell";
+import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
 import { ScopeBadge, type ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -70,6 +71,11 @@ export function ProjectionList({
   const calendar = useMemo(() => dprCalendar(data.settings), [data.settings]);
   const unitById = useMemo(
     () => new Map(data.boqItems.map((item) => [item.id, item.unit])),
+    [data.boqItems],
+  );
+  /** Where each projection's line sits in the work breakdown (depth, and the lines above it). */
+  const itemById = useMemo(
+    () => new Map(data.boqItems.map((item) => [item.id, item])),
     [data.boqItems],
   );
 
@@ -233,8 +239,17 @@ export function ProjectionList({
                         >
                           {target.boqSlNo || "—"}
                         </TableCell>
-                        <TableCell className="truncate text-sm" title={target.description}>
-                          {target.description || "BOQ line"}
+                        <TableCell
+                          className="text-sm"
+                          title={breakdownTitle({
+                            description: target.description,
+                            path: itemById.get(target.boqItemId)?.path,
+                          })}
+                        >
+                          <DprIndentedText
+                            text={target.description}
+                            depth={itemById.get(target.boqItemId)?.depth ?? 0}
+                          />
                         </TableCell>
                         <TableCell className="truncate text-sm" title={unit}>
                           {unit || "—"}

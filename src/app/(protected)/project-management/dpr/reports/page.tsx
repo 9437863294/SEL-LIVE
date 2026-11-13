@@ -20,6 +20,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Activity,
   CloudSun,
+  CornerDownRight,
   Download,
   LineChart as LineChartIcon,
   TriangleAlert,
@@ -44,10 +45,16 @@ import {
   buildDprLostTime,
   buildDprManpowerSummary,
   buildDprPeriodReport,
-  dprPeriodReportCsv,
+  dprToCsv,
+  type DprPeriodRow,
   type DprScope,
 } from "@/lib/project-management-dpr";
 import { buildDprShareTrend, dprShortDate } from "@/lib/project-management-dpr-plan";
+import {
+  arrangeByBreakdown,
+  type DprBreakdownNode,
+} from "@/lib/project-management-dpr-breakdown";
+import { cn } from "@/lib/utils";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DprAccessDenied,
@@ -102,6 +109,36 @@ const numberCell = "truncate text-right text-sm tabular-nums";
 
 const scopeTone = (scope: DprScope) => (scope === "Civil" ? "info" : "progress");
 
+/** A BOQ progress row: a leaf line (`row`), or a group (`row` null) with its rolled-up figures. */
+interface ProgressRow {
+  node: DprBreakdownNode | null;
+  row: DprPeriodRow | null;
+  rolled: Record<string, number>;
+}
+
+/** "7 Earthing system › 7.2 GI strip › Welding" — a breakdown row's tooltip. */
+const describeNode = (node: DprBreakdownNode | null): string =>
+  node
+    ? [...node.ancestors.map((ancestor) => `${ancestor.slNo} ${ancestor.description}`.trim()), node.description].join(
+        " › ",
+      )
+    : "";
+
+/** A description indented by its depth in the work breakdown, on one line. */
+function BreakdownDescription({ depth, text, strong = false }: { depth: number; text: string; strong?: boolean }) {
+  return (
+    <div
+      className={cn("flex min-w-0 items-center gap-1", strong && "font-semibold")}
+      style={depth > 0 ? { paddingLeft: depth * 16 } : undefined}
+    >
+      {depth > 0 ? (
+        <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      ) : null}
+      <span className="min-w-0 truncate">{text || "BOQ line"}</span>
+    </div>
+  );
+}
+
 export default function DprReportsPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
@@ -113,6 +150,7 @@ export default function DprReportsPage() {
     isResolving,
     notFound,
     boqItems,
+    breakdown,
     entries,
     targets,
     plan,
@@ -132,6 +170,30 @@ export default function DprReportsPage() {
     () => buildDprPeriodReport({ boqItems, entries, targets, range, scope: scopeFilter, plan }),
     [boqItems, entries, targets, range, scopeFilter, plan],
   );
+
+  /**
+   * The BOQ progress rows. With sub-items among them, they are shown under their groups in
+   * breakdown order, each group's figures rolled up from its leaves in the group's own unit;
+   * without, the report's own order (worst shortfall first) stands.
+   */
+  const progressRows = useMemo((): ProgressRow[] => {
+    const nested = report.rows.some((row) => (breakdown.nodes.get(row.id)?.depth ?? 0) > 0);
+    if (!nested) {
+      return report.rows.map((row) => ({ node: breakdown.nodes.get(row.id) ?? null, row, rolled: {} }));
+    }
+    const tree = arrangeByBreakdown(breakdown, new Map(report.rows.map((row) => [row.id, row])), {
+      plannedQty: (row) => row.plannedQty,
+      actualQty: (row) => row.actualQty,
+      cumulativeQty: (row) => row.cumulativeQty,
+    });
+    const placed = new Set(tree.map((entry) => entry.node.id));
+    return [
+      ...tree.map((entry) => ({ node: entry.node, row: entry.row, rolled: entry.rolled })),
+      ...report.rows
+        .filter((row) => !placed.has(row.id))
+        .map((row) => ({ node: null, row, rolled: {} })),
+    ];
+  }, [report.rows, breakdown]);
 
   const granularity = resolveTrendGranularity(period, range);
   const trend = useMemo(
@@ -168,7 +230,45 @@ export default function DprReportsPage() {
   );
 
   const downloadCsv = () => {
-    const csv = dprPeriodReportCsv(report);
+    // Leaf lines only (groups are roll-ups of them), each with the lines above it as "Parent".
+    const pathById = new Map(boqItems.map((item) => [item.id, item.path ?? ""]));
+    const round2 = (value: number) => Math.round(value * 100) / 100;
+    const csv = dprToCsv(
+      [
+        "ERP SL No",
+        "BOQ SL No",
+        "Parent",
+        "Description",
+        "Unit",
+        "BOQ Qty",
+        "Projected Qty",
+        "Actual Qty",
+        "Variance Qty",
+        "Achievement %",
+        "Cumulative Qty",
+        "Progress %",
+        "Balance Qty",
+        "Days Worked",
+        "Last Worked",
+      ],
+      report.rows.map((row) => [
+        row.erpSlNo ?? "",
+        row.boqSlNo,
+        pathById.get(row.id) ?? "",
+        row.description,
+        row.unit,
+        round2(row.boqQty),
+        round2(row.plannedQty),
+        round2(row.actualQty),
+        round2(row.varianceQty),
+        row.achievementPct === null ? "" : round2(row.achievementPct),
+        round2(row.cumulativeQty),
+        row.progressPct === null ? "" : round2(row.progressPct),
+        round2(row.balanceQty),
+        row.workedDays,
+        row.lastWorkedDate,
+      ]),
+    );
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -299,7 +399,62 @@ export default function DprReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.rows.map((row) => {
+                  {progressRows.map(({ node, row, rolled }) => {
+                    if (!row) {
+                      // A group: its leaves' figures rolled up, in its own unit.
+                      const unit = node?.unit ?? "";
+                      const qty = (value: number) => formatQtyAt(value, decimalsFor(unit));
+                      const planned = rolled.plannedQty ?? 0;
+                      const actual = rolled.actualQty ?? 0;
+                      const cumulative = rolled.cumulativeQty ?? 0;
+                      const boqQty = node?.qty ?? 0;
+                      const varianceQty = actual - planned;
+                      const achievementPct = planned > 0 ? (actual / planned) * 100 : null;
+                      const variance = `${varianceQty > 0 ? "+" : ""}${qty(varianceQty)}`;
+                      return (
+                        <TableRow key={node?.id} className="bg-muted/40">
+                          <TableCell className="truncate text-sm font-semibold tabular-nums" title={node?.slNo}>
+                            {node?.slNo || "—"}
+                          </TableCell>
+                          <TableCell className="text-sm" title={`${describeNode(node)} — rolled up from its sub-items`}>
+                            <BreakdownDescription depth={node?.depth ?? 0} text={node?.description ?? ""} strong />
+                          </TableCell>
+                          <TableCell className={`${lineCell} font-medium`} title={unit}>
+                            {unit || "—"}
+                          </TableCell>
+                          <TableCell className={`${numberCell} font-medium`}>{qty(boqQty)}</TableCell>
+                          <TableCell className={`${numberCell} font-medium`}>{qty(planned)}</TableCell>
+                          <TableCell className={`${numberCell} font-semibold`}>{qty(actual)}</TableCell>
+                          <TableCell
+                            className={`${numberCell} ${
+                              varianceQty < 0 ? "text-destructive" : varianceQty > 0 ? "text-emerald-600" : ""
+                            }`}
+                            title={variance}
+                          >
+                            {variance}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-right">
+                            {achievementPct === null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : (
+                              <StatusBadge
+                                status="Achievement"
+                                tone={achievementPct >= 100 ? "success" : achievementPct >= 75 ? "warning" : "danger"}
+                              >
+                                {formatPct(achievementPct)}
+                              </StatusBadge>
+                            )}
+                          </TableCell>
+                          <TableCell className={`${numberCell} font-medium`}>{qty(cumulative)}</TableCell>
+                          <TableCell className={numberCell}>
+                            {formatPct(boqQty > 0 ? (cumulative / boqQty) * 100 : null)}
+                          </TableCell>
+                          <TableCell className={numberCell}>{qty(Math.max(boqQty - cumulative, 0))}</TableCell>
+                          <TableCell className={`${numberCell} text-muted-foreground`}>—</TableCell>
+                          <TableCell className={`${lineCell} text-muted-foreground`}>—</TableCell>
+                        </TableRow>
+                      );
+                    }
                     const qty = (value: number) => formatQtyAt(value, decimalsFor(row.unit));
                     const variance = `${row.varianceQty > 0 ? "+" : ""}${qty(row.varianceQty)}`;
                     return (
@@ -307,8 +462,8 @@ export default function DprReportsPage() {
                         <TableCell className="truncate text-sm font-semibold tabular-nums" title={row.boqSlNo}>
                           {row.boqSlNo || "—"}
                         </TableCell>
-                        <TableCell className={lineCell} title={row.description}>
-                          {row.description || "BOQ line"}
+                        <TableCell className="text-sm" title={node ? describeNode(node) : row.description}>
+                          <BreakdownDescription depth={node?.depth ?? 0} text={row.description} />
                         </TableCell>
                         <TableCell className={lineCell} title={row.unit}>
                           {row.unit || "—"}

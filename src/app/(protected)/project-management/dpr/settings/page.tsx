@@ -243,7 +243,8 @@ export default function DprSettingsPage() {
     settings,
     settingsSaved,
     projectRecordDates,
-    boqItems,
+    boqLines,
+    breakdown,
     isLoading,
     loadError,
     reload,
@@ -272,18 +273,24 @@ export default function DprSettingsPage() {
     [form, settings],
   );
 
+  // Counted on the BOQ register's own lines; sub-items are counted separately, so a line split
+  // into five sub-items still reads as one BOQ line here.
   const boqSummary = useMemo(
     () =>
       DPR_SCOPES.map((scope) => {
-        const lines = boqItems.filter((item) => item.scope === scope);
+        const lines = boqLines.filter((item) => item.scope === scope);
         return {
           scope,
           lines: lines.length,
           withQty: lines.filter((item) => item.boqQty > 0).length,
           withRate: lines.filter((item) => dprNumber(item.rate) > 0).length,
+          brokenDown: lines.filter((item) => breakdown.groupLineIds.has(item.id)).length,
+          subItems: [...breakdown.nodes.values()].filter(
+            (node) => node.kind === "sub" && node.scope === scope,
+          ).length,
         };
       }),
-    [boqItems],
+    [boqLines, breakdown],
   );
   const missingQty = boqSummary.reduce((sum, row) => sum + (row.lines - row.withQty), 0);
   const missingRate = boqSummary.reduce((sum, row) => sum + (row.lines - row.withRate), 0);
@@ -682,6 +689,12 @@ export default function DprSettingsPage() {
                   <TableHead className="text-right">BOQ lines</TableHead>
                   <TableHead className="text-right">With a quantity</TableHead>
                   <TableHead className="text-right">With a rate</TableHead>
+                  <TableHead className="text-right" title="BOQ lines split into sub-items in Work breakdown">
+                    Broken down
+                  </TableHead>
+                  <TableHead className="text-right" title="Sub-items at every level, under those lines">
+                    Sub-items
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -691,6 +704,8 @@ export default function DprSettingsPage() {
                     <TableCell className="text-right tabular-nums">{row.lines}</TableCell>
                     <TableCell className="text-right tabular-nums">{row.withQty}</TableCell>
                     <TableCell className="text-right tabular-nums">{row.withRate}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.brokenDown}</TableCell>
+                    <TableCell className="text-right tabular-nums">{row.subItems}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

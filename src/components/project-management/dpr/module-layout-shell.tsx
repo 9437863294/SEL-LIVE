@@ -27,7 +27,7 @@ import {
 
 const GROUPS: Array<{ id: string; label?: string; keys: DprTabKey[] }> = [
   { id: "home", keys: ["dashboard"] },
-  { id: "work", label: "Daily work", keys: ["record", "projections"] },
+  { id: "work", label: "Daily work", keys: ["record", "projections", "breakdown"] },
   { id: "review", label: "Review", keys: ["log", "reports"] },
   { id: "setup", keys: ["settings"] },
 ];
