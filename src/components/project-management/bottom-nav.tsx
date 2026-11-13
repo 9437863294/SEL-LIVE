@@ -17,7 +17,7 @@
  */
 
 import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Building2,
   ClipboardList,
@@ -76,6 +76,7 @@ const under = (pathname: string, roots: string[]) =>
 
 function ProjectManagementBottomNavInner() {
   const searchParams = useSearchParams();
+  const pathname = usePathname() ?? "";
   const { can } = useAuthorization();
 
   const mappingId = searchParams?.get("project") ?? "";
@@ -95,6 +96,9 @@ function ProjectManagementBottomNavInner() {
   // The Tower Progress screens' own rule (tower-progress-provider): its resource, or Erection View.
   const canViewTowerProgress =
     can("View", TOWER_PROGRESS_PERMISSION_RESOURCE) || can("View", `${MODULE_NAME}.Erection`);
+
+  // Daily Progress has its own module shell, whose phone bar would otherwise stack on this one.
+  if (under(pathname, [`${BASE}/dpr`])) return null;
 
   // The hub is Access Denied without View Module, and so is everything it links to.
   if (!canViewModule) return null;

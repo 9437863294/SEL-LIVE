@@ -27,6 +27,7 @@ import {
   type DprDateRange,
   type DprEntry,
   type DprPeriodType,
+  type DprPlanReader,
   type DprTarget,
 } from "./project-management-dpr.ts";
 import {
@@ -38,6 +39,18 @@ import {
   type SubcontractorBillLike,
   type WorkOrderLike,
 } from "./civil-execution.ts";
+
+/**
+ * Civil quantity planned per BOQ item over a range. With the DPR planning engine (working calendar,
+ * spread, shorter period owning overlapped days) the figure matches Daily Progress exactly; without
+ * it, projections are spread evenly over calendar days and overlaps add up.
+ */
+const civilPlanned = (
+  targets: readonly DprTarget[],
+  range: DprDateRange,
+  plan: DprPlanReader | undefined,
+): Map<string, number> =>
+  plan ? plan.byItemInRange(range, { scope: "Civil" }) : plannedQtyByBoqItem(targets, range, { scope: "Civil" });
 
 /** A civil BOQ line, priced, with the composite key JMC measurement items join on. */
 export interface CivilBoqLine {
@@ -189,8 +202,10 @@ export function buildCivilProgressCurve(input: {
   periodType: DprPeriodType;
   range: DprDateRange;
   includeDrafts?: boolean;
+  /** The DPR planning engine, so planned value agrees with Daily Progress. */
+  plan?: DprPlanReader;
 }): CivilProgressPoint[] {
-  const { lines, entries, targets, certifiedEvents, periodType, range, includeDrafts } = input;
+  const { lines, entries, targets, certifiedEvents, periodType, range, includeDrafts, plan } = input;
   const total = civilBoqValue(lines);
   const rates = rateByBoqItemId(lines);
   const buckets = bucketsInRange(periodType, range.startDate, range.endDate);
@@ -210,9 +225,7 @@ export function buildCivilProgressCurve(input: {
 
     // Projections are pro-rated by day, so a month's plan contributes only its elapsed share.
     let plannedValue = 0;
-    const plannedQty = plannedQtyByBoqItem(targets, { startDate: "", endDate: upTo }, {
-      scope: "Civil",
-    });
+    const plannedQty = civilPlanned(targets, { startDate: "", endDate: upTo }, plan);
     for (const [boqItemId, qty] of plannedQty) {
       plannedValue += qty * (rates.get(boqItemId) ?? 0);
     }
@@ -265,8 +278,9 @@ export function buildCivilHeadline(input: {
   jmcEntries: readonly MeasurementEntryLike[];
   today: string;
   includeDrafts?: boolean;
+  plan?: DprPlanReader;
 }): CivilHeadline {
-  const { lines, entries, targets, jmcEntries, today, includeDrafts } = input;
+  const { lines, entries, targets, jmcEntries, today, includeDrafts, plan } = input;
   const boqValue = civilBoqValue(lines);
   const rates = rateByBoqItemId(lines);
   const toToday: DprDateRange = { startDate: "", endDate: today };
@@ -278,7 +292,7 @@ export function buildCivilHeadline(input: {
   }
 
   let plannedToDateValue = 0;
-  for (const [boqItemId, qty] of plannedQtyByBoqItem(targets, toToday, { scope: "Civil" })) {
+  for (const [boqItemId, qty] of civilPlanned(targets, toToday, plan)) {
     plannedToDateValue += qty * (rates.get(boqItemId) ?? 0);
   }
 
@@ -377,8 +391,9 @@ export function buildCivilWorkItems(input: {
   workOrders: readonly WorkOrderLike[];
   today: string;
   includeDrafts?: boolean;
+  plan?: DprPlanReader;
 }): CivilWorkItem[] {
-  const { lines, entries, targets, jmcEntries, workOrders, today, includeDrafts } = input;
+  const { lines, entries, targets, jmcEntries, workOrders, today, includeDrafts, plan } = input;
   const toToday: DprDateRange = { startDate: "", endDate: today };
 
   const doneByItem = new Map<string, number>();
@@ -392,7 +407,7 @@ export function buildCivilWorkItems(input: {
     }
   }
 
-  const plannedByItem = plannedQtyByBoqItem(targets, toToday, { scope: "Civil" });
+  const plannedByItem = civilPlanned(targets, toToday, plan);
 
   // JMC items join on the composite key, not on a boqItemId.
   const certifiedByKey = new Map<string, number>();

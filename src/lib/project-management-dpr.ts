@@ -26,6 +26,20 @@ export type DprScope = (typeof DPR_SCOPES)[number];
 export const DPR_PERIOD_TYPES = ["Day", "Week", "Month"] as const;
 export type DprPeriodType = (typeof DPR_PERIOD_TYPES)[number];
 
+/**
+ * The preset a projection was set with. Day, week and month are presets over the same stored
+ * from/to range; "Custom" is any other range. Reports never read this — they read the dates.
+ */
+export const DPR_PROJECTION_PERIODS = ["Day", "Week", "Month", "Custom"] as const;
+export type DprProjectionPeriod = (typeof DPR_PROJECTION_PERIODS)[number];
+
+/**
+ * How a projection's quantity is spread over the working days of its period: evenly, heavier at
+ * the start, or heavier at the end. A projection saved before this existed reads as even.
+ */
+export const DPR_DISTRIBUTIONS = ["even", "front", "back"] as const;
+export type DprDistribution = (typeof DPR_DISTRIBUTIONS)[number];
+
 /** No approval walk — a DPR is a field log. Submitting only marks the day closed off. */
 export const DPR_STATUSES = ["Draft", "Submitted"] as const;
 export type DprStatus = (typeof DPR_STATUSES)[number];
@@ -40,6 +54,11 @@ export interface DprLine {
   /** The day's target: carried from whatever projection covers the date, and overridable. */
   plannedQty: number;
   actualQty: number;
+  /**
+   * false when a draft was saved with the Actual box left empty, so reopening it shows the box
+   * empty rather than a 0 nobody typed. Absent on older lines, which read as entered.
+   */
+  actualEntered?: boolean;
   location?: string;
   agency?: string;
   remarks?: string;
@@ -74,6 +93,14 @@ export interface DprEntry {
   hindrances?: string;
   remarks?: string;
   preparedByName?: string;
+  /** Who submitted (and so locked) the sheet. Cleared nowhere: a reopen is logged beside it. */
+  submittedAt?: unknown;
+  submittedBy?: string;
+  submittedByName?: string;
+  /** The last reopen of a submitted sheet back to Draft. Only a DPR approver can do it. */
+  reopenedAt?: unknown;
+  reopenedBy?: string;
+  reopenedByName?: string;
   createdAt?: unknown;
   createdBy?: string;
   createdByName?: string;
@@ -89,11 +116,20 @@ export interface DprTarget {
   boqSlNo: string;
   description: string;
   unit: string;
-  periodType: DprPeriodType;
+  periodType: DprProjectionPeriod;
   /** Inclusive ISO dates. Always stored, whatever `periodType` the projection was set at. */
   startDate: string;
   endDate: string;
+  /** The current quantity. A revision changes this; the first figure stays in `baselineQty`. */
   plannedQty: number;
+  /** Absent on projections saved before spreads existed, which read as "even". */
+  distribution?: DprDistribution;
+  /** The quantity as first saved. Absent before revisions existed, when it equals `plannedQty`. */
+  baselineQty?: number;
+  /** 0 for the baseline, then 1, 2… for each revision. */
+  revisionNo?: number;
+  /** Every change to the quantity, oldest first. A revision needs a reason; the baseline is kept. */
+  revisions?: DprProjectionRevision[];
   remarks?: string;
   createdAt?: unknown;
   createdBy?: string;
@@ -101,6 +137,17 @@ export interface DprTarget {
   updatedAt?: unknown;
   updatedBy?: string;
   updatedByName?: string;
+}
+
+export interface DprProjectionRevision {
+  revisionNo: number;
+  fromQty: number;
+  toQty: number;
+  reason: string;
+  /** ISO timestamp. Not a server timestamp, which Firestore refuses inside an array. */
+  changedAt: string;
+  changedBy: string;
+  changedByName: string;
 }
 
 export type DprEntryDraft = Omit<
@@ -344,6 +391,19 @@ export function plannedQtyByBoqItem(
   return planned;
 }
 
+/**
+ * Anything that can answer "how much is planned per BOQ item over this range?".
+ *
+ * `plannedQtyByBoqItem` above is the plain answer: every projection spread evenly over calendar
+ * days, overlaps added together. The planning engine in `project-management-dpr-plan.ts` is the
+ * one the screens use — working days only, a chosen spread, and the shorter of two overlapping
+ * projections owning the shared days. The report builders below take either, so a caller that
+ * has the engine passes it and one that does not still gets the plain figure.
+ */
+export interface DprPlanReader {
+  byItemInRange(range: DprDateRange, filter?: DprTargetFilter): Map<string, number>;
+}
+
 /** The day's share of every projection covering `isoDate` — what a fresh DPR line starts at. */
 export function dailyPlannedByBoqItem(
   targets: readonly DprTarget[],
@@ -421,6 +481,11 @@ export interface DprBoqLike {
   description: string;
   unit: string;
   boqQty: number;
+  /**
+   * The BOQ rate, where the line carries one. Used only to weight achievement across lines of
+   * different units — never shown as money on a DPR screen.
+   */
+  rate?: number;
 }
 
 export interface DprPeriodRow extends DprBoqLike {
@@ -471,9 +536,13 @@ export function buildDprPeriodReport(input: {
   range: DprDateRange;
   scope?: DprScope;
   includeDrafts?: boolean;
+  /** The planning engine. Without it, projections are spread evenly and overlaps add up. */
+  plan?: DprPlanReader;
 }): DprPeriodReport {
-  const { boqItems, entries, targets, range, scope, includeDrafts } = input;
-  const planned = plannedQtyByBoqItem(targets, range, scope ? { scope } : {});
+  const { boqItems, entries, targets, range, scope, includeDrafts, plan } = input;
+  const planned = plan
+    ? plan.byItemInRange(range, scope ? { scope } : {})
+    : plannedQtyByBoqItem(targets, range, scope ? { scope } : {});
   const period = aggregateActualsByBoqItem(entries, { scope, range, includeDrafts });
   // Cumulative is open-ended at the start: everything up to the period end counts as progress.
   const cumulative = aggregateActualsByBoqItem(entries, {
@@ -555,8 +624,9 @@ export function buildDprTrend(input: {
   scope?: DprScope;
   boqItemId?: string;
   includeDrafts?: boolean;
+  plan?: DprPlanReader;
 }): DprTrendPoint[] {
-  const { entries, targets, periodType, range, scope, boqItemId, includeDrafts } = input;
+  const { entries, targets, periodType, range, scope, boqItemId, includeDrafts, plan } = input;
   const buckets = bucketsInRange(periodType, range.startDate, range.endDate);
   const scoped = filterDprEntries(entries, { scope, range, includeDrafts });
 
@@ -569,10 +639,13 @@ export function buildDprTrend(input: {
       startDate: full.startDate < range.startDate ? range.startDate : full.startDate,
       endDate: full.endDate > range.endDate ? range.endDate : full.endDate,
     };
-    const plannedMap = plannedQtyByBoqItem(targets, bucket, {
+    const filter: DprTargetFilter = {
       ...(scope ? { scope } : {}),
       ...(boqItemId ? { boqItemId } : {}),
-    });
+    };
+    const plannedMap = plan
+      ? plan.byItemInRange(bucket, filter)
+      : plannedQtyByBoqItem(targets, bucket, filter);
     let plannedQty = 0;
     for (const qty of plannedMap.values()) plannedQty += qty;
 
@@ -730,6 +803,7 @@ export function buildDprHeadline(input: {
   range: DprDateRange;
   scope?: DprScope;
   includeDrafts?: boolean;
+  plan?: DprPlanReader;
 }): DprHeadline {
   const report = buildDprPeriodReport(input);
   const scoped = filterDprEntries(input.entries, {
@@ -782,17 +856,21 @@ export function validateDprEntry(draft: DprEntryDraft): DprValidationError[] {
   if (lines.some((line) => dprNumber(line.actualQty) < 0 || dprNumber(line.plannedQty) < 0)) {
     errors.push({ field: "lines", message: "Quantities cannot be negative." });
   }
+  // The same BOQ item may appear on two rows only when each row names a different location — two
+  // gangs on one item at two places is a real day. Same item, same (or no) location is a double.
   const seen = new Set<string>();
   for (const line of lines) {
     if (!line.boqItemId) continue;
-    if (seen.has(line.boqItemId)) {
+    const key = `${line.boqItemId}|${String(line.location ?? "").trim().toLowerCase()}`;
+    if (seen.has(key)) {
       errors.push({
         field: "lines",
-        message: "A BOQ item appears twice — put the day's whole quantity on one line.",
+        message:
+          "A BOQ item appears twice for the same location — merge the rows, or give each its own location.",
       });
       break;
     }
-    seen.add(line.boqItemId);
+    seen.add(key);
   }
   if (dprNumber(draft.lostTimeHours) < 0 || dprNumber(draft.lostTimeHours) > 24) {
     errors.push({ field: "lostTimeHours", message: "Lost time must be between 0 and 24 hours." });
@@ -811,8 +889,11 @@ export function validateDprTarget(draft: DprTargetDraft): DprValidationError[] {
   if (!DPR_SCOPES.includes(draft.scope)) {
     errors.push({ field: "scope", message: "Choose Civil or Erection." });
   }
-  if (!DPR_PERIOD_TYPES.includes(draft.periodType)) {
-    errors.push({ field: "periodType", message: "Choose a day, week or month." });
+  if (!DPR_PROJECTION_PERIODS.includes(draft.periodType)) {
+    errors.push({ field: "periodType", message: "Choose a day, week, month or custom range." });
+  }
+  if (draft.distribution !== undefined && !DPR_DISTRIBUTIONS.includes(draft.distribution)) {
+    errors.push({ field: "distribution", message: "Choose how the quantity is spread." });
   }
   if (!parseIsoDate(draft.startDate) || !parseIsoDate(draft.endDate)) {
     errors.push({ field: "startDate", message: "The projection needs a valid period." });

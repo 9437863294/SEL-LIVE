@@ -1,34 +1,39 @@
 "use client";
 
 /**
- * Record Daily Progress — one day, one scope.
+ * Record progress — one sheet per scope per day.
  *
- * Opening a date that already has an entry loads it for editing, because a site files one DPR per
- * scope per day and a second one would double-count.
+ * Opening a date that already has a sheet loads it, because a site files one DPR per scope per day
+ * and a second would double-count. New sheets are keyed `{scope}-{date}` for the same reason.
  *
- * **Actual is the only thing this sheet asks for.** Projection is read-only here: it is whatever
- * the projection register (`dprTargets`) says for this date, pro-rated by day, and it is shown
- * purely so the recorder can see what the day was aimed at. A BOQ line with no projection behind
- * it still takes an actual — most days on a site are worked without a figure having been set for
- * them, and refusing the record because nobody filed a plan would lose the only hard fact of the
- * day. `plannedQty` is still written onto the saved line, as a snapshot of the projection at the
- * time of filing, so the log can show plan against actual without re-deriving it.
+ * **Actual is the only thing this sheet asks for.** Planned is read-only: it is whatever the
+ * planning engine says for the date (working days, spread, the shorter overlapping period owning
+ * the day). A BOQ line with nothing planned still takes an actual — most site days are worked
+ * without a figure having been set, and refusing the record would lose the only hard fact of the
+ * day. `plannedQty` is still written onto each saved line as a snapshot, so the log can show plan
+ * against actual without re-deriving it.
+ *
+ * The sheet is held as typed text, so an Actual left empty is told apart from a 0 — the checks
+ * (`checkDprSheet`, rules D1–D10) require every row to say which it is. Submitting locks the
+ * sheet; only a DPR approver (`Reopen`) can turn it back into a draft.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Activity,
+  ClipboardList,
   CloudSun,
   Loader2,
+  Lock,
   Plus,
-  Save,
+  Send,
   Trash2,
   Truck,
+  Unlock,
   Users,
 } from "lucide-react";
-import { collection, doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -40,27 +45,42 @@ import {
   DPR_ENTRY_COLLECTION,
   DPR_PERMISSION_RESOURCE,
   DPR_SCOPES,
-  dailyPlannedByBoqItem,
   dprNumber,
+  parseIsoDate,
   validateDprEntry,
+  type DprBoqLike,
   type DprEntry,
   type DprEntryDraft,
   type DprEquipmentLine,
   type DprLine,
   type DprManpowerLine,
   type DprScope,
+  type DprStatus,
 } from "@/lib/project-management-dpr";
-import { useDprData, type DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
+import {
+  checkDprSheet,
+  dprSuggestions,
+  indexDprActuals,
+  roundToDecimals,
+  type DprSheet,
+} from "@/lib/project-management-dpr-plan";
+import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DprAccessDenied,
+  DprBoqPicker,
+  DprHeader,
   DprLoadingState,
+  DprMessages,
   DprPageShell,
   DprProjectNotFound,
-  formatQty,
+  dprHref,
+  formatQtyAt,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
-import { PageHeader, SectionHeader } from "@/components/shared/page-header";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
+import { SectionHeader } from "@/components/shared/page-header";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { InfoTip } from "@/components/shared/info-tip";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -82,218 +102,367 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const emptyLine = (): DprLine => ({
+/* ── Sheet state: everything as typed ───────────────────────────────────────────────────────── */
+
+interface RowState {
+  id: string;
+  boqItemId: string;
+  /** "" means not entered yet, which is not the same as 0. */
+  actual: string;
+  location: string;
+  agency: string;
+  remarks: string;
+}
+
+interface ManpowerState {
+  id: string;
+  trade: string;
+  count: string;
+}
+
+interface EquipmentState {
+  id: string;
+  name: string;
+  deployed: string;
+  runningHours: string;
+  idleHours: string;
+}
+
+interface SheetState {
+  weather: string;
+  rows: RowState[];
+  manpower: ManpowerState[];
+  equipment: EquipmentState[];
+  lostTimeHours: string;
+  lostTimeReason: string;
+  hindrances: string;
+  remarks: string;
+}
+
+/**
+ * A draft can be saved with an Actual still empty. The stored line then carries `actualQty: 0`
+ * and `actualEntered: false`, so reopening the draft shows the box empty rather than a 0 nobody
+ * typed. Sheets saved before this flag existed read as entered.
+ */
+type StoredLine = DprLine & { actualEntered?: boolean };
+
+const blankRow = (boqItemId = ""): RowState => ({
   id: nanoid(),
-  boqItemId: "",
-  boqSlNo: "",
-  description: "",
-  unit: "",
-  plannedQty: 0,
-  actualQty: 0,
+  boqItemId,
+  actual: "",
+  location: "",
+  agency: "",
+  remarks: "",
 });
+
+const numberText = (value: unknown): string =>
+  value === null || value === undefined || value === "" ? "" : String(dprNumber(value));
+
+const sheetFromEntry = (entry: DprEntry): SheetState => ({
+  weather: entry.weather ?? "",
+  rows: (entry.lines ?? []).map((line) => {
+    const stored = line as StoredLine;
+    return {
+      id: stored.id || nanoid(),
+      boqItemId: stored.boqItemId ?? "",
+      actual: stored.actualEntered === false ? "" : String(dprNumber(stored.actualQty)),
+      location: stored.location ?? "",
+      agency: stored.agency ?? "",
+      remarks: stored.remarks ?? "",
+    };
+  }),
+  manpower: (entry.manpower ?? []).map((line) => ({
+    id: line.id || nanoid(),
+    trade: line.trade ?? "",
+    count: numberText(line.count),
+  })),
+  equipment: (entry.equipment ?? []).map((line) => ({
+    id: line.id || nanoid(),
+    name: line.name ?? "",
+    deployed: numberText(line.deployed),
+    runningHours: numberText(line.runningHours),
+    idleHours: numberText(line.idleHours),
+  })),
+  lostTimeHours: entry.lostTimeHours ? String(entry.lostTimeHours) : "",
+  lostTimeReason: entry.lostTimeReason ?? "",
+  hindrances: entry.hindrances ?? "",
+  remarks: entry.remarks ?? "",
+});
+
+const emptySheet = (rows: RowState[]): SheetState => ({
+  weather: "",
+  rows,
+  manpower: [],
+  equipment: [],
+  lostTimeHours: "",
+  lostTimeReason: "",
+  hindrances: "",
+  remarks: "",
+});
+
+interface Messages {
+  errors: string[];
+  warnings: string[];
+}
 
 export default function RecordDailyProgressPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = !isAuthLoading && can("View", DPR_PERMISSION_RESOURCE);
   const canRecord = !isAuthLoading && can("Add", DPR_PERMISSION_RESOURCE);
+  const canReopen = !isAuthLoading && can("Reopen", DPR_PERMISSION_RESOURCE);
 
-  const { globalProjectId, projectName, isResolving, notFound, boqItems, entries, targets, isLoading, reload } =
-    useDprData(mappingId, canView);
+  const mappingIdParam = searchParams?.get("project") ?? "";
+  const {
+    globalProjectId,
+    mappingId,
+    projectName,
+    isResolving,
+    notFound,
+    boqItems,
+    entries,
+    settings,
+    projectDates,
+    plan,
+    decimalsFor,
+    isLoading,
+    reload,
+  } = useDprData(mappingIdParam, canView);
 
-  const initialScope = (searchParams?.get("scope") as DprScope | null) ?? "Civil";
-  const initialDate = searchParams?.get("date") ?? todayIso();
-
+  const initialScope = searchParams?.get("scope");
   const [scope, setScope] = useState<DprScope>(
-    DPR_SCOPES.includes(initialScope) ? initialScope : "Civil",
+    DPR_SCOPES.includes(initialScope as DprScope) ? (initialScope as DprScope) : "Civil",
   );
-  const [date, setDate] = useState(initialDate);
-  const [lines, setLines] = useState<DprLine[]>([]);
-  /**
-   * What is literally in each Actual box, keyed by line id. The line itself keeps the parsed
-   * number; this keeps the text, so a line that has not been typed into shows empty rather than a
-   * pre-filled `0`, and "0.5" survives being typed one character at a time (a controlled number
-   * input fed from the parsed value would blank itself on the leading "0").
-   */
-  const [actualText, setActualText] = useState<Record<string, string>>({});
-  const [manpower, setManpower] = useState<DprManpowerLine[]>([]);
-  const [equipment, setEquipment] = useState<DprEquipmentLine[]>([]);
-  const [weather, setWeather] = useState("");
-  const [lostTimeHours, setLostTimeHours] = useState("");
-  const [lostTimeReason, setLostTimeReason] = useState("");
-  const [hindrances, setHindrances] = useState("");
-  const [remarks, setRemarks] = useState("");
+  const [date, setDate] = useState(() => {
+    const fromUrl = searchParams?.get("date") ?? "";
+    return parseIsoDate(fromUrl) ? fromUrl : todayIso();
+  });
+  const today = todayIso();
+
+  const [sheet, setSheet] = useState<SheetState>(() => emptySheet([]));
+  /** The sheet already filed for this scope and date, if there is one. */
+  const [existing, setExisting] = useState<DprEntry | null>(null);
+  const [messages, setMessages] = useState<Messages | null>(null);
+  /** Set once warnings have been shown: the next Submit goes through ("Submit anyway"). */
+  const [confirming, setConfirming] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  /** The entry this screen is editing, if the chosen date already has one. */
-  const [existingId, setExistingId] = useState("");
 
-  const scopeBoqItems = useMemo(
-    () => boqItems.filter((item) => item.scope === scope),
-    [boqItems, scope],
-  );
-
-  const boqById = useMemo(() => {
-    const map = new Map<string, DprBoqItem>();
+  const scopeItems = useMemo(() => boqItems.filter((item) => item.scope === scope), [boqItems, scope]);
+  const itemById = useMemo(() => {
+    const map = new Map<string, (typeof boqItems)[number]>();
     for (const item of boqItems) map.set(item.id, item);
     return map;
   }, [boqItems]);
 
-  /** The day's share of every projection covering this date — the default each line starts at. */
-  const plannedToday = useMemo(
-    () => dailyPlannedByBoqItem(targets, date, { scope }),
-    [targets, date, scope],
+  /** BOQ lines the plan puts work on for this date — what a fresh sheet opens with. */
+  const plannedItems = useMemo(
+    () => scopeItems.filter((item) => plan.onDate(item.id, date) > 0),
+    [scopeItems, plan, date],
   );
 
-  /** Load whatever is already filed for this date and scope, or start a fresh sheet. */
+  /** Everything counted except this sheet, so "done before" and the BOQ check exclude it. */
+  const actualsBefore = useMemo(
+    () => indexDprActuals(entries, { excludeEntryId: existing?.id }),
+    [entries, existing?.id],
+  );
+
+  const suggestions = useMemo(() => dprSuggestions(entries), [entries]);
+
   const loadForDate = useCallback(() => {
-    const existing = entries.find((entry) => entry.date === date && entry.scope === scope);
-    if (existing) {
-      setExistingId(existing.id);
-      setLines((existing.lines ?? []).map((line) => ({ ...line })));
-      // A filed sheet shows its figures as filed, zeros included: a recorded 0 is a statement that
-      // the line was not worked, not an untouched box.
-      setActualText(
-        Object.fromEntries(
-          (existing.lines ?? []).map((line) => [line.id, String(dprNumber(line.actualQty))]),
-        ),
-      );
-      setManpower((existing.manpower ?? []).map((line) => ({ ...line })));
-      setEquipment((existing.equipment ?? []).map((line) => ({ ...line })));
-      setWeather(existing.weather ?? "");
-      setLostTimeHours(existing.lostTimeHours ? String(existing.lostTimeHours) : "");
-      setLostTimeReason(existing.lostTimeReason ?? "");
-      setHindrances(existing.hindrances ?? "");
-      setRemarks(existing.remarks ?? "");
+    const filed = entries.find((entry) => entry.date === date && entry.scope === scope) ?? null;
+    setExisting(filed);
+    setMessages(null);
+    setConfirming(false);
+    if (filed) {
+      setSheet(sheetFromEntry(filed));
       return;
     }
-    setExistingId("");
-    // A fresh sheet is seeded with whatever was projected for the day, so the recorder confirms
-    // the plan rather than retyping it.
-    const seeded: DprLine[] = [];
-    for (const [boqItemId, plannedQty] of plannedToday) {
-      const item = boqById.get(boqItemId);
-      if (!item) continue;
-      seeded.push({
-        id: nanoid(),
-        boqItemId,
-        boqSlNo: item.boqSlNo,
-        erpSlNo: item.erpSlNo,
-        description: item.description,
-        unit: item.unit,
-        plannedQty: Math.round(plannedQty * 1000) / 1000,
-        actualQty: 0,
-      });
-    }
-    // No projection covers this day: open with one blank line rather than an empty sheet, so the
-    // recorder can pick a BOQ item and type the actual straight away.
-    setLines(seeded.length > 0 ? seeded : [emptyLine()]);
-    setActualText({});
-    setManpower([]);
-    setEquipment([]);
-    setWeather("");
-    setLostTimeHours("");
-    setLostTimeReason("");
-    setHindrances("");
-    setRemarks("");
-  }, [entries, date, scope, plannedToday, boqById]);
+    // Nothing planned for the day: one blank row rather than an empty table, so the recorder can
+    // pick the BOQ line worked and type the actual straight away.
+    setSheet(
+      emptySheet(
+        plannedItems.length > 0 ? plannedItems.map((item) => blankRow(item.id)) : [blankRow()],
+      ),
+    );
+  }, [entries, date, scope, plannedItems]);
 
-  // Loading a filed sheet into an editable form is exactly the "sync React state from an external
-  // system" case effects are for: the register is the source, and changing the date or scope must
-  // re-seed every field. eslint's set-state-in-effect rule flags the shape regardless; the sibling
-  // Project Management hooks carry the same finding.
+  // Loading a filed sheet into an editable form is the "sync state from an external system" case
+  // effects are for: the register is the source, and a new date or scope must re-seed every field.
   useEffect(() => {
     if (isLoading) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadForDate();
   }, [isLoading, loadForDate]);
 
-  const setLine = (index: number, patch: Partial<DprLine>) => {
-    setLines((previous) =>
-      previous.map((line, position) => (position === index ? { ...line, ...patch } : line)),
-    );
+  const locked = existing?.status === "Submitted";
+  const editable = canRecord && !locked;
+
+  /** Every edit drops a pending "Submit anyway": the warnings were about the sheet as it was. */
+  const edit = (change: (previous: SheetState) => SheetState) => {
+    setConfirming(false);
+    setSheet(change);
+  };
+  const editRow = (id: string, patch: Partial<RowState>) =>
+    edit((previous) => ({
+      ...previous,
+      rows: previous.rows.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    }));
+  const editManpower = (id: string, patch: Partial<ManpowerState>) =>
+    edit((previous) => ({
+      ...previous,
+      manpower: previous.manpower.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    }));
+  const editEquipment = (id: string, patch: Partial<EquipmentState>) =>
+    edit((previous) => ({
+      ...previous,
+      equipment: previous.equipment.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    }));
+
+  /** Scope and date live in the URL too, so a refresh or a shared link opens the same sheet. */
+  const changeSheet = (next: { scope?: DprScope; date?: string }) => {
+    const nextScope = next.scope ?? scope;
+    const nextDate = next.date ?? date;
+    if (next.scope) setScope(next.scope);
+    if (next.date !== undefined) setDate(next.date);
+    if (mappingId && parseIsoDate(nextDate)) {
+      router.replace(dprHref(`${DPR_BASE_PATH}/entry`, mappingId, { scope: nextScope, date: nextDate }), {
+        scroll: false,
+      });
+    }
   };
 
-  const chooseBoqItem = (index: number, boqItemId: string) => {
-    const item = boqById.get(boqItemId);
-    if (!item) return;
-    setLine(index, {
-      boqItemId,
-      boqSlNo: item.boqSlNo,
-      erpSlNo: item.erpSlNo,
-      description: item.description,
-      unit: item.unit,
-      plannedQty: Math.round((plannedToday.get(boqItemId) ?? 0) * 1000) / 1000,
-    });
-  };
+  const weatherOptions = useMemo(() => {
+    const options = [...settings.weatherOptions];
+    // A sheet filed before the list changed keeps its own value selectable.
+    if (sheet.weather && !options.some((option) => option.toLowerCase() === sheet.weather.toLowerCase())) {
+      options.push(sheet.weather);
+    }
+    return options;
+  }, [settings.weatherOptions, sheet.weather]);
 
-  /**
-   * What the register projects for one BOQ line on this date. Always read from `dprTargets` —
-   * nothing on this screen types a projection, so there is no typed value to prefer.
-   */
-  const plannedFor = useCallback(
-    (boqItemId: string) =>
-      boqItemId ? Math.round((plannedToday.get(boqItemId) ?? 0) * 1000) / 1000 : 0,
-    [plannedToday],
-  );
+  const enteredCount = sheet.rows.filter((row) => row.actual.trim() !== "").length;
+  const headcount = sheet.manpower.reduce((sum, row) => sum + dprNumber(row.count), 0);
 
-  /** Whether the projection register says anything at all about this scope on this date. */
-  const hasProjection = plannedToday.size > 0;
+  /* ── Saving ────────────────────────────────────────────────────────────────────────────── */
 
-  const totals = useMemo(
-    () => ({
-      planned: lines.reduce((sum, line) => sum + plannedFor(line.boqItemId), 0),
-      actual: lines.reduce((sum, line) => sum + dprNumber(line.actualQty), 0),
-      manpower: manpower.reduce((sum, line) => sum + dprNumber(line.count), 0),
-    }),
-    [lines, manpower, plannedFor],
-  );
-
-  const buildDraft = (status: "Draft" | "Submitted"): DprEntryDraft => ({
+  const sheetForCheck = (): DprSheet => ({
     scope,
     date,
-    status,
-    lines: lines
-      .filter((line) => line.boqItemId)
-      .map((line) => ({
-        ...line,
-        // Snapshot the projection as it stands now, so the log can show plan against actual for
-        // this day without re-deriving it. Zero simply means nothing was projected for the line.
-        plannedQty: plannedFor(line.boqItemId),
-        actualQty: dprNumber(line.actualQty),
-      })),
-    manpower: manpower.filter((line) => String(line.trade ?? "").trim()),
-    equipment: equipment.filter((line) => String(line.name ?? "").trim()),
-    weather: weather.trim(),
-    lostTimeHours: dprNumber(lostTimeHours),
-    lostTimeReason: lostTimeReason.trim(),
-    hindrances: hindrances.trim(),
-    remarks: remarks.trim(),
-    preparedByName: user?.name ?? "",
+    weather: sheet.weather,
+    lines: sheet.rows.map((row) => ({
+      boqItemId: row.boqItemId,
+      actual: row.actual,
+      location: row.location,
+      remarks: row.remarks,
+    })),
+    manpower: sheet.manpower.map((row) => ({ trade: row.trade, count: row.count })),
+    equipment: sheet.equipment.map((row) => ({
+      name: row.name,
+      deployed: row.deployed,
+      runningHours: row.runningHours,
+      idleHours: row.idleHours,
+    })),
+    lostTimeHours: sheet.lostTimeHours,
+    lostTimeReason: sheet.lostTimeReason,
+    hindrances: sheet.hindrances,
   });
 
-  const handleSave = async (status: "Draft" | "Submitted") => {
-    if (!globalProjectId || !user) return;
-    const draft = buildDraft(status);
-    const errors = validateDprEntry(draft);
-    if (errors.length > 0) {
-      toast({
-        title: "Check the entry",
-        description: errors[0]!.message,
-        variant: "destructive",
+  const buildDraft = (status: DprStatus): DprEntryDraft => {
+    const lines: StoredLine[] = sheet.rows
+      .filter((row) => row.boqItemId)
+      .map((row) => {
+        const item = itemById.get(row.boqItemId);
+        const decimals = decimalsFor(item?.unit ?? "");
+        return {
+          id: row.id,
+          boqItemId: row.boqItemId,
+          boqSlNo: item?.boqSlNo ?? "",
+          erpSlNo: item?.erpSlNo ?? "",
+          description: item?.description ?? "",
+          unit: item?.unit ?? "",
+          // A snapshot of the plan as it stands, so the log can show plan against actual.
+          plannedQty: roundToDecimals(plan.onDate(row.boqItemId, date), decimals),
+          actualQty: dprNumber(row.actual),
+          actualEntered: row.actual.trim() !== "",
+          location: row.location.trim(),
+          agency: row.agency.trim(),
+          remarks: row.remarks.trim(),
+        };
       });
+    const manpower: DprManpowerLine[] = sheet.manpower
+      .filter((row) => row.trade.trim())
+      .map((row) => ({ id: row.id, trade: row.trade.trim(), count: dprNumber(row.count) }));
+    const equipment: DprEquipmentLine[] = sheet.equipment
+      .filter((row) => row.name.trim())
+      .map((row) => ({
+        id: row.id,
+        name: row.name.trim(),
+        // Blank means the one unit the row describes.
+        deployed: row.deployed.trim() === "" ? 1 : dprNumber(row.deployed),
+        runningHours: dprNumber(row.runningHours),
+        idleHours: dprNumber(row.idleHours),
+      }));
+    return {
+      scope,
+      date,
+      status,
+      lines,
+      manpower,
+      equipment,
+      weather: sheet.weather.trim(),
+      lostTimeHours: dprNumber(sheet.lostTimeHours),
+      lostTimeReason: sheet.lostTimeReason.trim(),
+      hindrances: sheet.hindrances.trim(),
+      remarks: sheet.remarks.trim(),
+      preparedByName: user?.name ?? "",
+    };
+  };
+
+  const handleSave = async (status: "Draft" | "Submitted") => {
+    if (!globalProjectId || !user || !editable) return;
+
+    if (!parseIsoDate(date)) {
+      setMessages({ errors: ["Pick the date this progress was recorded on."], warnings: [] });
       return;
+    }
+    if (date > today) {
+      setMessages({ errors: ["Future dates cannot be recorded."], warnings: [] });
+      return;
+    }
+
+    const draft = buildDraft(status);
+    if (status === "Submitted") {
+      const check = checkDprSheet({
+        sheet: sheetForCheck(),
+        items: itemById as ReadonlyMap<string, DprBoqLike>,
+        plan,
+        actuals: actualsBefore,
+        settings,
+        projectDates,
+        today,
+        canRecordAnyDate: canReopen,
+      });
+      // The structural guard catches anything the sheet checks do not word themselves.
+      const errors =
+        check.errors.length > 0 ? check.errors : validateDprEntry(draft).map((error) => error.message);
+      if (errors.length > 0 || (check.warnings.length > 0 && !confirming)) {
+        setMessages({ errors, warnings: check.warnings });
+        setConfirming(errors.length === 0);
+        return;
+      }
     }
 
     setIsSaving(true);
     try {
-      const entryRef = existingId
-        ? doc(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION, existingId)
-        : doc(collection(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION));
-      const audit = existingId
+      // New sheets are keyed by scope and date, so two people opening the same empty day cannot
+      // file two sheets for it.
+      const entryRef = existing
+        ? doc(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION, existing.id)
+        : doc(collection(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION), `${scope}-${date}`);
+      const audit = existing
         ? { updatedAt: serverTimestamp(), updatedBy: user.id, updatedByName: user.name ?? "" }
         : {
             createdAt: serverTimestamp(),
@@ -303,37 +472,40 @@ export default function RecordDailyProgressPage() {
             updatedBy: user.id,
             updatedByName: user.name ?? "",
           };
-      await setDoc(entryRef, { ...draft, ...audit }, { merge: true });
+      const submitted =
+        status === "Submitted"
+          ? { submittedAt: serverTimestamp(), submittedBy: user.id, submittedByName: user.name ?? "" }
+          : {};
+      await setDoc(entryRef, { ...draft, ...audit, ...submitted }, { merge: true });
 
       void logUserActivity({
         userId: user.id,
         userName: user.name,
         userEmail: user.email,
         module: "Project Management",
-        action: `${existingId ? "Update" : "Record"} Daily Progress`,
+        action: status === "Submitted" ? "Submit Daily Progress" : "Save Daily Progress Draft",
         details: {
           project: projectName,
           scope,
           date,
           status,
           lines: draft.lines.length,
-          actualQty: draft.lines.reduce((sum, line) => sum + line.actualQty, 0),
+          linesWorked: draft.lines.filter((line) => line.actualQty > 0).length,
         },
       });
 
       toast({
-        title: status === "Draft" ? "Saved as draft" : "Daily progress recorded",
-        description: `${scope} progress for ${date} has been ${existingId ? "updated" : "saved"}.`,
+        title: status === "Submitted" ? "Sheet submitted and locked" : "Draft saved",
+        description: `${scope} progress for ${date}.`,
       });
+      setMessages(null);
+      setConfirming(false);
       await reload();
-      if (status === "Submitted") {
-        router.push(`${DPR_BASE_PATH}?project=${encodeURIComponent(mappingId)}`);
-      }
     } catch (error) {
-      console.error("Failed to save the daily progress entry:", error);
+      console.error("Failed to save the daily progress sheet:", error);
       toast({
         title: "Save failed",
-        description: "The daily progress entry could not be saved.",
+        description: "The daily progress sheet could not be saved.",
         variant: "destructive",
       });
     } finally {
@@ -341,8 +513,42 @@ export default function RecordDailyProgressPage() {
     }
   };
 
-  const withProject = (path: string) =>
-    `${path}${path.includes("?") ? "&" : "?"}project=${encodeURIComponent(mappingId)}`;
+  const handleReopen = async () => {
+    if (!globalProjectId || !user || !existing || !canReopen) return;
+    setIsSaving(true);
+    try {
+      await updateDoc(doc(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION, existing.id), {
+        status: "Draft",
+        reopenedAt: serverTimestamp(),
+        reopenedBy: user.id,
+        reopenedByName: user.name ?? "",
+        updatedAt: serverTimestamp(),
+        updatedBy: user.id,
+        updatedByName: user.name ?? "",
+      });
+      void logUserActivity({
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: "Project Management",
+        action: "Reopen Daily Progress",
+        details: { project: projectName, scope, date },
+      });
+      toast({ title: "Reopened as a draft", description: `${scope} progress for ${date}.` });
+      await reload();
+    } catch (error) {
+      console.error("Failed to reopen the daily progress sheet:", error);
+      toast({
+        title: "Reopen failed",
+        description: "The sheet could not be reopened.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  /* ── Guards ────────────────────────────────────────────────────────────────────────────── */
 
   if (isAuthLoading || isResolving) return <DprLoadingState blocks={2} />;
   if (!canView) {
@@ -357,38 +563,56 @@ export default function RecordDailyProgressPage() {
     );
   }
 
+  const actionButtons = locked ? (
+    canReopen ? (
+      <Button variant="outline" disabled={isSaving} onClick={() => void handleReopen()}>
+        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Unlock className="mr-2 h-4 w-4" />}
+        Reopen
+      </Button>
+    ) : (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Lock className="h-3.5 w-3.5" aria-hidden="true" /> Only a DPR approver can reopen this sheet.
+      </span>
+    )
+  ) : (
+    <>
+      <Button
+        variant="outline"
+        disabled={!canRecord || isSaving || isLoading}
+        onClick={() => void handleSave("Draft")}
+      >
+        Save draft
+      </Button>
+      <Button disabled={!canRecord || isSaving || isLoading} onClick={() => void handleSave("Submitted")}>
+        {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+        {confirming ? "Submit anyway" : "Submit"}
+      </Button>
+    </>
+  );
+
+  const statusReadout = locked ? (
+    <StatusBadge status="Submitted" tone="success" dot>
+      Submitted, locked
+    </StatusBadge>
+  ) : existing?.status === "Draft" ? (
+    <StatusBadge status="Draft" tone="warning" dot>
+      Draft
+    </StatusBadge>
+  ) : (
+    <span className="text-sm text-muted-foreground">New sheet</span>
+  );
+
+  const lockedBy = locked
+    ? existing?.submittedByName || existing?.updatedByName || existing?.createdByName || ""
+    : "";
+
   return (
     <DprPageShell>
-      <PageHeader
-        title={existingId ? "Edit daily progress" : "Record daily progress"}
-        description="One sheet per scope per day: what was planned, what was done, and the site diary behind it."
-        icon={Activity}
-        breadcrumbs={[
-          { label: "Project Management", href: "/project-management" },
-          { label: "Daily Progress", href: withProject(DPR_BASE_PATH) },
-          { label: projectName || "Project" },
-        ]}
-        backHref={withProject(DPR_BASE_PATH)}
-        backLabel="Daily Progress"
-        actions={
-          <>
-            <Button
-              variant="outline"
-              disabled={!canRecord || isSaving}
-              onClick={() => void handleSave("Draft")}
-            >
-              Save draft
-            </Button>
-            <Button disabled={!canRecord || isSaving} onClick={() => void handleSave("Submitted")}>
-              {isSaving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-2 h-4 w-4" />
-              )}
-              Submit
-            </Button>
-          </>
-        }
+      <DprHeader
+        active="record"
+        mappingId={mappingId}
+        projectName={projectName}
+        title={existing ? "Edit daily progress" : "Record progress"}
       />
 
       {!canRecord ? (
@@ -400,457 +624,610 @@ export default function RecordDailyProgressPage() {
         </Card>
       ) : null}
 
+      {/* ── Sheet header ─────────────────────────────────────────────────────────────────── */}
       <Card className="border-border/60">
-        <CardContent className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-scope">Scope</Label>
-            <Select value={scope} onValueChange={(next) => setScope(next as DprScope)}>
-              <SelectTrigger id="dpr-scope" className="text-left">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {DPR_SCOPES.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-date">Date</Label>
-            <Input
-              id="dpr-date"
-              type="date"
-              value={date}
-              max={todayIso()}
-              onChange={(event) => setDate(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-weather">Weather</Label>
-            <Input
-              id="dpr-weather"
-              value={weather}
-              placeholder="Clear / Rain / Hot"
-              onChange={(event) => setWeather(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Status</Label>
-            <div className="flex h-10 items-center rounded-md border border-border/60 bg-muted/40 px-3 text-sm">
-              {existingId ? "Editing the sheet already filed for this day" : "New sheet"}
+        <CardContent className="space-y-3 p-4">
+          {/* Every control and the sheet's actions on one line; it wraps only on a narrow screen. */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[8rem] flex-1 space-y-1.5">
+              <Label htmlFor="dpr-scope">Scope</Label>
+              <Select value={scope} onValueChange={(next) => changeSheet({ scope: next as DprScope })}>
+                <SelectTrigger id="dpr-scope" className="text-left">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DPR_SCOPES.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="min-w-[9rem] flex-1 space-y-1.5">
+              <Label htmlFor="dpr-date">Date</Label>
+              <Input
+                id="dpr-date"
+                type="date"
+                value={date}
+                max={today}
+                onChange={(event) => changeSheet({ date: event.target.value })}
+              />
+            </div>
+            <div className="min-w-[8rem] flex-1 space-y-1.5">
+              {/* h-6: the height a bare Label takes, so this label lines up with the others. */}
+              <div className="flex h-6 items-center gap-1.5">
+                <Label htmlFor="dpr-weather">Weather</Label>
+                <InfoTip label="About “Weather”">
+                  A fixed list, set under Daily Progress › Settings. Required before the sheet can be
+                  submitted.
+                </InfoTip>
+              </div>
+              <Select
+                // "" keeps the Select controlled and shows the placeholder (Radix 2.x), so moving to
+                // a sheet with no weather clears the previous one instead of leaving it showing.
+                value={sheet.weather}
+                disabled={!editable}
+                onValueChange={(next) => edit((previous) => ({ ...previous, weather: next }))}
+              >
+                <SelectTrigger id="dpr-weather" className="text-left">
+                  <SelectValue placeholder="Select" />
+                </SelectTrigger>
+                <SelectContent>
+                  {weatherOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-[10rem] flex-1 space-y-1.5">
+              <Label>Status</Label>
+              <div
+                className="flex h-10 items-center rounded-md border border-border/60 bg-muted/40 px-3"
+                title={lockedBy ? `Submitted by ${lockedBy}` : undefined}
+              >
+                {statusReadout}
+              </div>
+            </div>
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actionButtons}</div>
           </div>
+          {messages ? (
+            <DprMessages
+              errors={messages.errors}
+              warnings={messages.warnings}
+              errorTitle="Fix these before submitting"
+              warningTitle={
+                messages.errors.length > 0 ? "Also check" : "Check these, then press “Submit anyway”"
+              }
+            />
+          ) : null}
         </CardContent>
       </Card>
 
-      {/* ── Progress lines ───────────────────────────────────────────────────────────────── */}
-      <Card className="border-border/60">
-        <SectionHeader
-          title="Work done"
-          description={`${lines.length} line${lines.length === 1 ? "" : "s"} · actual ${formatQty(totals.actual)}${
-            hasProjection ? ` · against a projection of ${formatQty(totals.planned)}` : ""
-          }`}
-          icon={Activity}
-          className="p-4 pb-0"
-        />
-        <CardContent className="p-0">
-          {scopeBoqItems.length === 0 ? (
-            <PmEmptyState
-              icon={Activity}
-              title={`No ${scope} BOQ lines on this project`}
-              description={`BOQ items are read as ${scope} when their Scope 2 column says so. Import or tag them first.`}
-            />
-          ) : (
-            <>
-              {!hasProjection ? (
-                <p className="border-y border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
-                  No projection covers this day. Record what was actually done — a projection is a
-                  reference, not a precondition. Figures are set in{" "}
-                  <Link
-                    href={withProject(`${DPR_BASE_PATH}/targets`)}
-                    className="underline underline-offset-2"
-                  >
-                    Projections
-                  </Link>
-                  .
-                </p>
-              ) : null}
-              <Table>
+      <fieldset disabled={!editable} className="min-w-0 space-y-4">
+        {/* ── Work done ──────────────────────────────────────────────────────────────────── */}
+        <Card className="border-border/60">
+          <SectionHeader
+            title="Work done"
+            description="Planned today comes from Projections and cannot be typed here. Done before is everything submitted on the line, this sheet excluded. Enter an actual on every row, 0 if no work was done."
+            descriptionAs="info"
+            icon={ClipboardList}
+            badge={
+              <span className="text-xs font-normal text-muted-foreground">
+                {sheet.rows.length} line{sheet.rows.length === 1 ? "" : "s"}, {enteredCount} with a
+                quantity entered
+              </span>
+            }
+            className="p-4 pb-0"
+          />
+          <CardContent className="p-0">
+            {scopeItems.length === 0 ? (
+              <PmEmptyState
+                icon={ClipboardList}
+                title={`No ${scope} BOQ lines on this project`}
+                description={`BOQ items are read as ${scope} when their Scope 2 column says so. Import or tag them first.`}
+              />
+            ) : (
+              <>
+                {plannedItems.length === 0 && !existing ? (
+                  <p className="border-y border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+                    Nothing is planned for {scope} on this date. Record what was actually done — a
+                    projection is a reference, not a precondition. Plans are set in{" "}
+                    <Link
+                      href={dprHref(`${DPR_BASE_PATH}/targets`, mappingId)}
+                      className="underline underline-offset-2"
+                    >
+                      Projections
+                    </Link>
+                    .
+                  </p>
+                ) : null}
+                {/* One line per BOQ line, all of it inside the table: fixed columns, a bounded
+                    height under a pinned header, and a narrow screen scrolls it sideways. */}
+                <Table
+                  stickyHeader
+                  containerClassName="max-h-[65vh]"
+                  className="min-w-[1180px] table-fixed"
+                >
+                  <colgroup>
+                    <col />
+                    <col className="w-[76px]" />
+                    <col className="w-[100px]" />
+                    <col className="w-[130px]" />
+                    <col className="w-[120px]" />
+                    <col className="w-[150px]" />
+                    <col className="w-[150px]" />
+                    <col className="w-[170px]" />
+                    <col className="w-[48px]" />
+                  </colgroup>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="min-w-[260px]">BOQ line</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Projected</TableHead>
-                      <TableHead className="text-right">Actual</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Agency</TableHead>
-                      <TableHead>Remarks</TableHead>
-                      <TableHead className="w-12 text-right">Action</TableHead>
+                      <TableHead className="truncate">BOQ line</TableHead>
+                      <TableHead className="truncate">Unit</TableHead>
+                      <TableHead className="truncate text-right">Planned today</TableHead>
+                      <TableHead className="truncate text-right" title="Submitted before this sheet, of the BOQ quantity">
+                        Done / BOQ
+                      </TableHead>
+                      <TableHead className="truncate text-right">Actual</TableHead>
+                      <TableHead className="truncate">Location</TableHead>
+                      <TableHead className="truncate">Agency</TableHead>
+                      <TableHead className="truncate">Remarks</TableHead>
+                      <TableHead className="text-right">
+                        <span className="sr-only">Remove</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {lines.length === 0 ? (
+                    {sheet.rows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                          No lines yet. Add the BOQ items worked on today.
+                        <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                          No lines yet. Add the BOQ lines worked on this day.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      lines.map((line, index) => (
-                        <TableRow key={line.id}>
-                          <TableCell className="min-w-[260px]">
-                            <Select
-                              value={line.boqItemId}
-                              onValueChange={(next) => chooseBoqItem(index, next)}
-                            >
-                              <SelectTrigger className="text-left">
-                                <SelectValue placeholder="Choose a BOQ item" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {scopeBoqItems.map((item) => (
-                                  <SelectItem key={item.id} value={item.id}>
-                                    {item.boqSlNo ? `${item.boqSlNo} · ` : ""}
-                                    {item.description || "BOQ line"}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-sm">{line.unit || "—"}</TableCell>
-                          {/* Read-only: the projection register owns this figure, not the sheet. */}
-                          <TableCell className="whitespace-nowrap text-right text-sm tabular-nums">
-                            {plannedFor(line.boqItemId) > 0 ? (
-                              formatQty(plannedFor(line.boqItemId))
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Input
-                              type="number"
-                              min={0}
-                              step="any"
-                              inputMode="decimal"
-                              placeholder="0"
-                              aria-label={`Actual quantity for ${line.boqSlNo || "this line"}`}
-                              className="ml-auto min-w-[96px] text-right"
-                              value={actualText[line.id] ?? (line.actualQty ? String(line.actualQty) : "")}
-                              onChange={(event) => {
-                                const text = event.target.value;
-                                setActualText((previous) => ({ ...previous, [line.id]: text }));
-                                setLine(index, { actualQty: dprNumber(text) });
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              className="min-w-[120px]"
-                              value={line.location ?? ""}
-                              onChange={(event) => setLine(index, { location: event.target.value })}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              className="min-w-[120px]"
-                              value={line.agency ?? ""}
-                              onChange={(event) => setLine(index, { agency: event.target.value })}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              className="min-w-[140px]"
-                              value={line.remarks ?? ""}
-                              onChange={(event) => setLine(index, { remarks: event.target.value })}
-                            />
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              aria-label="Remove line"
-                              onClick={() =>
-                                setLines((previous) =>
-                                  previous.filter((candidate) => candidate.id !== line.id),
-                                )
+                      sheet.rows.map((row, index) => {
+                        const item = itemById.get(row.boqItemId);
+                        const decimals = decimalsFor(item?.unit ?? "");
+                        const planned = row.boqItemId ? plan.onDate(row.boqItemId, date) : 0;
+                        const doneBefore = row.boqItemId ? actualsBefore.total(row.boqItemId) : 0;
+                        const label = item?.boqSlNo || `row ${index + 1}`;
+                        return (
+                          <TableRow key={row.id}>
+                            <TableCell className="py-1.5">
+                              <DprBoqPicker
+                                compact
+                                items={scopeItems}
+                                value={row.boqItemId}
+                                disabled={!editable}
+                                ariaLabel={`BOQ line for ${label}`}
+                                onChange={(boqItemId) => editRow(row.id, { boqItemId })}
+                              />
+                            </TableCell>
+                            <TableCell className="truncate text-sm" title={item?.unit}>
+                              {item?.unit || "—"}
+                            </TableCell>
+                            <TableCell className="truncate text-right text-sm tabular-nums">
+                              {planned > 0 ? (
+                                formatQtyAt(planned, decimals)
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell
+                              className="truncate text-right text-sm tabular-nums"
+                              title={
+                                item && item.boqQty > 0
+                                  ? `${formatQtyAt(doneBefore, decimals)} of ${formatQtyAt(item.boqQty, decimals)} ${item.unit}`
+                                  : undefined
                               }
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                              {item ? (
+                                <>
+                                  {formatQtyAt(doneBefore, decimals)}
+                                  {item.boqQty > 0 ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      {" / "}
+                                      {formatQtyAt(item.boqQty, decimals)}
+                                    </span>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                type="number"
+                                min={0}
+                                step={decimals === 0 ? "1" : "0.001"}
+                                inputMode={decimals === 0 ? "numeric" : "decimal"}
+                                placeholder="0"
+                                aria-label={`Actual quantity for ${label}`}
+                                className="h-8 w-full min-w-0 text-right tabular-nums"
+                                value={row.actual}
+                                onChange={(event) => editRow(row.id, { actual: event.target.value })}
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-8 w-full min-w-0"
+                                list="dpr-locations"
+                                aria-label={`Location for ${label}`}
+                                value={row.location}
+                                onChange={(event) => editRow(row.id, { location: event.target.value })}
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-8 w-full min-w-0"
+                                list="dpr-agencies"
+                                aria-label={`Agency for ${label}`}
+                                value={row.agency}
+                                onChange={(event) => editRow(row.id, { agency: event.target.value })}
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-8 w-full min-w-0"
+                                aria-label={`Remarks for ${label}`}
+                                value={row.remarks}
+                                onChange={(event) => editRow(row.id, { remarks: event.target.value })}
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5 text-right">
+                              {editable ? (
+                                <Button
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  variant="ghost"
+                                  aria-label={`Remove ${label}`}
+                                  onClick={() =>
+                                    edit((previous) => ({
+                                      ...previous,
+                                      rows: previous.rows.filter((candidate) => candidate.id !== row.id),
+                                    }))
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              ) : null}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
-              </Table>
-              <div className="border-t border-border/60 p-3">
+                </Table>
+                {editable ? (
+                  <div className="border-t border-border/60 p-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => edit((previous) => ({ ...previous, rows: [...previous.rows, blankRow()] }))}
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" /> Add BOQ line
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Site diary ─────────────────────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="border-border/60">
+            <SectionHeader
+              title="Manpower"
+              description="Headcount by trade. Required when any work is recorded; each headcount is a whole number above zero."
+              descriptionAs="info"
+              icon={Users}
+              badge={
+                <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                  {headcount} on site
+                </span>
+              }
+              className="p-4 pb-0"
+            />
+            <CardContent className="space-y-2 p-4">
+              {sheet.manpower.length > 0 ? (
+                <div className="overflow-hidden rounded-lg border border-border/60">
+                  <Table stickyHeader containerClassName="max-h-[40vh]" className="table-fixed">
+                    <colgroup>
+                      <col />
+                      <col className="w-[120px]" />
+                      <col className="w-[48px]" />
+                    </colgroup>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="truncate">Trade</TableHead>
+                        <TableHead className="truncate text-right">Headcount</TableHead>
+                        <TableHead className="text-right">
+                          <span className="sr-only">Remove</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sheet.manpower.map((row, index) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="py-1.5">
+                            <Input
+                              className="h-8 w-full min-w-0"
+                              list="dpr-trades"
+                              placeholder="Mason, fitter, rigger…"
+                              aria-label={`Trade, row ${index + 1}`}
+                              value={row.trade}
+                              onChange={(event) => editManpower(row.id, { trade: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <Input
+                              className="h-8 w-full min-w-0 text-right tabular-nums"
+                              type="number"
+                              min={0}
+                              step="1"
+                              inputMode="numeric"
+                              placeholder="0"
+                              aria-label={`Headcount, row ${index + 1}`}
+                              value={row.count}
+                              onChange={(event) => editManpower(row.id, { count: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5 text-right">
+                            {editable ? (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                aria-label={`Remove trade, row ${index + 1}`}
+                                onClick={() =>
+                                  edit((previous) => ({
+                                    ...previous,
+                                    manpower: previous.manpower.filter((candidate) => candidate.id !== row.id),
+                                  }))
+                                }
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : null}
+              {sheet.manpower.length === 0 && !editable ? (
+                <p className="text-sm text-muted-foreground">No manpower recorded.</p>
+              ) : null}
+              {editable ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setLines((previous) => [...previous, emptyLine()])}
+                  onClick={() =>
+                    edit((previous) => ({
+                      ...previous,
+                      manpower: [...previous.manpower, { id: nanoid(), trade: "", count: "" }],
+                    }))
+                  }
                 >
-                  <Plus className="mr-1.5 h-4 w-4" /> Add BOQ line
+                  <Plus className="mr-1.5 h-4 w-4" /> Add trade
                 </Button>
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+              ) : null}
+            </CardContent>
+          </Card>
 
-      {/* ── Site diary ───────────────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card className="border-border/60">
+            <SectionHeader
+              title="Plant and equipment"
+              description="What was on site and how long it worked. Running and idle hours together cannot exceed 24 a day for each unit deployed."
+              descriptionAs="info"
+              icon={Truck}
+              className="p-4 pb-0"
+            />
+            <CardContent className="space-y-3 p-4">
+              {sheet.equipment.length > 0 ? (
+                <div className="overflow-hidden rounded-lg border border-border/60">
+                  <Table stickyHeader containerClassName="max-h-[40vh]" className="min-w-[460px] table-fixed">
+                    <colgroup>
+                      <col />
+                      <col className="w-[72px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[96px]" />
+                      <col className="w-[48px]" />
+                    </colgroup>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="truncate">Equipment</TableHead>
+                        <TableHead className="truncate text-right">Nos</TableHead>
+                        <TableHead className="truncate text-right">Running hrs</TableHead>
+                        <TableHead className="truncate text-right">Idle hrs</TableHead>
+                        <TableHead className="text-right">
+                          <span className="sr-only">Remove</span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sheet.equipment.map((row, index) => (
+                        <TableRow key={row.id}>
+                          <TableCell className="py-1.5">
+                            <Input
+                              className="h-8 w-full min-w-0"
+                              list="dpr-equipment"
+                              placeholder="Excavator, crane…"
+                              aria-label={`Equipment, row ${index + 1}`}
+                              value={row.name}
+                              onChange={(event) => editEquipment(row.id, { name: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="1"
+                              inputMode="numeric"
+                              placeholder="1"
+                              aria-label={`Number deployed, row ${index + 1}`}
+                              className="h-8 w-full min-w-0 text-right tabular-nums"
+                              value={row.deployed}
+                              onChange={(event) => editEquipment(row.id, { deployed: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.5"
+                              inputMode="decimal"
+                              placeholder="0"
+                              aria-label={`Running hours, row ${index + 1}`}
+                              className="h-8 w-full min-w-0 text-right tabular-nums"
+                              value={row.runningHours}
+                              onChange={(event) => editEquipment(row.id, { runningHours: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.5"
+                              inputMode="decimal"
+                              placeholder="0"
+                              aria-label={`Idle hours, row ${index + 1}`}
+                              className="h-8 w-full min-w-0 text-right tabular-nums"
+                              value={row.idleHours}
+                              onChange={(event) => editEquipment(row.id, { idleHours: event.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5 text-right">
+                            {editable ? (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                aria-label={`Remove equipment, row ${index + 1}`}
+                                onClick={() =>
+                                  edit((previous) => ({
+                                    ...previous,
+                                    equipment: previous.equipment.filter((candidate) => candidate.id !== row.id),
+                                  }))
+                                }
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : null}
+              {sheet.equipment.length === 0 && !editable ? (
+                <p className="text-sm text-muted-foreground">No plant recorded.</p>
+              ) : null}
+              {editable ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    edit((previous) => ({
+                      ...previous,
+                      equipment: [
+                        ...previous.equipment,
+                        { id: nanoid(), name: "", deployed: "1", runningHours: "", idleHours: "" },
+                      ],
+                    }))
+                  }
+                >
+                  <Plus className="mr-1.5 h-4 w-4" /> Add equipment
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+
         <Card className="border-border/60">
           <SectionHeader
-            title="Manpower"
-            description={`${formatQty(totals.manpower)} on site`}
-            icon={Users}
+            title="Lost time, hindrances and remarks"
+            description="The basis for any delay the day caused. Time lost above zero needs a reason; a planned line left at zero needs a row remark or a hindrance."
+            descriptionAs="info"
+            icon={CloudSun}
             className="p-4 pb-0"
           />
-          <CardContent className="space-y-2 p-4">
-            {manpower.map((line, index) => (
-              <div key={line.id} className="flex items-end gap-2">
-                <div className="flex-1 space-y-1.5">
-                  <Label className="sr-only" htmlFor={`trade-${line.id}`}>
-                    Trade
-                  </Label>
-                  <Input
-                    id={`trade-${line.id}`}
-                    placeholder="Trade (mason, fitter, rigger…)"
-                    value={line.trade}
-                    onChange={(event) =>
-                      setManpower((previous) =>
-                        previous.map((candidate, position) =>
-                          position === index ? { ...candidate, trade: event.target.value } : candidate,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <div className="w-24 space-y-1.5">
-                  <Label className="sr-only" htmlFor={`count-${line.id}`}>
-                    Count
-                  </Label>
-                  <Input
-                    id={`count-${line.id}`}
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    className="text-right"
-                    value={line.count}
-                    onChange={(event) =>
-                      setManpower((previous) =>
-                        previous.map((candidate, position) =>
-                          position === index
-                            ? { ...candidate, count: dprNumber(event.target.value) }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Remove trade"
-                  onClick={() =>
-                    setManpower((previous) =>
-                      previous.filter((candidate) => candidate.id !== line.id),
-                    )
-                  }
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setManpower((previous) => [...previous, { id: nanoid(), trade: "", count: 0 }])
-              }
-            >
-              <Plus className="mr-1.5 h-4 w-4" /> Add trade
-            </Button>
+          {/* Time lost and its reason on one line; hindrances and remarks side by side under it. */}
+          <CardContent className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-1.5">
+              <Label htmlFor="dpr-lost-hours">Time lost (hrs, max {settings.shiftHours})</Label>
+              <Input
+                id="dpr-lost-hours"
+                type="number"
+                min={0}
+                max={settings.shiftHours}
+                step="0.5"
+                inputMode="decimal"
+                value={sheet.lostTimeHours}
+                onChange={(event) => edit((previous) => ({ ...previous, lostTimeHours: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dpr-lost-reason">Reason</Label>
+              <Input
+                id="dpr-lost-reason"
+                placeholder="Rain, power failure, material shortage…"
+                value={sheet.lostTimeReason}
+                onChange={(event) => edit((previous) => ({ ...previous, lostTimeReason: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dpr-hindrances">Hindrances</Label>
+              <Textarea
+                id="dpr-hindrances"
+                rows={2}
+                placeholder="Blockers raised today and who they sit with."
+                value={sheet.hindrances}
+                onChange={(event) => edit((previous) => ({ ...previous, hindrances: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="dpr-remarks">Remarks</Label>
+              <Textarea
+                id="dpr-remarks"
+                rows={2}
+                placeholder="Anything else the day should be remembered by."
+                value={sheet.remarks}
+                onChange={(event) => edit((previous) => ({ ...previous, remarks: event.target.value }))}
+              />
+            </div>
           </CardContent>
         </Card>
+      </fieldset>
 
-        <Card className="border-border/60">
-          <SectionHeader
-            title="Plant and equipment"
-            description="What was on site, and how it was used."
-            icon={Truck}
-            className="p-4 pb-0"
-          />
-          <CardContent className="space-y-2 p-4">
-            {equipment.map((line, index) => (
-              <div key={line.id} className="grid grid-cols-[1fr_auto] gap-2">
-                <Input
-                  placeholder="Equipment"
-                  value={line.name}
-                  onChange={(event) =>
-                    setEquipment((previous) =>
-                      previous.map((candidate, position) =>
-                        position === index ? { ...candidate, name: event.target.value } : candidate,
-                      ),
-                    )
-                  }
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Remove equipment"
-                  onClick={() =>
-                    setEquipment((previous) =>
-                      previous.filter((candidate) => candidate.id !== line.id),
-                    )
-                  }
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-                <div className="col-span-2 grid grid-cols-3 gap-2">
-                  <Input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    placeholder="Nos"
-                    value={line.deployed}
-                    onChange={(event) =>
-                      setEquipment((previous) =>
-                        previous.map((candidate, position) =>
-                          position === index
-                            ? { ...candidate, deployed: dprNumber(event.target.value) }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  />
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    inputMode="decimal"
-                    placeholder="Running hrs"
-                    value={line.runningHours ?? ""}
-                    onChange={(event) =>
-                      setEquipment((previous) =>
-                        previous.map((candidate, position) =>
-                          position === index
-                            ? { ...candidate, runningHours: dprNumber(event.target.value) }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  />
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    inputMode="decimal"
-                    placeholder="Idle hrs"
-                    value={line.idleHours ?? ""}
-                    onChange={(event) =>
-                      setEquipment((previous) =>
-                        previous.map((candidate, position) =>
-                          position === index
-                            ? { ...candidate, idleHours: dprNumber(event.target.value) }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setEquipment((previous) => [
-                  ...previous,
-                  { id: nanoid(), name: "", deployed: 1, runningHours: 0, idleHours: 0 },
-                ])
-              }
-            >
-              <Plus className="mr-1.5 h-4 w-4" /> Add equipment
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2 pb-4">{actionButtons}</div>
 
-      <Card className="border-border/60">
-        <SectionHeader
-          title="Lost time, hindrances and remarks"
-          description="The basis for any delay the day caused."
-          icon={CloudSun}
-          className="p-4 pb-0"
-        />
-        <CardContent className="grid grid-cols-1 gap-3 p-4 lg:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-lost-hours">Time lost (hours)</Label>
-            <Input
-              id="dpr-lost-hours"
-              type="number"
-              min={0}
-              max={24}
-              step="any"
-              inputMode="decimal"
-              value={lostTimeHours}
-              onChange={(event) => setLostTimeHours(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-lost-reason">Reason</Label>
-            <Input
-              id="dpr-lost-reason"
-              placeholder="Rain, power failure, material shortage…"
-              value={lostTimeReason}
-              onChange={(event) => setLostTimeReason(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-hindrances">Hindrances</Label>
-            <Textarea
-              id="dpr-hindrances"
-              rows={3}
-              placeholder="Blockers raised today and who they sit with."
-              value={hindrances}
-              onChange={(event) => setHindrances(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="dpr-remarks">Remarks</Label>
-            <Textarea
-              id="dpr-remarks"
-              rows={3}
-              placeholder="Anything else the day should be remembered by."
-              value={remarks}
-              onChange={(event) => setRemarks(event.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex flex-wrap items-center justify-end gap-2 pb-4">
-        <Button asChild variant="ghost">
-          <Link href={withProject(DPR_BASE_PATH)}>Cancel</Link>
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!canRecord || isSaving}
-          onClick={() => void handleSave("Draft")}
-        >
-          Save draft
-        </Button>
-        <Button disabled={!canRecord || isSaving} onClick={() => void handleSave("Submitted")}>
-          {isSaving ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="mr-2 h-4 w-4" />
-          )}
-          Submit
-        </Button>
-      </div>
+      {/* Values already used on this project's sheets, offered as the recorder types. */}
+      <datalist id="dpr-locations">
+        {suggestions.locations.map((value) => (
+          <option key={value} value={value} />
+        ))}
+      </datalist>
+      <datalist id="dpr-agencies">
+        {suggestions.agencies.map((value) => (
+          <option key={value} value={value} />
+        ))}
+      </datalist>
+      <datalist id="dpr-trades">
+        {suggestions.trades.map((value) => (
+          <option key={value} value={value} />
+        ))}
+      </datalist>
+      <datalist id="dpr-equipment">
+        {suggestions.equipment.map((value) => (
+          <option key={value} value={value} />
+        ))}
+      </datalist>
     </DprPageShell>
   );
 }

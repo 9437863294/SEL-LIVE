@@ -1,12 +1,17 @@
 "use client";
 
 /**
- * Daily Progress — the register's dashboard.
+ * Daily Progress — the module's dashboard.
  *
- * Opens on figures rather than link cards: how the chosen period is tracking against what was
- * projected for it, the planned-vs-actual curve, and the lines furthest behind. The period picker
- * is the whole point of the screen — projections are set at whatever granularity suits, and this
- * reads them back at whatever granularity is asked for.
+ * Figures and charts for the chosen scope and period, read from the register through the planning
+ * engine (`src/lib/project-management-dpr-plan.ts`) and the dashboard's own builders
+ * (`src/lib/project-management-dpr-dashboard.ts`). Projections are spread over working days, the
+ * shorter of two overlapping projections owns the shared days, and quantities in different units
+ * are never added: anything read across lines is each line's share of its own plan —
+ * value-weighted when every line has a BOQ rate, the average of line percentages otherwise.
+ *
+ * Only real register data is shown. Drafts are not counted anywhere; the filing calendar is the one
+ * place a draft appears, as a draft.
  */
 
 import { useMemo, useState } from "react";
@@ -14,60 +19,87 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Activity,
+  BarChart3,
   CalendarDays,
+  CalendarRange,
   ClipboardList,
-  FileBarChart2,
   HardHat,
   LineChart as LineChartIcon,
-  Plus,
+  ListChecks,
   Target,
   TriangleAlert,
   Users,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   DPR_BASE_PATH,
   DPR_PERMISSION_RESOURCE,
-  buildDprHeadline,
-  buildDprPeriodReport,
-  buildDprTrend,
+  DPR_SCOPES,
+  buildDprHindrances,
+  daysInRange,
+  type DprPeriodType,
   type DprScope,
 } from "@/lib/project-management-dpr";
+import {
+  buildDprBoard,
+  buildDprShareTrend,
+  dprCalendar,
+  dprShortDate,
+  isValidRange,
+} from "@/lib/project-management-dpr-plan";
+import {
+  buildDprComingUp,
+  buildDprDiaryDays,
+  buildDprFilingCalendar,
+  buildDprScopeSplit,
+  dprProgressAt,
+  furthestBehind,
+  lineAchievementBars,
+} from "@/lib/project-management-dpr-dashboard";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
-  DPR_GRADIENT,
   DprAccessDenied,
+  DprHeader,
   DprLoadingState,
   DprPageShell,
   DprPeriodPicker,
   DprProjectNotFound,
   DprScopeTabs,
+  DprStatTile,
   defaultPeriodSelection,
+  dprHref,
+  formatDisplayDate,
   formatPct,
-  formatQty,
+  formatQtyAt,
   resolvePeriodRange,
-  resolveTrendGranularity,
   todayIso,
   type DprPeriodSelection,
 } from "@/components/project-management/dpr/dpr-shell";
-import StatCard from "@/components/project-management/stat-card";
-import { PageHeader, SectionHeader } from "@/components/shared/page-header";
-import { StatusBadge } from "@/components/shared/status-badge";
+import {
+  DprDashboardCard,
+  DprDiaryCharts,
+  DprLineAchievementChart,
+  DprSCurveChart,
+  DprShareBarsChart,
+  type DprShareBar,
+} from "@/components/project-management/dpr/dashboard-charts";
+import { DprFilingCalendarView } from "@/components/project-management/dpr/dashboard-calendar";
+import {
+  DprComingUpTable,
+  DprFurthestBehindList,
+  DprHindranceList,
+  DprScopeSplitPanel,
+} from "@/components/project-management/dpr/dashboard-lists";
+import { DprBoardTable } from "@/components/project-management/dpr/dashboard-board-table";
+import { DprDashboardHero, type DprTodaySheet } from "@/components/project-management/dpr/dashboard-hero";
+import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { chartChrome } from "@/components/ui/chart";
-import { PmEmptyState } from "@/components/project-management/pm-shell";
-import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+
+/** Bars by day for a month or less, by week up to half a year, by month beyond. */
+const shareGranularity = (days: number): DprPeriodType =>
+  days <= 31 ? "Day" : days <= 183 ? "Week" : "Month";
 
 export default function DailyProgressDashboardPage() {
   const searchParams = useSearchParams();
@@ -75,8 +107,19 @@ export default function DailyProgressDashboardPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = !isAuthLoading && can("View", DPR_PERMISSION_RESOURCE);
 
-  const { projectName, isResolving, notFound, boqItems, entries, targets, isLoading, loadError } =
-    useDprData(mappingId, canView);
+  const {
+    projectName,
+    isResolving,
+    notFound,
+    boqItems,
+    entries,
+    settings,
+    plan,
+    projectDates,
+    decimalsFor,
+    isLoading,
+    loadError,
+  } = useDprData(mappingId, canView);
 
   // The Civil and Erection workspaces link in with their own scope, so arriving from one opens
   // already filtered to it rather than on a mixed view the user then has to narrow.
@@ -86,47 +129,81 @@ export default function DailyProgressDashboardPage() {
   );
   const [period, setPeriod] = useState<DprPeriodSelection>(() => defaultPeriodSelection("Week"));
 
+  const today = todayIso();
   const range = useMemo(() => resolvePeriodRange(period), [period]);
+  const rangeIsValid = isValidRange(range);
   const scopeFilter = scope === "All" ? undefined : scope;
 
-  const headline = useMemo(
-    () => buildDprHeadline({ boqItems, entries, targets, range, scope: scopeFilter }),
-    [boqItems, entries, targets, range, scopeFilter],
+  /** Scopes this project actually has BOQ lines in — both, if it has none yet. */
+  const projectScopes = useMemo<DprScope[]>(() => {
+    const present = DPR_SCOPES.filter((candidate) => boqItems.some((item) => item.scope === candidate));
+    return present.length > 0 ? present : [...DPR_SCOPES];
+  }, [boqItems]);
+  const shownScopes = useMemo<DprScope[]>(
+    () => (scopeFilter ? [scopeFilter] : projectScopes),
+    [scopeFilter, projectScopes],
   );
 
-  const report = useMemo(
-    () => buildDprPeriodReport({ boqItems, entries, targets, range, scope: scopeFilter }),
-    [boqItems, entries, targets, range, scopeFilter],
+  const board = useMemo(
+    () => buildDprBoard({ items: boqItems, entries, plan, settings, range, scope: scopeFilter, today }),
+    [boqItems, entries, plan, settings, range, scopeFilter, today],
   );
+  const reading = useMemo(() => dprProgressAt(board, today), [board, today]);
+  const bars = useMemo(() => lineAchievementBars(board, 10), [board]);
+  const behind = useMemo(() => furthestBehind(board, 5), [board]);
 
-  const trend = useMemo(
-    () =>
-      buildDprTrend({
-        entries,
-        targets,
-        periodType: resolveTrendGranularity(period, range),
-        range,
-        scope: scopeFilter,
-      }),
-    [entries, targets, period, range, scopeFilter],
-  );
-
-  /** Today's filing status per scope — the question a site office opens this screen to answer. */
-  const todayStatus = useMemo(() => {
-    const today = todayIso();
-    return (["Civil", "Erection"] as DprScope[]).map((candidate) => {
-      const entry = entries.find((item) => item.date === today && item.scope === candidate);
-      return { scope: candidate, status: entry?.status ?? null, id: entry?.id ?? "" };
+  const shareBars = useMemo<DprShareBar[]>(() => {
+    if (!rangeIsValid) return [];
+    const granularity = shareGranularity(daysInRange(range.startDate, range.endDate));
+    const { points } = buildDprShareTrend({
+      items: boqItems,
+      entries,
+      plan,
+      range,
+      periodType: granularity,
+      scope: scopeFilter,
     });
-  }, [entries]);
+    return points.map((point) => ({
+      label: granularity === "Day" ? dprShortDate(point.bucketStart) : point.label,
+      plannedPct: point.plannedPct,
+      // A bucket that has not started cannot have anything done in it yet.
+      actualPct: point.bucketStart > today ? null : point.actualPct,
+    }));
+  }, [boqItems, entries, plan, range, rangeIsValid, scopeFilter, today]);
 
-  const behind = useMemo(
-    () => report.rows.filter((row) => row.plannedQty > 0 && row.varianceQty < 0).slice(0, 6),
-    [report.rows],
+  const diary = useMemo(
+    () => buildDprDiaryDays({ entries, range, scope: scopeFilter, today }),
+    [entries, range, scopeFilter, today],
+  );
+  const filing = useMemo(
+    () =>
+      buildDprFilingCalendar({ entries, settings, range, scopes: shownScopes, today, projectDates }),
+    [entries, settings, range, shownScopes, today, projectDates],
+  );
+  const split = useMemo(
+    () =>
+      scope === "All" && projectScopes.length > 1
+        ? buildDprScopeSplit({ items: boqItems, entries, plan, settings, range, today })
+        : [],
+    [scope, projectScopes.length, boqItems, entries, plan, settings, range, today],
+  );
+  const comingUp = useMemo(
+    () => buildDprComingUp({ items: boqItems, plan, settings, today, scope: scopeFilter }),
+    [boqItems, plan, settings, today, scopeFilter],
+  );
+  const hindrances = useMemo(
+    () => (rangeIsValid ? buildDprHindrances(entries, { scope: scopeFilter, range }) : []),
+    [entries, scopeFilter, range, rangeIsValid],
   );
 
-  const withProject = (path: string) =>
-    `${path}${path.includes("?") ? "&" : "?"}project=${encodeURIComponent(mappingId)}`;
+  /** Today's sheet per scope — the question a site office opens this screen to answer. */
+  const todaySheets = useMemo<DprTodaySheet[]>(() => {
+    const working = dprCalendar(settings).isWorkingDay(today);
+    return shownScopes.map((candidate) => {
+      const sheet = entries.find((item) => item.date === today && item.scope === candidate);
+      return { scope: candidate, status: sheet?.status ?? "none", working };
+    });
+  }, [entries, settings, today, shownScopes]);
 
   if (isAuthLoading || isResolving) return <DprLoadingState blocks={2} />;
   if (!canView) {
@@ -141,43 +218,36 @@ export default function DailyProgressDashboardPage() {
     );
   }
 
+  const qty = (value: number, unit: string) => formatQtyAt(value, decimalsFor(unit));
+  // A per-day rate is not a count, so even a whole-number unit shows it to two places.
+  const rate = (value: number, unit: string) => formatQtyAt(value, Math.max(2, decimalsFor(unit)));
+  const { stats } = board;
+  const basisText = stats.basis === "value" ? "Weighted by BOQ value" : "Average of line percentages";
+  const todayLabel =
+    rangeIsValid && range.startDate <= today && today <= range.endDate ? dprShortDate(today) : null;
+  const periodLabel = rangeIsValid
+    ? range.startDate === range.endDate
+      ? formatDisplayDate(range.startDate)
+      : `${formatDisplayDate(range.startDate)} – ${formatDisplayDate(range.endDate)}`
+    : "";
+  const periodNote =
+    rangeIsValid && range.startDate > today
+      ? `This period starts on ${formatDisplayDate(range.startDate)}.`
+      : "Nothing is planned in this period yet.";
+  const projectionsLink = (
+    <Button asChild variant="outline" size="sm">
+      <Link href={dprHref(`${DPR_BASE_PATH}/targets`, mappingId)}>Open projections</Link>
+    </Button>
+  );
+
   return (
     <DprPageShell>
-      <PageHeader
-        title="Daily Progress"
-        description="Projected against actual work on this project's Civil and Erection BOQ lines."
-        icon={Activity}
-        breadcrumbs={[
-          { label: "Project Management", href: "/project-management" },
-          { label: projectName || "Project" },
-        ]}
-        backHref={withProject("/project-management")}
-        backLabel="Project Management"
-        actions={
-          <>
-            <Button asChild variant="outline">
-              <Link href={withProject(`${DPR_BASE_PATH}/targets`)}>
-                <Target className="mr-2 h-4 w-4" /> Projections
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href={withProject(`${DPR_BASE_PATH}/reports`)}>
-                <FileBarChart2 className="mr-2 h-4 w-4" /> Reports
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href={withProject(`${DPR_BASE_PATH}/entry`)}>
-                <Plus className="mr-2 h-4 w-4" /> Record progress
-              </Link>
-            </Button>
-          </>
-        }
-      />
+      <DprHeader active="dashboard" mappingId={mappingId} projectName={projectName} />
 
       <Card className="border-border/60">
         <CardContent className="space-y-4 p-4">
           <DprScopeTabs value={scope} onChange={setScope} includeAll />
-          <DprPeriodPicker value={period} onChange={setPeriod} />
+          <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} />
         </CardContent>
       </Card>
 
@@ -187,209 +257,195 @@ export default function DailyProgressDashboardPage() {
         </Card>
       ) : null}
 
-      {/* Today's filing status, so a missing day is visible without opening the log. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {todayStatus.map((row) => (
-          <Card key={row.scope} className="border-border/60">
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white",
-                    row.scope === "Civil" ? "from-sky-500 to-blue-600" : DPR_GRADIENT,
-                  )}
-                >
-                  <HardHat className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">{row.scope} — today</p>
-                  <div className="mt-0.5">
-                    {row.status ? (
-                      <StatusBadge status={row.status} dot />
-                    ) : (
-                      <StatusBadge status="Pending" tone="warning" dot>
-                        Not recorded
-                      </StatusBadge>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <Button asChild size="sm" variant={row.status ? "outline" : "default"}>
-                <Link
-                  href={withProject(
-                    `${DPR_BASE_PATH}/entry?scope=${row.scope}&date=${todayIso()}`,
-                  )}
-                >
-                  {row.status ? "Open" : "Record"}
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard
-          label="Projected this period"
-          value={formatQty(headline.plannedQty)}
-          icon={Target}
-          tone="bg-sky-500/10 text-sky-600"
-        />
-        <StatCard
-          label="Actual this period"
-          value={formatQty(headline.actualQty)}
-          icon={Activity}
-          tone="bg-emerald-500/10 text-emerald-600"
-        />
-        <StatCard
-          label="Achievement"
-          value={formatPct(headline.achievementPct)}
-          icon={LineChartIcon}
-          tone="bg-violet-500/10 text-violet-600"
-        />
-        <StatCard
-          label="Lines behind plan"
-          value={headline.linesBehind}
-          icon={TriangleAlert}
-          tone="bg-rose-500/10 text-rose-600"
-        />
-        <StatCard
-          label="Man-days"
-          value={formatQty(headline.manDays)}
-          icon={Users}
-          tone="bg-amber-500/10 text-amber-600"
-        />
-        <StatCard
-          label="Lost time (hrs)"
-          value={formatQty(headline.lostTimeHours)}
-          icon={TriangleAlert}
-          tone="bg-orange-500/10 text-orange-600"
-        />
-        <StatCard
-          label="Days reported"
-          value={`${headline.daysReported} / ${headline.daysInPeriod}`}
-          icon={CalendarDays}
-          tone="bg-indigo-500/10 text-indigo-600"
-        />
-        <StatCard
-          label="Lines worked"
-          value={headline.linesWorked}
-          icon={ClipboardList}
-          tone="bg-teal-500/10 text-teal-600"
-        />
-      </div>
-
-      <Card className="border-border/60">
-        <CardContent className="space-y-3 p-4">
-          <SectionHeader
-            title="Projected against actual"
-            description="Cumulative across the period. Quantities are summed across BOQ lines, so read the shape rather than the absolute figure where units differ."
-            icon={LineChartIcon}
+      {!rangeIsValid ? (
+        <Card className="border-destructive/40">
+          <CardContent className="p-4 text-sm text-destructive">Pick a valid from and to date.</CardContent>
+        </Card>
+      ) : isLoading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-44 w-full rounded-2xl" />
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-20 w-full" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Skeleton className="h-80 w-full" />
+            <Skeleton className="h-80 w-full" />
+          </div>
+        </div>
+      ) : (
+        <>
+          <DprDashboardHero
+            achievementPct={stats.achievementToDatePct}
+            basis={stats.basis}
+            reading={reading}
+            linesBehind={stats.linesBehind}
+            linesDue={stats.linesDue}
+            daysReported={stats.daysReported}
+            workingDaysElapsed={stats.workingDaysElapsed}
+            workingDaysInPeriod={stats.workingDaysInPeriod}
+            periodLabel={periodLabel}
+            periodNote={periodNote}
+            today={today}
+            todaySheets={todaySheets}
+            mappingId={mappingId}
           />
-          {isLoading ? (
-            <div className="h-72 animate-pulse rounded-md bg-muted/50" />
-          ) : trend.length === 0 ? (
-            <PmEmptyState
-              icon={LineChartIcon}
-              title="Nothing to plot yet"
-              description="Set a projection and record a day's progress to see the curve."
-            />
-          ) : (
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                  <defs>
-                    <linearGradient id="dprPlanned" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="dprActual" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="label"
-                    stroke={chartChrome.axis}
-                    tick={{ fontSize: 11 }}
-                    interval="preserveStartEnd"
-                    minTickGap={16}
-                  />
-                  <YAxis stroke={chartChrome.axis} tick={{ fontSize: 11 }} width={56} />
-                  <Tooltip
-                    cursor={chartChrome.cursor}
-                    {...chartChrome.tooltip}
-                    formatter={(value: number | string) => formatQty(Number(value))}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area
-                    type="monotone"
-                    name="Projected (cumulative)"
-                    dataKey="cumulativePlannedQty"
-                    stroke="#6366f1"
-                    strokeWidth={2}
-                    fill="url(#dprPlanned)"
-                  />
-                  <Area
-                    type="monotone"
-                    name="Actual (cumulative)"
-                    dataKey="cumulativeActualQty"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    fill="url(#dprActual)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      <Card className="border-border/60">
-        <CardContent className="space-y-3 p-4">
-          <SectionHeader
-            title="Furthest behind"
-            description="BOQ lines that were projected for this period and fell short."
-            icon={TriangleAlert}
-            actions={
-              <Button asChild size="sm" variant="outline">
-                <Link href={withProject(`${DPR_BASE_PATH}/reports`)}>Full report</Link>
-              </Button>
-            }
-          />
-          {behind.length === 0 ? (
-            <PmEmptyState
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+            <DprStatTile
+              value={formatPct(stats.achievementFullPct)}
+              label="Against the full period"
+              detail={basisText}
               icon={Target}
-              title="Nothing behind plan"
-              description="Every projected line met its target for this period, or nothing was projected."
+              tone="bg-sky-500/10 text-sky-600"
             />
-          ) : (
-            <div className="space-y-2">
-              {behind.map((row) => (
-                <div
-                  key={row.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium" title={row.description}>
-                      {row.boqSlNo ? `${row.boqSlNo} · ` : ""}
-                      {row.description || "BOQ line"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Projected {formatQty(row.plannedQty)} {row.unit} · done{" "}
-                      {formatQty(row.actualQty)} {row.unit} · {formatPct(row.progressPct)} of BOQ
-                    </p>
-                  </div>
-                  <StatusBadge status="Shortfall" tone="danger">
-                    {formatQty(row.varianceQty)} {row.unit}
-                  </StatusBadge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            <DprStatTile
+              value={stats.linesBehind}
+              label="Lines behind plan"
+              detail={`${stats.linesDue} line${stats.linesDue === 1 ? "" : "s"} due so far`}
+              icon={TriangleAlert}
+              tone="bg-rose-500/10 text-rose-600"
+            />
+            <DprStatTile
+              value={stats.linesWorked}
+              label="Lines worked"
+              detail={`${stats.linesInPeriod} in this period`}
+              icon={ClipboardList}
+              tone="bg-teal-500/10 text-teal-600"
+            />
+            <DprStatTile
+              value={`${stats.daysReported} / ${stats.workingDaysElapsed}`}
+              label="Working days reported"
+              detail={`${stats.workingDaysInPeriod} working day${stats.workingDaysInPeriod === 1 ? "" : "s"} in period`}
+              icon={CalendarDays}
+              tone="bg-indigo-500/10 text-indigo-600"
+            />
+            <DprStatTile
+              value={formatQtyAt(stats.manDays, 1)}
+              label="Man-days"
+              detail="From submitted sheets"
+              icon={Users}
+              tone="bg-amber-500/10 text-amber-600"
+            />
+            <DprStatTile
+              value={formatQtyAt(stats.lostTimeHours, 1)}
+              label="Lost time (hrs)"
+              detail="From submitted sheets"
+              icon={TriangleAlert}
+              tone="bg-orange-500/10 text-orange-600"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <DprDashboardCard
+              title="Cumulative progress"
+              info={`Planned and actual as running shares of the period plan — each line counts as its own percentage (${
+                stats.basis === "value" ? "weighted by BOQ value" : "averaged across lines"
+              }), so Cum and Nos are never added together. The planned line is dashed; the actual line is stepped and stops at today.`}
+              icon={LineChartIcon}
+            >
+              {board.curve.length > 0 ? (
+                <DprSCurveChart curve={board.curve} todayLabel={todayLabel} />
+              ) : (
+                <PmEmptyState icon={LineChartIcon} title={periodNote} action={projectionsLink} />
+              )}
+            </DprDashboardCard>
+
+            <DprDashboardCard
+              title="Planned and done, bucket by bucket"
+              info="Each bar is that day's (or week's) share of the period plan, so the bars across the period add up to 100% planned. Actual bars stop at today."
+              icon={BarChart3}
+            >
+              {shareBars.some((bar) => bar.plannedPct > 0 || (bar.actualPct ?? 0) > 0) ? (
+                <DprShareBarsChart data={shareBars} />
+              ) : (
+                <PmEmptyState icon={BarChart3} title={periodNote} action={projectionsLink} />
+              )}
+            </DprDashboardCard>
+
+            <DprDashboardCard
+              title="Achievement by BOQ line"
+              info="Lines already due in this period, worst first: actual against plan to date. Red is behind plan, green is on plan; the dashed line is 100%. Hover a bar for the quantities."
+              icon={Activity}
+            >
+              <DprLineAchievementChart bars={bars} formatQty={qty} />
+            </DprDashboardCard>
+
+            <DprDashboardCard
+              title="Furthest behind"
+              info="Lines behind their plan to date, with what each remaining working day must deliver to meet the period plan. Today counts as remaining until its sheet is submitted."
+              icon={TriangleAlert}
+            >
+              <DprFurthestBehindList rows={behind} qty={qty} rate={rate} />
+            </DprDashboardCard>
+
+            <DprDashboardCard
+              title="Daily sheets filed"
+              info="One mark per scope per day: submitted, a draft, not recorded on a working day, not expected (a non-working day or outside the project's dates), or not yet due. Select a mark to open that day's sheet."
+              icon={CalendarRange}
+            >
+              <DprFilingCalendarView calendar={filing} mappingId={mappingId} />
+            </DprDashboardCard>
+
+            <DprDashboardCard
+              title="Manpower and lost time"
+              info="Headcount on site and hours lost, per day, from the submitted sheets. Two charts on one time axis, so neither scale distorts the other."
+              icon={Users}
+            >
+              <DprDiaryCharts days={diary} />
+            </DprDashboardCard>
+          </div>
+
+          <DprDashboardCard
+            title="Next seven days"
+            info="What the projections ask of each BOQ line from today, day by day, in its own unit. Greyed days are non-working days in the project calendar."
+            icon={ListChecks}
+          >
+            <DprComingUpTable comingUp={comingUp} qty={qty} />
+          </DprDashboardCard>
+
+          <div className={split.length > 0 ? "grid grid-cols-1 gap-4 xl:grid-cols-2" : "space-y-4"}>
+            {split.length > 0 ? (
+              <DprDashboardCard
+                title="Civil against Erection"
+                info="Each scope read on its own: achievement to date and against the full period, and how many of its lines are behind."
+                icon={HardHat}
+              >
+                <DprScopeSplitPanel rows={split} />
+              </DprDashboardCard>
+            ) : null}
+            <DprDashboardCard
+              title="Hindrances in this period"
+              info="Hindrances written on submitted sheets, newest first."
+              icon={TriangleAlert}
+            >
+              <DprHindranceList rows={hindrances} />
+            </DprDashboardCard>
+          </div>
+
+          <DprDashboardCard
+            title="Planned against actual, by BOQ line"
+            info="Each line is measured in its own unit. “Plan to date” runs from the period start to today. “Needed per day” is what the remaining working days must deliver to meet the period plan; today counts until its sheet is submitted."
+            icon={Activity}
+          >
+            {board.rows.length === 0 ? (
+              <PmEmptyState
+                icon={Target}
+                title={
+                  scope === "All"
+                    ? "No projections or progress in this period"
+                    : `No ${scope} projections or progress in this period`
+                }
+                description="Add projections, or record a day's progress, to see the lines here."
+                action={projectionsLink}
+              />
+            ) : (
+              <DprBoardTable rows={board.rows} qty={qty} rate={rate} />
+            )}
+          </DprDashboardCard>
+        </>
+      )}
     </DprPageShell>
   );
 }

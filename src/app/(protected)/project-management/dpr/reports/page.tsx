@@ -4,9 +4,15 @@
  * Daily Progress reports.
  *
  * Five views over the same register, each scoped to Civil, Erection or both and read at whatever
- * period the picker is set to. Projections are pro-rated onto that window, so a monthly plan and a
- * weekly question still line up — the reports never assume the plan was set at the granularity
- * they are being read at.
+ * period the picker is set to. Projections come from the planning engine (working calendar, spread,
+ * shorter period owning overlapped days), so a monthly plan and a weekly question still line up.
+ *
+ * The plan-vs-actual view is unit-free: each bucket is a share of the period's plan, so lines in
+ * Cum and Nos sit on one axis without their quantities ever being added together.
+ *
+ * Every table keeps its data inside itself, as the Projections views do: one line per row, fixed
+ * columns with the long text cut short (full text on hover), a bounded height under a pinned
+ * header, and a narrow screen scrolls the table sideways in its own box.
  */
 
 import { useMemo, useState } from "react";
@@ -15,7 +21,6 @@ import {
   Activity,
   CloudSun,
   Download,
-  FileBarChart2,
   LineChart as LineChartIcon,
   TriangleAlert,
   Truck,
@@ -33,20 +38,20 @@ import {
 } from "recharts";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
-  DPR_BASE_PATH,
   DPR_PERMISSION_RESOURCE,
   buildDprEquipmentSummary,
   buildDprHindrances,
   buildDprLostTime,
   buildDprManpowerSummary,
   buildDprPeriodReport,
-  buildDprTrend,
   dprPeriodReportCsv,
   type DprScope,
 } from "@/lib/project-management-dpr";
+import { buildDprShareTrend, dprShortDate } from "@/lib/project-management-dpr-plan";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DprAccessDenied,
+  DprHeader,
   DprLoadingState,
   DprPageShell,
   DprPeriodPicker,
@@ -56,16 +61,18 @@ import {
   formatDisplayDate,
   formatPct,
   formatQty,
+  formatQtyAt,
   resolvePeriodRange,
   resolveTrendGranularity,
   type DprPeriodSelection,
 } from "@/components/project-management/dpr/dpr-shell";
-import { PageHeader } from "@/components/shared/page-header";
+import { InfoTip } from "@/components/shared/info-tip";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { chartChrome } from "@/components/ui/chart";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -86,16 +93,33 @@ const VIEWS = [
 
 type ViewId = (typeof VIEWS)[number]["id"];
 
+/** The table furniture every view shares: bounded height, pinned header, fixed columns. */
+const TABLE_PROPS = { stickyHeader: true, containerClassName: "max-h-[65vh]" } as const;
+
+/** A single-line text cell: cut short with an ellipsis, the whole value on hover. */
+const lineCell = "truncate text-sm";
+const numberCell = "truncate text-right text-sm tabular-nums";
+
+const scopeTone = (scope: DprScope) => (scope === "Civil" ? "info" : "progress");
+
 export default function DprReportsPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = !isAuthLoading && can("View", DPR_PERMISSION_RESOURCE);
 
-  const { projectName, isResolving, notFound, boqItems, entries, targets, isLoading } = useDprData(
-    mappingId,
-    canView,
-  );
+  const {
+    projectName,
+    isResolving,
+    notFound,
+    boqItems,
+    entries,
+    targets,
+    plan,
+    settings,
+    decimalsFor,
+    isLoading,
+  } = useDprData(mappingId, canView);
 
   const [view, setView] = useState<ViewId>("progress");
   const [scope, setScope] = useState<DprScope | "All">("All");
@@ -105,20 +129,22 @@ export default function DprReportsPage() {
   const scopeFilter = scope === "All" ? undefined : scope;
 
   const report = useMemo(
-    () => buildDprPeriodReport({ boqItems, entries, targets, range, scope: scopeFilter }),
-    [boqItems, entries, targets, range, scopeFilter],
+    () => buildDprPeriodReport({ boqItems, entries, targets, range, scope: scopeFilter, plan }),
+    [boqItems, entries, targets, range, scopeFilter, plan],
   );
 
+  const granularity = resolveTrendGranularity(period, range);
   const trend = useMemo(
     () =>
-      buildDprTrend({
+      buildDprShareTrend({
+        items: boqItems,
         entries,
-        targets,
-        periodType: resolveTrendGranularity(period, range),
+        plan,
         range,
+        periodType: granularity,
         scope: scopeFilter,
       }),
-    [entries, targets, period, range, scopeFilter],
+    [boqItems, entries, plan, range, granularity, scopeFilter],
   );
 
   const manpower = useMemo(
@@ -152,9 +178,6 @@ export default function DprReportsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const withProject = (path: string) =>
-    `${path}${path.includes("?") ? "&" : "?"}project=${encodeURIComponent(mappingId)}`;
-
   if (isAuthLoading || isResolving) return <DprLoadingState blocks={2} />;
   if (!canView) {
     return <DprAccessDenied description="You do not have permission to view daily progress." />;
@@ -172,17 +195,10 @@ export default function DprReportsPage() {
 
   return (
     <DprPageShell>
-      <PageHeader
-        title="Daily Progress reports"
-        description="Projected against actual, manpower, plant and delays — for the period and scope you choose."
-        icon={FileBarChart2}
-        breadcrumbs={[
-          { label: "Project Management", href: "/project-management" },
-          { label: "Daily Progress", href: withProject(DPR_BASE_PATH) },
-          { label: projectName || "Project" },
-        ]}
-        backHref={withProject(DPR_BASE_PATH)}
-        backLabel="Daily Progress"
+      <DprHeader
+        active="reports"
+        mappingId={mappingId}
+        projectName={projectName}
         actions={
           <Button variant="outline" onClick={downloadCsv} disabled={report.rows.length === 0}>
             <Download className="mr-2 h-4 w-4" /> Export CSV
@@ -191,11 +207,9 @@ export default function DprReportsPage() {
       />
 
       <Card className="border-border/60">
-        <CardContent className="space-y-4 p-4">
-          <DprScopeTabs value={scope} onChange={setScope} includeAll />
-          <DprPeriodPicker value={period} onChange={setPeriod} />
+        <CardContent className="space-y-3 p-4">
           <Tabs value={view} onValueChange={(next) => setView(next as ViewId)}>
-            <TabsList className="flex-wrap">
+            <TabsList className="h-auto flex-wrap">
               {VIEWS.map((candidate) => (
                 <TabsTrigger key={candidate.id} value={candidate.id}>
                   <candidate.icon className="mr-1.5 h-4 w-4" />
@@ -204,6 +218,16 @@ export default function DprReportsPage() {
               ))}
             </TabsList>
           </Tabs>
+          {/* Scope and period on one line at their own height; it wraps only when narrow. */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label>Scope</Label>
+              <div>
+                <DprScopeTabs value={scope} onChange={setScope} includeAll />
+              </div>
+            </div>
+            <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} inline />
+          </div>
         </CardContent>
       </Card>
 
@@ -225,87 +249,124 @@ export default function DprReportsPage() {
                 description="Change the period or scope, or record a day's progress."
               />
             ) : (
-              <Table>
+              <Table {...TABLE_PROPS} className="min-w-[1200px] table-fixed">
+                <colgroup>
+                  <col />
+                  <col className="w-[68px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[84px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[84px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[64px]" />
+                  <col className="w-[96px]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[240px]">BOQ line</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead className="text-right">BOQ qty</TableHead>
-                    <TableHead className="text-right">Projected</TableHead>
-                    <TableHead className="text-right">Actual</TableHead>
-                    <TableHead className="text-right">Variance</TableHead>
-                    <TableHead className="text-right">Achieved</TableHead>
-                    <TableHead className="text-right">Cumulative</TableHead>
-                    <TableHead className="text-right">Progress</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="truncate">BOQ line</TableHead>
+                    <TableHead className="truncate">Unit</TableHead>
+                    <TableHead className="truncate text-right">BOQ qty</TableHead>
+                    <TableHead className="truncate text-right" title="Projected for the period">
+                      Planned
+                    </TableHead>
+                    <TableHead className="truncate text-right">Actual</TableHead>
+                    <TableHead className="truncate text-right" title="Actual less planned">
+                      Variance
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Achievement: actual ÷ planned">
+                      Ach.
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Cumulative actual up to the period end">
+                      To date
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Cumulative as a share of the BOQ quantity">
+                      % BOQ
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="BOQ quantity less cumulative">
+                      Balance
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Days the line was worked in the period">
+                      Days
+                    </TableHead>
+                    <TableHead className="truncate" title="The last day the line was worked in the period">
+                      Last day
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="min-w-[240px]">
-                        <div className="truncate text-sm font-medium" title={row.description}>
-                          {row.boqSlNo ? `${row.boqSlNo} · ` : ""}
+                  {report.rows.map((row) => {
+                    const qty = (value: number) => formatQtyAt(value, decimalsFor(row.unit));
+                    const label = `${row.boqSlNo ? `${row.boqSlNo} · ` : ""}${row.description || "BOQ line"}`;
+                    const variance = `${row.varianceQty > 0 ? "+" : ""}${qty(row.varianceQty)}`;
+                    return (
+                      <TableRow key={row.id}>
+                        <TableCell className={lineCell} title={label}>
+                          {row.boqSlNo ? <span className="font-semibold">{row.boqSlNo}</span> : null}
+                          {row.boqSlNo ? " · " : null}
                           {row.description || "BOQ line"}
-                        </div>
-                        {row.lastWorkedDate ? (
-                          <div className="text-xs text-muted-foreground">
-                            Last worked {formatDisplayDate(row.lastWorkedDate)} · {row.workedDays}{" "}
-                            day{row.workedDays === 1 ? "" : "s"}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">{row.unit || "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatQty(row.boqQty)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQty(row.plannedQty)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {formatQty(row.actualQty)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        <span
-                          className={
+                        </TableCell>
+                        <TableCell className={lineCell} title={row.unit}>
+                          {row.unit || "—"}
+                        </TableCell>
+                        <TableCell className={numberCell} title={qty(row.boqQty)}>
+                          {qty(row.boqQty)}
+                        </TableCell>
+                        <TableCell className={numberCell} title={qty(row.plannedQty)}>
+                          {qty(row.plannedQty)}
+                        </TableCell>
+                        <TableCell className={`${numberCell} font-medium`} title={qty(row.actualQty)}>
+                          {qty(row.actualQty)}
+                        </TableCell>
+                        <TableCell
+                          className={`${numberCell} ${
                             row.varianceQty < 0
                               ? "text-destructive"
                               : row.varianceQty > 0
                                 ? "text-emerald-600"
-                                : undefined
-                          }
+                                : ""
+                          }`}
+                          title={variance}
                         >
-                          {row.varianceQty > 0 ? "+" : ""}
-                          {formatQty(row.varianceQty)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.achievementPct === null ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : (
-                          <StatusBadge
-                            status="Achievement"
-                            tone={
-                              row.achievementPct >= 100
-                                ? "success"
-                                : row.achievementPct >= 75
-                                  ? "warning"
-                                  : "danger"
-                            }
-                          >
-                            {formatPct(row.achievementPct)}
-                          </StatusBadge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQty(row.cumulativeQty)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatPct(row.progressPct)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQty(row.balanceQty)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          {variance}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right">
+                          {row.achievementPct === null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <StatusBadge
+                              status="Achievement"
+                              tone={
+                                row.achievementPct >= 100
+                                  ? "success"
+                                  : row.achievementPct >= 75
+                                    ? "warning"
+                                    : "danger"
+                              }
+                            >
+                              {formatPct(row.achievementPct)}
+                            </StatusBadge>
+                          )}
+                        </TableCell>
+                        <TableCell className={numberCell} title={qty(row.cumulativeQty)}>
+                          {qty(row.cumulativeQty)}
+                        </TableCell>
+                        <TableCell className={numberCell}>{formatPct(row.progressPct)}</TableCell>
+                        <TableCell className={numberCell} title={qty(row.balanceQty)}>
+                          {qty(row.balanceQty)}
+                        </TableCell>
+                        <TableCell className={numberCell}>{row.workedDays || "—"}</TableCell>
+                        <TableCell
+                          className={`${lineCell} tabular-nums`}
+                          title={row.lastWorkedDate ? formatDisplayDate(row.lastWorkedDate) : undefined}
+                        >
+                          {row.lastWorkedDate ? dprShortDate(row.lastWorkedDate) : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -314,16 +375,32 @@ export default function DprReportsPage() {
       ) : view === "trend" ? (
         <Card className="border-border/60">
           <CardContent className="space-y-3 p-4">
-            <p className="text-sm text-muted-foreground">
-              Read at {resolveTrendGranularity(period, range).toLowerCase()} granularity. Quantities
-              are summed across BOQ lines, so where units differ read the shape, not the figure.
-            </p>
-            {trend.length === 0 ? (
-              <PmEmptyState icon={LineChartIcon} title="Nothing to plot for this period" />
+            <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+              <span>
+                Each {granularity.toLowerCase()} as a share of the period plan,{" "}
+                {trend.basis === "value"
+                  ? "weighted by BOQ value"
+                  : "averaged across each line’s own percentage"}
+                .
+              </span>
+              <InfoTip label="About this chart">
+                A bar is that {granularity.toLowerCase()}’s planned or actual quantity as a
+                percentage of everything planned for the whole period, line by line, so lines in
+                different units are never added together. When every planned line has a BOQ rate
+                the lines are weighted by value; otherwise each line counts equally. The planned
+                bars add up to 100% across the period.
+              </InfoTip>
+            </div>
+            {trend.points.length === 0 ? (
+              <PmEmptyState
+                icon={LineChartIcon}
+                title="Nothing planned in this period"
+                description="The chart reads actuals against the period plan, so it needs a projection covering the period."
+              />
             ) : (
               <div className="h-80 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <BarChart data={trend.points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                     <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
                     <XAxis
                       dataKey="label"
@@ -332,20 +409,30 @@ export default function DprReportsPage() {
                       interval="preserveStartEnd"
                       minTickGap={16}
                     />
-                    <YAxis stroke={chartChrome.axis} tick={{ fontSize: 11 }} width={56} />
+                    <YAxis
+                      stroke={chartChrome.axis}
+                      tick={{ fontSize: 11 }}
+                      width={48}
+                      tickFormatter={(value: number) => `${Math.round(value)}%`}
+                    />
                     <Tooltip
                       cursor={chartChrome.cursor}
                       {...chartChrome.tooltip}
-                      formatter={(value: number | string) => formatQty(Number(value))}
+                      formatter={(value: number | string) => formatPct(Number(value))}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
                     <Bar
-                      name="Projected"
-                      dataKey="plannedQty"
+                      name="Planned (% of period plan)"
+                      dataKey="plannedPct"
                       fill="#6366f1"
                       radius={[4, 4, 0, 0]}
                     />
-                    <Bar name="Actual" dataKey="actualQty" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    <Bar
+                      name="Actual (% of period plan)"
+                      dataKey="actualPct"
+                      fill="#10b981"
+                      radius={[4, 4, 0, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -362,24 +449,41 @@ export default function DprReportsPage() {
                 description="Trades and headcount entered on the daily sheets roll up here."
               />
             ) : (
-              <Table>
+              <Table {...TABLE_PROPS} className="min-w-[640px] table-fixed">
+                <colgroup>
+                  <col />
+                  <col className="w-[128px]" />
+                  <col className="w-[128px]" />
+                  <col className="w-[128px]" />
+                  <col className="w-[128px]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Trade</TableHead>
-                    <TableHead className="text-right">Man-days</TableHead>
-                    <TableHead className="text-right">Days present</TableHead>
-                    <TableHead className="text-right">Peak strength</TableHead>
-                    <TableHead className="text-right">Average per day</TableHead>
+                    <TableHead className="truncate">Trade</TableHead>
+                    <TableHead className="truncate text-right" title="Headcount summed over the days worked">
+                      Man-days
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Days present">
+                      Days
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Peak strength on any one day">
+                      Peak
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Average headcount per day present">
+                      Avg / day
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {manpower.map((row) => (
                     <TableRow key={row.trade}>
-                      <TableCell className="font-medium">{row.trade}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatQty(row.manDays)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.daysPresent}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.peakCount}</TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className={`${lineCell} font-medium`} title={row.trade}>
+                        {row.trade}
+                      </TableCell>
+                      <TableCell className={numberCell}>{formatQty(row.manDays)}</TableCell>
+                      <TableCell className={numberCell}>{row.daysPresent}</TableCell>
+                      <TableCell className={numberCell}>{row.peakCount}</TableCell>
+                      <TableCell className={numberCell}>
                         {row.daysPresent > 0 ? formatQty(row.manDays / row.daysPresent) : "—"}
                       </TableCell>
                     </TableRow>
@@ -399,28 +503,41 @@ export default function DprReportsPage() {
                 description="Equipment deployed on the daily sheets rolls up here with its utilisation."
               />
             ) : (
-              <Table>
+              <Table {...TABLE_PROPS} className="min-w-[640px] table-fixed">
+                <colgroup>
+                  <col />
+                  <col className="w-[120px]" />
+                  <col className="w-[128px]" />
+                  <col className="w-[120px]" />
+                  <col className="w-[128px]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Equipment</TableHead>
-                    <TableHead className="text-right">Days deployed</TableHead>
-                    <TableHead className="text-right">Running hrs</TableHead>
-                    <TableHead className="text-right">Idle hrs</TableHead>
-                    <TableHead className="text-right">Utilisation</TableHead>
+                    <TableHead className="truncate">Equipment</TableHead>
+                    <TableHead className="truncate text-right" title="Days deployed">
+                      Days
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Running hours">
+                      Running hrs
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Idle hours">
+                      Idle hrs
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Running ÷ (running + idle)">
+                      Utilisation
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {equipment.map((row) => (
                     <TableRow key={row.name}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.deployedDays}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQty(row.runningHours)}
+                      <TableCell className={`${lineCell} font-medium`} title={row.name}>
+                        {row.name}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatQty(row.idleHours)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className={numberCell}>{row.deployedDays}</TableCell>
+                      <TableCell className={numberCell}>{formatQty(row.runningHours)}</TableCell>
+                      <TableCell className={numberCell}>{formatQty(row.idleHours)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right">
                         {row.utilisationPct === null ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
@@ -458,31 +575,39 @@ export default function DprReportsPage() {
               {lostTime.length === 0 ? (
                 <PmEmptyState icon={CloudSun} title="No time lost in this period" />
               ) : (
-                <Table>
+                <Table {...TABLE_PROPS} className="min-w-[640px] table-fixed">
+                  <colgroup>
+                    <col className="w-[120px]" />
+                    <col className="w-[104px]" />
+                    <col className="w-[88px]" />
+                    <col className="w-[128px]" />
+                    <col />
+                  </colgroup>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Scope</TableHead>
-                      <TableHead className="text-right">Hours</TableHead>
-                      <TableHead>Weather</TableHead>
-                      <TableHead className="min-w-[200px]">Reason</TableHead>
+                      <TableHead className="truncate">Date</TableHead>
+                      <TableHead className="truncate">Scope</TableHead>
+                      <TableHead className="truncate text-right">Hours</TableHead>
+                      <TableHead className="truncate">Weather</TableHead>
+                      <TableHead className="truncate">Reason</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {lostTime.map((row) => (
                       <TableRow key={`${row.date}-${row.scope}`}>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className={`${lineCell} tabular-nums`}>
                           {formatDisplayDate(row.date)}
                         </TableCell>
-                        <TableCell>
-                          <StatusBadge
-                            status={row.scope}
-                            tone={row.scope === "Civil" ? "info" : "progress"}
-                          />
+                        <TableCell className="whitespace-nowrap">
+                          <StatusBadge status={row.scope} tone={scopeTone(row.scope)} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatQty(row.hours)}</TableCell>
-                        <TableCell>{row.weather || "—"}</TableCell>
-                        <TableCell className="min-w-[200px]">{row.reason || "—"}</TableCell>
+                        <TableCell className={numberCell}>{formatQty(row.hours)}</TableCell>
+                        <TableCell className={lineCell} title={row.weather || undefined}>
+                          {row.weather || "—"}
+                        </TableCell>
+                        <TableCell className={lineCell} title={row.reason || undefined}>
+                          {row.reason || "—"}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -502,22 +627,39 @@ export default function DprReportsPage() {
               {hindrances.length === 0 ? (
                 <PmEmptyState icon={TriangleAlert} title="No hindrances raised in this period" />
               ) : (
-                <div className="divide-y divide-border/60">
-                  {hindrances.map((row) => (
-                    <div key={`${row.date}-${row.scope}`} className="space-y-1 p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{formatDisplayDate(row.date)}</span>
-                        <StatusBadge
-                          status={row.scope}
-                          tone={row.scope === "Civil" ? "info" : "progress"}
-                        />
-                      </div>
-                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                        {row.hindrances}
-                      </p>
-                    </div>
-                  ))}
-                </div>
+                <Table {...TABLE_PROPS} className="min-w-[560px] table-fixed">
+                  <colgroup>
+                    <col className="w-[120px]" />
+                    <col className="w-[104px]" />
+                    <col />
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="truncate">Date</TableHead>
+                      <TableHead className="truncate">Scope</TableHead>
+                      <TableHead className="truncate">Hindrance</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {hindrances.map((row) => (
+                      <TableRow key={`${row.date}-${row.scope}`}>
+                        <TableCell className={`${lineCell} tabular-nums`}>
+                          {formatDisplayDate(row.date)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <StatusBadge status={row.scope} tone={scopeTone(row.scope)} />
+                        </TableCell>
+                        {/* One line: line breaks in the text read as separators; all of it on hover. */}
+                        <TableCell
+                          className={`${lineCell} text-muted-foreground`}
+                          title={row.hindrances}
+                        >
+                          {row.hindrances.replace(/\s*\n+\s*/g, " · ")}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>

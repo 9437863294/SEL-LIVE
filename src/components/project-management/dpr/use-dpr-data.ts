@@ -9,7 +9,16 @@
  * rendering as though no project were selected (same shape as use-survey-host-context.ts).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { PM_PROJECT_COLLECTION } from "@/lib/project-management-projects";
@@ -24,6 +33,18 @@ import {
   type DprScope,
   type DprTarget,
 } from "@/lib/project-management-dpr";
+import {
+  DPR_SETTINGS_COLLECTION,
+  DPR_SETTINGS_DOC_ID,
+  buildDprPlan,
+  defaultDprSettings,
+  dprCalendar,
+  dprProjectDates,
+  dprUnitDecimals,
+  sanitizeDprSettings,
+  type DprPlan,
+  type DprSettings,
+} from "@/lib/project-management-dpr-plan";
 
 /** A BOQ line with the raw document kept alongside, for screens that need other columns. */
 export interface DprBoqItem extends DprBoqLike {
@@ -33,7 +54,21 @@ export interface DprBoqItem extends DprBoqLike {
 
 export interface DprDataState {
   globalProjectId: string;
+  /** The Project Management mapping id from `?project=`. */
+  mappingId: string;
   projectName: string;
+  /** This project's DPR settings (Daily Progress › Settings), or the defaults when none are saved. */
+  settings: DprSettings;
+  /** Whether a settings document exists yet. */
+  settingsSaved: boolean;
+  /** The project record's own dates, before any DPR override. */
+  projectRecordDates: { startDate: string; endDate: string };
+  /** Start and completion the checks use: the DPR setting, else the project record's. */
+  projectDates: { startDate: string; endDate: string };
+  /** The planning engine over `targets` with this project's calendar and unit precision. */
+  plan: DprPlan;
+  /** Decimal places for a unit under this project's settings. */
+  decimalsFor: (unit: string) => number;
   isResolving: boolean;
   notFound: boolean;
   boqItems: DprBoqItem[];
@@ -60,9 +95,43 @@ const readScope = (item: Record<string, unknown>): DprScope | null => {
   return null;
 };
 
+/**
+ * The register, loaded once by the module layout and shared with every Daily Progress screen, so
+ * moving between Dashboard, Projections, Record and the rest does not re-read the whole register.
+ */
+const DprDataContext = createContext<DprDataState | null>(null);
+
+export function DprDataProvider({
+  mappingId,
+  canRead,
+  children,
+}: {
+  mappingId: string;
+  canRead: boolean;
+  children: ReactNode;
+}) {
+  const value = useDprDataSource(mappingId, canRead);
+  return createElement(DprDataContext.Provider, { value }, children);
+}
+
+/**
+ * The screens' entry point. Inside the module layout it returns the shared register (the layout's
+ * own load, for the same `?project=`); outside one it loads its own, as it always did.
+ */
 export function useDprData(mappingId: string, canRead: boolean): DprDataState {
+  const shared = useContext(DprDataContext);
+  const useShared = Boolean(shared && shared.mappingId === mappingId);
+  // Hooks cannot be skipped, so the local load is handed no project when the shared one applies.
+  const own = useDprDataSource(useShared ? "" : mappingId, useShared ? false : canRead);
+  return useShared && shared ? shared : own;
+}
+
+function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
   const [globalProjectId, setGlobalProjectId] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [projectRecordDates, setProjectRecordDates] = useState({ startDate: "", endDate: "" });
+  const [settings, setSettings] = useState<DprSettings>(() => defaultDprSettings());
+  const [settingsSaved, setSettingsSaved] = useState(false);
   /**
    * The mapping id the resolved state above belongs to.
    *
@@ -88,10 +157,19 @@ export function useDprData(mappingId: string, canRead: boolean): DprDataState {
         const snapshot = await getDoc(doc(db, PM_PROJECT_COLLECTION, mappingId));
         if (cancelled) return;
         const data = snapshot.exists()
-          ? (snapshot.data() as { globalProjectId?: unknown; projectName?: unknown })
+          ? (snapshot.data() as {
+              globalProjectId?: unknown;
+              projectName?: unknown;
+              startDate?: unknown;
+              endDate?: unknown;
+            })
           : null;
         setGlobalProjectId(String(data?.globalProjectId ?? ""));
         setProjectName(String(data?.projectName ?? ""));
+        setProjectRecordDates({
+          startDate: typeof data?.startDate === "string" ? data.startDate : "",
+          endDate: typeof data?.endDate === "string" ? data.endDate : "",
+        });
       } catch (error) {
         console.error("Failed to resolve the Project Management project mapping:", error);
         if (!cancelled) {
@@ -117,11 +195,21 @@ export function useDprData(mappingId: string, canRead: boolean): DprDataState {
     setIsLoading(true);
     setLoadError("");
     try {
-      const [boqSnapshot, entrySnapshot, targetSnapshot] = await Promise.all([
+      const [boqSnapshot, entrySnapshot, targetSnapshot, settingsSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", globalProjectId, DPR_ENTRY_COLLECTION)),
         getDocs(collection(db, "projects", globalProjectId, DPR_TARGET_COLLECTION)),
+        // A settings read that fails must not take the register down with it: the defaults
+        // reproduce how figures were worked out before settings existed.
+        getDoc(doc(db, "projects", globalProjectId, DPR_SETTINGS_COLLECTION, DPR_SETTINGS_DOC_ID)).catch(
+          (error: unknown) => {
+            console.error("Failed to read the DPR settings; using the defaults:", error);
+            return null;
+          },
+        ),
       ]);
+      setSettings(sanitizeDprSettings(settingsSnapshot?.exists() ? settingsSnapshot.data() : null));
+      setSettingsSaved(Boolean(settingsSnapshot?.exists()));
 
       const items: DprBoqItem[] = [];
       for (const boqDoc of boqSnapshot.docs) {
@@ -139,6 +227,8 @@ export function useDprData(mappingId: string, canRead: boolean): DprDataState {
           description: readText(raw, ["Description", "DESCRIPTION OF ITEMS"]),
           unit: readText(raw, ["Unit", "UNIT", "Units"]),
           boqQty: dprNumber(raw.QTY ?? raw.Quantity ?? raw.quantity),
+          // The same columns the Civil hub prices lines from. Only weights achievement here.
+          rate: dprNumber(raw["Budget Price"] ?? raw["Unit Rate"] ?? raw.Rate ?? raw.rate),
           raw,
         });
       }
@@ -165,6 +255,22 @@ export function useDprData(mappingId: string, canRead: boolean): DprDataState {
 
   const isResolving = Boolean(mappingId) && mappingId !== resolvedFor;
 
+  const decimalsFor = useCallback((unit: string) => dprUnitDecimals(unit, settings), [settings]);
+
+  const plan = useMemo(() => {
+    // A projection is spread at its BOQ line's current unit, falling back to the unit it was saved with.
+    const unitById = new Map(boqItems.map((item) => [item.id, item.unit]));
+    return buildDprPlan(targets, {
+      calendar: dprCalendar(settings),
+      decimalsFor: (target) => dprUnitDecimals(unitById.get(target.boqItemId) || target.unit, settings),
+    });
+  }, [targets, boqItems, settings]);
+
+  const projectDates = useMemo(
+    () => dprProjectDates(settings, projectRecordDates),
+    [settings, projectRecordDates],
+  );
+
   useEffect(() => {
     // Nothing to load without a resolved project or the right to read it; "not loading" is derived
     // below rather than written back through setState from inside this effect.
@@ -178,7 +284,14 @@ export function useDprData(mappingId: string, canRead: boolean): DprDataState {
   return useMemo(
     () => ({
       globalProjectId,
+      mappingId,
       projectName,
+      settings,
+      settingsSaved,
+      projectRecordDates,
+      projectDates,
+      plan,
+      decimalsFor,
       isResolving,
       // No project in the URL, or one whose mapping did not resolve to a global project.
       notFound: !mappingId || (!isResolving && !globalProjectId),
@@ -196,6 +309,12 @@ export function useDprData(mappingId: string, canRead: boolean): DprDataState {
       canRead,
       globalProjectId,
       projectName,
+      settings,
+      settingsSaved,
+      projectRecordDates,
+      projectDates,
+      plan,
+      decimalsFor,
       isResolving,
       boqItems,
       entries,

@@ -3,14 +3,16 @@
 /**
  * Daily Progress log — every sheet filed on this project, newest first.
  *
- * The register's audit view: which days are filed, which are still drafts, and what each one
- * booked. Opening a row returns to the entry screen for that date and scope.
+ * The register's audit view: which days are filed, which are still drafts, and how each one went.
+ * Quantities are never totalled across a sheet's lines — they are in different units — so a sheet
+ * is summarised by counts instead: lines on it, lines worked, and lines that fell short of the
+ * plan snapshot taken when it was filed. Opening a row returns to the entry screen for that day.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CalendarDays, History, Plus } from "lucide-react";
+import { CalendarDays, Plus } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   DPR_BASE_PATH,
@@ -23,14 +25,15 @@ import {
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DprAccessDenied,
+  DprHeader,
   DprLoadingState,
   DprPageShell,
   DprProjectNotFound,
   DprScopeTabs,
+  dprHref,
   formatDisplayDate,
   formatQty,
 } from "@/components/project-management/dpr/dpr-shell";
-import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { Button } from "@/components/ui/button";
@@ -83,16 +86,21 @@ export default function DprLogPage() {
           .toLowerCase();
         return haystack.includes(needle);
       })
-      .map((entry) => ({
-        entry,
-        plannedQty: (entry.lines ?? []).reduce((sum, line) => sum + dprNumber(line.plannedQty), 0),
-        actualQty: (entry.lines ?? []).reduce((sum, line) => sum + dprNumber(line.actualQty), 0),
-        manpower: (entry.manpower ?? []).reduce((sum, line) => sum + dprNumber(line.count), 0),
-      }));
+      .map((entry) => {
+        const lines = entry.lines ?? [];
+        return {
+          entry,
+          lineCount: lines.length,
+          worked: lines.filter((line) => dprNumber(line?.actualQty) > 0).length,
+          // Against the plan snapshot written onto the line when the sheet was filed.
+          behind: lines.filter(
+            (line) =>
+              dprNumber(line?.plannedQty) > 0 && dprNumber(line?.actualQty) < dprNumber(line?.plannedQty),
+          ).length,
+          manpower: (entry.manpower ?? []).reduce((sum, line) => sum + dprNumber(line?.count), 0),
+        };
+      });
   }, [entries, scope, status, search]);
-
-  const withProject = (path: string) =>
-    `${path}${path.includes("?") ? "&" : "?"}project=${encodeURIComponent(mappingId)}`;
 
   if (isAuthLoading || isResolving) return <DprLoadingState blocks={1} />;
   if (!canView) {
@@ -109,20 +117,13 @@ export default function DprLogPage() {
 
   return (
     <DprPageShell>
-      <PageHeader
-        title="Daily Progress log"
-        description="Every sheet filed on this project, newest first."
-        icon={History}
-        breadcrumbs={[
-          { label: "Project Management", href: "/project-management" },
-          { label: "Daily Progress", href: withProject(DPR_BASE_PATH) },
-          { label: projectName || "Project" },
-        ]}
-        backHref={withProject(DPR_BASE_PATH)}
-        backLabel="Daily Progress"
+      <DprHeader
+        active="log"
+        mappingId={mappingId}
+        projectName={projectName}
         actions={
           <Button asChild>
-            <Link href={withProject(`${DPR_BASE_PATH}/entry`)}>
+            <Link href={dprHref(`${DPR_BASE_PATH}/entry`, mappingId)}>
               <Plus className="mr-2 h-4 w-4" /> Record progress
             </Link>
           </Button>
@@ -175,7 +176,7 @@ export default function DprLogPage() {
               action={
                 entries.length === 0 ? (
                   <Button asChild>
-                    <Link href={withProject(`${DPR_BASE_PATH}/entry`)}>
+                    <Link href={dprHref(`${DPR_BASE_PATH}/entry`, mappingId)}>
                       <Plus className="mr-2 h-4 w-4" /> Record progress
                     </Link>
                   </Button>
@@ -183,15 +184,15 @@ export default function DprLogPage() {
               }
             />
           ) : (
-            <Table>
+            <Table stickyHeader containerClassName="max-h-[65vh]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Scope</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Lines</TableHead>
-                  <TableHead className="text-right">Projected</TableHead>
-                  <TableHead className="text-right">Actual</TableHead>
+                  <TableHead className="text-right">Worked</TableHead>
+                  <TableHead className="text-right">Behind plan</TableHead>
                   <TableHead className="text-right">Manpower</TableHead>
                   <TableHead className="text-right">Lost hrs</TableHead>
                   <TableHead>Recorded by</TableHead>
@@ -199,7 +200,7 @@ export default function DprLogPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map(({ entry, plannedQty, actualQty, manpower }) => (
+                {rows.map(({ entry, lineCount, worked, behind, manpower }) => (
                   <TableRow key={entry.id}>
                     <TableCell className="whitespace-nowrap font-medium">
                       {formatDisplayDate(entry.date)}
@@ -213,12 +214,14 @@ export default function DprLogPage() {
                     <TableCell>
                       <StatusBadge status={entry.status} dot />
                     </TableCell>
+                    <TableCell className="text-right tabular-nums">{lineCount}</TableCell>
+                    <TableCell className="text-right tabular-nums">{worked}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {(entry.lines ?? []).length}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{formatQty(plannedQty)}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {formatQty(actualQty)}
+                      {behind > 0 ? (
+                        <span className="font-medium text-destructive">{behind}</span>
+                      ) : (
+                        <span className="text-muted-foreground">0</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{formatQty(manpower)}</TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -230,9 +233,10 @@ export default function DprLogPage() {
                     <TableCell className="text-right">
                       <Button asChild size="sm" variant="outline">
                         <Link
-                          href={withProject(
-                            `${DPR_BASE_PATH}/entry?scope=${entry.scope}&date=${entry.date}`,
-                          )}
+                          href={dprHref(`${DPR_BASE_PATH}/entry`, mappingId, {
+                            scope: entry.scope,
+                            date: entry.date,
+                          })}
                         >
                           Open
                         </Link>

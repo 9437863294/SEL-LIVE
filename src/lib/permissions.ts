@@ -794,7 +794,9 @@ export const permissionModules = {
     // whatever day/week/month granularity suits) and the daily sheets recorded against them
     // (see src/lib/project-management-dpr.ts). "Add" records a day; "Edit" also covers setting
     // projections, since planning the work and correcting a filed sheet are the same authority.
-    DPR: ["View", "Add", "Edit", "Delete", "Export"],
+    // "Reopen" is the DPR approver: it reopens a submitted (locked) sheet and may record a date
+    // past the backdating limit. "Edit Settings" changes the calendar, limits and lists.
+    DPR: ["View", "Add", "Edit", "Delete", "Export", "Reopen", "Edit Settings"],
     // Tower-wise execution hosted inside Erection: the seven construction activities per tower, their
     // photographic evidence, and the reporting engine over both (see
     // src/lib/project-management-tower-progress.ts). "Verify Progress" is deliberately separate from

@@ -83,6 +83,16 @@ import {
   type DprTarget,
 } from "@/lib/project-management-dpr";
 import {
+  DPR_SETTINGS_COLLECTION,
+  DPR_SETTINGS_DOC_ID,
+  buildDprPlan,
+  defaultDprSettings,
+  dprCalendar,
+  dprUnitDecimals,
+  sanitizeDprSettings,
+  type DprSettings,
+} from "@/lib/project-management-dpr-plan";
+import {
   JMC_ENTRY_COLLECTION,
   SUBCONTRACTOR_BILL_COLLECTION,
   WORK_ORDER_COLLECTION,
@@ -204,6 +214,7 @@ export default function CivilPage() {
   const [boqItems, setBoqItems] = useState<Array<Record<string, unknown>>>([]);
   const [entries, setEntries] = useState<DprEntry[]>([]);
   const [targets, setTargets] = useState<DprTarget[]>([]);
+  const [dprSettings, setDprSettings] = useState<DprSettings>(() => defaultDprSettings());
   const [jmcEntries, setJmcEntries] = useState<MeasurementEntryLike[]>([]);
   const [workOrders, setWorkOrders] = useState<WorkOrderLike[]>([]);
   const [bills, setBills] = useState<SubcontractorBillLike[]>([]);
@@ -278,13 +289,19 @@ export default function CivilPage() {
     setLoadError("");
     try {
       const path = ["projects", globalProjectId] as const;
-      const [boqSnap, entrySnap, targetSnap, jmcSnap, workOrderSnap, billSnap] = await Promise.all([
+      const [boqSnap, entrySnap, targetSnap, jmcSnap, workOrderSnap, billSnap, dprSettingsSnap] = await Promise.all([
         getDocs(collection(db, ...path, "boqItems")),
         getDocs(collection(db, ...path, DPR_ENTRY_COLLECTION)),
         getDocs(collection(db, ...path, DPR_TARGET_COLLECTION)),
         getDocs(collection(db, ...path, JMC_ENTRY_COLLECTION)),
         getDocs(collection(db, ...path, WORK_ORDER_COLLECTION)),
         getDocs(collection(db, ...path, SUBCONTRACTOR_BILL_COLLECTION)),
+        // Daily Progress's calendar and unit precision, so planned figures here match its own.
+        // A failed read falls back to the defaults rather than failing the hub.
+        getDoc(doc(db, ...path, DPR_SETTINGS_COLLECTION, DPR_SETTINGS_DOC_ID)).catch((error: unknown) => {
+          console.error("Failed to read the DPR settings; using the defaults:", error);
+          return null;
+        }),
       ]);
       const records = <T,>(snapshot: typeof boqSnap) =>
         snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
@@ -292,6 +309,7 @@ export default function CivilPage() {
       setBoqItems(records<Record<string, unknown>>(boqSnap));
       setEntries(records<DprEntry>(entrySnap));
       setTargets(records<DprTarget>(targetSnap));
+      setDprSettings(sanitizeDprSettings(dprSettingsSnap?.exists() ? dprSettingsSnap.data() : null));
       setJmcEntries(records<MeasurementEntryLike>(jmcSnap));
       setWorkOrders(records<WorkOrderLike>(workOrderSnap));
       setBills(records<SubcontractorBillLike>(billSnap));
@@ -316,14 +334,26 @@ export default function CivilPage() {
   const lines = useMemo(() => buildCivilBoqLines(boqItems), [boqItems]);
   const certifiedEvents = useMemo(() => buildCivilCertifiedEvents(jmcEntries), [jmcEntries]);
 
+  /**
+   * The same planning engine Daily Progress reads: working days only, the projection's spread, and
+   * the shorter of two overlapping projections owning the shared days.
+   */
+  const plan = useMemo(() => {
+    const unitById = new Map(lines.map((line) => [line.id, line.unit]));
+    return buildDprPlan(targets, {
+      calendar: dprCalendar(dprSettings),
+      decimalsFor: (target) => dprUnitDecimals(unitById.get(target.boqItemId) || target.unit, dprSettings),
+    });
+  }, [targets, lines, dprSettings]);
+
   const headline = useMemo(
-    () => buildCivilHeadline({ lines, entries, targets, jmcEntries, today }),
-    [lines, entries, targets, jmcEntries, today],
+    () => buildCivilHeadline({ lines, entries, targets, jmcEntries, today, plan }),
+    [lines, entries, targets, jmcEntries, today, plan],
   );
 
   const workItems = useMemo(
-    () => buildCivilWorkItems({ lines, entries, targets, jmcEntries, workOrders, today }),
-    [lines, entries, targets, jmcEntries, workOrders, today],
+    () => buildCivilWorkItems({ lines, entries, targets, jmcEntries, workOrders, today, plan }),
+    [lines, entries, targets, jmcEntries, workOrders, today, plan],
   );
 
   const todaySnapshot = useMemo(() => buildCivilToday(entries, today), [entries, today]);
@@ -368,8 +398,9 @@ export default function CivilPage() {
         certifiedEvents,
         periodType: "Week",
         range: curveRange,
+        plan,
       }),
-    [lines, entries, targets, certifiedEvents, curveRange],
+    [lines, entries, targets, certifiedEvents, curveRange, plan],
   );
 
   const curveHasData = curve.some(
