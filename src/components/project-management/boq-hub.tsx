@@ -14,6 +14,7 @@ import {
   ClipboardList,
   GitPullRequestArrow,
   ListPlus,
+  ListTree,
   UploadCloud,
   type LucideIcon,
 } from "lucide-react";
@@ -35,6 +36,7 @@ export type BoqHubFigures = {
 export type BoqHubPermissions = {
   canImport: boolean;
   canAddManual: boolean;
+  canBreakDown: boolean;
   canViewVariations: boolean;
 };
 
@@ -117,7 +119,7 @@ export function buildBoqStages(
 ): BoqStage[] {
   const projectQuery = `project=${encodeURIComponent(project.id)}`;
   const globalProjectSlug = slugify(project.globalProjectName);
-  const { canImport, canAddManual, canViewVariations } = permissions;
+  const { canImport, canAddManual, canBreakDown, canViewVariations } = permissions;
   const { boqItems, pendingVariations } = figures;
   const count = (n: number) => n.toLocaleString("en-IN");
   // With nothing entered yet, costing and execution have nothing to work on — say so where the
@@ -166,6 +168,31 @@ export function buildBoqStages(
           : boqItems === 0
             ? { text: "No items yet — start here", tone: "flag" }
             : { text: `${count(boqItems)} item${boqItems === 1 ? "" : "s"}`, tone: "default" },
+    },
+    {
+      key: "breakdown",
+      label: "Break it down",
+      // A client's line is what you are paid for; a sub-item is what you actually buy and build.
+      // Its own right, because subdividing a line changes what every register downstream can book
+      // against — and it can only be done before work starts on the line.
+      cards: canBreakDown
+        ? [
+            {
+              title: "Work Breakdown",
+              description: "Split a BOQ line into the parts you buy and sub-contract.",
+              cta: "Open breakdown",
+              href: `/project-management/boq/breakdown?${projectQuery}`,
+              icon: ListTree,
+              accent: "amber",
+            },
+          ]
+        : [],
+      help: {
+        title: "Work Breakdown",
+        text: "Break a coarse line — “Earthing system, 1 LOT” — into pits, strip and testing, so procurement can order the parts. The client still bills the line.",
+      },
+      phrase: "break it into parts",
+      status: waitingOnBoq,
     },
     {
       key: "price",

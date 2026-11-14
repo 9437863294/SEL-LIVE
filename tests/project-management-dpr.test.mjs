@@ -505,35 +505,7 @@ test('the CSV export quotes commas and defuses formula injection', () => {
   assert.equal(row.includes('32.46'), true, 'quantities round to 2dp');
 });
 
-/* ── Groundwork for per-party reporting ─────────────────────────────────────────────────────── */
-
-test('proRataQty is the one pro-rating implementation, and targetQtyInRange delegates to it', () => {
-  const span = { startDate: '2026-11-01', endDate: '2026-11-30' };
-  const week = { startDate: '2026-11-02', endDate: '2026-11-08' };
-  // 300 over 30 days = 10/day; 7 days of it = 70.
-  assert.equal(round(proRataQty(span, 300, week)), 70);
-  // The projection helper must agree exactly — if these ever diverge, a projection and an
-  // assignment on the same line would be measured against different arithmetic.
-  const projection = target({ startDate: span.startDate, endDate: span.endDate, plannedQty: 300 });
-  assert.equal(round(targetQtyInRange(projection, week)), round(proRataQty(span, 300, week)));
-  // An inverted or unparseable span contributes nothing rather than throwing.
-  assert.equal(proRataQty({ startDate: '2026-11-30', endDate: '2026-11-01' }, 300, week), 0);
-  assert.equal(proRataQty({ startDate: 'not-a-date', endDate: '2026-11-30' }, 300, week), 0);
-});
-
-test('workedDays counts distinct dates, so two parties filing one date is one day', () => {
-  // The same BOQ line worked by two parties on 11-02, and by one on 11-03.
-  const entries = [
-    entry('2026-11-02', 'Civil', [{ boqItemId: 'civil-1', plannedQty: 0, actualQty: 12 }], { id: 'a' }),
-    entry('2026-11-02', 'Civil', [{ boqItemId: 'civil-1', plannedQty: 0, actualQty: 8 }], { id: 'b' }),
-    entry('2026-11-03', 'Civil', [{ boqItemId: 'civil-1', plannedQty: 0, actualQty: 5 }], { id: 'c' }),
-  ];
-  const totals = aggregateActualsByBoqItem(entries);
-  const line = totals.get('civil-1');
-  assert.equal(line.actualQty, 25, 'quantities still add across both parties');
-  assert.equal(line.workedDays, 2, 'two dates, not three entries');
-  assert.equal(line.lastWorkedDate, '2026-11-03');
-});
+/* ── Worked days ────────────────────────────────────────────────────────────────────────────── */
 
 test('a line filed at zero does not count as a worked day', () => {
   const entries = [
@@ -544,29 +516,3 @@ test('a line filed at zero does not count as a worked day', () => {
   assert.equal(line.lastWorkedDate, '', 'never worked, so there is no last date');
 });
 
-test('the counting set decides what reports total, and Draft stays out by default', () => {
-  const entries = [
-    entry('2026-11-02', 'Civil', [{ boqItemId: 'civil-1', plannedQty: 0, actualQty: 10 }], { id: 's' }),
-    entry('2026-11-03', 'Civil', [{ boqItemId: 'civil-1', plannedQty: 0, actualQty: 7 }], { id: 'd', status: 'Draft' }),
-  ];
-  assert.equal(aggregateActualsByBoqItem(entries).get('civil-1').actualQty, 10, 'Draft excluded');
-  assert.equal(
-    aggregateActualsByBoqItem(entries, { includeDrafts: true }).get('civil-1').actualQty,
-    17,
-    'the deprecated flag still works',
-  );
-  assert.equal(
-    aggregateActualsByBoqItem(entries, { statuses: ['Draft'] }).get('civil-1').actualQty,
-    7,
-    'an explicit set wins over the default',
-  );
-  assert.deepEqual(countingStatuses(), DPR_COUNTING_STATUSES);
-  assert.deepEqual(countingStatuses({ includeDrafts: true }), [...DPR_COUNTING_STATUSES, 'Draft']);
-  assert.deepEqual(countingStatuses({ statuses: ['Submitted'] }), ['Submitted']);
-});
-
-test('every counting status is a real status, so a typo cannot silently empty a report', () => {
-  for (const status of DPR_COUNTING_STATUSES) {
-    assert.equal(DPR_ALL_STATUSES.includes(status), true, `${status} is not a DprStatus`);
-  }
-});

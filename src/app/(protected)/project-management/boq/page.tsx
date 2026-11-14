@@ -61,6 +61,7 @@ export default function BoqPage() {
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
   const canImportBoq = can("Import", `${MODULE_NAME}.BOQ`);
   const canAddManualBoq = can("Add Manual", `${MODULE_NAME}.BOQ`);
+  const canBreakDownBoq = can("Break Down", `${MODULE_NAME}.BOQ`);
   const canViewVariations = can("View", VARIATION_PERMISSION_RESOURCE);
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(Boolean(mappingId));
@@ -147,12 +148,13 @@ export default function BoqPage() {
             {
               canImport: canImportBoq,
               canAddManual: canAddManualBoq,
+              canBreakDown: canBreakDownBoq,
               canViewVariations,
             },
             figures,
           )
         : [],
-    [canAddManualBoq, canImportBoq, canViewVariations, figures, selectedProject],
+    [canAddManualBoq, canBreakDownBoq, canImportBoq, canViewVariations, figures, selectedProject],
   );
 
   if (isAuthLoading || isLoadingProject) {

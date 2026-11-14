@@ -765,7 +765,11 @@ export const permissionModules = {
   },
   "Project Management": {
     "View Module": [],
-    BOQ: ["View", "Import", "Add Manual", "Delete", "Export"],
+    // "Break Down" splits a contract line into the sub-items procurement and subcontracts actually
+    // order against (see src/lib/project-management-boq-subitems.ts). It is deliberately separate
+    // from "Add Manual": adding a line extends the BOQ, but subdividing one changes what every
+    // register downstream can book against, and it cannot be undone once work starts on a part.
+    BOQ: ["View", "Import", "Add Manual", "Break Down", "Delete", "Export"],
     // Indents route through a configurable approval workflow before their quantities reserve
     // against the BOQ (see src/lib/project-management-indent-workflow.ts).
     Indent: ["View", "Add", "Delete", "View Settings", "Edit Settings"],
