@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * The Reports screen's headline band, from the user's mock-up (`sel-dpr-reports-manpower-colour`):
- * a violet-to-teal band carrying the back arrow, where the page sits, the title, the export
- * button, and the five reports as tabs. It carries `keep-light`, so the dark-compat layer leaves
- * its white text and translucent chips alone; it reads the same in both themes.
+ * The headline band of the Reports and Projections screens, from the user's mock-ups
+ * (`sel-dpr-reports-manpower-colour`, `sel-projections-colour`): a violet-to-teal band carrying the
+ * back arrow, where the page sits, the title, any actions (Export CSV), and the screen's views as
+ * tabs. It carries `keep-light`, so the dark-compat layer leaves its white text and translucent
+ * chips alone; it reads the same in both themes.
  *
  * Colours are plain rgba — no color-mix(), which Chrome 109 (the Windows 7 PCs) drops silently.
  */
@@ -25,13 +26,30 @@ export interface DprReportTab<Id extends string> {
   colours: readonly [string, string];
 }
 
-const BAND = {
-  backgroundImage: [
+/** The band's colourings, from the mock-ups: violet→teal (Reports, Projections, Log), cyan→violet (BOQ register), rose→violet (Settings). */
+const BANDS = {
+  violet: [
     "radial-gradient(520px 230px at 92% 0%, rgba(251, 191, 36, 0.63), transparent 65%)",
     "radial-gradient(520px 260px at 40% 140%, rgba(236, 72, 153, 0.63), transparent 65%)",
     "linear-gradient(115deg, #4c1d95, #7c3aed 45%, #0e7490)",
-  ].join(", "),
+  ],
+  cyan: [
+    "radial-gradient(520px 230px at 92% 0%, rgba(34, 211, 238, 0.63), transparent 65%)",
+    "radial-gradient(520px 260px at 40% 140%, rgba(167, 139, 250, 0.63), transparent 65%)",
+    "linear-gradient(115deg, #164e63, #0891b2 45%, #6d28d9)",
+  ],
+  rose: [
+    "radial-gradient(520px 230px at 92% 0%, rgba(251, 113, 133, 0.63), transparent 65%)",
+    "radial-gradient(520px 260px at 40% 140%, rgba(251, 191, 36, 0.63), transparent 65%)",
+    "linear-gradient(115deg, #831843, #db2777 45%, #7c3aed)",
+  ],
 } as const;
+export type DprHeroBand = keyof typeof BANDS;
+
+/** The band's own buttons: the white main action, and a translucent second one beside it. */
+export const DPR_HERO_PRIMARY = "rounded-xl bg-white font-extrabold text-violet-900 shadow-lg hover:bg-white/90";
+export const DPR_HERO_SECONDARY =
+  "rounded-xl border border-white/30 bg-white/10 font-extrabold text-white hover:bg-white/20 hover:text-white";
 
 const DOTS = {
   backgroundImage: "radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px)",
@@ -40,7 +58,7 @@ const DOTS = {
   maskImage: "linear-gradient(90deg, transparent, #000 70%)",
 } as const;
 
-export function DprReportsHero<Id extends string>({
+export function DprReportsHero<Id extends string = string>({
   mappingId,
   projectName,
   title,
@@ -50,16 +68,19 @@ export function DprReportsHero<Id extends string>({
   active,
   onTabChange,
   actions,
+  band = "violet",
 }: {
   mappingId: string;
   projectName: string;
   title: string;
   description: string;
   icon: LucideIcon;
-  tabs: readonly DprReportTab<Id>[];
-  active: Id;
-  onTabChange: (next: Id) => void;
+  /** The screen's views; a page with one view leaves them out. */
+  tabs?: readonly DprReportTab<Id>[];
+  active?: Id;
+  onTabChange?: (next: Id) => void;
   actions?: ReactNode;
+  band?: DprHeroBand;
 }) {
   const back = useBackNavigation(dprHref("/project-management", mappingId), {
     fallbackLabel: "Project Management",
@@ -67,7 +88,7 @@ export function DprReportsHero<Id extends string>({
   return (
     <section
       className="keep-light relative overflow-hidden rounded-3xl px-4 pb-4 pt-4 text-white shadow-sm sm:px-6 sm:pb-5 sm:pt-5"
-      style={BAND}
+      style={{ backgroundImage: BANDS[band].join(", ") }}
     >
       <div className="pointer-events-none absolute inset-0" style={DOTS} aria-hidden="true" />
       <div className="relative flex flex-wrap items-center gap-3">
@@ -99,12 +120,13 @@ export function DprReportsHero<Id extends string>({
             <span>{projectName || "Project"}</span>
           </nav>
           <h1 className="mt-px text-2xl font-extrabold leading-tight tracking-tight">{title}</h1>
-          <p className="text-[12.5px] text-indigo-100">{description}</p>
+          <p className="max-w-[720px] text-[12.5px] text-indigo-100">{description}</p>
         </div>
         {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
       </div>
 
-      <div className="relative mt-4 flex flex-wrap gap-2" role="tablist" aria-label="Reports">
+      {tabs && tabs.length > 0 && active !== undefined && onTabChange ? (
+      <div className="relative mt-4 flex flex-wrap gap-2" role="tablist" aria-label={`${title} views`}>
         {tabs.map((tab) => {
           const selected = tab.id === active;
           return (
@@ -147,6 +169,7 @@ export function DprReportsHero<Id extends string>({
           );
         })}
       </div>
+      ) : null}
     </section>
   );
 }

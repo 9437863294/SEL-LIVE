@@ -157,7 +157,9 @@ export function DprReportCard({
             </small>
           ) : null}
         </div>
-        {aside ? <div className="flex shrink-0 flex-wrap items-center gap-2">{aside}</div> : null}
+        {/* On a phone the aside wraps under the title and keeps within the card; from sm up it
+            holds its own width at the right. */}
+        {aside ? <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:shrink-0">{aside}</div> : null}
       </div>
       {children}
     </section>
@@ -179,20 +181,31 @@ export function DprReportCallout({
   title,
   children,
   action,
+  mark,
 }: {
   tone: DprCalloutTone;
   title: ReactNode;
   children?: ReactNode;
   action?: ReactNode;
+  /** Short text in the chip instead of the tone's icon — the SL No a finding is about ("5", "R1"). */
+  mark?: string;
 }) {
   const style = CALLOUT[tone];
   return (
     <div className={cn("flex items-start gap-2.5 rounded-2xl border px-3 py-2.5 text-[12.5px]", style.box)}>
       <span
-        className={cn("flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-lg text-white", style.chip)}
+        className={cn(
+          "flex h-[26px] min-w-[26px] max-w-[4.5rem] shrink-0 items-center justify-center rounded-lg px-1 text-white",
+          style.chip,
+        )}
         aria-hidden="true"
+        title={mark}
       >
-        <style.icon className="h-[15px] w-[15px]" />
+        {mark ? (
+          <span className="truncate text-[11px] font-extrabold tabular-nums">{mark}</span>
+        ) : (
+          <style.icon className="h-[15px] w-[15px]" />
+        )}
       </span>
       <div className="min-w-0 flex-1">
         <b className={cn("block", style.title)}>{title}</b>
@@ -200,6 +213,42 @@ export function DprReportCallout({
         {action ? <div className="mt-1.5">{action}</div> : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * A BOQ line's SL No as a small gradient pill. The colour is decorative and follows the line (a
+ * hash of `seed`, its id), never its row — so a line keeps its colour when a table is sorted or
+ * filtered. Mid-to-dark steps, so the white text stays readable at 11.5px.
+ */
+const SL_GRADIENTS = [
+  ["#8b5cf6", "#6d28d9"],
+  ["#3b82f6", "#1d4ed8"],
+  ["#10b981", "#047857"],
+  ["#f97316", "#c2410c"],
+  ["#ec4899", "#be185d"],
+  ["#06b6d4", "#0e7490"],
+] as const;
+
+export function dprSlGradient(seed: string): DprGradient {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) hash = (hash * 31 + seed.charCodeAt(index)) | 0;
+  return SL_GRADIENTS[Math.abs(hash) % SL_GRADIENTS.length];
+}
+
+export function DprSlNoPill({ slNo, seed, className }: { slNo: string; seed: string; className?: string }) {
+  const [from, to] = dprSlGradient(seed);
+  return (
+    <span
+      className={cn(
+        "keep-light inline-block min-w-[38px] max-w-full truncate rounded-lg px-2 py-0.5 text-center align-middle text-[11.5px] font-extrabold tabular-nums text-white",
+        className,
+      )}
+      style={{ backgroundImage: `linear-gradient(140deg, ${from}, ${to})` }}
+      title={slNo}
+    >
+      {slNo || "—"}
+    </span>
   );
 }
 

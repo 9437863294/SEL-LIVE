@@ -24,14 +24,15 @@ import { DPR_BASE_PATH, DPR_PERMISSION_RESOURCE, type DprTarget } from "@/lib/pr
 import { indexDprActuals } from "@/lib/project-management-dpr-plan";
 import { useDprData, type DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import {
+  DPR_TABS,
   DprAccessDenied,
-  DprHeader,
   DprLoadingState,
   DprPageShell,
   DprProjectNotFound,
   dprHref,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
+import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
 import { ProjectionList } from "@/components/project-management/dpr/projections-list";
 import { ProjectionPlanner } from "@/components/project-management/dpr/projections-plan";
 import { ProjectionLookAhead } from "@/components/project-management/dpr/projections-look-ahead";
@@ -42,15 +43,17 @@ import {
 } from "@/components/project-management/dpr/projections-dialogs";
 import type { ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const VIEWS = [
-  { id: "list", label: "Projection list", icon: ListChecks },
-  { id: "plan", label: "Plan several lines", icon: Target },
-  { id: "look", label: "Six-week look-ahead", icon: CalendarRange },
-] as const;
+type ViewId = "list" | "plan" | "look";
 
-type ViewId = (typeof VIEWS)[number]["id"];
+/** The three views, as tabs in the headline band, each with the mock-up's chip colours. */
+const VIEWS: readonly DprReportTab<ViewId>[] = [
+  { id: "list", label: "Projection list", icon: ListChecks, colours: ["#c4b5fd", "#7c3aed"] },
+  { id: "plan", label: "Plan several lines", icon: Target, colours: ["#93c5fd", "#2563eb"] },
+  { id: "look", label: "Six-week look-ahead", icon: CalendarRange, colours: ["#6ee7b7", "#059669"] },
+];
+
+const PROJECTIONS_TAB = DPR_TABS.find((tab) => tab.key === "projections")!;
 
 const isViewId = (value: string | null | undefined): value is ViewId =>
   VIEWS.some((view) => view.id === value);
@@ -102,24 +105,22 @@ export default function DprProjectionsPage() {
 
   return (
     <DprPageShell>
-      <DprHeader active="projections" mappingId={mappingId} projectName={data.projectName} />
+      <DprReportsHero
+        mappingId={mappingId}
+        projectName={data.projectName}
+        title={PROJECTIONS_TAB.label}
+        description={PROJECTIONS_TAB.description}
+        icon={PROJECTIONS_TAB.icon}
+        tabs={VIEWS}
+        active={view}
+        onTabChange={changeView}
+      />
 
       {data.loadError ? (
         <Card className="border-destructive/40">
           <CardContent className="p-4 text-sm text-destructive">{data.loadError}</CardContent>
         </Card>
       ) : null}
-
-      <Tabs value={view} onValueChange={(next) => changeView(next as ViewId)}>
-        <TabsList className="h-auto flex-wrap">
-          {VIEWS.map((candidate) => (
-            <TabsTrigger key={candidate.id} value={candidate.id}>
-              <candidate.icon className="mr-1.5 h-4 w-4" />
-              {candidate.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
 
       {view === "list" ? (
         <ProjectionList context={context} onRevise={setRevising} onPlan={() => changeView("plan")} />

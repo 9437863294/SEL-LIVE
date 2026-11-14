@@ -9,17 +9,22 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlignJustify,
+  Ban,
   CircleAlert,
   ClipboardPaste,
   Copy,
+  ListEnd,
   ListPlus,
   Loader2,
   Pencil,
   Save,
   Search,
   Sigma,
+  Table2,
   Target,
   TriangleAlert,
+  type LucideIcon,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -47,15 +52,19 @@ import {
 } from "@/lib/project-management-dpr-plan";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import {
+  DPR_FIELD_ACCENTS,
+  DprFieldLabel,
   DprMessages,
   DprPeriodPicker,
   defaultPeriodSelection,
   dprHref,
   formatDisplayDate,
   formatQtyAt,
+  formatRangeCompact,
   resolvePeriodRange,
   type DprPeriodSelection,
 } from "@/components/project-management/dpr/dpr-shell";
+import { DprReportCard, DprSlNoPill } from "@/components/project-management/dpr/reports-parts";
 import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
 import {
   SubItemDialog,
@@ -73,12 +82,10 @@ import {
 } from "@/components/project-management/dpr/projections-shared";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { InfoTip } from "@/components/shared/info-tip";
-import { SectionHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -120,6 +127,28 @@ const nodeTitle = (node: DprBreakdownNode): string =>
 const floorToDecimals = (value: number, decimals: number): number => {
   const scale = 10 ** decimals;
   return Math.floor(value * scale + 1e-9) / scale;
+};
+
+/** The planner's own field accents, beside the shared Scope / Period ones (Reports' filter bar look). */
+const SPREAD_ACCENT: { colour: string; icon: LucideIcon } = { colour: "#0891b2", icon: AlignJustify };
+const OVERLAP_ACCENT: { colour: string; icon: LucideIcon } = { colour: "#e11d48", icon: Ban };
+/** A box's coloured 3px left edge, as the decorated filter bar draws them. */
+const edge = (colour: string) => ({ borderLeftWidth: 3, borderLeftColor: colour });
+
+/** A white-text gradient button (the mock-up's `.gb`), for the planner's actions and Save. */
+const gradientButton = (from: string, to: string) => ({
+  backgroundImage: `linear-gradient(135deg, ${from}, ${to})`,
+  boxShadow: `0 8px 16px -10px ${to}`,
+});
+const GRADIENT_BUTTON =
+  "keep-light h-9 rounded-[11px] border-0 px-3.5 text-[12.5px] font-extrabold text-white hover:brightness-105 disabled:opacity-50";
+
+/** The per-day figure on its own — "0.467", or "1 to 2" for a whole-number unit. */
+const perDayFigure = (qty: number, decimals: number, workingDays: number): string => {
+  const perDay = qty / workingDays;
+  return decimals === 0 && perDay % 1 !== 0
+    ? `${Math.floor(perDay)} to ${Math.ceil(perDay)}`
+    : formatQtyAt(perDay, 3);
 };
 
 export function ProjectionPlanner({ context }: { context: ProjectionsContext }) {
@@ -306,6 +335,14 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     });
   };
 
+  /** A line's whole unplanned balance, at its unit's precision — what its fill button types in. */
+  const openBalanceOf = (item: DprBoqItem): number | null => {
+    const balance = unplannedBalance({ item, plan: data.plan, actuals, settings: data.settings, today });
+    if (balance === null) return null;
+    const qty = floorToDecimals(balance, data.decimalsFor(item.unit));
+    return qty > 0 ? qty : null;
+  };
+
   const applyPaste = (text: string) => {
     const pasted = parsePastedQuantities(text);
     const next = { ...rows };
@@ -384,34 +421,57 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
 
   return (
     <div className="space-y-4">
-      <Card className="border-border/60">
-        <CardContent className="space-y-3 p-4">
-          <SectionHeader
-            title="Plan several BOQ lines for one period"
-            icon={Target}
-            descriptionAs="info"
-            description="Pick the period once, then fill a quantity against each line. Reports spread it over working days only, in the spread you choose."
-            className="mb-0"
-            actions={
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={copyPrevious} disabled={!canEdit}>
-                  <Copy className="mr-1.5 h-4 w-4" /> Copy previous period
-                </Button>
-                <Button variant="outline" size="sm" onClick={spreadBalance} disabled={!canEdit}>
-                  <Sigma className="mr-1.5 h-4 w-4" /> Spread remaining balance
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setIsPasteOpen(true)} disabled={!canEdit}>
-                  <ClipboardPaste className="mr-1.5 h-4 w-4" /> Paste from Excel
-                </Button>
-              </div>
-            }
-          />
-          {/* Every control on one line at its own height; it wraps only on a narrow screen. */}
+      <DprReportCard
+        icon={Target}
+        colours={["#93c5fd", "#2563eb"]}
+        title="Plan several BOQ lines for one period"
+        subtitle="Type a quantity against each line — the rest is worked out for you"
+        aside={
+          <>
+            <InfoTip label="About planning several lines">
+              Pick the period once, then fill a quantity against each line. Reports spread it over
+              working days only, in the spread you choose.
+            </InfoTip>
+            <Button
+              size="sm"
+              className={GRADIENT_BUTTON}
+              style={gradientButton("#a78bfa", "#7c3aed")}
+              onClick={copyPrevious}
+              disabled={!canEdit}
+            >
+              <Copy className="mr-1.5 h-4 w-4" /> Copy previous period
+            </Button>
+            <Button
+              size="sm"
+              className={GRADIENT_BUTTON}
+              style={gradientButton("#60a5fa", "#2563eb")}
+              onClick={spreadBalance}
+              disabled={!canEdit}
+            >
+              <Sigma className="mr-1.5 h-4 w-4" /> Spread remaining balance
+            </Button>
+            <Button
+              size="sm"
+              className={GRADIENT_BUTTON}
+              style={gradientButton("#34d399", "#059669")}
+              onClick={() => setIsPasteOpen(true)}
+              disabled={!canEdit}
+            >
+              <ClipboardPaste className="mr-1.5 h-4 w-4" /> Paste from Excel
+            </Button>
+          </>
+        }
+      >
+        <div className="px-4 pb-4 pt-3.5 sm:px-5">
+          {/* Every control on one line at one height: every label is the same h-6 row, every box
+              the density's control height. It wraps only on a narrow screen. */}
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[6.5rem] flex-[0.8] space-y-1.5">
-              <Label htmlFor="plan-scope">Scope</Label>
+              <DprFieldLabel htmlFor="plan-scope" accent={DPR_FIELD_ACCENTS.scope}>
+                Scope
+              </DprFieldLabel>
               <Select value={scope} onValueChange={(next) => setScope(next as DprScope)}>
-                <SelectTrigger id="plan-scope" className="text-left">
+                <SelectTrigger id="plan-scope" className="text-left" style={edge(DPR_FIELD_ACCENTS.scope.colour)}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -424,9 +484,11 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
               </Select>
             </div>
             <div className="min-w-[7.5rem] flex-[0.9] space-y-1.5">
-              <Label htmlFor="plan-spread">Spread</Label>
+              <DprFieldLabel htmlFor="plan-spread" accent={SPREAD_ACCENT}>
+                Spread
+              </DprFieldLabel>
               <Select value={distribution} onValueChange={(next) => setDistribution(next as DprDistribution)}>
-                <SelectTrigger id="plan-spread" className="text-left">
+                <SelectTrigger id="plan-spread" className="text-left" style={edge(SPREAD_ACCENT.colour)}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -439,9 +501,11 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
               </Select>
             </div>
             <div className="min-w-[11rem] flex-[1.3] space-y-1.5">
-              {/* h-6: the height a bare Label takes in its line box, so this label lines up with the rest. */}
+              {/* The same h-6 row as every other label, with its InfoTip beside it. */}
               <div className="flex h-6 items-center gap-1.5">
-                <Label htmlFor="plan-policy">Overlap rule</Label>
+                <DprFieldLabel htmlFor="plan-policy" accent={OVERLAP_ACCENT}>
+                  Overlap rule
+                </DprFieldLabel>
                 <InfoTip label="About the overlap rule">
                   What happens when a line already has a projection in these dates. Overlapping
                   projections are never added together: block the entry, or let the shorter period
@@ -450,7 +514,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                 </InfoTip>
               </div>
               <Select value={policy} onValueChange={(next) => setPolicy(next as DprOverlapPolicy)}>
-                <SelectTrigger id="plan-policy" className="text-left">
+                <SelectTrigger id="plan-policy" className="text-left" style={edge(OVERLAP_ACCENT.colour)}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -459,10 +523,10 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                 </SelectContent>
               </Select>
             </div>
-            <DprPeriodPicker value={period} onChange={setPeriod} settings={data.settings} inline />
+            <DprPeriodPicker value={period} onChange={setPeriod} settings={data.settings} inline decorated stepper />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </DprReportCard>
 
       {!canEdit ? (
         <Card className="border-amber-500/40">
@@ -472,47 +536,70 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
         </Card>
       ) : null}
 
-      <Card className="border-border/60">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-sm text-muted-foreground">
-                {rangeOk
-                  ? `${formatDisplayDate(range.startDate)} – ${formatDisplayDate(range.endDate)} · ${daysInRange(
-                      range.startDate,
-                      range.endDate,
-                    )}d, ${workingDays} working · ${filledCount} line${filledCount === 1 ? "" : "s"} filled`
-                  : "Pick a valid from and to date"}
-                {blockedCount > 0 ? ` · ${blockedCount} need attention` : ""}
-              </p>
-              <span className="flex items-center gap-1.5">
-                <InfoTip label="About sub-items">
-                  A BOQ line can be split into sub-items (and those into their own) with + — once
-                  split, it is planned on its sub-items, and its figures roll up. Manage the whole
-                  breakdown in BOQ register.
-                </InfoTip>
-                <Link
-                  href={dprHref(`${DPR_BASE_PATH}/boq`, data.mappingId)}
-                  className="text-sm text-primary underline-offset-2 hover:underline"
-                >
-                  Open BOQ register
-                </Link>
-              </span>
-            </div>
-            <div className="relative w-full sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label="Filter BOQ lines"
-                placeholder="Filter BOQ lines…"
-                className="pl-9"
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-              />
-            </div>
+      <section className="min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+        {/* The period, how much of the scope is filled, the BOQ register, and the filter. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-3 sm:px-5">
+          <span
+            className="whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-extrabold tabular-nums text-blue-700"
+            title={rangeOk ? `${formatDisplayDate(range.startDate)} – ${formatDisplayDate(range.endDate)}` : undefined}
+          >
+            {rangeOk
+              ? `${formatDisplayDate(range.startDate)} – ${formatDisplayDate(range.endDate)} · ${daysInRange(
+                  range.startDate,
+                  range.endDate,
+                )}d, ${workingDays} working`
+              : "Pick a valid from and to date"}
+          </span>
+          <span
+            className="h-2 w-40 shrink-0 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label="Lines filled"
+            aria-valuemin={0}
+            aria-valuemax={scopeItems.length}
+            aria-valuenow={filledCount}
+          >
+            <span
+              className="block h-full rounded-full transition-[width] duration-200"
+              style={{
+                width: `${scopeItems.length > 0 ? Math.min(100, (filledCount / scopeItems.length) * 100) : 0}%`,
+                backgroundImage: "linear-gradient(90deg, #60a5fa, #7c3aed)",
+              }}
+            />
+          </span>
+          <span className="whitespace-nowrap text-sm font-bold tabular-nums text-muted-foreground">
+            {filledCount} line{filledCount === 1 ? "" : "s"} filled
+            {blockedCount > 0 ? (
+              <span className="text-rose-600"> · {blockedCount} need attention</span>
+            ) : null}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <InfoTip label="About sub-items">
+              A BOQ line can be split into sub-items (and those into their own) with + — once
+              split, it is planned on its sub-items, and its figures roll up. Manage the whole
+              breakdown in BOQ register.
+            </InfoTip>
+            <Link
+              href={dprHref(`${DPR_BASE_PATH}/boq`, data.mappingId)}
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-violet-600 underline-offset-2 hover:underline"
+            >
+              <Table2 className="h-4 w-4" aria-hidden="true" />
+              Open BOQ register
+            </Link>
+          </span>
+          <div className="relative w-full sm:ml-auto sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Filter BOQ lines"
+              placeholder="Filter BOQ lines…"
+              className="h-9 rounded-[11px] pl-9 font-semibold"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+            />
           </div>
+        </div>
 
           {data.isLoading ? (
-            <div className="space-y-2">
+            <div className="space-y-2 p-4">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div key={index} className="h-12 animate-pulse rounded bg-muted/50" />
               ))}
@@ -529,15 +616,20 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
             // One line per BOQ line, every cell single-line, and all of it inside the table: a
             // bounded height that scrolls under a pinned header, and a narrow screen scrolls the
             // table sideways in its own box. The description is cut to one line (full text on
-            // hover). A row's problems are a marker beside its box, listed in full above the table.
-            <div className="space-y-2">
-              <DprMessages
-                errors={problemRows.flatMap((row) => row.errors)}
-                warnings={problemRows.flatMap((row) => row.warnings)}
-                errorTitle="Fix these before saving"
-                warningTitle="Check these"
-              />
-              <div className="overflow-hidden rounded-lg border border-border/60">
+            // hover). A row's problems are a marker beside its box and the first one in rose in
+            // Works out at, listed in full above the table.
+            <div>
+              {problemRows.length > 0 ? (
+                <div className="px-4 pt-3 sm:px-5">
+                  <DprMessages
+                    errors={problemRows.flatMap((row) => row.errors)}
+                    warnings={problemRows.flatMap((row) => row.warnings)}
+                    errorTitle="Fix these before saving"
+                    warningTitle="Check these"
+                  />
+                </div>
+              ) : null}
+              <div className={cn(problemRows.length > 0 && "mt-3 border-t border-border/60")}>
                 <TooltipProvider delayDuration={150}>
                   <Table
                     stickyHeader
@@ -549,13 +641,13 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                       <col />
                       <col className="w-[76px]" />
                       <col className="w-[88px]" />
-                      <col className="w-[72px]" />
-                      <col className="w-[88px]" />
+                      <col className="w-[76px]" />
+                      <col className="w-[140px]" />
                       <col className="w-[92px]" />
                       <col className="w-[160px]" />
-                      <col className="w-[150px]" />
-                      <col className="w-[150px]" />
-                      <col className="w-[84px]" />
+                      <col className="w-[142px]" />
+                      <col className="w-[124px]" />
+                      <col className="w-[112px]" />
                     </colgroup>
                     <TableHeader>
                       <TableRow>
@@ -580,11 +672,36 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                       {displayRows.map(({ node, item }) => {
                         const blockers = addBlockers.get(node.id) ?? [];
                         const sl = node.slNo || "this line";
-                        // Add a sub-item under any row; edit one that already is a sub-item.
+                        // A leaf's whole open balance, typed in by its fill button; a group has none.
+                        const fillQty = item ? openBalanceOf(item) : null;
+                        // Fill a leaf with its balance; add a sub-item under any row; edit one that
+                        // already is a sub-item.
                         const actions = (
                           <TableCell className="py-1.5">
                             {canEdit ? (
                               <div className="flex items-center justify-end gap-1">
+                                {item ? (
+                                  <span
+                                    className="inline-flex"
+                                    title={
+                                      fillQty === null
+                                        ? "Nothing left to plan on this line"
+                                        : `Plan the whole balance this period (${formatQtyAt(fillQty, data.decimalsFor(item.unit))} ${item.unit})`
+                                    }
+                                  >
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="outline"
+                                      className="h-8 w-8 rounded-[10px] text-blue-600 hover:bg-blue-50"
+                                      aria-label={`Plan the whole balance of ${sl} this period`}
+                                      disabled={fillQty === null}
+                                      onClick={() => fillQty !== null && setRow(item.id, { qty: String(fillQty) })}
+                                    >
+                                      <ListEnd className="h-4 w-4" />
+                                    </Button>
+                                  </span>
+                                ) : null}
                                 {/* A disabled button takes no pointer events, so its reason sits on a wrapper. */}
                                 <span
                                   className="inline-flex"
@@ -626,11 +743,8 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                           const leafCount = data.breakdown.leavesUnder(node.id).length;
                           return (
                             <TableRow key={node.id} className="bg-muted/40 hover:bg-muted/40">
-                              <TableCell
-                                className="truncate text-sm font-semibold tabular-nums"
-                                title={node.slNo}
-                              >
-                                {node.slNo || "—"}
+                              <TableCell className="py-1.5">
+                                <DprSlNoPill slNo={node.slNo} seed={node.id} />
                               </TableCell>
                               <TableCell className="text-sm" title={nodeTitle(node)}>
                                 <DprIndentedText text={node.description} depth={node.depth} strong />
@@ -667,21 +781,17 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                         const row = rowOf(item.id);
                         const check = checks.get(item.id);
                         const hasQuantity = item.boqQty > 0;
-                        const worksOut = worksOutAt(
-                          readQtyText(row.qty),
-                          item.unit,
-                          decimals,
-                          rangeOk ? workingDays : 0,
-                        );
+                        const typedQty = readQtyText(row.qty);
+                        const worksOut = worksOutAt(typedQty, item.unit, decimals, rangeOk ? workingDays : 0);
                         const hasErrors = Boolean(check && check.errors.length > 0);
                         const hasWarnings = Boolean(check && check.warnings.length > 0);
+                        const balance = hasQuantity ? item.boqQty - executed : null;
+                        const plannedHere = rangeOk ? data.plan.qtyInRange(item.id, range) : null;
+                        const typedOk = typedQty !== null && Number.isFinite(typedQty) && typedQty > 0;
                         return (
                           <TableRow key={item.id}>
-                            <TableCell
-                              className="truncate text-sm font-semibold tabular-nums"
-                              title={item.boqSlNo}
-                            >
-                              {item.boqSlNo || "—"}
+                            <TableCell className="py-1.5">
+                              <DprSlNoPill slNo={item.boqSlNo} seed={item.id} />
                             </TableCell>
                             <TableCell className="text-sm" title={breakdownTitle(item)}>
                               <DprIndentedText text={item.description} depth={item.depth ?? 0} />
@@ -692,14 +802,42 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                             <TableCell className="truncate text-right text-sm tabular-nums">
                               {hasQuantity ? formatQtyAt(item.boqQty, decimals) : "—"}
                             </TableCell>
-                            <TableCell className="truncate text-right text-sm tabular-nums">
+                            <TableCell
+                              className={cn(
+                                "truncate text-right text-sm tabular-nums",
+                                executed > 0 && "font-bold text-emerald-600",
+                              )}
+                            >
                               {formatQtyAt(executed, decimals)}
                             </TableCell>
-                            <TableCell className="truncate text-right text-sm font-medium tabular-nums">
-                              {hasQuantity ? formatQtyAt(item.boqQty - executed, decimals) : "—"}
+                            <TableCell className="text-right text-sm font-medium tabular-nums">
+                              {balance === null ? (
+                                <span className="text-muted-foreground">—</span>
+                              ) : (
+                                <span className="flex min-w-0 items-center justify-end gap-1.5" title={`${formatQtyAt(executed, decimals)} of ${formatQtyAt(item.boqQty, decimals)} ${item.unit} done`}>
+                                  <span className="h-1.5 w-8 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                                    <span
+                                      className="block h-full rounded-full"
+                                      style={{
+                                        width: `${Math.min(100, Math.max(0, (executed / item.boqQty) * 100))}%`,
+                                        backgroundImage: "linear-gradient(90deg, #34d399, #059669)",
+                                      }}
+                                    />
+                                  </span>
+                                  <span className="truncate">{formatQtyAt(balance, decimals)}</span>
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell className="truncate text-right text-sm tabular-nums">
-                              {rangeOk ? formatQtyAt(data.plan.qtyInRange(item.id, range), decimals) : "—"}
+                              {plannedHere === null ? (
+                                "—"
+                              ) : plannedHere > 0 ? (
+                                <span className="rounded-lg bg-violet-50 px-2 py-0.5 font-extrabold text-violet-700">
+                                  {formatQtyAt(plannedHere, decimals)}
+                                </span>
+                              ) : (
+                                formatQtyAt(0, decimals)
+                              )}
                             </TableCell>
                             <TableCell className="py-1.5">
                               <div className="flex items-center justify-end gap-1.5">
@@ -736,9 +874,18 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                                   aria-label={`Plan quantity for ${item.boqSlNo || "this line"}`}
                                   aria-invalid={hasErrors ? true : undefined}
                                   disabled={!canEdit}
+                                  // Green once it passes every check, rose while it fails one,
+                                  // amber with only warnings. Dark text is set explicitly: the
+                                  // dark-compat layer leaves text alone beside a -300 border.
                                   className={cn(
-                                    "h-8 w-full min-w-0 text-right tabular-nums",
-                                    hasErrors && "border-destructive",
+                                    "h-8 w-full min-w-0 rounded-[10px] bg-muted/40 text-right font-extrabold tabular-nums",
+                                    hasErrors
+                                      ? "border-rose-300 bg-rose-50 text-rose-700 dark:text-rose-300"
+                                      : hasWarnings
+                                        ? "border-amber-300 bg-amber-50 text-amber-700 dark:text-amber-300"
+                                        : check
+                                          ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:text-emerald-300"
+                                          : "",
                                   )}
                                   value={row.qty}
                                   onChange={(event) => setRow(item.id, { qty: event.target.value })}
@@ -747,15 +894,35 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                             </TableCell>
                             <TableCell
                               className="truncate text-xs tabular-nums text-muted-foreground"
-                              title={worksOut === "—" ? undefined : worksOut}
+                              title={
+                                hasErrors
+                                  ? check?.errors.join(" ")
+                                  : worksOut === "—"
+                                    ? undefined
+                                    : worksOut
+                              }
                             >
-                              {worksOut}
+                              {/* One line: the row's first problem in rose, else what the quantity
+                                  works out at per working day and as a share of the balance. */}
+                              {hasErrors ? (
+                                <span className="font-bold text-rose-600">{check?.errors[0]}</span>
+                              ) : typedOk && rangeOk && workingDays > 0 ? (
+                                <>
+                                  <b className="text-blue-600">{perDayFigure(typedQty ?? 0, decimals, workingDays)}</b> /day
+                                  {balance !== null && balance > 0
+                                    ? ` · ${Math.round(((typedQty ?? 0) / balance) * 1000) / 10}% of bal.`
+                                    : ""}
+                                </>
+                              ) : (
+                                worksOut
+                              )}
                             </TableCell>
                             <TableCell className="py-1.5">
                               <Input
                                 aria-label={`Remarks for ${item.boqSlNo || "this line"}`}
+                                placeholder="Add a note"
                                 disabled={!canEdit}
-                                className="h-8 w-full min-w-0"
+                                className="h-8 w-full min-w-0 rounded-[10px] bg-muted/40"
                                 value={row.remarks}
                                 onChange={(event) => setRow(item.id, { remarks: event.target.value })}
                               />
@@ -771,24 +938,39 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
             </div>
           )}
 
-          {missingQuantities > 0 && scopeItems.length > 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {missingQuantities} {scope} line{missingQuantities === 1 ? " has" : "s have"} no BOQ quantity, so
-              the balance check is off for {missingQuantities === 1 ? "it" : "them"}.
-            </p>
-          ) : null}
-
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+        {/* The save bar: what is typed, then Clear and Save. */}
+        <div className="flex flex-col gap-2.5 border-t border-indigo-100 bg-gradient-to-r from-sky-50 to-violet-50 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+          <div className="min-w-0 flex-1 text-sm font-bold text-muted-foreground">
+            <span className="tabular-nums">
+              {filledCount > 0
+                ? `${filledCount} of ${scopeItems.length} line${scopeItems.length === 1 ? "" : "s"} planned${
+                    rangeOk ? ` for ${formatRangeCompact(range.startDate, range.endDate)}` : ""
+                  }.`
+                : "Nothing typed yet."}
+            </span>
+            {missingQuantities > 0 && scopeItems.length > 0 ? (
+              <span className="block text-xs font-normal">
+                {missingQuantities} {scope} line{missingQuantities === 1 ? " has" : "s have"} no BOQ quantity,
+                so the balance check is off for {missingQuantities === 1 ? "it" : "them"}.
+              </span>
+            ) : null}
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
             <Button variant="outline" onClick={() => setRows({})} disabled={isSaving || filledCount === 0}>
               Clear
             </Button>
-            <Button onClick={() => void handleSave()} disabled={!canEdit || isSaving || filledCount === 0}>
+            <Button
+              className={cn(GRADIENT_BUTTON, "h-[var(--control-h,2.5rem)] px-4 text-sm")}
+              style={gradientButton("#818cf8", "#4f46e5")}
+              onClick={() => void handleSave()}
+              disabled={!canEdit || isSaving || filledCount === 0}
+            >
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save projections
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <PasteQuantitiesDialog open={isPasteOpen} onOpenChange={setIsPasteOpen} onApply={applyPaste} />
       {/* The BOQ register's own add / edit dialog, so a sub-item made here is the same record. */}

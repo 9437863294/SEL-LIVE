@@ -48,7 +48,11 @@ import {
   dprProgressDates,
   dprTradeOrder,
 } from "@/lib/project-management-dpr-reports";
-import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
+import {
+  DPR_HERO_PRIMARY,
+  DprReportsHero,
+  type DprReportTab,
+} from "@/components/project-management/dpr/reports-hero";
 import { DprManpowerView } from "@/components/project-management/dpr/reports-manpower";
 import { DprBoqProgressView } from "@/components/project-management/dpr/reports-boq-progress";
 import { DprTrendView } from "@/components/project-management/dpr/reports-trend";
@@ -402,7 +406,7 @@ export default function DprReportsPage() {
           <Button
             onClick={downloadCsv}
             disabled={exportRows.rows.length === 0}
-            className="rounded-xl bg-white font-extrabold text-violet-900 shadow-lg hover:bg-white/90"
+            className={DPR_HERO_PRIMARY}
           >
             <Download className="mr-2 h-4 w-4" /> Export CSV
           </Button>
