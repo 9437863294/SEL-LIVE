@@ -95,6 +95,7 @@ import { DprDashboardHero, type DprTodaySheet } from "@/components/project-manag
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Bars by day for a month or less, by week up to half a year, by month beyond. */
@@ -246,9 +247,15 @@ export default function DailyProgressDashboardPage() {
       <DprHeader active="dashboard" mappingId={mappingId} projectName={projectName} />
 
       <Card className="border-border/60">
-        <CardContent className="space-y-4 p-4">
-          <DprScopeTabs value={scope} onChange={setScope} includeAll />
-          <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} />
+        <CardContent className="p-4">
+          {/* Scope and period on one line at their own height; it wraps only when narrow. */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label>Scope</Label>
+              <DprScopeTabs value={scope} onChange={setScope} includeAll asField />
+            </div>
+            <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} inline />
+          </div>
         </CardContent>
       </Card>
 

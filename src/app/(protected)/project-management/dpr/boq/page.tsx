@@ -279,7 +279,7 @@ export default function DprBoqRegisterPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label>Scope</Label>
-              <DprScopeTabs value={scope} onChange={(next) => next !== "All" && setScope(next)} />
+              <DprScopeTabs value={scope} onChange={(next) => next !== "All" && setScope(next)} asField />
             </div>
             <div className="min-w-[11rem] space-y-1.5">
               <Label htmlFor="boq-register-show">Show</Label>

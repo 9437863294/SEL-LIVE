@@ -389,6 +389,14 @@ export interface DprPlan extends DprPlanReader {
   daily(boqItemId: string): ReadonlyMap<string, number>;
   onDate(boqItemId: string, isoDate: string): number;
   qtyInRange(boqItemId: string, range: DprDateRange): number;
+  /** The projection that owns a day for a BOQ line (the shorter period, where two overlap). */
+  ownerOn(boqItemId: string, isoDate: string): DprPlanOwner | null;
+}
+
+export interface DprPlanOwner {
+  targetId: string;
+  startDate: string;
+  endDate: string;
 }
 
 export interface DprPlanOptions {
@@ -404,6 +412,7 @@ const inRange = (isoDate: string, range: DprDateRange): boolean =>
 interface DayOwner {
   span: number;
   startDate: string;
+  endDate: string;
   id: string;
   qty: number;
 }
@@ -431,10 +440,12 @@ export function buildDprPlan(targets: readonly DprTarget[], options: DprPlanOpti
   }
 
   const cache = new Map<string, Map<string, number>>();
+  const ownerCache = new Map<string, Map<string, DayOwner>>();
   const daily = (boqItemId: string): Map<string, number> => {
     const cached = cache.get(boqItemId);
     if (cached) return cached;
     const owners = new Map<string, DayOwner>();
+    ownerCache.set(boqItemId, owners);
     for (const target of byItem.get(boqItemId) ?? []) {
       const allocation = allocateProjection(target, options.calendar, options.decimalsFor(target));
       const span = daysInRange(target.startDate, target.endDate);
@@ -445,6 +456,7 @@ export function buildDprPlan(targets: readonly DprTarget[], options: DprPlanOpti
         owners.set(day, {
           span,
           startDate: target.startDate,
+          endDate: target.endDate,
           id: String(target.id),
           qty: allocation.get(day) ?? 0,
         });
@@ -466,6 +478,11 @@ export function buildDprPlan(targets: readonly DprTarget[], options: DprPlanOpti
     daily,
     onDate: (boqItemId, isoDate) => daily(boqItemId).get(isoDate) ?? 0,
     qtyInRange,
+    ownerOn(boqItemId, isoDate) {
+      daily(boqItemId);
+      const owner = ownerCache.get(boqItemId)?.get(isoDate);
+      return owner ? { targetId: owner.id, startDate: owner.startDate, endDate: owner.endDate } : null;
+    },
     byItemInRange(range, filter: DprTargetFilter = {}) {
       const planned = new Map<string, number>();
       for (const boqItemId of byItem.keys()) {
@@ -522,6 +539,40 @@ export function indexDprActuals(
     onDate: (boqItemId, isoDate) => byItem.get(boqItemId)?.get(isoDate) ?? 0,
     hasSheet: (scope, isoDate) => sheetDays.get(scope)?.has(isoDate) ?? false,
   };
+}
+
+/**
+ * Why a planned line needs no recording on a day: its work is already done before that day.
+ *  - `boq`: everything counted so far reaches the BOQ quantity — more would pass the BOQ.
+ *  - `period`: everything planned across the projection that owns the day (its whole period,
+ *    shorter projections inside it included) was achieved within that period before the day —
+ *    the projection finished early, and the days it still spreads quantity on are left over.
+ */
+export type DprCompletion =
+  | { kind: "boq"; doneQty: number; boqQty: number }
+  | { kind: "period"; doneQty: number; plannedQty: number; startDate: string; endDate: string };
+
+export function dprCompletionOn(input: {
+  item: Pick<DprBoqLike, "id" | "boqQty">;
+  isoDate: string;
+  plan: Pick<DprPlan, "ownerOn" | "qtyInRange">;
+  /** Must leave out the sheet being recorded, as everywhere "done before" is read. */
+  actuals: Pick<DprActualIndex, "total">;
+}): DprCompletion | null {
+  const { item, isoDate, plan, actuals } = input;
+  const boqQty = dprNumber(item.boqQty);
+  const doneQty = actuals.total(item.id);
+  if (boqQty > 0 && doneQty + 1e-9 >= boqQty) return { kind: "boq", doneQty, boqQty };
+
+  const owner = plan.ownerOn(item.id, isoDate);
+  if (!owner || !owner.startDate || isoDate <= owner.startDate) return null;
+  const period = { startDate: owner.startDate, endDate: owner.endDate };
+  const plannedQty = plan.qtyInRange(item.id, period);
+  if (!(plannedQty > 0)) return null;
+  const doneInPeriod = actuals.total(item.id, { startDate: owner.startDate, endDate: addDays(isoDate, -1) });
+  return doneInPeriod + 1e-9 >= plannedQty
+    ? { kind: "period", doneQty: doneInPeriod, plannedQty, ...period }
+    : null;
 }
 
 /** Still to come: days after today, plus today while today's sheet is not in. */
@@ -779,7 +830,15 @@ export function checkDprSheet(input: {
     sheetTotals.set(item.id, (sheetTotals.get(item.id) ?? 0) + actual);
     if (actual > 0) anyWork = true;
 
-    if (actual === 0 && planned > 0 && !String(line.remarks ?? "").trim() && !hindrances) {
+    // A line whose planned work is already done (BOQ reached, or its projection met early) owes
+    // no explanation for a zero: there was nothing left to do.
+    if (
+      actual === 0 &&
+      planned > 0 &&
+      !String(line.remarks ?? "").trim() &&
+      !hindrances &&
+      !dprCompletionOn({ item, isoDate: sheet.date, plan, actuals })
+    ) {
       errors.push(
         `${label}: ${fmtQty(planned)} ${item.unit} was planned but nothing was done. Add a row remark or a hindrance.`,
       );

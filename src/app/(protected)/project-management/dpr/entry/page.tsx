@@ -59,12 +59,16 @@ import {
 } from "@/lib/project-management-dpr";
 import {
   checkDprSheet,
+  dprCompletionOn,
   dprSuggestions,
   indexDprActuals,
   roundToDecimals,
+  type DprActualIndex,
+  type DprCompletion,
   type DprSheet,
 } from "@/lib/project-management-dpr-plan";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
+import { DprCompletedLines } from "@/components/project-management/dpr/entry-completed-lines";
 import {
   DprAccessDenied,
   DprBoqPicker,
@@ -155,6 +159,10 @@ const blankRow = (boqItemId = ""): RowState => ({
   agency: "",
   remarks: "",
 });
+
+/** A row nobody has typed on yet: no actual, location, agency or remark. */
+const isUntouchedRow = (row: RowState): boolean =>
+  !row.actual.trim() && !row.location.trim() && !row.agency.trim() && !row.remarks.trim();
 
 const numberText = (value: unknown): string =>
   value === null || value === undefined || value === "" ? "" : String(dprNumber(value));
@@ -327,6 +335,25 @@ export default function RecordDailyProgressPage() {
     [entries, existing?.id],
   );
 
+  /**
+   * Planned lines whose work was already done before this day — the BOQ quantity reached, or the
+   * projection owning the day met early. The plan still spreads quantity on their remaining days,
+   * but there is nothing left to record, so a sheet leaves them off.
+   */
+  const completionFor = useCallback(
+    (actuals: DprActualIndex) => {
+      const map = new Map<string, DprCompletion>();
+      for (const item of plannedItems) {
+        const completion = dprCompletionOn({ item, isoDate: date, plan, actuals });
+        if (completion) map.set(item.id, completion);
+      }
+      return map;
+    },
+    [plannedItems, date, plan],
+  );
+  const completed = useMemo(() => completionFor(actualsBefore), [completionFor, actualsBefore]);
+  const [showCompleted, setShowCompleted] = useState(false);
+
   const suggestions = useMemo(() => dprSuggestions(entries), [entries]);
 
   const loadForDate = useCallback(() => {
@@ -334,18 +361,23 @@ export default function RecordDailyProgressPage() {
     setExisting(filed);
     setMessages(null);
     setConfirming(false);
+    setShowCompleted(false);
+    const done = completionFor(indexDprActuals(entries, { excludeEntryId: filed?.id }));
     if (filed) {
-      setSheet(sheetFromEntry(filed));
+      const loaded = sheetFromEntry(filed);
+      // A draft opened after one of its lines was finished elsewhere: an untouched row for it
+      // would only block Submit. A submitted sheet is a record and is shown exactly as filed.
+      if (filed.status !== "Submitted") {
+        loaded.rows = loaded.rows.filter((row) => !(done.has(row.boqItemId) && isUntouchedRow(row)));
+      }
+      setSheet(loaded);
       return;
     }
-    // Nothing planned for the day: one blank row rather than an empty table, so the recorder can
-    // pick the BOQ line worked and type the actual straight away.
-    setSheet(
-      emptySheet(
-        plannedItems.length > 0 ? plannedItems.map((item) => blankRow(item.id)) : [blankRow()],
-      ),
-    );
-  }, [entries, date, scope, plannedItems]);
+    // Nothing (left) planned for the day: one blank row rather than an empty table, so the
+    // recorder can pick the BOQ line worked and type the actual straight away.
+    const open = plannedItems.filter((item) => !done.has(item.id));
+    setSheet(emptySheet(open.length > 0 ? open.map((item) => blankRow(item.id)) : [blankRow()]));
+  }, [entries, date, scope, plannedItems, completionFor]);
 
   // Loading a filed sheet into an editable form is the "sync state from an external system" case
   // effects are for: the register is the source, and a new date or scope must re-seed every field.
@@ -402,6 +434,11 @@ export default function RecordDailyProgressPage() {
   }, [settings.weatherOptions, sheet.weather]);
 
   const enteredCount = sheet.rows.filter((row) => row.actual.trim() !== "").length;
+  /** Planned for the day, already finished, and not on the sheet: listed, collapsed, under it. */
+  const completedOffSheet = plannedItems.filter(
+    (item) => completed.has(item.id) && !sheet.rows.some((row) => row.boqItemId === item.id),
+  );
+  const openPlannedCount = plannedItems.filter((item) => !completed.has(item.id)).length;
   const headcount = sheet.manpower.reduce((sum, row) => sum + dprNumber(row.count), 0);
 
   /* ── Saving ────────────────────────────────────────────────────────────────────────────── */
@@ -769,7 +806,7 @@ export default function RecordDailyProgressPage() {
         <Card className="border-border/60">
           <SectionHeader
             title="Work done"
-            description="Planned today comes from Projections and cannot be typed here. Done before is everything submitted on the line, this sheet excluded. Enter an actual on every row, 0 if no work was done."
+            description="Planned today comes from Projections and cannot be typed here. Done before is everything submitted on the line, this sheet excluded. Enter an actual on every row, 0 if no work was done. A planned line already finished before this day — its BOQ quantity reached, or its projection met early — is left off and listed, collapsed, under Already complete; add it back if more was done."
             descriptionAs="info"
             icon={ClipboardList}
             badge={
@@ -802,6 +839,12 @@ export default function RecordDailyProgressPage() {
                     .
                   </p>
                 ) : null}
+                {plannedItems.length > 0 && openPlannedCount === 0 && !existing ? (
+                  <p className="border-y border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+                    Everything planned for {scope} on this date was already finished before it — see
+                    Already complete below. Record anything else that was done.
+                  </p>
+                ) : null}
                 {/* One line per BOQ line, all of it inside the table: fixed columns, a bounded
                     height under a pinned header, and a narrow screen scrolls it sideways. */}
                 <Table
@@ -826,7 +869,9 @@ export default function RecordDailyProgressPage() {
                       <TableHead className="truncate">SL No</TableHead>
                       <TableHead className="truncate">BOQ line</TableHead>
                       <TableHead className="truncate">Unit</TableHead>
-                      <TableHead className="truncate text-right">Planned today</TableHead>
+                      <TableHead className="truncate text-right" title="Planned for this day, from Projections">
+                        Planned
+                      </TableHead>
                       <TableHead className="truncate text-right" title="Submitted before this sheet, of the BOQ quantity">
                         Done / BOQ
                       </TableHead>
@@ -981,6 +1026,27 @@ export default function RecordDailyProgressPage() {
                     )}
                   </TableBody>
                 </Table>
+                {editable && completedOffSheet.length > 0 ? (
+                  <DprCompletedLines
+                    items={completedOffSheet}
+                    completed={completed}
+                    open={showCompleted}
+                    onToggle={() => setShowCompleted((value) => !value)}
+                    planned={(id) => plan.onDate(id, date)}
+                    doneBefore={(id) => actualsBefore.total(id)}
+                    decimalsFor={decimalsFor}
+                    onAdd={(boqItemId) =>
+                      edit((previous) => ({
+                        ...previous,
+                        // The blank row a fresh sheet opens with makes way for the line added back.
+                        rows: [
+                          ...previous.rows.filter((row) => row.boqItemId || !isUntouchedRow(row)),
+                          blankRow(boqItemId),
+                        ],
+                      }))
+                    }
+                  />
+                ) : null}
                 {editable ? (
                   <div className="border-t border-border/60 p-3">
                     <Button

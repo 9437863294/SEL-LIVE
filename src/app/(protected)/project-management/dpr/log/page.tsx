@@ -39,6 +39,7 @@ import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -131,27 +132,38 @@ export default function DprLogPage() {
       />
 
       <Card className="border-border/60">
-        <CardContent className="space-y-4 p-4">
-          <DprScopeTabs value={scope} onChange={setScope} includeAll />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input
-              placeholder="Search by date, BOQ line, recorder or remarks…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Select value={status} onValueChange={(next) => setStatus(next as DprStatus | "All")}>
-              <SelectTrigger className="text-left">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="All">All statuses</SelectItem>
-                {DPR_STATUSES.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <CardContent className="p-4">
+          {/* Scope, status and search on one line at one height; it wraps only when narrow. */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label>Scope</Label>
+              <DprScopeTabs value={scope} onChange={setScope} includeAll asField />
+            </div>
+            <div className="min-w-[11rem] space-y-1.5">
+              <Label htmlFor="dpr-log-status">Status</Label>
+              <Select value={status} onValueChange={(next) => setStatus(next as DprStatus | "All")}>
+                <SelectTrigger id="dpr-log-status" className="text-left">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="All">All statuses</SelectItem>
+                  {DPR_STATUSES.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-[14rem] flex-1 space-y-1.5">
+              <Label htmlFor="dpr-log-search">Find</Label>
+              <Input
+                id="dpr-log-search"
+                placeholder="Search by date, BOQ line, recorder or remarks…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -322,9 +322,7 @@ export default function DprReportsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label>Scope</Label>
-              <div>
-                <DprScopeTabs value={scope} onChange={setScope} includeAll />
-              </div>
+              <DprScopeTabs value={scope} onChange={setScope} includeAll asField />
             </div>
             <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} inline />
           </div>

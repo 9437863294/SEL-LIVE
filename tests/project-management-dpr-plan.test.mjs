@@ -772,3 +772,61 @@ test('the Civil hub uses the engine when given it, so overlaps are not double-co
   });
   assert.equal(round(plainCurve.at(-1).plannedValue), 44 * 1000, 'without the engine, overlaps still add');
 });
+
+/* ── Work already done before the day ───────────────────────────────────────────────────────── */
+
+test('ownerOn names the projection that owns a day: the shorter one where two overlap', () => {
+  const week = target({ id: 't-week', periodType: 'Week', startDate: '2026-11-09', endDate: '2026-11-15', plannedQty: 7 });
+  const p = planFor([target(), week]);
+  assert.deepEqual(p.ownerOn('pcc', '2026-11-10'), { targetId: 't-week', startDate: '2026-11-09', endDate: '2026-11-15' });
+  assert.equal(p.ownerOn('pcc', '2026-11-20').targetId, 't-month');
+  assert.equal(p.ownerOn('pcc', '2026-12-01'), null);
+  assert.equal(p.ownerOn('rwh', '2026-11-10'), null);
+});
+
+test('dprCompletionOn: a line whose BOQ quantity is reached is done', () => {
+  const { dprCompletionOn } = plan;
+  const actuals = indexDprActuals([entry('2026-11-05', 'Civil', [{ boqItemId: 'rwh', actualQty: 60 }])]);
+  const rwh = itemMap.get('rwh');
+  const p = planFor([target({ boqItemId: 'rwh', plannedQty: 30 })]);
+  assert.deepEqual(dprCompletionOn({ item: rwh, isoDate: '2026-11-12', plan: p, actuals }), {
+    kind: 'boq',
+    doneQty: 60,
+    boqQty: 60,
+  });
+  // Done before the month's projection, so only the BOQ rule can apply.
+  const short = indexDprActuals([entry('2026-10-25', 'Civil', [{ boqItemId: 'rwh', actualQty: 59 }])]);
+  assert.equal(dprCompletionOn({ item: rwh, isoDate: '2026-11-12', plan: p, actuals: short }), null);
+});
+
+test('dprCompletionOn: a projection met before its period ends leaves its remaining days done', () => {
+  const { dprCompletionOn } = plan;
+  const week = target({ id: 't-week', periodType: 'Week', startDate: '2026-11-09', endDate: '2026-11-15', plannedQty: 7 });
+  const p = planFor([week]);
+  const pcc = itemMap.get('pcc');
+  const actuals = indexDprActuals([
+    entry('2026-11-09', 'Civil', [{ boqItemId: 'pcc', actualQty: 4 }]),
+    entry('2026-11-10', 'Civil', [{ boqItemId: 'pcc', actualQty: 3 }]),
+  ]);
+  assert.deepEqual(dprCompletionOn({ item: pcc, isoDate: '2026-11-11', plan: p, actuals }), {
+    kind: 'period',
+    doneQty: 7,
+    plannedQty: 7,
+    startDate: '2026-11-09',
+    endDate: '2026-11-15',
+  });
+  assert.equal(dprCompletionOn({ item: pcc, isoDate: '2026-11-10', plan: p, actuals }), null, 'only 4 of 7 by then');
+  assert.equal(dprCompletionOn({ item: pcc, isoDate: '2026-11-09', plan: p, actuals }), null, 'first day');
+  // Work done before the period does not count towards it.
+  const early = indexDprActuals([entry('2026-11-02', 'Civil', [{ boqItemId: 'pcc', actualQty: 7 }])]);
+  assert.equal(dprCompletionOn({ item: pcc, isoDate: '2026-11-12', plan: p, actuals: early }), null);
+  // A day nothing owns is never "done" by a projection.
+  assert.equal(dprCompletionOn({ item: pcc, isoDate: '2026-11-20', plan: p, actuals }), null);
+});
+
+test('D6: a zero on a line whose work is already done needs no remark', () => {
+  const zero = [{ boqItemId: 'pcc', actual: '0', location: '', remarks: '' }];
+  const done = indexDprActuals([entry('2026-11-05', 'Civil', [{ boqItemId: 'pcc', actualQty: 100 }])]);
+  const result = sheetCheck({ lines: zero, manpower: [] }, { actuals: done });
+  assert.doesNotMatch(result.errors.join(), /was planned but nothing was done/);
+});

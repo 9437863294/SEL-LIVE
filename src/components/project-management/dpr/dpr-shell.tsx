@@ -318,7 +318,7 @@ export function DprPeriodPicker({
         <div className={coversField}>
           <Label>Covers</Label>
           <div
-            className="flex h-10 items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 text-sm font-medium tabular-nums"
+            className="flex h-[var(--control-h,2.5rem)] items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 text-sm font-medium tabular-nums"
             title={label}
           >
             <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -341,16 +341,27 @@ export function DprScopeTabs({
   value,
   onChange,
   includeAll = false,
+  asField = false,
   className,
 }: {
   value: DprScope | "All";
   onChange: (next: DprScope | "All") => void;
   includeAll?: boolean;
+  /**
+   * Sitting in a row of labelled fields: the strip takes the fields' height (the user's density,
+   * `--control-h`) and drops the line-box gap an inline strip leaves below it, so labels and
+   * boxes line up across the row.
+   */
+  asField?: boolean;
   className?: string;
 }) {
   return (
-    <Tabs value={value} onValueChange={(next) => onChange(next as DprScope | "All")} className={className}>
-      <TabsList>
+    <Tabs
+      value={value}
+      onValueChange={(next) => onChange(next as DprScope | "All")}
+      className={cn(asField && "flex", className)}
+    >
+      <TabsList className={asField ? "h-[var(--control-h,2.5rem)] p-0.5" : undefined}>
         {includeAll && <TabsTrigger value="All">All scopes</TabsTrigger>}
         {DPR_SCOPES.map((scope) => (
           <TabsTrigger key={scope} value={scope}>
