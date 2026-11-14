@@ -91,6 +91,10 @@ export interface DprSettings {
   wholeNumberUnits: string[];
   /** The fixed list a sheet's weather is chosen from. */
   weatherOptions: string[];
+  /** The trades a sheet's manpower is chosen from. Empty: the trade is typed instead. */
+  trades: string[];
+  /** The plant and equipment a sheet's machinery is chosen from. Empty: typed instead. */
+  equipmentTypes: string[];
 }
 
 /**
@@ -108,6 +112,32 @@ export const defaultDprSettings = (): DprSettings => ({
   spikeMultiple: 3,
   wholeNumberUnits: ["Nos", "No", "Each", "Set", "Pair", "Pcs"],
   weatherOptions: ["Clear", "Cloudy", "Rain", "Hot"],
+  trades: [
+    "Mason",
+    "Helper",
+    "Carpenter",
+    "Bar bender",
+    "Fitter",
+    "Rigger",
+    "Welder",
+    "Electrician",
+    "Painter",
+    "Operator",
+    "Supervisor",
+  ],
+  equipmentTypes: [
+    "Excavator",
+    "Backhoe loader (JCB)",
+    "Crane",
+    "Hydra",
+    "Concrete mixer",
+    "Transit mixer",
+    "Needle vibrator",
+    "Tipper",
+    "Tractor",
+    "DG set",
+    "Welding machine",
+  ],
 });
 
 const readNumber = (
@@ -187,6 +217,10 @@ export function sanitizeDprSettings(raw: unknown): DprSettings {
     wholeNumberUnits: readList(source.wholeNumberUnits, defaults.wholeNumberUnits),
     // The sheet requires a weather, so an emptied list falls back rather than blocking every submit.
     weatherOptions: weatherOptions.length > 0 ? weatherOptions : defaults.weatherOptions,
+    // A project that has never saved these lists gets the starting ones; one that deliberately
+    // emptied a list types the trade or equipment instead.
+    trades: readList(source.trades, defaults.trades),
+    equipmentTypes: readList(source.equipmentTypes, defaults.equipmentTypes),
   };
 }
 

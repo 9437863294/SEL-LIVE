@@ -84,6 +84,8 @@ interface SettingsForm {
   spikeMultiple: string;
   wholeNumberUnits: string[];
   weatherOptions: string[];
+  trades: string[];
+  equipmentTypes: string[];
 }
 
 const toForm = (settings: DprSettings): SettingsForm => ({
@@ -97,6 +99,8 @@ const toForm = (settings: DprSettings): SettingsForm => ({
   spikeMultiple: String(settings.spikeMultiple),
   wholeNumberUnits: [...settings.wholeNumberUnits],
   weatherOptions: [...settings.weatherOptions],
+  trades: [...settings.trades],
+  equipmentTypes: [...settings.equipmentTypes],
 });
 
 /** The stored shape. `sanitizeDprSettings` then clamps it, exactly as every reader does. */
@@ -644,7 +648,9 @@ export default function DprSettingsPage() {
                 Weather is chosen from this list on every daily sheet. Units in the second list are
                 counted in whole numbers — projections spread as 1s and 2s and actuals cannot take a
                 fraction. Every other unit takes up to three decimals. Units match ignoring case,
-                dots and spaces, so “Nos.” matches “NOS”.
+                dots and spaces, so “Nos.” matches “NOS”. Trades and plant are the dropdowns on
+                every daily sheet&apos;s manpower and equipment rows; empty a list to type them
+                instead.
               </TitleWithTip>
             }
           >
@@ -662,6 +668,22 @@ export default function DprSettingsPage() {
               values={form.wholeNumberUnits}
               onChange={(wholeNumberUnits) => patch({ wholeNumberUnits })}
               placeholder="Add a unit (Nos, Set…)"
+              disabled={disabled}
+            />
+            <ChipListEditor
+              id="dpr-trades"
+              label="Trades (manpower)"
+              values={form.trades}
+              onChange={(trades) => patch({ trades })}
+              placeholder="Add a trade (Mason, Fitter…)"
+              disabled={disabled}
+            />
+            <ChipListEditor
+              id="dpr-equipment-types"
+              label="Plant and equipment"
+              values={form.equipmentTypes}
+              onChange={(equipmentTypes) => patch({ equipmentTypes })}
+              placeholder="Add equipment (Excavator, Crane…)"
               disabled={disabled}
             />
           </SettingsSection>

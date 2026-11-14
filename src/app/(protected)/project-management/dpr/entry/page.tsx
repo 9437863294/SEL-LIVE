@@ -206,6 +206,59 @@ interface Messages {
   warnings: string[];
 }
 
+/**
+ * A dropdown over one of the project's configured lists (Daily Progress › Settings › Lists).
+ *
+ * A value already on a filed sheet stays selectable even after it leaves the list, so an old
+ * sheet still reads as it was filed. A project that emptied the list types the value instead.
+ */
+function ConfiguredListPick({
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder,
+  ariaLabel,
+}: {
+  value: string;
+  options: readonly string[];
+  onChange: (next: string) => void;
+  disabled: boolean;
+  placeholder: string;
+  ariaLabel: string;
+}) {
+  const choices = value && !options.includes(value) ? [value, ...options] : [...options];
+  if (options.length === 0) {
+    return (
+      <Input
+        className="h-8 w-full min-w-0"
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        disabled={disabled}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+  return (
+    // "" keeps the Select controlled and shows the placeholder (Radix 2.x).
+    <Select value={value} disabled={disabled} onValueChange={onChange}>
+      <SelectTrigger className="h-8 w-full min-w-0 text-left" aria-label={ariaLabel}>
+        <span className="min-w-0 flex-1 truncate">
+          <SelectValue placeholder={placeholder} />
+        </span>
+      </SelectTrigger>
+      <SelectContent>
+        {choices.map((option) => (
+          <SelectItem key={option} value={option}>
+            {option}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function RecordDailyProgressPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -973,13 +1026,13 @@ export default function RecordDailyProgressPage() {
                       {sheet.manpower.map((row, index) => (
                         <TableRow key={row.id}>
                           <TableCell className="py-1.5">
-                            <Input
-                              className="h-8 w-full min-w-0"
-                              list="dpr-trades"
-                              placeholder="Mason, fitter, rigger…"
-                              aria-label={`Trade, row ${index + 1}`}
+                            <ConfiguredListPick
                               value={row.trade}
-                              onChange={(event) => editManpower(row.id, { trade: event.target.value })}
+                              options={settings.trades}
+                              disabled={!editable}
+                              placeholder="Choose a trade"
+                              ariaLabel={`Trade, row ${index + 1}`}
+                              onChange={(trade) => editManpower(row.id, { trade })}
                             />
                           </TableCell>
                           <TableCell className="py-1.5">
@@ -1073,13 +1126,13 @@ export default function RecordDailyProgressPage() {
                       {sheet.equipment.map((row, index) => (
                         <TableRow key={row.id}>
                           <TableCell className="py-1.5">
-                            <Input
-                              className="h-8 w-full min-w-0"
-                              list="dpr-equipment"
-                              placeholder="Excavator, crane…"
-                              aria-label={`Equipment, row ${index + 1}`}
+                            <ConfiguredListPick
                               value={row.name}
-                              onChange={(event) => editEquipment(row.id, { name: event.target.value })}
+                              options={settings.equipmentTypes}
+                              disabled={!editable}
+                              placeholder="Choose equipment"
+                              ariaLabel={`Equipment, row ${index + 1}`}
+                              onChange={(name) => editEquipment(row.id, { name })}
                             />
                           </TableCell>
                           <TableCell className="py-1.5">
@@ -1235,16 +1288,6 @@ export default function RecordDailyProgressPage() {
       </datalist>
       <datalist id="dpr-agencies">
         {suggestions.agencies.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
-      <datalist id="dpr-trades">
-        {suggestions.trades.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
-      <datalist id="dpr-equipment">
-        {suggestions.equipment.map((value) => (
           <option key={value} value={value} />
         ))}
       </datalist>
