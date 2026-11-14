@@ -3,18 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { FolderOpen, ShieldAlert } from "lucide-react";
 import {
-  ArrowRight,
-  Calculator,
-  ClipboardCheck,
-  ClipboardList,
-  FolderOpen,
-  GitPullRequestArrow,
-  ListPlus,
-  ShieldAlert,
-  UploadCloud,
-} from "lucide-react";
-import { doc, getDoc } from "firebase/firestore";
+  collection,
+  doc,
+  getCountFromServer,
+  getDoc,
+  query,
+  where,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,11 +21,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/page-header";
+import {
+  BoqHub,
+  BoqHubSkeleton,
+  buildBoqStages,
+  type BoqHubFigures,
+} from "@/components/project-management/boq-hub";
 import { useAuthorization } from "@/hooks/useAuthorization";
-import { VARIATION_PERMISSION_RESOURCE } from "@/lib/project-management-variations";
-import { cn } from "@/lib/utils";
+import {
+  VARIATION_COLLECTION,
+  VARIATION_PERMISSION_RESOURCE,
+} from "@/lib/project-management-variations";
 
 const MODULE_NAME = "Project Management";
 const PROJECTS_COLLECTION = "projectManagementProjects";
@@ -40,13 +44,15 @@ type SelectedProject = {
   globalProjectName: string;
 };
 
-const slugify = (text: string) =>
-  text
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^\w-]+/g, "")
-    .replace(/--+/g, "-")
-    .replace(/^-+|-+$/g, "");
+/** A count, or `null` when it cannot be read (rules, offline) — the stage then shows no figure. */
+async function countOrNull(source: Parameters<typeof getCountFromServer>[0]) {
+  try {
+    return (await getCountFromServer(source)).data().count;
+  } catch (error) {
+    console.warn("BOQ hub: a stage figure could not be counted.", error);
+    return null;
+  }
+}
 
 export default function BoqPage() {
   const searchParams = useSearchParams();
@@ -58,6 +64,7 @@ export default function BoqPage() {
   const canViewVariations = can("View", VARIATION_PERMISSION_RESOURCE);
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [isLoadingProject, setIsLoadingProject] = useState(Boolean(mappingId));
+  const [figures, setFigures] = useState<BoqHubFigures>({});
 
   useEffect(() => {
     if (isAuthLoading || !canViewBoq || !mappingId) {
@@ -102,73 +109,56 @@ export default function BoqPage() {
     void loadProject();
   }, [canViewBoq, isAuthLoading, mappingId]);
 
-  const boqSections = useMemo(() => {
-    if (!selectedProject) return [];
-    const projectQuery = `project=${encodeURIComponent(selectedProject.id)}`;
-    const globalProjectSlug = slugify(selectedProject.globalProjectName);
+  // The figures beside the stage names. Count queries only — a few reads, not the whole BOQ — and
+  // drawn after the cards, so a slow count never holds the page back.
+  useEffect(() => {
+    if (!selectedProject) return;
+    let cancelled = false;
 
-    const sections = [
-      {
-        title: "BOQ Costing",
-        description: "Prepare and manage project BOQ costing.",
-        href: `/project-management/boq/costing?${projectQuery}`,
-        icon: Calculator,
-        gradient: "from-emerald-500 to-teal-600",
-      },
-      {
-        title: "Operational BOQ",
-        description: "Manage operational quantities and project execution BOQs.",
-        href: `/project-management/boq/operational/${globalProjectSlug}?${projectQuery}`,
-        icon: ClipboardCheck,
-        gradient: "from-violet-500 to-purple-600",
-      },
-      // Its own permission, not BOQ's: approving a variation rewrites a BOQ quantity, so somebody
-      // who may only read the BOQ should not be shown a card that refuses them.
-      ...(canViewVariations
-        ? [
+    const loadFigures = async () => {
+      const [boqItems, pendingVariations] = await Promise.all([
+        selectedProject.globalProjectId
+          ? countOrNull(collection(db, "projects", selectedProject.globalProjectId, "boqItems"))
+          : Promise.resolve(null),
+        canViewVariations
+          ? countOrNull(
+              query(
+                collection(db, VARIATION_COLLECTION),
+                where("projectMappingId", "==", selectedProject.id),
+                where("status", "==", "Pending"),
+              ),
+            )
+          : Promise.resolve(null),
+      ]);
+      if (!cancelled) setFigures({ boqItems, pendingVariations });
+    };
+
+    void loadFigures();
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewVariations, selectedProject]);
+
+  const stages = useMemo(
+    () =>
+      selectedProject
+        ? buildBoqStages(
+            selectedProject,
             {
-              title: "Variation Orders",
-              description: "Approve BOQ quantities asked to go beyond the surveyed tolerance.",
-              href: `/project-management/boq/variation-orders?${projectQuery}`,
-              icon: GitPullRequestArrow,
-              gradient: "from-amber-500 to-orange-600",
+              canImport: canImportBoq,
+              canAddManual: canAddManualBoq,
+              canViewVariations,
             },
-          ]
-        : []),
-    ];
-
-    if (canAddManualBoq) {
-      sections.unshift({
-        title: "Add BOQ Items",
-        description: "Manually add one or more BOQ items at once.",
-        href: `/project-management/boq/add?${projectQuery}`,
-        icon: ListPlus,
-        gradient: "from-blue-500 to-indigo-600",
-      });
-    }
-
-    if (canImportBoq) {
-      sections.unshift({
-        title: "Import BOQ",
-        description: "Upload and process a BOQ Excel file.",
-        href: `/project-management/boq/import?${projectQuery}`,
-        icon: UploadCloud,
-        gradient: "from-amber-500 to-orange-600",
-      });
-    }
-
-    return sections;
-  }, [canAddManualBoq, canImportBoq, canViewVariations, selectedProject]);
+            figures,
+          )
+        : [],
+    [canAddManualBoq, canImportBoq, canViewVariations, figures, selectedProject],
+  );
 
   if (isAuthLoading || isLoadingProject) {
     return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-24 w-full rounded-xl" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-16 rounded-xl" />
-          ))}
-        </div>
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
+        <BoqHubSkeleton />
       </main>
     );
   }
@@ -219,47 +209,8 @@ export default function BoqPage() {
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <PageHeader
-        title="BOQ"
-        description={`${selectedProject.projectName} · mapped to ${selectedProject.globalProjectName}`}
-        icon={ClipboardList}
-        backHref={`/project-management?project=${encodeURIComponent(selectedProject.id)}`}
-        backLabel="Back to Project Management"
-      />
-
-      {/* ── Sections ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {boqSections.map((section) => {
-          const Icon = section.icon;
-
-          return (
-            <Link key={section.href} href={section.href} className="group no-underline">
-              <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-                <div className={cn("h-1 w-full bg-gradient-to-r", section.gradient)} />
-                <CardContent className="flex items-center gap-2.5 p-3">
-                  <div
-                    className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
-                      section.gradient,
-                    )}
-                  >
-                    <Icon className="h-4 w-4 text-white" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold leading-tight">{section.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {section.description}
-                    </p>
-                  </div>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
-      </div>
+    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
+      <BoqHub project={selectedProject} stages={stages} />
     </main>
   );
 }

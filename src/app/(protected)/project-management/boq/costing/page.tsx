@@ -1577,7 +1577,9 @@ export default function ViewBoqPage() {
                                         'max-sm:sticky max-sm:left-0 max-sm:z-10 max-sm:bg-background max-sm:shadow-[1px_0_0_0_hsl(var(--border))]',
                                     )}
                                   >
-                                    <p
+                                    {/* A div, not a p: the status columns render a StatusBadge, which is a
+                                        div, and a div inside a p is a hydration error. */}
+                                    <div
                                       className={cn(
                                         'truncate',
                                         isHeaderRow && header === 'Description' && 'font-semibold',
@@ -1586,7 +1588,7 @@ export default function ViewBoqPage() {
                                       title={titleText}
                                     >
                                       {display}
-                                    </p>
+                                    </div>
                                   </TableCell>
                                 );
                               })}
