@@ -15,6 +15,7 @@ import { useSearchParams } from "next/navigation";
 import {
   CalendarDays,
   Database,
+  History,
   ListChecks,
   Loader2,
   Plus,
@@ -40,6 +41,7 @@ import {
   DPR_SETTINGS_DOC_ID,
   DPR_WEEKDAYS,
   dprProjectDates,
+  dprSuggestions,
   sanitizeDprSettings,
   type DprHoliday,
   type DprSettings,
@@ -86,6 +88,8 @@ interface SettingsForm {
   weatherOptions: string[];
   trades: string[];
   equipmentTypes: string[];
+  locations: string[];
+  agencies: string[];
 }
 
 const toForm = (settings: DprSettings): SettingsForm => ({
@@ -101,6 +105,8 @@ const toForm = (settings: DprSettings): SettingsForm => ({
   weatherOptions: [...settings.weatherOptions],
   trades: [...settings.trades],
   equipmentTypes: [...settings.equipmentTypes],
+  locations: [...settings.locations],
+  agencies: [...settings.agencies],
 });
 
 /** The stored shape. `sanitizeDprSettings` then clamps it, exactly as every reader does. */
@@ -162,6 +168,7 @@ function ChipListEditor({
   onChange,
   placeholder,
   disabled,
+  suggestions,
 }: {
   id: string;
   label: string;
@@ -169,9 +176,14 @@ function ChipListEditor({
   onChange: (next: string[]) => void;
   placeholder: string;
   disabled?: boolean;
+  /** Values already typed on this project's sheets, offered in one click. */
+  suggestions?: readonly string[];
 }) {
   const [text, setText] = useState("");
   const trimmed = text.trim();
+  const missingSuggestions = (suggestions ?? []).filter(
+    (suggestion) => !values.some((value) => value.toLowerCase() === suggestion.toLowerCase()),
+  );
   const duplicate = values.some((value) => value.toLowerCase() === trimmed.toLowerCase());
   const add = () => {
     if (!trimmed || duplicate) return;
@@ -226,6 +238,20 @@ function ChipListEditor({
       {trimmed && duplicate ? (
         <p className="text-xs text-muted-foreground">“{trimmed}” is already in the list.</p>
       ) : null}
+      {missingSuggestions.length > 0 ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          disabled={disabled}
+          title={missingSuggestions.join(", ")}
+          onClick={() => onChange([...values, ...missingSuggestions.map((value) => value.slice(0, 40))])}
+        >
+          <History className="mr-1.5 h-3.5 w-3.5" />
+          Add {missingSuggestions.length} used on past sheets
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -249,10 +275,14 @@ export default function DprSettingsPage() {
     projectRecordDates,
     boqLines,
     breakdown,
+    entries,
     isLoading,
     loadError,
     reload,
   } = useDprData(mappingId, canView);
+
+  /** Locations and agencies already typed on this project's sheets, for one-click adding. */
+  const pastValues = useMemo(() => dprSuggestions(entries), [entries]);
 
   const [form, setForm] = useState<SettingsForm>(() => toForm(settings));
   /**
@@ -649,8 +679,9 @@ export default function DprSettingsPage() {
                 counted in whole numbers — projections spread as 1s and 2s and actuals cannot take a
                 fraction. Every other unit takes up to three decimals. Units match ignoring case,
                 dots and spaces, so “Nos.” matches “NOS”. Trades and plant are the dropdowns on
-                every daily sheet&apos;s manpower and equipment rows; empty a list to type them
-                instead.
+                every daily sheet&apos;s manpower and equipment rows, and locations and agencies the
+                dropdowns on its work lines; an empty list is typed instead, with earlier values
+                suggested.
               </TitleWithTip>
             }
           >
@@ -685,6 +716,24 @@ export default function DprSettingsPage() {
               onChange={(equipmentTypes) => patch({ equipmentTypes })}
               placeholder="Add equipment (Excavator, Crane…)"
               disabled={disabled}
+            />
+            <ChipListEditor
+              id="dpr-locations"
+              label="Locations (work lines)"
+              values={form.locations}
+              onChange={(locations) => patch({ locations })}
+              placeholder="Add a location (Tower 12, Zone A…)"
+              disabled={disabled}
+              suggestions={pastValues.locations}
+            />
+            <ChipListEditor
+              id="dpr-agencies"
+              label="Agencies (work lines)"
+              values={form.agencies}
+              onChange={(agencies) => patch({ agencies })}
+              placeholder="Add an agency (Departmental, a subcontractor…)"
+              disabled={disabled}
+              suggestions={pastValues.agencies}
             />
           </SettingsSection>
 

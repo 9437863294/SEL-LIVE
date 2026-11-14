@@ -95,6 +95,10 @@ export interface DprSettings {
   trades: string[];
   /** The plant and equipment a sheet's machinery is chosen from. Empty: typed instead. */
   equipmentTypes: string[];
+  /** Where on site a sheet's work lines are, chosen from this list. Empty: typed instead. */
+  locations: string[];
+  /** Who did a work line (own workforce, a subcontractor…). Empty: typed instead. */
+  agencies: string[];
 }
 
 /**
@@ -138,6 +142,10 @@ export const defaultDprSettings = (): DprSettings => ({
     "DG set",
     "Welding machine",
   ],
+  // Locations and agencies belong to one project (its towers and zones, its subcontractors), so
+  // there is nothing sensible to start them with; Settings offers the values already typed.
+  locations: [],
+  agencies: [],
 });
 
 const readNumber = (
@@ -221,6 +229,8 @@ export function sanitizeDprSettings(raw: unknown): DprSettings {
     // emptied a list types the trade or equipment instead.
     trades: readList(source.trades, defaults.trades),
     equipmentTypes: readList(source.equipmentTypes, defaults.equipmentTypes),
+    locations: readList(source.locations, defaults.locations),
+    agencies: readList(source.agencies, defaults.agencies),
   };
 }
 

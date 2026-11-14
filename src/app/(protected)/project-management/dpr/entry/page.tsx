@@ -219,6 +219,7 @@ function ConfiguredListPick({
   disabled,
   placeholder,
   ariaLabel,
+  fallbackListId,
 }: {
   value: string;
   options: readonly string[];
@@ -226,12 +227,15 @@ function ConfiguredListPick({
   disabled: boolean;
   placeholder: string;
   ariaLabel: string;
+  /** A <datalist> of earlier values, suggested while the configured list is still empty. */
+  fallbackListId?: string;
 }) {
   const choices = value && !options.includes(value) ? [value, ...options] : [...options];
   if (options.length === 0) {
     return (
       <Input
         className="h-8 w-full min-w-0"
+        list={fallbackListId}
         placeholder={placeholder}
         aria-label={ariaLabel}
         disabled={disabled}
@@ -924,21 +928,25 @@ export default function RecordDailyProgressPage() {
                               />
                             </TableCell>
                             <TableCell className="py-1.5">
-                              <Input
-                                className="h-8 w-full min-w-0"
-                                list="dpr-locations"
-                                aria-label={`Location for ${label}`}
+                              <ConfiguredListPick
                                 value={row.location}
-                                onChange={(event) => editRow(row.id, { location: event.target.value })}
+                                options={settings.locations}
+                                disabled={!editable}
+                                placeholder="Choose a location"
+                                ariaLabel={`Location for ${label}`}
+                                fallbackListId="dpr-locations"
+                                onChange={(location) => editRow(row.id, { location })}
                               />
                             </TableCell>
                             <TableCell className="py-1.5">
-                              <Input
-                                className="h-8 w-full min-w-0"
-                                list="dpr-agencies"
-                                aria-label={`Agency for ${label}`}
+                              <ConfiguredListPick
                                 value={row.agency}
-                                onChange={(event) => editRow(row.id, { agency: event.target.value })}
+                                options={settings.agencies}
+                                disabled={!editable}
+                                placeholder="Choose an agency"
+                                ariaLabel={`Agency for ${label}`}
+                                fallbackListId="dpr-agencies"
+                                onChange={(agency) => editRow(row.id, { agency })}
                               />
                             </TableCell>
                             <TableCell className="py-1.5">
