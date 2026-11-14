@@ -164,6 +164,14 @@ const blankRow = (boqItemId = ""): RowState => ({
 const isUntouchedRow = (row: RowState): boolean =>
   !row.actual.trim() && !row.location.trim() && !row.agency.trim() && !row.remarks.trim();
 
+/**
+ * A draft row that records no work: the actual blank or 0, and no remark. On a line that was
+ * finished before the day, such a row says nothing (where a 0 was worked is moot), so a draft
+ * opened later leaves it off instead of showing a finished line as still to do.
+ */
+const recordsNoWork = (row: RowState): boolean =>
+  (!row.actual.trim() || dprNumber(row.actual) === 0) && !row.remarks.trim();
+
 const numberText = (value: unknown): string =>
   value === null || value === undefined || value === "" ? "" : String(dprNumber(value));
 
@@ -365,10 +373,13 @@ export default function RecordDailyProgressPage() {
     const done = completionFor(indexDprActuals(entries, { excludeEntryId: filed?.id }));
     if (filed) {
       const loaded = sheetFromEntry(filed);
-      // A draft opened after one of its lines was finished elsewhere: an untouched row for it
-      // would only block Submit. A submitted sheet is a record and is shown exactly as filed.
+      // A draft opened after one of its lines was finished: a row on it that records no work is
+      // left off (it is listed under Already complete instead). Work typed on it, or a remark,
+      // keeps the row. A submitted sheet is a record and is shown exactly as filed.
       if (filed.status !== "Submitted") {
-        loaded.rows = loaded.rows.filter((row) => !(done.has(row.boqItemId) && isUntouchedRow(row)));
+        const kept = loaded.rows.filter((row) => !(done.has(row.boqItemId) && recordsNoWork(row)));
+        // Every row gone: one blank row, as a fresh sheet with nothing left planned opens with.
+        loaded.rows = kept.length > 0 || loaded.rows.length === 0 ? kept : [blankRow()];
       }
       setSheet(loaded);
       return;
@@ -722,10 +733,14 @@ export default function RecordDailyProgressPage() {
       {/* ── Sheet header ─────────────────────────────────────────────────────────────────── */}
       <Card className="border-border/60">
         <CardContent className="space-y-3 p-4">
-          {/* Every control and the sheet's actions on one line; it wraps only on a narrow screen. */}
+          {/* Every control and the sheet's actions on one line; it wraps only on a narrow screen.
+              Every label sits in the same h-6 row (Weather's carries an InfoTip) and every box
+              takes the density's control height, so labels and boxes line up across the row. */}
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[8rem] flex-1 space-y-1.5">
-              <Label htmlFor="dpr-scope">Scope</Label>
+              <div className="flex h-6 items-center">
+                <Label htmlFor="dpr-scope">Scope</Label>
+              </div>
               <Select value={scope} onValueChange={(next) => changeSheet({ scope: next as DprScope })}>
                 <SelectTrigger id="dpr-scope" className="text-left">
                   <SelectValue />
@@ -740,7 +755,9 @@ export default function RecordDailyProgressPage() {
               </Select>
             </div>
             <div className="min-w-[9rem] flex-1 space-y-1.5">
-              <Label htmlFor="dpr-date">Date</Label>
+              <div className="flex h-6 items-center">
+                <Label htmlFor="dpr-date">Date</Label>
+              </div>
               <Input
                 id="dpr-date"
                 type="date"
@@ -750,7 +767,6 @@ export default function RecordDailyProgressPage() {
               />
             </div>
             <div className="min-w-[8rem] flex-1 space-y-1.5">
-              {/* h-6: the height a bare Label takes, so this label lines up with the others. */}
               <div className="flex h-6 items-center gap-1.5">
                 <Label htmlFor="dpr-weather">Weather</Label>
                 <InfoTip label="About “Weather”">
@@ -778,9 +794,11 @@ export default function RecordDailyProgressPage() {
               </Select>
             </div>
             <div className="min-w-[10rem] flex-1 space-y-1.5">
-              <Label>Status</Label>
+              <div className="flex h-6 items-center">
+                <Label>Status</Label>
+              </div>
               <div
-                className="flex h-10 items-center rounded-md border border-border/60 bg-muted/40 px-3"
+                className="flex h-[var(--control-h,2.5rem)] items-center rounded-md border border-border/60 bg-muted/40 px-3"
                 title={lockedBy ? `Submitted by ${lockedBy}` : undefined}
               >
                 {statusReadout}
@@ -839,7 +857,7 @@ export default function RecordDailyProgressPage() {
                     .
                   </p>
                 ) : null}
-                {plannedItems.length > 0 && openPlannedCount === 0 && !existing ? (
+                {plannedItems.length > 0 && openPlannedCount === 0 && !locked ? (
                   <p className="border-y border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
                     Everything planned for {scope} on this date was already finished before it — see
                     Already complete below. Record anything else that was done.
