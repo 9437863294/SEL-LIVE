@@ -1,15 +1,23 @@
 "use client";
 
+/**
+ * Settings › General Settings — the container: permissions, the stored values, and the save.
+ * Everything on screen is `GeneralSettingsView` (props-only, so it can be rendered with fabricated
+ * data).
+ */
+
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Loader2, Save, Settings2, ShieldAlert } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
 import { DEFAULT_PLAUSIBILITY_LIMIT_PCT } from "@/lib/project-management-survey";
 import { DEFAULT_LEAD_TIME_DAYS } from "@/lib/project-management-requirement-planner";
 import { DEFAULT_STALL_DAYS } from "@/lib/project-management-dashboard";
-import { Button } from "@/components/ui/button";
+import {
+  GeneralSettingsView,
+  type GeneralSettingsValues,
+} from "@/components/project-management/general-settings-view";
 import {
   Card,
   CardContent,
@@ -17,8 +25,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/page-header";
 import { useAuthorization } from "@/hooks/useAuthorization";
@@ -28,35 +34,36 @@ const SETTINGS_PERMISSION = "Project Management.Settings";
 const SETTINGS_COLLECTION = "projectManagementSettings";
 const GENERAL_SETTINGS_DOC = "general";
 
+const DEFAULTS: GeneralSettingsValues = {
+  variationTolerancePct: DEFAULT_VARIATION_TOLERANCE_PCT,
+  plausibilityLimitPct: DEFAULT_PLAUSIBILITY_LIMIT_PCT,
+  leadTimeDays: DEFAULT_LEAD_TIME_DAYS,
+  stallDays: DEFAULT_STALL_DAYS,
+};
+
 export default function ProjectManagementGeneralSettingsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
   const canView = can("View", SETTINGS_PERMISSION);
   const canEdit = can("Edit", SETTINGS_PERMISSION);
 
-  const [variationTolerancePct, setVariationTolerancePct] = useState(String(DEFAULT_VARIATION_TOLERANCE_PCT));
-  const [plausibilityLimitPct, setPlausibilityLimitPct] = useState(String(DEFAULT_PLAUSIBILITY_LIMIT_PCT));
-  const [leadTimeDays, setLeadTimeDays] = useState(String(DEFAULT_LEAD_TIME_DAYS));
-  const [stallDays, setStallDays] = useState(String(DEFAULT_STALL_DAYS));
+  const [saved, setSaved] = useState<GeneralSettingsValues>(DEFAULTS);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
 
+  // Without View the page shows Access Denied and never reads, so "loading" only matters with it.
   useEffect(() => {
-    if (isAuthLoading || !canView) {
-      setIsLoading(false);
-      return;
-    }
+    if (isAuthLoading || !canView) return;
     const load = async () => {
       try {
-        const snapshot = await getDoc(doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC));
-        const stored = snapshot.data()?.variationTolerancePct;
-        if (typeof stored === "number") setVariationTolerancePct(String(stored));
-        const storedPlausibility = snapshot.data()?.plausibilityLimitPct;
-        if (typeof storedPlausibility === "number") setPlausibilityLimitPct(String(storedPlausibility));
-        const storedLeadTime = snapshot.data()?.leadTimeDays;
-        if (typeof storedLeadTime === "number") setLeadTimeDays(String(storedLeadTime));
-        const storedStallDays = snapshot.data()?.stallDays;
-        if (typeof storedStallDays === "number") setStallDays(String(storedStallDays));
+        const data = (await getDoc(doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC))).data() ?? {};
+        const read = (key: keyof GeneralSettingsValues) =>
+          typeof data[key] === "number" ? (data[key] as number) : DEFAULTS[key];
+        setSaved({
+          variationTolerancePct: read("variationTolerancePct"),
+          plausibilityLimitPct: read("plausibilityLimitPct"),
+          leadTimeDays: read("leadTimeDays"),
+          stallDays: read("stallDays"),
+        });
       } catch (error) {
         console.error("Failed to load Project Management general settings:", error);
       } finally {
@@ -66,28 +73,29 @@ export default function ProjectManagementGeneralSettingsPage() {
     void load();
   }, [canView, isAuthLoading]);
 
-  const handleSave = async () => {
-    const pct = Number(variationTolerancePct);
+  const handleSave = async (values: GeneralSettingsValues): Promise<boolean> => {
+    if (!canEdit) return false;
+    // The view holds each value to these limits as it is typed; they stay here as the last word.
+    const pct = values.variationTolerancePct;
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
       toast({ title: "Enter a tolerance between 0 and 100", variant: "destructive" });
-      return;
+      return false;
     }
-    const plausibility = Number(plausibilityLimitPct);
+    const plausibility = values.plausibilityLimitPct;
     if (!Number.isFinite(plausibility) || plausibility <= 0) {
       toast({ title: "Enter a valid plausibility limit", variant: "destructive" });
-      return;
+      return false;
     }
-    const leadTime = Number(leadTimeDays);
+    const leadTime = values.leadTimeDays;
     if (!Number.isFinite(leadTime) || leadTime < 0) {
       toast({ title: "Enter a valid lead time", variant: "destructive" });
-      return;
+      return false;
     }
-    const stall = Number(stallDays);
+    const stall = values.stallDays;
     if (!Number.isFinite(stall) || stall < 1) {
       toast({ title: "Enter a stall threshold of at least 1 day", variant: "destructive" });
-      return;
+      return false;
     }
-    setIsSaving(true);
     try {
       await setDoc(
         doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC),
@@ -100,19 +108,25 @@ export default function ProjectManagementGeneralSettingsPage() {
         },
         { merge: true },
       );
+      setSaved({ variationTolerancePct: pct, plausibilityLimitPct: plausibility, leadTimeDays: leadTime, stallDays: stall });
       toast({ title: "Settings saved" });
+      return true;
     } catch (error) {
       console.error("Failed to save Project Management general settings:", error);
       toast({ title: "Unable to save settings", variant: "destructive" });
-    } finally {
-      setIsSaving(false);
+      return false;
     }
   };
 
-  if (isAuthLoading || isLoading) {
+  if (isAuthLoading || (canView && isLoading)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Skeleton className="h-9 w-64" />
+        <Skeleton className="mb-4 h-28 w-full rounded-3xl" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-56 rounded-[22px]" />
+          ))}
+        </div>
       </main>
     );
   }
@@ -138,126 +152,7 @@ export default function ProjectManagementGeneralSettingsPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <PageHeader
-        title="General Settings"
-        description="Module-wide defaults for Project Management."
-        icon={Settings2}
-        backHref="/project-management/settings"
-        backLabel="Back to Settings"
-      />
-
-      <Card className="max-w-xl">
-        <CardHeader>
-          <CardTitle>Variation Order Tolerance</CardTitle>
-          <CardDescription>
-            When a surveyed or required quantity exceeds a BOQ item&apos;s stated quantity by more than this
-            percentage, it can&apos;t be indented, ordered, or billed until an approved{" "}
-            <Link href="/project-management/boq/variation-orders" className="underline underline-offset-2">
-              variation order
-            </Link>{" "}
-            covers the excess.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="max-w-xs space-y-2">
-            <Label htmlFor="variation-tolerance">Tolerance (%)</Label>
-            <Input
-              id="variation-tolerance"
-              type="number"
-              min="0"
-              max="100"
-              step="0.5"
-              value={variationTolerancePct}
-              disabled={!canEdit}
-              onChange={(event) => setVariationTolerancePct(event.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4 max-w-xl">
-        <CardHeader>
-          <CardTitle>Survey Plausibility Limit</CardTitle>
-          <CardDescription>
-            A surveyed quantity deviating from the BOQ by more than this percentage is treated as a likely
-            measurement error rather than a real variation — it&apos;s blocked pending re-survey instead of being
-            approved.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="max-w-xs space-y-2">
-            <Label htmlFor="plausibility-limit">Plausibility Limit (%)</Label>
-            <Input
-              id="plausibility-limit"
-              type="number"
-              min="1"
-              step="10"
-              value={plausibilityLimitPct}
-              disabled={!canEdit}
-              onChange={(event) => setPlausibilityLimitPct(event.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4 max-w-xl">
-        <CardHeader>
-          <CardTitle>Procurement Lead Time</CardTitle>
-          <CardDescription>
-            Default total lead time (RFQ → quotes → PO → manufacturing → inspection → dispatch → transit) used
-            by the{" "}
-            <Link href="/project-management/requirement-planner" className="underline underline-offset-2">
-              Requirement Planner
-            </Link>{" "}
-            to back-calculate each BOQ line&apos;s indent-by date from its required-at-site date.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="max-w-xs space-y-2">
-            <Label htmlFor="lead-time-days">Lead Time (days)</Label>
-            <Input
-              id="lead-time-days"
-              type="number"
-              min="0"
-              step="1"
-              value={leadTimeDays}
-              disabled={!canEdit}
-              onChange={(event) => setLeadTimeDays(event.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4 max-w-xl">
-        <CardHeader>
-          <CardTitle>Stall Threshold</CardTitle>
-          <CardDescription>
-            How many days a waiting record (an RFQ sent, an inspection or MDCC requested, a DI issued,
-            an MVAC with the client) may age before the project control tower reports it as stalled.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="max-w-xs space-y-2">
-            <Label htmlFor="stall-days">Stall Threshold (days)</Label>
-            <Input
-              id="stall-days"
-              type="number"
-              min="1"
-              step="1"
-              value={stallDays}
-              disabled={!canEdit}
-              onChange={(event) => setStallDays(event.target.value)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {canEdit && (
-        <Button className="mt-4 w-full sm:w-auto" onClick={handleSave} disabled={isSaving}>
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save
-        </Button>
-      )}
+      <GeneralSettingsView saved={saved} canEdit={canEdit} onSave={handleSave} />
     </main>
   );
 }

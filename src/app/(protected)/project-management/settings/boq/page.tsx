@@ -71,8 +71,8 @@ export default function ProjectManagementBoqSettingsPage() {
     );
   }, []);
 
+  // Runs once, on arrival: `isLoading` starts true, so nothing is set before the first read.
   const loadColumns = useCallback(async () => {
-    setIsLoading(true);
     try {
       const [settingsSnapshot, discoveredKeys] = await Promise.all([
         getDoc(doc(db, BOQ_COLUMN_SETTINGS_COLLECTION, BOQ_COLUMN_SETTINGS_DOC)),
@@ -92,12 +92,12 @@ export default function ProjectManagementBoqSettingsPage() {
     }
   }, [discoverImportedKeys, toast]);
 
+  // Without View the load never runs; the render below shows Access Denied whatever `isLoading` says.
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (!canView) {
-      setIsLoading(false);
-      return;
-    }
+    if (isAuthLoading || !canView) return;
+    // Loading from Firestore is the external system effects are for; every setState in
+    // `loadColumns` runs after its first await, never synchronously here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadColumns();
   }, [canView, isAuthLoading, loadColumns]);
 

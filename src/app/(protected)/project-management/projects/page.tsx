@@ -81,9 +81,12 @@ export default function ProjectRegisterPage() {
     }
   }, [toast]);
 
-  // Without access nothing is read; the skeleton below only shows while a permitted read runs.
+  // Reading Firestore once is the "sync with an external system" case effects are for; the state is
+  // set after the reads resolve. Without access nothing is read, and the skeleton below only shows
+  // while a permitted read runs.
   useEffect(() => {
     if (isAuthLoading || !canView) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, [canView, isAuthLoading, loadData]);
 

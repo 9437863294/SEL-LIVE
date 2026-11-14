@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  CalendarRange,
-  Link2,
-  Loader2,
-  Pencil,
-  Plus,
-  ShieldAlert,
-  Trash2,
-} from "lucide-react";
+/**
+ * Settings › Manage Projects — the container. It holds the permissions, loads the global projects,
+ * the mappings and the staff, and runs every rule before it writes: Field Control requirements,
+ * the timeline, duplicate names and global projects, the activation bar and the allowed lifecycle
+ * transitions. The screen itself is `ProjectMappingsView`, which only renders and calls back.
+ */
+
+import { useCallback, useEffect, useState } from "react";
+import { ShieldAlert } from "lucide-react";
 import {
   addDoc,
   collection,
@@ -23,9 +22,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { Project } from "@/lib/types";
-import { personOptionLabel } from "@/lib/people-directory";
 import { withDesignations } from "@/lib/people-directory-client";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -33,119 +30,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  PM_DIALOG,
-  PmDataList,
-  PmEmptyState,
-  type PmListColumn,
-} from "@/components/project-management/pm-shell";
 import { PageHeader } from "@/components/shared/page-header";
-import { StatusBadge } from "@/components/shared/status-badge";
-import { TableCard } from "@/components/shared/table-card";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
-import { ControlledField } from "@/components/project-management/controlled-field";
 import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import {
-  PROJECT_SCOPES,
-  PROJECT_TYPES,
-  PM_TEAM_ROLES,
+  ProjectMappingsView,
+  type MappingForm,
+  type MappingStaffMember,
+  type ProjectMapping,
+} from "@/components/project-management/project-mappings-view";
+import {
   canActivateProject,
   canTransitionLifecycle,
   deriveLegacyStatus,
-  nextLifecycleStates,
   resolveLifecycle,
   validatePmProject,
-  type PmProject,
-  type PmProjectTeam,
-  type ProjectLifecycleState,
-  type ProjectScope,
-  type ProjectType,
 } from "@/lib/project-management-projects";
 
 const COLLECTION_NAME = "projectManagementProjects";
 const PERMISSION_RESOURCE = "Project Management.Project Mappings";
-
-type MappingStatus = "Active" | "Inactive";
-
-type ProjectMapping = PmProject & { globalProjectName: string };
-
-type MappingForm = Omit<ProjectMapping, "id" | "globalProjectName" | "globalProjectSite">;
-
-const emptyForm: MappingForm = {
-  projectName: "",
-  globalProjectId: "",
-  description: "",
-  startDate: "",
-  endDate: "",
-  status: "Inactive",
-  projectCode: "",
-  scopes: [],
-  projectManagerId: "",
-  projectManagerName: "",
-  siteInChargeId: "",
-  siteInChargeName: "",
-  team: {},
-  // New projects start as drafts. A project record should be able to exist before every detail is
-  // known; going live is a deliberate act that has to clear the activation bar.
-  lifecycle: "Draft",
-};
-
-/** Three steps, because the fields genuinely group into three decisions: what and where it is,
- * who runs it, and whether it is ready to go live. */
-const WIZARD_STEPS = [
-  { key: "details", label: "Project details" },
-  { key: "scope", label: "Scope & team" },
-  { key: "activation", label: "Review & activate" },
-] as const;
-
-const formatProjectDate = (value?: string) => {
-  if (!value) return "Not set";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-};
 
 export default function ProjectMappingsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -154,25 +61,13 @@ export default function ProjectMappingsPage() {
   const [globalProjects, setGlobalProjects] = useState<Project[]>([]);
   const [mappings, setMappings] = useState<ProjectMapping[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingMapping, setEditingMapping] = useState<ProjectMapping | null>(null);
-  const [form, setForm] = useState<MappingForm>(emptyForm);
-  const [wizardStep, setWizardStep] = useState(0);
-  const [staff, setStaff] = useState<
-    Array<{ id: string; name: string; role?: string; designation?: string | null }>
-  >([]);
+  const [staff, setStaff] = useState<MappingStaffMember[]>([]);
 
   const canView = can("View", PERMISSION_RESOURCE);
   const canAdd = can("Add", PERMISSION_RESOURCE);
   const canEdit = can("Edit", PERMISSION_RESOURCE);
   const canDelete = can("Delete", PERMISSION_RESOURCE);
   const { field } = useFieldControl("projectMapping");
-
-  const globalProjectsById = useMemo(
-    () => new Map(globalProjects.map((project) => [project.id, project])),
-    [globalProjects],
-  );
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -188,10 +83,7 @@ export default function ProjectMappingsPage() {
         .map((projectDoc) => ({ id: projectDoc.id, ...projectDoc.data() }) as Project)
         .sort((a, b) => a.projectName.localeCompare(b.projectName));
       const projectMappings = mappingsSnapshot.docs
-        .map(
-          (mappingDoc) =>
-            ({ id: mappingDoc.id, ...mappingDoc.data() }) as ProjectMapping,
-        )
+        .map((mappingDoc) => ({ id: mappingDoc.id, ...mappingDoc.data() }) as ProjectMapping)
         .sort((a, b) => a.projectName.localeCompare(b.projectName));
 
       setGlobalProjects(projects);
@@ -235,78 +127,22 @@ export default function ProjectMappingsPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (!canView) {
-      setIsLoading(false);
-      return;
-    }
+    // Without View the denied state renders whatever `isLoading` holds, so nothing to reset here.
+    if (isAuthLoading || !canView) return;
+    // Loading the registers from Firestore is the "sync with an external system" case effects are
+    // for; `loadData` marks itself loading before it reads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadData();
   }, [canView, isAuthLoading, loadData]);
 
-  const openCreateDialog = () => {
-    setEditingMapping(null);
-    setForm(emptyForm);
-    setWizardStep(0);
-    setIsDialogOpen(true);
-  };
-
-  const openEditDialog = (mapping: ProjectMapping) => {
-    setEditingMapping(mapping);
-    setForm({
-      projectName: mapping.projectName,
-      globalProjectId: mapping.globalProjectId,
-      description: mapping.description ?? "",
-      startDate: mapping.startDate ?? "",
-      endDate: mapping.endDate ?? "",
-      status: mapping.status,
-      projectCode: mapping.projectCode ?? "",
-      projectType: mapping.projectType,
-      scopes: mapping.scopes ?? [],
-      projectManagerId: mapping.projectManagerId ?? "",
-      projectManagerName: mapping.projectManagerName ?? "",
-      siteInChargeId: mapping.siteInChargeId ?? "",
-      siteInChargeName: mapping.siteInChargeName ?? "",
-      team: mapping.team ?? {},
-      // Legacy mappings predate the lifecycle field — infer it rather than showing a blank.
-      lifecycle: resolveLifecycle(mapping),
-    });
-    setWizardStep(0);
-    setIsDialogOpen(true);
-  };
-
-  const toggleScope = (scope: ProjectScope) =>
-    setForm((current) => {
-      const scopes = current.scopes ?? [];
-      return {
-        ...current,
-        scopes: scopes.includes(scope)
-          ? scopes.filter((item) => item !== scope)
-          : [...scopes, scope],
-      };
-    });
-
-  const toggleTeamMember = (role: keyof PmProjectTeam, userId: string) =>
-    setForm((current) => {
-      const members = current.team?.[role] ?? [];
-      return {
-        ...current,
-        team: {
-          ...current.team,
-          [role]: members.includes(userId)
-            ? members.filter((item) => item !== userId)
-            : [...members, userId],
-        },
-      };
-    });
-
-  // Blocking problems for the lifecycle the user is actually trying to save.
-  const activationErrors = canActivateProject(form);
-  const draftErrors = validatePmProject(form);
-  const blockingErrors = form.lifecycle === "Active" ? activationErrors : draftErrors;
-
-  const handleSave = async () => {
+  /** Every rule, then the write. Resolves true when saved, so the wizard can close. */
+  const handleSave = async (form: MappingForm, editingMapping: ProjectMapping | null): Promise<boolean> => {
+    if (editingMapping ? !canEdit : !canAdd) {
+      toast({ title: "You don't have permission to do that", variant: "destructive" });
+      return false;
+    }
     const projectName = form.projectName.trim();
-    const globalProject = globalProjectsById.get(form.globalProjectId);
+    const globalProject = globalProjects.find((project) => project.id === form.globalProjectId);
 
     if (!projectName || !globalProject) {
       toast({
@@ -314,17 +150,13 @@ export default function ProjectMappingsPage() {
         description: "Enter the new project name and select a global project.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
-    const missingLabel = validateFieldControlRequirements(
-      "projectMapping",
-      { ...form },
-      field,
-    );
+    const missingLabel = validateFieldControlRequirements("projectMapping", { ...form }, field);
     if (missingLabel) {
       toast({ title: `${missingLabel} is required`, variant: "destructive" });
-      return;
+      return false;
     }
 
     if (Boolean(form.startDate) !== Boolean(form.endDate)) {
@@ -333,7 +165,7 @@ export default function ProjectMappingsPage() {
         description: "Select both the start date and end date.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     if (form.startDate && form.endDate && form.endDate < form.startDate) {
@@ -342,13 +174,12 @@ export default function ProjectMappingsPage() {
         description: "The end date cannot be before the start date.",
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     const duplicateName = mappings.some(
       (mapping) =>
-        mapping.id !== editingMapping?.id &&
-        mapping.projectName.trim().toLowerCase() === projectName.toLowerCase(),
+        mapping.id !== editingMapping?.id && mapping.projectName.trim().toLowerCase() === projectName.toLowerCase(),
     );
     if (duplicateName) {
       toast({
@@ -356,7 +187,7 @@ export default function ProjectMappingsPage() {
         description: `A Project Management project named "${projectName}" already exists.`,
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     const duplicateGlobalProject = mappings.find(
@@ -368,20 +199,18 @@ export default function ProjectMappingsPage() {
         description: `"${globalProject.projectName}" is already mapped as "${duplicateGlobalProject.projectName}". Each global project can only be mapped once.`,
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     // Domain rules — light for a Draft, strict for anything going Active.
+    const blockingErrors = form.lifecycle === "Active" ? canActivateProject(form) : validatePmProject(form);
     if (blockingErrors.length) {
       toast({
-        title:
-          form.lifecycle === "Active"
-            ? "This project cannot be activated yet"
-            : "Complete the project details",
+        title: form.lifecycle === "Active" ? "This project cannot be activated yet" : "Complete the project details",
         description: blockingErrors.map((error) => error.message).join(" "),
         variant: "destructive",
       });
-      return;
+      return false;
     }
 
     // Status changes follow the allowed graph rather than free-form dropdown editing.
@@ -394,11 +223,10 @@ export default function ProjectMappingsPage() {
           description: `A project cannot move directly from ${from} to ${to}.`,
           variant: "destructive",
         });
-        return;
+        return false;
       }
     }
 
-    setIsSaving(true);
     try {
       const lifecycle = form.lifecycle ?? "Draft";
       const payload = {
@@ -417,8 +245,7 @@ export default function ProjectMappingsPage() {
         ...(form.projectType ? { projectType: form.projectType } : {}),
         scopes: form.scopes ?? [],
         projectManagerId: form.projectManagerId ?? "",
-        projectManagerName:
-          staff.find((member) => member.id === form.projectManagerId)?.name ?? "",
+        projectManagerName: staff.find((member) => member.id === form.projectManagerId)?.name ?? "",
         siteInChargeId: form.siteInChargeId ?? "",
         siteInChargeName: staff.find((member) => member.id === form.siteInChargeId)?.name ?? "",
         team: form.team ?? {},
@@ -456,10 +283,8 @@ export default function ProjectMappingsPage() {
         toast({ title: "Project mapping created" });
       }
 
-      setIsDialogOpen(false);
-      setEditingMapping(null);
-      setForm(emptyForm);
       await loadData();
+      return true;
     } catch (error) {
       console.error("Failed to save project mapping:", error);
       toast({
@@ -467,12 +292,12 @@ export default function ProjectMappingsPage() {
         description: "The Project Management project could not be saved.",
         variant: "destructive",
       });
-    } finally {
-      setIsSaving(false);
+      return false;
     }
   };
 
   const handleDelete = async (mapping: ProjectMapping) => {
+    if (!canDelete) return;
     try {
       // Deleting the mapping doesn't touch the underlying subcollections — it just makes them
       // unreachable from every Project Management page, which all resolve data via this mapping.
@@ -522,7 +347,7 @@ export default function ProjectMappingsPage() {
   if (isAuthLoading || (isLoading && canView)) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Skeleton className="mb-6 h-9 w-72" />
+        <Skeleton className="mb-6 h-32 w-full rounded-3xl" />
         <Skeleton className="h-80 w-full" />
       </main>
     );
@@ -535,9 +360,7 @@ export default function ProjectMappingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You do not have permission to view Project Management mappings.
-            </CardDescription>
+            <CardDescription>You do not have permission to view Project Management mappings.</CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center p-8">
             <ShieldAlert className="h-16 w-16 text-destructive" />
@@ -547,521 +370,19 @@ export default function ProjectMappingsPage() {
     );
   }
 
-  const columns: PmListColumn<ProjectMapping>[] = [
-    {
-      header: "Project Management project",
-      mobile: "title",
-      cell: (mapping) => (
-        <>
-          <p className="font-medium">{mapping.projectName}</p>
-          {mapping.description && (
-            <p className="text-xs text-muted-foreground">
-              {mapping.description}
-            </p>
-          )}
-        </>
-      ),
-    },
-    {
-      header: "Mapped global project",
-      mobile: "title",
-      cell: (mapping) => (
-        <div className="flex items-center gap-2">
-          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          {globalProjectsById.get(mapping.globalProjectId)?.projectName ?? mapping.globalProjectName}
-        </div>
-      ),
-    },
-    {
-      header: "Site",
-      cell: (mapping) =>
-        globalProjectsById.get(mapping.globalProjectId)?.projectSite ?? mapping.globalProjectSite ?? "—",
-    },
-    {
-      // A sub-line on the phone card: a date range does not fit a half-width detail cell.
-      header: "Project timeline",
-      mobile: "title",
-      cell: (mapping) => (
-        <div className="flex items-center gap-2 whitespace-nowrap">
-          <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>
-            {mapping.startDate && mapping.endDate
-              ? `${formatProjectDate(mapping.startDate)} – ${formatProjectDate(mapping.endDate)}`
-              : "Not set"}
-          </span>
-        </div>
-      ),
-    },
-    {
-      header: "Status",
-      mobile: "aside",
-      cell: (mapping) => (
-        <>
-          <StatusBadge status={resolveLifecycle(mapping)} />
-          {mapping.projectCode ? (
-            <div className="mt-1 text-[10px] text-muted-foreground">
-              {mapping.projectCode}
-            </div>
-          ) : null}
-        </>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right",
-      mobile: "footer",
-      cell: (mapping) => (
-        // Icon-only in the table; on a phone card each stretches into a labelled button.
-        <div className="flex w-full justify-end gap-2 sm:w-auto">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => openEditDialog(mapping)}
-            disabled={!canEdit}
-            aria-label={`Edit ${mapping.projectName}`}
-          >
-            <Pencil className="h-4 w-4" />
-            <span className="ml-2 sm:hidden">Edit</span>
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="destructive"
-                size="icon"
-                disabled={!canDelete}
-                aria-label={`Delete ${mapping.projectName}`}
-              >
-                <Trash2 className="h-4 w-4" />
-                <span className="ml-2 sm:hidden">Delete</span>
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete project mapping?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This removes “{mapping.projectName}” from Project
-                  Management. The mapped global project will not be deleted.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => handleDelete(mapping)}
-                >
-                  Delete Mapping
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      ),
-    },
-  ];
-
   return (
     <main className="min-h-[calc(100dvh-4rem)] p-4 max-sm:[--card-pad:1rem] sm:p-6">
-      <PageHeader
-        title="Manage Projects"
-        description="Create Project Management projects and map each one to a global project."
-        icon={Link2}
-        backHref="/project-management/settings"
-        backLabel="Back to Settings"
-        actions={
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreateDialog} disabled={!canAdd}>
-              <Plus className="mr-2 h-4 w-4" />
-              New Project Mapping
-            </Button>
-          </DialogTrigger>
-          <DialogContent
-            className={cn(PM_DIALOG.content, "sm:max-h-[90dvh] sm:max-w-2xl sm:overflow-y-auto")}
-          >
-            <DialogHeader className={PM_DIALOG.header}>
-              <DialogTitle>
-                {editingMapping ? "Edit Project" : "New Project"}
-              </DialogTitle>
-              <DialogDescription>
-                {WIZARD_STEPS[wizardStep].label} — step {wizardStep + 1} of {WIZARD_STEPS.length}
-              </DialogDescription>
-            </DialogHeader>
-
-            {/* Step rail */}
-            <div className="flex items-center gap-2">
-              {WIZARD_STEPS.map((step, index) => (
-                <button
-                  key={step.key}
-                  type="button"
-                  onClick={() => setWizardStep(index)}
-                  className={cn(
-                    "flex-1 rounded-md border px-2 py-1.5 text-left text-xs transition-colors",
-                    index === wizardStep
-                      ? "border-primary bg-primary/5 font-medium text-primary"
-                      : "border-border text-muted-foreground hover:bg-muted/50",
-                  )}
-                >
-                  <span className="block">{index + 1}. {step.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Each step panel is the part of the phone sheet that scrolls (`hr-dialog-body`); only
-                one is ever shown, so the class sits on all three rather than on a wrapper. */}
-            <div className={cn("hr-dialog-body grid grid-cols-1 gap-4 py-4", wizardStep !== 0 && "hidden")}>
-              <ControlledField setting={field("projectName")}>
-                <Input
-                  id="project-name"
-                  placeholder="For example: Project Y"
-                  value={form.projectName}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      projectName: event.target.value,
-                    }))
-                  }
-                />
-              </ControlledField>
-
-              <ControlledField setting={field("globalProjectId")}>
-                <Select
-                  value={form.globalProjectId}
-                  onValueChange={(globalProjectId) =>
-                    setForm((current) => ({ ...current, globalProjectId }))
-                  }
-                >
-                  <SelectTrigger id="global-project">
-                    <SelectValue placeholder="Select global project X" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {globalProjects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.projectName}
-                        {project.siteCode ? ` (${project.siteCode})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </ControlledField>
-
-              <ControlledField setting={field("description")}>
-                <Input
-                  id="mapping-description"
-                  placeholder="Optional description"
-                  value={form.description}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                />
-              </ControlledField>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <ControlledField setting={field("startDate")}>
-                  <Input
-                    id="project-start-date"
-                    type="date"
-                    value={form.startDate}
-                    max={form.endDate || undefined}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        startDate: event.target.value,
-                      }))
-                    }
-                  />
-                </ControlledField>
-                <ControlledField setting={field("endDate")}>
-                  <Input
-                    id="project-end-date"
-                    type="date"
-                    value={form.endDate}
-                    min={form.startDate || undefined}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        endDate: event.target.value,
-                      }))
-                    }
-                  />
-                </ControlledField>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="project-code">Project Code</Label>
-                  <Input
-                    id="project-code"
-                    placeholder="SEL/PRJ/0031"
-                    value={form.projectCode ?? ""}
-                    onChange={(event) =>
-                      setForm((current) => ({ ...current, projectCode: event.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="project-type">Project Type</Label>
-                  <Select
-                    value={form.projectType ?? ""}
-                    onValueChange={(projectType: ProjectType) =>
-                      setForm((current) => ({ ...current, projectType }))
-                    }
-                  >
-                    <SelectTrigger id="project-type">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PROJECT_TYPES.map((type) => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 2 — scope and team */}
-            <div className={cn("hr-dialog-body grid grid-cols-1 gap-5 py-4", wizardStep !== 1 && "hidden")}>
-              <div className="space-y-2">
-                <Label>Scope</Label>
-                <p className="text-xs text-muted-foreground">
-                  Which lanes this project actually runs. Determines which workflow a BOQ line
-                  follows and which sections are worth showing.
-                </p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {PROJECT_SCOPES.map((scope) => (
-                    <label
-                      key={scope}
-                      className="flex items-center gap-2 rounded-md border p-2 text-sm"
-                    >
-                      <Checkbox
-                        checked={(form.scopes ?? []).includes(scope)}
-                        onCheckedChange={() => toggleScope(scope)}
-                      />
-                      {scope}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="project-manager">Project Manager</Label>
-                  <Select
-                    value={form.projectManagerId ?? ""}
-                    onValueChange={(projectManagerId) =>
-                      setForm((current) => ({ ...current, projectManagerId }))
-                    }
-                  >
-                    <SelectTrigger id="project-manager">
-                      <SelectValue placeholder="Select manager" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {staff.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>{personOptionLabel(member)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="site-incharge">Site In-Charge</Label>
-                  <Select
-                    value={form.siteInChargeId ?? ""}
-                    onValueChange={(siteInChargeId) =>
-                      setForm((current) => ({ ...current, siteInChargeId }))
-                    }
-                  >
-                    <SelectTrigger id="site-incharge">
-                      <SelectValue placeholder="Select site in-charge" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {staff.map((member) => (
-                        <SelectItem key={member.id} value={member.id}>{personOptionLabel(member)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Project Team</Label>
-                <p className="text-xs text-muted-foreground">
-                  Referenced by user account, never copied — a rename or role change in User
-                  Management flows through automatically.
-                </p>
-                <div className="space-y-3">
-                  {PM_TEAM_ROLES.map((role) => (
-                    <div key={role.key} className="rounded-md border p-2">
-                      <p className="mb-1.5 text-xs font-medium">{role.label}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {staff.map((member) => {
-                          const selected = (form.team?.[role.key] ?? []).includes(member.id);
-                          return (
-                            <button
-                              key={member.id}
-                              type="button"
-                              onClick={() => toggleTeamMember(role.key, member.id)}
-                              className={cn(
-                                // hr-inline-action: a 32px chip on the phone sheet, not the 44px
-                                // every other dialog button is stretched to.
-                                "hr-inline-action rounded-full border px-2 py-0.5 text-xs transition-colors",
-                                selected
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border text-muted-foreground hover:bg-muted",
-                              )}
-                            >
-                              {member.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Step 3 — review and activate */}
-            <div className={cn("hr-dialog-body space-y-4 py-4", wizardStep !== 2 && "hidden")}>
-              <div className="space-y-2">
-                <Label htmlFor="project-lifecycle">Status</Label>
-                <Select
-                  value={form.lifecycle ?? "Draft"}
-                  onValueChange={(lifecycle: ProjectLifecycleState) =>
-                    setForm((current) => ({ ...current, lifecycle }))
-                  }
-                >
-                  <SelectTrigger id="project-lifecycle">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(editingMapping
-                      ? Array.from(
-                          new Set([
-                            resolveLifecycle(editingMapping),
-                            ...nextLifecycleStates(resolveLifecycle(editingMapping)),
-                          ]),
-                        )
-                      : (["Draft", "Review"] as ProjectLifecycleState[])
-                    ).map((state) => (
-                      <SelectItem key={state} value={state}>{state}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Only transitions valid from the current status are offered. A new project starts
-                  as a Draft and is activated once it clears the checks below.
-                </p>
-              </div>
-
-              <div className="rounded-lg border p-3">
-                <p className="mb-2 text-sm font-medium">Activation checklist</p>
-                {activationErrors.length ? (
-                  <ul className="space-y-1">
-                    {activationErrors.map((error) => (
-                      <li key={`${error.field}-${error.message}`} className="text-xs text-red-600">
-                        • {error.message}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-xs text-emerald-700">
-                    Everything required to activate this project is in place.
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded-lg border p-3 text-xs">
-                <p className="mb-2 text-sm font-medium">Summary</p>
-                {/* Label beside value on a phone too, rather than each stacked over the other. */}
-                <div className="grid grid-cols-1 gap-1.5 max-sm:grid-cols-[auto_1fr] max-sm:gap-x-3 sm:grid-cols-2">
-                  <span className="text-muted-foreground">Name</span>
-                  <span>{form.projectName || "—"}</span>
-                  <span className="text-muted-foreground">Code</span>
-                  <span>{form.projectCode || "—"}</span>
-                  <span className="text-muted-foreground">Type</span>
-                  <span>{form.projectType || "—"}</span>
-                  <span className="text-muted-foreground">Scope</span>
-                  <span>
-                    {(form.scopes ?? []).length ? (
-                      <span className="flex flex-wrap gap-1">
-                        {(form.scopes ?? []).map((scope) => (
-                          <Badge key={scope} variant="outline">{scope}</Badge>
-                        ))}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </span>
-                  <span className="text-muted-foreground">Project Manager</span>
-                  <span>
-                    {staff.find((member) => member.id === form.projectManagerId)?.name || "—"}
-                  </span>
-                  <span className="text-muted-foreground">Schedule</span>
-                  <span>
-                    {form.startDate || "—"} → {form.endDate || "—"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* On a phone both button groups dissolve (`contents`) into the sheet footer's
-                two-column grid: Back | Next above, Cancel | Save beneath. */}
-            <DialogFooter className={cn(PM_DIALOG.footer, "gap-2 sm:justify-between")}>
-              <div className="flex gap-2 max-sm:contents">
-                <Button
-                  variant="outline"
-                  onClick={() => setWizardStep((step) => Math.max(0, step - 1))}
-                  disabled={wizardStep === 0}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    setWizardStep((step) => Math.min(WIZARD_STEPS.length - 1, step + 1))
-                  }
-                  disabled={wizardStep === WIZARD_STEPS.length - 1}
-                >
-                  Next
-                </Button>
-              </div>
-              <div className="flex gap-2 max-sm:contents">
-                <DialogClose asChild>
-                  <Button variant="outline">Cancel</Button>
-                </DialogClose>
-                <Button onClick={handleSave} disabled={isSaving || blockingErrors.length > 0}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {editingMapping ? "Save Changes" : "Create Project"}
-                </Button>
-              </div>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-        }
+      <ProjectMappingsView
+        mappings={mappings}
+        globalProjects={globalProjects}
+        staff={staff}
+        field={field}
+        canAdd={canAdd}
+        canEdit={canEdit}
+        canDelete={canDelete}
+        onSave={handleSave}
+        onDelete={handleDelete}
       />
-
-      <TableCard
-        title="Project mappings"
-        icon={Link2}
-        description="The new project name is used inside Project Management. The mapped global project remains the source for shared project data."
-      >
-        <div className="p-3 sm:p-0">
-          <PmDataList
-            rows={mappings}
-            columns={columns}
-            className="sm:rounded-none sm:border-0 sm:shadow-none"
-            empty={
-              <PmEmptyState
-                icon={Link2}
-                title="No Project Management projects yet"
-                description="Create project Y and map it to an existing global project X."
-              />
-            }
-          />
-        </div>
-      </TableCard>
     </main>
   );
 }

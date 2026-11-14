@@ -11,13 +11,11 @@
  * it can be rendered with fabricated data.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import type { Client } from "@/lib/types";
-import {
-  validateFieldControlRequirements,
-  type PMFieldSetting,
-} from "@/components/project-management/use-field-control";
+import { PM_FORM_REGISTRY } from "@/lib/project-management-field-registry";
+import type { PMFieldSetting } from "@/components/project-management/use-field-control";
 import {
   SUB_ITEM_DIALOG_CLASS,
   SUB_ITEM_DIALOG_STYLE,
@@ -161,23 +159,19 @@ export function checkClientForm(
     if (Number(form.ldRatePct) > Number(form.ldCapPct)) live.ldRatePct = "LD rate is above the LD cap.";
   }
 
-  // Field Control's required fields (locked ones are the form's own — the name, above).
-  let values: Record<string, unknown> = { ...form };
-  for (;;) {
-    const missing = validateFieldControlRequirements("clientMaster", values, context.fieldControl);
-    if (!missing) break;
-    const key = (Object.keys(form) as Array<keyof ClientForm>).find(
-      (candidate) => context.fieldControl(candidate).label === missing && !String(values[candidate] ?? "").trim(),
-    );
-    if (!key) {
-      required.name = required.name ?? `${missing} is required.`;
-      break;
-    }
-    required[key] = `${missing} is required.`;
-    values = { ...values, [key]: "—" };
+  // Field Control's required fields — the same rule as validateFieldControlRequirements, kept per
+  // field so each message sits under its own box. Locked fields are the form's own (the name, above).
+  for (const def of PM_FORM_REGISTRY.clientMaster.fields) {
+    if (def.locked || !(def.key in form)) continue;
+    const setting = context.fieldControl(def.key);
+    if (!setting.visible || !setting.required) continue;
+    const key = def.key as keyof ClientForm;
+    if (!String(form[key] ?? "").trim()) required[key] = `${setting.label} is required.`;
   }
   return { live, required };
 }
+
+type TextKey = Exclude<keyof ClientForm, "status">;
 
 /**
  * A dialog whose header is a coloured band: the dialog's own window buttons and × sit on it in
@@ -246,8 +240,7 @@ function ClientDialogBody({
   const shown: ClientFormErrors = attempted ? { ...check.required, ...check.live } : check.live;
   const blocked = Object.keys(check.live).length > 0;
 
-  const set = <K extends keyof ClientForm>(key: K, value: ClientForm[K]) =>
-    setForm((current) => ({ ...current, [key]: value }));
+  const set = (key: TextKey, value: string) => setForm((current) => ({ ...current, [key]: value }));
 
   const save = async () => {
     setAttempted(true);
@@ -261,7 +254,7 @@ function ClientDialogBody({
   };
 
   /** One field, as Field Control has it (hidden, required, renamed), with its message under it. */
-  const field = (key: keyof ClientForm, input: (invalid: boolean) => React.ReactNode, className?: string) => {
+  const field = (key: keyof ClientForm, input: (invalid: boolean) => ReactNode, className?: string) => {
     const setting = fieldControl(key);
     if (!setting.visible) return null;
     const error = shown[key];
@@ -281,7 +274,7 @@ function ClientDialogBody({
     );
   };
   const invalidClass = (invalid: boolean) => (invalid ? "border-rose-300 bg-rose-50" : undefined);
-  const text = (key: keyof ClientForm, placeholder?: string) =>
+  const text = (key: TextKey, placeholder?: string) =>
     field(key, (invalid) => (
       <Input
         id={`client-${key}`}
@@ -290,7 +283,7 @@ function ClientDialogBody({
         aria-invalid={invalid || undefined}
         aria-describedby={invalid ? `client-${key}-error` : undefined}
         className={invalidClass(invalid)}
-        onChange={(event) => set(key, event.target.value as never)}
+        onChange={(event) => set(key, event.target.value)}
       />
     ));
   const code = (key: "gstin" | "pan", placeholder: string, maxLength: number) =>
@@ -308,7 +301,7 @@ function ClientDialogBody({
         onChange={(event) => set(key, event.target.value.toUpperCase().replace(/\s/g, ""))}
       />
     ));
-  const amount = (key: keyof ClientForm, suffix: string) =>
+  const amount = (key: TextKey, suffix: string) =>
     field(key, (invalid) => (
       <SuffixInput
         id={`client-${key}`}
@@ -318,7 +311,7 @@ function ClientDialogBody({
         aria-invalid={invalid || undefined}
         aria-describedby={invalid ? `client-${key}-error` : undefined}
         className={invalidClass(invalid)}
-        onChange={(event) => set(key, event.target.value as never)}
+        onChange={(event) => set(key, event.target.value)}
       />
     ));
 
@@ -398,7 +391,10 @@ function ClientDialogBody({
           <Label htmlFor="client-status" className="text-xs font-extrabold text-muted-foreground">
             Status
           </Label>
-          <Select value={form.status} onValueChange={(status: "Active" | "Inactive") => set("status", status)}>
+          <Select
+            value={form.status}
+            onValueChange={(status: "Active" | "Inactive") => setForm((current) => ({ ...current, status }))}
+          >
             <SelectTrigger id="client-status" className="text-left">
               <SelectValue />
             </SelectTrigger>
