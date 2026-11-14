@@ -15,6 +15,7 @@ import type { DprCompletion } from "@/lib/project-management-dpr-plan";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import { formatQtyAt, formatRangeCompact } from "@/components/project-management/dpr/dpr-shell";
 import { breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
+import { DprSlNoPill } from "@/components/project-management/dpr/reports-parts";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -80,8 +81,8 @@ export function DprCompletedLines({
             <col />
             <col className="w-[76px]" />
             <col className="w-[100px]" />
-            <col className="w-[130px]" />
-            <col className="w-[420px]" />
+            <col className="w-[150px]" />
+            <col className="w-[400px]" />
             <col className="w-[218px]" />
           </colgroup>
           <TableHeader>
@@ -106,8 +107,8 @@ export function DprCompletedLines({
               const why = completion ? completionText(completion, item.unit, decimals) : "";
               return (
                 <TableRow key={item.id} className="text-muted-foreground">
-                  <TableCell className="truncate text-sm font-semibold tabular-nums" title={item.boqSlNo}>
-                    {item.boqSlNo || "—"}
+                  <TableCell className="truncate">
+                    <DprSlNoPill slNo={item.boqSlNo} seed={item.id} />
                   </TableCell>
                   <TableCell
                     className="truncate text-sm"
