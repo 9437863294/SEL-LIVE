@@ -795,7 +795,8 @@ export function checkDprSheet(input: {
     warnings.push("This date is after the project completion date.");
   }
   if (!calendar.isWorkingDay(sheet.date)) warnings.push("This is a non-working day in the project calendar.");
-  if (!String(sheet.weather ?? "").trim()) errors.push("Select the weather.");
+  // Weather is optional (the user, 2026-11-14): it is chosen from the fixed list when recorded,
+  // and never blocks a submit.
   if (sheet.lines.length === 0) errors.push("Add at least one BOQ line.");
 
   const hindrances = String(sheet.hindrances ?? "").trim();

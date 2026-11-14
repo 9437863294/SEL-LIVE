@@ -23,33 +23,36 @@ import {
   CornerDownRight,
   Download,
   LineChart as LineChartIcon,
-  TriangleAlert,
   Truck,
   Users,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   DPR_PERMISSION_RESOURCE,
   buildDprEquipmentSummary,
   buildDprHindrances,
   buildDprLostTime,
-  buildDprManpowerSummary,
   buildDprPeriodReport,
   dprToCsv,
   type DprPeriodRow,
   type DprScope,
 } from "@/lib/project-management-dpr";
-import { buildDprShareTrend, dprShortDate } from "@/lib/project-management-dpr-plan";
+import {
+  buildDprShareTrend,
+  dprCalendar,
+  dprShortDate,
+  isValidRange,
+} from "@/lib/project-management-dpr-plan";
+import {
+  buildDprManpowerReport,
+  dprProgressDates,
+  dprTradeOrder,
+} from "@/lib/project-management-dpr-reports";
+import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
+import { DprManpowerView } from "@/components/project-management/dpr/reports-manpower";
+import { DprBoqProgressView } from "@/components/project-management/dpr/reports-boq-progress";
+import { DprTrendView } from "@/components/project-management/dpr/reports-trend";
+import { DprDelaysView, DprPlantView } from "@/components/project-management/dpr/reports-plant-delays";
 import {
   arrangeByBreakdown,
   type DprBreakdownNode,
@@ -57,8 +60,10 @@ import {
 import { cn } from "@/lib/utils";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
+  DPR_FIELD_ACCENTS,
+  DPR_TABS,
   DprAccessDenied,
-  DprHeader,
+  DprFieldLabel,
   DprLoadingState,
   DprPageShell,
   DprPeriodPicker,
@@ -67,20 +72,16 @@ import {
   defaultPeriodSelection,
   formatDisplayDate,
   formatPct,
-  formatQty,
   formatQtyAt,
+  formatRangeCompact,
   resolvePeriodRange,
   resolveTrendGranularity,
+  todayIso,
   type DprPeriodSelection,
 } from "@/components/project-management/dpr/dpr-shell";
-import { InfoTip } from "@/components/shared/info-tip";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { chartChrome } from "@/components/ui/chart";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -90,15 +91,25 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const VIEWS = [
-  { id: "progress", label: "BOQ progress", icon: Activity },
-  { id: "trend", label: "Plan vs actual", icon: LineChartIcon },
-  { id: "manpower", label: "Manpower", icon: Users },
-  { id: "equipment", label: "Plant", icon: Truck },
-  { id: "delays", label: "Delays", icon: CloudSun },
-] as const;
+type ViewId = "progress" | "trend" | "manpower" | "equipment" | "delays";
 
-type ViewId = (typeof VIEWS)[number]["id"];
+/** The five reports, as tabs in the headline band, each with the mock-up's chip colours. */
+const VIEWS: readonly DprReportTab<ViewId>[] = [
+  { id: "progress", label: "BOQ progress", icon: Activity, colours: ["#6ee7b7", "#059669"] },
+  { id: "trend", label: "Plan vs actual", icon: LineChartIcon, colours: ["#93c5fd", "#2563eb"] },
+  { id: "manpower", label: "Manpower", icon: Users, colours: ["#c4b5fd", "#7c3aed"] },
+  { id: "equipment", label: "Plant", icon: Truck, colours: ["#fcd34d", "#d97706"] },
+  { id: "delays", label: "Delays", icon: CloudSun, colours: ["#fda4af", "#e11d48"] },
+];
+
+const REPORTS_TAB = DPR_TABS.find((tab) => tab.key === "reports")!;
+
+const PERIOD_WORDS = {
+  Day: { choice: "daily", noun: "day" },
+  Week: { choice: "weekly", noun: "week" },
+  Month: { choice: "monthly", noun: "month" },
+  Custom: { choice: "custom range", noun: "period" },
+} as const;
 
 /** The table furniture every view shares: bounded height, pinned header, fixed columns. */
 const TABLE_PROPS = { stickyHeader: true, containerClassName: "max-h-[65vh]" } as const;
@@ -106,8 +117,6 @@ const TABLE_PROPS = { stickyHeader: true, containerClassName: "max-h-[65vh]" } a
 /** A single-line text cell: cut short with an ellipsis, the whole value on hover. */
 const lineCell = "truncate text-sm";
 const numberCell = "truncate text-right text-sm tabular-nums";
-
-const scopeTone = (scope: DprScope) => (scope === "Civil" ? "info" : "progress");
 
 /** A BOQ progress row: a leaf line (`row`), or a group (`row` null) with its rolled-up figures. */
 interface ProgressRow {
@@ -209,10 +218,37 @@ export default function DprReportsPage() {
     [boqItems, entries, plan, range, granularity, scopeFilter],
   );
 
+  /** Counted per date, so two scopes on one day are one day for a trade. */
   const manpower = useMemo(
-    () => buildDprManpowerSummary(entries, { scope: scopeFilter, range }),
-    [entries, scopeFilter, range],
+    () =>
+      buildDprManpowerReport(entries, {
+        scope: scopeFilter,
+        range,
+        calendar: dprCalendar(settings),
+        today: todayIso(),
+      }),
+    [entries, scopeFilter, range, settings],
   );
+  /** Read over the whole register, so a trade keeps its colour whatever the period or scope. */
+  const tradeOrder = useMemo(() => dprTradeOrder(entries, settings.trades), [entries, settings.trades]);
+
+  const today = todayIso();
+  /** The same range day by day, so the figures "up to today" are exact at any chart granularity. */
+  const dailyTrend = useMemo(
+    () =>
+      buildDprShareTrend({ items: boqItems, entries, plan, range, periodType: "Day", scope: scopeFilter }),
+    [boqItems, entries, plan, range, scopeFilter],
+  );
+  const calendarDays = useMemo(() => {
+    if (!isValidRange(range)) return { working: 0, toDate: 0 };
+    const working = dprCalendar(settings).workingDays(range.startDate, range.endDate);
+    return { working: working.length, toDate: working.filter((date) => date <= today).length };
+  }, [range, settings, today]);
+  const progressDays = useMemo(
+    () => dprProgressDates(entries, { scope: scopeFilter, range, today }).length,
+    [entries, scopeFilter, range, today],
+  );
+  const pathById = useMemo(() => new Map(boqItems.map((item) => [item.id, item.path ?? ""])), [boqItems]);
 
   const equipment = useMemo(
     () => buildDprEquipmentSummary(entries, { scope: scopeFilter, range }),
@@ -229,12 +265,56 @@ export default function DprReportsPage() {
     [entries, scopeFilter, range],
   );
 
-  const downloadCsv = () => {
-    // Leaf lines only (groups are roll-ups of them), each with the lines above it as "Parent".
-    const pathById = new Map(boqItems.map((item) => [item.id, item.path ?? ""]));
-    const round2 = (value: number) => Math.round(value * 100) / 100;
-    const csv = dprToCsv(
-      [
+  const round2 = (value: number) => Math.round(value * 100) / 100;
+
+  /** The open report as CSV: the rows on screen, in the order they are shown. */
+  const csvFor = (): { headers: string[]; rows: Array<Array<string | number>> } => {
+    if (view === "trend") {
+      return {
+        headers: [`${granularity} starting`, "Label", "Planned % of period plan", "Actual % of period plan"],
+        rows: trend.points.map((point) => [point.bucketStart, point.label, round2(point.plannedPct), round2(point.actualPct)]),
+      };
+    }
+    if (view === "manpower") {
+      return {
+        headers: ["Trade", "Man-days", "Days", "Peak", "Avg per day", "Share %"],
+        rows: [
+          ...manpower.rows.map((row) => [
+            row.trade,
+            round2(row.manDays),
+            row.days,
+            round2(row.peak),
+            round2(row.avgPerDay),
+            round2(row.sharePct),
+          ]),
+          ...(manpower.rows.length > 0 ? [["Total", round2(manpower.totalManDays), "", "", "", 100]] : []),
+        ],
+      };
+    }
+    if (view === "equipment") {
+      return {
+        headers: ["Equipment", "Days", "Running hrs", "Idle hrs", "Utilisation %"],
+        rows: equipment.map((row) => [
+          row.name,
+          row.deployedDays,
+          round2(row.runningHours),
+          round2(row.idleHours),
+          row.utilisationPct === null ? "" : round2(row.utilisationPct),
+        ]),
+      };
+    }
+    if (view === "delays") {
+      return {
+        headers: ["Date", "Scope", "Kind", "Hours lost", "Weather", "Detail"],
+        rows: [
+          ...lostTime.map((row) => [row.date, row.scope, "Lost time", round2(row.hours), row.weather, row.reason]),
+          ...hindrances.map((row) => [row.date, row.scope, "Hindrance", "", "", row.hindrances.replace(/\s*\n+\s*/g, " · ")]),
+        ].sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+      };
+    }
+    // BOQ progress: leaf lines only (groups are roll-ups of them), each with the lines above it as "Parent".
+    return {
+      headers: [
         "ERP SL No",
         "BOQ SL No",
         "Parent",
@@ -251,7 +331,7 @@ export default function DprReportsPage() {
         "Days Worked",
         "Last Worked",
       ],
-      report.rows.map((row) => [
+      rows: report.rows.map((row) => [
         row.erpSlNo ?? "",
         row.boqSlNo,
         pathById.get(row.id) ?? "",
@@ -268,12 +348,24 @@ export default function DprReportsPage() {
         row.workedDays,
         row.lastWorkedDate,
       ]),
-    );
+    };
+  };
+  const exportRows = csvFor();
+  const viewSlug: Record<ViewId, string> = {
+    progress: "boq-progress",
+    trend: "plan-vs-actual",
+    manpower: "manpower",
+    equipment: "plant",
+    delays: "delays",
+  };
+
+  const downloadCsv = () => {
+    const csv = dprToCsv(exportRows.headers, exportRows.rows);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${projectName || "project"}-dpr-${scope.toLowerCase()}-${range.startDate}-to-${range.endDate}.csv`;
+    anchor.download = `${projectName || "project"}-dpr-${viewSlug[view]}-${scope.toLowerCase()}-${range.startDate}-to-${range.endDate}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -291,40 +383,41 @@ export default function DprReportsPage() {
     );
   }
 
-  const totalLostTime = lostTime.reduce((sum, row) => sum + row.hours, 0);
+  const scopeLabel = scope === "All" ? "All scopes" : scope;
+  const periodLabel = isValidRange(range) ? formatRangeCompact(range.startDate, range.endDate) : "—";
+  const periodWords = PERIOD_WORDS[period.choice];
 
   return (
     <DprPageShell>
-      <DprHeader
-        active="reports"
+      <DprReportsHero
         mappingId={mappingId}
         projectName={projectName}
+        title={REPORTS_TAB.label}
+        description={REPORTS_TAB.description}
+        icon={REPORTS_TAB.icon}
+        tabs={VIEWS}
+        active={view}
+        onTabChange={setView}
         actions={
-          <Button variant="outline" onClick={downloadCsv} disabled={report.rows.length === 0}>
+          <Button
+            onClick={downloadCsv}
+            disabled={exportRows.rows.length === 0}
+            className="rounded-xl bg-white font-extrabold text-violet-900 shadow-lg hover:bg-white/90"
+          >
             <Download className="mr-2 h-4 w-4" /> Export CSV
           </Button>
         }
       />
 
-      <Card className="border-border/60">
-        <CardContent className="space-y-3 p-4">
-          <Tabs value={view} onValueChange={(next) => setView(next as ViewId)}>
-            <TabsList className="h-auto flex-wrap">
-              {VIEWS.map((candidate) => (
-                <TabsTrigger key={candidate.id} value={candidate.id}>
-                  <candidate.icon className="mr-1.5 h-4 w-4" />
-                  {candidate.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          {/* Scope and period on one line at their own height; it wraps only when narrow. */}
-          <div className="flex flex-wrap items-end gap-3">
+      <Card className="rounded-[20px] border-border/60 shadow-sm">
+        <CardContent className="p-4">
+          {/* Scope and period on one line at one height; it wraps only when narrow. */}
+          <div className="flex flex-wrap items-end gap-3.5">
             <div className="space-y-1.5">
-              <Label>Scope</Label>
+              <DprFieldLabel accent={DPR_FIELD_ACCENTS.scope}>Scope</DprFieldLabel>
               <DprScopeTabs value={scope} onChange={setScope} includeAll asField />
             </div>
-            <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} inline />
+            <DprPeriodPicker value={period} onChange={setPeriod} settings={settings} inline decorated stepper />
           </div>
         </CardContent>
       </Card>
@@ -338,15 +431,18 @@ export default function DprReportsPage() {
           </CardContent>
         </Card>
       ) : view === "progress" ? (
-        <Card className="border-border/60">
-          <CardContent className="p-0">
-            {report.rows.length === 0 ? (
-              <PmEmptyState
-                icon={Activity}
-                title="Nothing recorded or projected for this period"
-                description="Change the period or scope, or record a day's progress."
-              />
-            ) : (
+        <DprBoqProgressView
+          rows={report.rows}
+          pathOf={(id) => pathById.get(id) ?? ""}
+          decimalsFor={decimalsFor}
+          scopeLabel={scopeLabel}
+          periodLabel={periodLabel}
+          periodChoiceLabel={periodWords.choice}
+          periodNoun={periodWords.noun}
+          workingDays={calendarDays.working}
+          workingDaysToDate={calendarDays.toDate}
+          progressDays={progressDays}
+          fullDetail={
               <Table {...TABLE_PROPS} className="min-w-[1272px] table-fixed">
                 <colgroup>
                   <col className="w-[72px]" />
@@ -524,301 +620,33 @@ export default function DprReportsPage() {
                   })}
                 </TableBody>
               </Table>
-            )}
-          </CardContent>
-        </Card>
+          }
+        />
       ) : view === "trend" ? (
-        <Card className="border-border/60">
-          <CardContent className="space-y-3 p-4">
-            <div className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-              <span>
-                Each {granularity.toLowerCase()} as a share of the period plan,{" "}
-                {trend.basis === "value"
-                  ? "weighted by BOQ value"
-                  : "averaged across each line’s own percentage"}
-                .
-              </span>
-              <InfoTip label="About this chart">
-                A bar is that {granularity.toLowerCase()}’s planned or actual quantity as a
-                percentage of everything planned for the whole period, line by line, so lines in
-                different units are never added together. When every planned line has a BOQ rate
-                the lines are weighted by value; otherwise each line counts equally. The planned
-                bars add up to 100% across the period.
-              </InfoTip>
-            </div>
-            {trend.points.length === 0 ? (
-              <PmEmptyState
-                icon={LineChartIcon}
-                title="Nothing planned in this period"
-                description="The chart reads actuals against the period plan, so it needs a projection covering the period."
-              />
-            ) : (
-              <div className="h-80 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={trend.points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                    <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="label"
-                      stroke={chartChrome.axis}
-                      tick={{ fontSize: 11 }}
-                      interval="preserveStartEnd"
-                      minTickGap={16}
-                    />
-                    <YAxis
-                      stroke={chartChrome.axis}
-                      tick={{ fontSize: 11 }}
-                      width={48}
-                      tickFormatter={(value: number) => `${Math.round(value)}%`}
-                    />
-                    <Tooltip
-                      cursor={chartChrome.cursor}
-                      {...chartChrome.tooltip}
-                      formatter={(value: number | string) => formatPct(Number(value))}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar
-                      name="Planned (% of period plan)"
-                      dataKey="plannedPct"
-                      fill="#6366f1"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Bar
-                      name="Actual (% of period plan)"
-                      dataKey="actualPct"
-                      fill="#10b981"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <DprTrendView
+          points={trend.points}
+          daily={dailyTrend.points}
+          basis={trend.basis}
+          granularity={granularity}
+          range={range}
+          today={today}
+          periodNoun={periodWords.noun}
+        />
       ) : view === "manpower" ? (
-        <Card className="border-border/60">
-          <CardContent className="p-0">
-            {manpower.length === 0 ? (
-              <PmEmptyState
-                icon={Users}
-                title="No manpower recorded"
-                description="Trades and headcount entered on the daily sheets roll up here."
-              />
-            ) : (
-              <Table {...TABLE_PROPS} className="min-w-[640px] table-fixed">
-                <colgroup>
-                  <col />
-                  <col className="w-[128px]" />
-                  <col className="w-[128px]" />
-                  <col className="w-[128px]" />
-                  <col className="w-[128px]" />
-                </colgroup>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="truncate">Trade</TableHead>
-                    <TableHead className="truncate text-right" title="Headcount summed over the days worked">
-                      Man-days
-                    </TableHead>
-                    <TableHead className="truncate text-right" title="Days present">
-                      Days
-                    </TableHead>
-                    <TableHead className="truncate text-right" title="Peak strength on any one day">
-                      Peak
-                    </TableHead>
-                    <TableHead className="truncate text-right" title="Average headcount per day present">
-                      Avg / day
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {manpower.map((row) => (
-                    <TableRow key={row.trade}>
-                      <TableCell className={`${lineCell} font-medium`} title={row.trade}>
-                        {row.trade}
-                      </TableCell>
-                      <TableCell className={numberCell}>{formatQty(row.manDays)}</TableCell>
-                      <TableCell className={numberCell}>{row.daysPresent}</TableCell>
-                      <TableCell className={numberCell}>{row.peakCount}</TableCell>
-                      <TableCell className={numberCell}>
-                        {row.daysPresent > 0 ? formatQty(row.manDays / row.daysPresent) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <DprManpowerView
+          report={manpower}
+          tradeOrder={tradeOrder}
+          mappingId={mappingId}
+          scope={scope}
+          scopeLabel={scopeLabel}
+          periodLabel={periodLabel}
+          periodChoiceLabel={periodWords.choice}
+          periodNoun={periodWords.noun}
+        />
       ) : view === "equipment" ? (
-        <Card className="border-border/60">
-          <CardContent className="p-0">
-            {equipment.length === 0 ? (
-              <PmEmptyState
-                icon={Truck}
-                title="No plant recorded"
-                description="Equipment deployed on the daily sheets rolls up here with its utilisation."
-              />
-            ) : (
-              <Table {...TABLE_PROPS} className="min-w-[640px] table-fixed">
-                <colgroup>
-                  <col />
-                  <col className="w-[120px]" />
-                  <col className="w-[128px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[128px]" />
-                </colgroup>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="truncate">Equipment</TableHead>
-                    <TableHead className="truncate text-right" title="Days deployed">
-                      Days
-                    </TableHead>
-                    <TableHead className="truncate text-right" title="Running hours">
-                      Running hrs
-                    </TableHead>
-                    <TableHead className="truncate text-right" title="Idle hours">
-                      Idle hrs
-                    </TableHead>
-                    <TableHead className="truncate text-right" title="Running ÷ (running + idle)">
-                      Utilisation
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {equipment.map((row) => (
-                    <TableRow key={row.name}>
-                      <TableCell className={`${lineCell} font-medium`} title={row.name}>
-                        {row.name}
-                      </TableCell>
-                      <TableCell className={numberCell}>{row.deployedDays}</TableCell>
-                      <TableCell className={numberCell}>{formatQty(row.runningHours)}</TableCell>
-                      <TableCell className={numberCell}>{formatQty(row.idleHours)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        {row.utilisationPct === null ? (
-                          <span className="text-muted-foreground">—</span>
-                        ) : (
-                          <StatusBadge
-                            status="Utilisation"
-                            tone={
-                              row.utilisationPct >= 75
-                                ? "success"
-                                : row.utilisationPct >= 50
-                                  ? "warning"
-                                  : "danger"
-                            }
-                          >
-                            {formatPct(row.utilisationPct)}
-                          </StatusBadge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <DprPlantView rows={equipment} subtitle="Machines deployed on the daily sheets, with utilisation" />
       ) : (
-        <div className="space-y-4">
-          <Card className="border-border/60">
-            <CardContent className="p-0">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 p-4">
-                <p className="text-sm font-semibold">Lost time</p>
-                <StatusBadge status="Total" tone={totalLostTime > 0 ? "warning" : "neutral"}>
-                  {formatQty(totalLostTime)} hrs
-                </StatusBadge>
-              </div>
-              {lostTime.length === 0 ? (
-                <PmEmptyState icon={CloudSun} title="No time lost in this period" />
-              ) : (
-                <Table {...TABLE_PROPS} className="min-w-[640px] table-fixed">
-                  <colgroup>
-                    <col className="w-[120px]" />
-                    <col className="w-[104px]" />
-                    <col className="w-[88px]" />
-                    <col className="w-[128px]" />
-                    <col />
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="truncate">Date</TableHead>
-                      <TableHead className="truncate">Scope</TableHead>
-                      <TableHead className="truncate text-right">Hours</TableHead>
-                      <TableHead className="truncate">Weather</TableHead>
-                      <TableHead className="truncate">Reason</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lostTime.map((row) => (
-                      <TableRow key={`${row.date}-${row.scope}`}>
-                        <TableCell className={`${lineCell} tabular-nums`}>
-                          {formatDisplayDate(row.date)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <StatusBadge status={row.scope} tone={scopeTone(row.scope)} />
-                        </TableCell>
-                        <TableCell className={numberCell}>{formatQty(row.hours)}</TableCell>
-                        <TableCell className={lineCell} title={row.weather || undefined}>
-                          {row.weather || "—"}
-                        </TableCell>
-                        <TableCell className={lineCell} title={row.reason || undefined}>
-                          {row.reason || "—"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/60">
-            <CardContent className="p-0">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 p-4">
-                <p className="text-sm font-semibold">Hindrances</p>
-                <StatusBadge status="Days" tone={hindrances.length > 0 ? "warning" : "neutral"}>
-                  {hindrances.length} day{hindrances.length === 1 ? "" : "s"}
-                </StatusBadge>
-              </div>
-              {hindrances.length === 0 ? (
-                <PmEmptyState icon={TriangleAlert} title="No hindrances raised in this period" />
-              ) : (
-                <Table {...TABLE_PROPS} className="min-w-[560px] table-fixed">
-                  <colgroup>
-                    <col className="w-[120px]" />
-                    <col className="w-[104px]" />
-                    <col />
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="truncate">Date</TableHead>
-                      <TableHead className="truncate">Scope</TableHead>
-                      <TableHead className="truncate">Hindrance</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {hindrances.map((row) => (
-                      <TableRow key={`${row.date}-${row.scope}`}>
-                        <TableCell className={`${lineCell} tabular-nums`}>
-                          {formatDisplayDate(row.date)}
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          <StatusBadge status={row.scope} tone={scopeTone(row.scope)} />
-                        </TableCell>
-                        {/* One line: line breaks in the text read as separators; all of it on hover. */}
-                        <TableCell
-                          className={`${lineCell} text-muted-foreground`}
-                          title={row.hindrances}
-                        >
-                          {row.hindrances.replace(/\s*\n+\s*/g, " · ")}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+        <DprDelaysView lostTime={lostTime} hindrances={hindrances} periodNoun={periodWords.noun} />
       )}
     </DprPageShell>
   );

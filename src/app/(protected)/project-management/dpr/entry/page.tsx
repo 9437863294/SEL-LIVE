@@ -160,6 +160,9 @@ const blankRow = (boqItemId = ""): RowState => ({
   remarks: "",
 });
 
+/** The Weather dropdown's "Not recorded" choice. Radix refuses "" as an item value. */
+const WEATHER_NOT_RECORDED = "__not-recorded__";
+
 /** A row nobody has typed on yet: no actual, location, agency or remark. */
 const isUntouchedRow = (row: RowState): boolean =>
   !row.actual.trim() && !row.location.trim() && !row.agency.trim() && !row.remarks.trim();
@@ -768,10 +771,12 @@ export default function RecordDailyProgressPage() {
             </div>
             <div className="min-w-[8rem] flex-1 space-y-1.5">
               <div className="flex h-6 items-center gap-1.5">
-                <Label htmlFor="dpr-weather">Weather</Label>
+                <Label htmlFor="dpr-weather">
+                  Weather <span className="font-normal text-muted-foreground">(optional)</span>
+                </Label>
                 <InfoTip label="About “Weather”">
-                  A fixed list, set under Daily Progress › Settings. Required before the sheet can be
-                  submitted.
+                  Optional. Chosen from a fixed list, set under Daily Progress › Settings. Worth
+                  recording on a day with time lost: it backs a delay or hindrance later.
                 </InfoTip>
               </div>
               <Select
@@ -779,12 +784,18 @@ export default function RecordDailyProgressPage() {
                 // a sheet with no weather clears the previous one instead of leaving it showing.
                 value={sheet.weather}
                 disabled={!editable}
-                onValueChange={(next) => edit((previous) => ({ ...previous, weather: next }))}
+                onValueChange={(next) =>
+                  edit((previous) => ({ ...previous, weather: next === WEATHER_NOT_RECORDED ? "" : next }))
+                }
               >
                 <SelectTrigger id="dpr-weather" className="text-left">
-                  <SelectValue placeholder="Select" />
+                  <SelectValue placeholder="Not recorded" />
                 </SelectTrigger>
                 <SelectContent>
+                  {/* Optional, so a weather chosen by mistake can be taken off again. */}
+                  <SelectItem value={WEATHER_NOT_RECORDED} className="text-muted-foreground">
+                    Not recorded
+                  </SelectItem>
                   {weatherOptions.map((option) => (
                     <SelectItem key={option} value={option}>
                       {option}

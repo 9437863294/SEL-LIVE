@@ -473,8 +473,8 @@ test('project dates and the calendar are checked against the sheet date', () => 
   assert.match(sunday.warnings.join(), /non-working day/);
 });
 
-test('D3/D4: weather, a BOQ line, and an actual on every row', () => {
-  assert.match(sheetCheck({ weather: '' }).errors.join(), /Select the weather/);
+test('D3/D4: weather is optional; a BOQ line and an actual on every row are not', () => {
+  assert.deepEqual(sheetCheck({ weather: '' }), { errors: [], warnings: [] }, 'no weather still submits');
   assert.match(sheetCheck({ lines: [] }).errors.join(), /at least one BOQ line/);
   assert.match(sheetCheck({ lines: [{ boqItemId: '', actual: '1' }] }).errors.join(), /Row 1: choose a BOQ line/);
   assert.match(sheetCheck({ lines: [{ boqItemId: 'pcc', actual: '' }] }).errors.join(), /enter the actual quantity/);

@@ -675,7 +675,7 @@ export default function DprSettingsPage() {
             icon={ListChecks}
             title={
               <TitleWithTip title="Lists">
-                Weather is chosen from this list on every daily sheet. Units in the second list are
+                A daily sheet&apos;s weather (optional) is chosen from this list. Units in the second list are
                 counted in whole numbers — projections spread as 1s and 2s and actuals cannot take a
                 fraction. Every other unit takes up to three decimals. Units match ignoring case,
                 dots and spaces, so “Nos.” matches “NOS”. Trades and plant are the dropdowns on

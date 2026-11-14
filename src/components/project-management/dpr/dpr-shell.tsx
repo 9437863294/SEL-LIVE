@@ -12,13 +12,18 @@ import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
+  CalendarDays,
   CalendarRange,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ChevronsUpDown,
   ClipboardList,
   FileBarChart2,
   History,
+  Layers,
   ListTree,
+  RefreshCw,
   Settings2,
   ShieldAlert,
   Target,
@@ -36,6 +41,7 @@ import {
   type DprScope,
 } from "@/lib/project-management-dpr";
 import { dprCalendar, isValidRange, type DprSettings } from "@/lib/project-management-dpr-plan";
+import { neighbourAnchor, shiftDprRange } from "@/lib/project-management-dpr-reports";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import { PageHeader } from "@/components/shared/page-header";
 import type { ModuleNavTone } from "@/components/shared/module-shell";
@@ -217,12 +223,53 @@ export const formatRangeCompact = (startDate: string, endDate: string): string =
   return `${start} – ${end}`;
 };
 
+/** The accent each filter field wears when the picker is `decorated` (Reports' filter bar). */
+export const DPR_FIELD_ACCENTS = {
+  scope: { colour: "#7c3aed", icon: Layers },
+  period: { colour: "#db2777", icon: RefreshCw },
+  date: { colour: "#2563eb", icon: CalendarDays },
+  covers: { colour: "#0e7490", icon: CalendarRange },
+} as const satisfies Record<string, { colour: string; icon: LucideIcon }>;
+
+/**
+ * A field label in a row of fields. Always the same h-6 row, so labels with and without an icon
+ * or InfoTip line up; `accent` adds the small coloured icon chip of the decorated filter bar.
+ */
+export function DprFieldLabel({
+  htmlFor,
+  accent,
+  children,
+}: {
+  htmlFor?: string;
+  accent?: { colour: string; icon: LucideIcon };
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex h-6 items-center gap-1.5">
+      {accent ? (
+        <span
+          className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md text-white"
+          style={{ backgroundColor: accent.colour }}
+          aria-hidden="true"
+        >
+          <accent.icon className="h-[11px] w-[11px]" />
+        </span>
+      ) : null}
+      <Label htmlFor={htmlFor} className={accent ? "text-xs font-bold text-muted-foreground" : undefined}>
+        {children}
+      </Label>
+    </div>
+  );
+}
+
 export function DprPeriodPicker({
   value,
   onChange,
   className,
   settings,
   inline = false,
+  decorated = false,
+  stepper = false,
 }: {
   value: DprPeriodSelection;
   onChange: (next: DprPeriodSelection) => void;
@@ -234,18 +281,35 @@ export function DprPeriodPicker({
    * sit on one line beside the caller's fields at their own height, and wrap only when narrow.
    */
   inline?: boolean;
+  /** Reports' filter bar: an icon chip on each label, a coloured edge on each box, a tinted readout. */
+  decorated?: boolean;
+  /** Previous / next period buttons inside the readout. */
+  stepper?: boolean;
 }) {
   const range = useMemo(() => resolvePeriodRange(value), [value]);
-  const label = useMemo(() => {
-    if (!isValidRange(range)) return "Pick a valid from and to date";
+  const valid = isValidRange(range);
+  const readout = useMemo(() => {
+    if (!valid) return { span: "Pick a valid from and to date", detail: "" };
     const span = formatRangeCompact(range.startDate, range.endDate);
     if (!settings) {
-      return value.choice === "Custom" ? span : formatPeriodLabel(value.choice, range.startDate);
+      return { span: value.choice === "Custom" ? span : formatPeriodLabel(value.choice, range.startDate), detail: "" };
     }
     const days = daysInRange(range.startDate, range.endDate);
     const working = dprCalendar(settings).workingDays(range.startDate, range.endDate).length;
-    return `${span} (${days}d, ${working} working)`;
-  }, [range, settings, value.choice]);
+    return { span, detail: `${days}d · ${working} working` };
+  }, [valid, range, settings, value.choice]);
+  const label = readout.detail ? `${readout.span} (${readout.detail})` : readout.span;
+
+  const noun = value.choice === "Day" ? "day" : value.choice === "Week" ? "week" : value.choice === "Month" ? "month" : "period";
+  const step = (direction: -1 | 1) => {
+    if (!valid) return;
+    if (value.choice === "Custom") {
+      const next = shiftDprRange(range, direction);
+      onChange({ ...value, customStart: next.startDate, customEnd: next.endDate });
+    } else {
+      onChange({ ...value, anchorDate: neighbourAnchor(range, direction) });
+    }
+  };
 
   // In a row, each field takes its share of the line; the readout gets the widest, so its dates
   // never clip. In the default grid, the readout spans two columns for the same reason.
@@ -253,16 +317,27 @@ export function DprPeriodPicker({
   const coversField = inline
     ? "min-w-[12.5rem] flex-[2.2] space-y-1.5"
     : cn("min-w-0 space-y-1.5", value.choice !== "Custom" && "sm:col-span-2");
+  const edge = (accent: { colour: string }) =>
+    decorated ? { borderLeftWidth: 3, borderLeftColor: accent.colour } : undefined;
+  // Plain labels unless decorated: the other screens' rows are aligned against plain labels.
+  const labelFor = (htmlFor: string | undefined, accent: { colour: string; icon: LucideIcon }, text: ReactNode) =>
+    decorated ? (
+      <DprFieldLabel htmlFor={htmlFor} accent={accent}>
+        {text}
+      </DprFieldLabel>
+    ) : (
+      <Label htmlFor={htmlFor}>{text}</Label>
+    );
 
   const fields = (
     <>
         <div className={field}>
-          <Label htmlFor="dpr-period-type">Period</Label>
+          {labelFor("dpr-period-type", DPR_FIELD_ACCENTS.period, "Period")}
           <Select
             value={value.choice}
             onValueChange={(next) => onChange({ ...value, choice: next as DprPeriodChoice })}
           >
-            <SelectTrigger id="dpr-period-type" className="text-left">
+            <SelectTrigger id="dpr-period-type" className="text-left" style={edge(DPR_FIELD_ACCENTS.period)}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -279,19 +354,21 @@ export function DprPeriodPicker({
         {value.choice === "Custom" ? (
           <>
             <div className={field}>
-              <Label htmlFor="dpr-period-from">From</Label>
+              {labelFor("dpr-period-from", DPR_FIELD_ACCENTS.date, "From")}
               <Input
                 id="dpr-period-from"
                 type="date"
+                style={edge(DPR_FIELD_ACCENTS.date)}
                 value={value.customStart}
                 onChange={(event) => onChange({ ...value, customStart: event.target.value })}
               />
             </div>
             <div className={field}>
-              <Label htmlFor="dpr-period-to">To</Label>
+              {labelFor("dpr-period-to", DPR_FIELD_ACCENTS.date, "To")}
               <Input
                 id="dpr-period-to"
                 type="date"
+                style={edge(DPR_FIELD_ACCENTS.date)}
                 value={value.customEnd}
                 onChange={(event) => onChange({ ...value, customEnd: event.target.value })}
               />
@@ -299,16 +376,19 @@ export function DprPeriodPicker({
           </>
         ) : (
           <div className={field}>
-            <Label htmlFor="dpr-period-anchor">
-              {value.choice === "Day"
+            {labelFor(
+              "dpr-period-anchor",
+              DPR_FIELD_ACCENTS.date,
+              value.choice === "Day"
                 ? "Date"
                 : inline
                   ? `Date in ${value.choice.toLowerCase()}`
-                  : `Any date in the ${value.choice.toLowerCase()}`}
-            </Label>
+                  : `Any date in the ${value.choice.toLowerCase()}`,
+            )}
             <Input
               id="dpr-period-anchor"
               type="date"
+              style={edge(DPR_FIELD_ACCENTS.date)}
               value={value.anchorDate}
               onChange={(event) => onChange({ ...value, anchorDate: event.target.value })}
             />
@@ -316,13 +396,59 @@ export function DprPeriodPicker({
         )}
 
         <div className={coversField}>
-          <Label>Covers</Label>
+          {labelFor(undefined, DPR_FIELD_ACCENTS.covers, "Covers")}
           <div
-            className="flex h-[var(--control-h,2.5rem)] items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 text-sm font-medium tabular-nums"
+            className={cn(
+              "flex h-[var(--control-h,2.5rem)] items-center gap-2 rounded-md border px-3 text-sm font-medium tabular-nums",
+              decorated
+                ? "border-cyan-100 bg-gradient-to-r from-cyan-50 to-violet-50 pr-1"
+                : "border-border/60 bg-muted/40",
+            )}
             title={label}
           >
-            <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="truncate">{label}</span>
+            {decorated ? (
+              <>
+                <b className="min-w-0 truncate font-extrabold text-cyan-800">{readout.span}</b>
+                {readout.detail ? (
+                  <span className="shrink-0 whitespace-nowrap rounded-full bg-background px-2 text-[11.5px] font-bold text-violet-700">
+                    {readout.detail}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <CalendarRange className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="truncate">{label}</span>
+              </>
+            )}
+            {stepper ? (
+              <span className="ml-auto flex shrink-0 items-center gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg"
+                  disabled={!valid}
+                  aria-label={`Previous ${noun}`}
+                  title={`Previous ${noun}`}
+                  onClick={() => step(-1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 rounded-lg"
+                  disabled={!valid}
+                  aria-label={`Next ${noun}`}
+                  title={`Next ${noun}`}
+                  onClick={() => step(1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </span>
+            ) : null}
           </div>
         </div>
     </>
