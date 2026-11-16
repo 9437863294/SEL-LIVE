@@ -245,12 +245,11 @@ export default function ProjectIndentRegisterPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { context, isResolving, notFound } = useProjectManagementIndentContext(mappingId);
 
-  const canView =
-    can("View", PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
-  const canAdd =
-    can("Add", PERMISSION_RESOURCE) || can("Import", "Project Management.BOQ");
-  const canDelete =
-    can("Delete", PERMISSION_RESOURCE) || can("Import", "Project Management.BOQ");
+  // Indent's own rights only. BOQ View used to open this register and BOQ Import to raise and
+  // even delete indents.
+  const canView = can("View", PERMISSION_RESOURCE);
+  const canAdd = can("Add", PERMISSION_RESOURCE);
+  const canDelete = can("Delete", PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);

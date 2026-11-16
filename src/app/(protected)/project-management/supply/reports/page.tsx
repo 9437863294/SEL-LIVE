@@ -105,8 +105,8 @@ export default function SupplyReportsPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const canView =
-    can("View", PO_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  // Purchase-order lines and their values: Purchase Orders View, no longer also BOQ View.
+  const canView = can("View", PO_PERMISSION_RESOURCE);
 
   const [projectName, setProjectName] = useState("");
   const [lines, setLines] = useState<SupplyChainLine[]>([]);

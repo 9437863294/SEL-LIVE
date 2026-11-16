@@ -43,7 +43,7 @@ export default function ProjectRegisterPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
   const back = useBackNavigation("/project-management", { fallbackLabel: "Back to Project Management" });
-  const canView = can("View Module", MODULE_NAME) || can("View", `${MODULE_NAME}.BOQ`);
+  const canView = can("View Module", MODULE_NAME);
   const canManage = can("View", `${MODULE_NAME}.Project Mappings`);
   const canOpenSettings = can("View", `${MODULE_NAME}.Settings`);
 

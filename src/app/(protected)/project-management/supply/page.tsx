@@ -98,22 +98,22 @@ export default function SupplyPage() {
   const mappingId = searchParams?.get("project") ?? "";
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
+  // Every tile answers to its own screen's permission. They used to fall back on BOQ View (and PO
+  // on RFQ, Requirement Planner on Indent), which offered screens that then refused the same person.
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
-  const canView = can("View", PERMISSION_RESOURCE) || canViewBoq;
-  const canViewIndent = can("View", `${MODULE_NAME}.Indent`) || canViewBoq;
-  const canViewRfq = can("View", `${MODULE_NAME}.RFQ`) || canViewBoq;
-  const canViewPurchaseOrders = can("View", `${MODULE_NAME}.Purchase Orders`) || canViewRfq;
-  const canViewSurvey = can("View", `${MODULE_NAME}.Survey`) || canViewBoq;
-  const canViewRequirementPlanner =
-    can("View", `${MODULE_NAME}.Requirement Planner`) || canViewIndent;
-  const canViewDrawing = can("View", `${MODULE_NAME}.Drawing`) || canViewBoq;
-  const canViewManufacturingClearance =
-    can("View", `${MODULE_NAME}.Manufacturing Clearance`) || canViewBoq;
-  const canViewInspections = can("View", `${MODULE_NAME}.Inspections`) || canViewBoq;
-  const canViewMdcc = can("View", `${MODULE_NAME}.MDCC`) || canViewBoq;
-  const canViewDi = can("View", `${MODULE_NAME}.Dispatch Instructions`) || canViewBoq;
-  const canViewGrn = can("View", `${MODULE_NAME}.GRN`) || canViewBoq;
-  const canViewMvac = can("View", `${MODULE_NAME}.MVAC`) || canViewBoq;
+  const canView = can("View", PERMISSION_RESOURCE);
+  const canViewIndent = can("View", `${MODULE_NAME}.Indent`);
+  const canViewRfq = can("View", `${MODULE_NAME}.RFQ`);
+  const canViewPurchaseOrders = can("View", `${MODULE_NAME}.Purchase Orders`);
+  const canViewSurvey = can("View", `${MODULE_NAME}.Survey`);
+  const canViewRequirementPlanner = can("View", `${MODULE_NAME}.Requirement Planner`);
+  const canViewDrawing = can("View", `${MODULE_NAME}.Drawing`);
+  const canViewManufacturingClearance = can("View", `${MODULE_NAME}.Manufacturing Clearance`);
+  const canViewInspections = can("View", `${MODULE_NAME}.Inspections`);
+  const canViewMdcc = can("View", `${MODULE_NAME}.MDCC`);
+  const canViewDi = can("View", `${MODULE_NAME}.Dispatch Instructions`);
+  const canViewGrn = can("View", `${MODULE_NAME}.GRN`);
+  const canViewMvac = can("View", `${MODULE_NAME}.MVAC`);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [isResolving, setIsResolving] = useState(Boolean(mappingId));

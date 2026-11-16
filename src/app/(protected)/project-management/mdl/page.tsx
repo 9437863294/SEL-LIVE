@@ -240,7 +240,7 @@ export default function MdlPage() {
   const { user, users } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const canView = can("View", MDL_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  const canView = can("View", MDL_PERMISSION_RESOURCE);
   const canEdit = can("Edit", MDL_PERMISSION_RESOURCE);
 
   const assignableUsers = useMemo(

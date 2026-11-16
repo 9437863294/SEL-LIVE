@@ -89,7 +89,7 @@ export default function RfqRegisterPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { context, isResolving, notFound } = useProjectManagementRfqContext(mappingId);
 
-  const canView = can("View", RFQ_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  const canView = can("View", RFQ_PERMISSION_RESOURCE);
   const canAdd = can("Add", RFQ_PERMISSION_RESOURCE);
   const canDelete = can("Delete", RFQ_PERMISSION_RESOURCE);
 

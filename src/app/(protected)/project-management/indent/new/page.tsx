@@ -109,7 +109,8 @@ export default function NewIndentPage() {
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const canAdd = can("Add", PERMISSION_RESOURCE) || can("Import", "Project Management.BOQ");
+  // Raising an indent is Indent Add — no longer also anybody who may import a BOQ.
+  const canAdd = can("Add", PERMISSION_RESOURCE);
   const { field: fieldControl } = useFieldControl("indentNew");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);

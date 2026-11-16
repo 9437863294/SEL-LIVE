@@ -202,18 +202,17 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
   const resource = `Project Management.${scope}`;
-  const canView = can("View", resource) || can("View", "Project Management.BOQ");
+  // Every right here is this scope's own, or the linked screen's own. BOQ View and BOQ Export used
+  // to stand in for Civil/Erection, and the DPR, JMC and Tower Progress buttons borrowed this scope's
+  // or Billing Recon's rights — while the screens behind them check their own resources.
+  const canView = can("View", resource);
   const canAdd = can("Add", resource);
   const canEdit = can("Edit", resource);
   const canDelete = can("Delete", resource);
-  const canExport = can("Export", resource) || can("Export", "Project Management.BOQ");
-  // JMC is hosted by both modules against the same registers, so either module's view right opens it.
-  const canViewJmc = can("View", "Project Management.JMC") || can("View", "Billing Recon.JMC");
-  // Tower Progress has its own resource, but an existing Erection view right also opens it — the
-  // feature would otherwise be invisible to the site engineers who already hold Erection rights
-  // until every role had been edited.
-  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE) || canView;
-  const canViewTowerProgress = can("View", TOWER_PROGRESS_PERMISSION_RESOURCE) || canView;
+  const canExport = can("Export", resource);
+  const canViewJmc = can("View", "Project Management.JMC");
+  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE);
+  const canViewTowerProgress = can("View", TOWER_PROGRESS_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [packages, setPackages] = useState<ProjectWorkPackage[]>([]);

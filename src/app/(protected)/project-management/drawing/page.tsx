@@ -51,7 +51,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   MDL_COLLECTION,
-  MDL_PERMISSION_RESOURCE,
   canEditMdlSubDrawing,
   computeMdlDrawingStage,
   formatMdlDate,
@@ -142,11 +141,10 @@ export default function DrawingPage() {
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const canView = can("View", PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
-  // Whoever maintains the MDL register is exactly who receives vendor drawings, so Edit on MDL
-  // carries collection rights too — otherwise "Collect" being a new permission would leave the
-  // page read-only for everyone until roles are re-granted.
-  const canCollect = can("Collect", PERMISSION_RESOURCE) || can("Edit", MDL_PERMISSION_RESOURCE);
+  // Drawing's own rights. View used to borrow BOQ View, and Collect — never grantable until it was
+  // added to the role catalogue — fell back to MDL Edit.
+  const canView = can("View", PERMISSION_RESOURCE);
+  const canCollect = can("Collect", PERMISSION_RESOURCE);
 
   // Kept in the URL (`?view=`) so refreshing or sharing a link doesn't reset the view.
   const activeTab = searchParams?.get("view") || "pending";

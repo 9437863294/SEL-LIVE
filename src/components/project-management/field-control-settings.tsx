@@ -28,8 +28,10 @@ const PERMISSION_RESOURCE = `${MODULE}.Settings`;
 export default function ProjectManagementFieldControlSettings() {
   const { user } = useAuth();
   const { can, isLoading: authLoading } = useAuthorization();
-  const canView = can('View', PERMISSION_RESOURCE);
-  const canEdit = can('Manage Field Control', PERMISSION_RESOURCE) || can('Edit', PERMISSION_RESOURCE);
+  // Changing field rules is "Manage Field Control" — its own grant, no longer implied by Settings
+  // Edit. Whoever holds it may also open the page without Settings View.
+  const canEdit = can('Manage Field Control', PERMISSION_RESOURCE);
+  const canView = can('View', PERMISSION_RESOURCE) || canEdit;
   const [draft, setDraft] = useState<FieldControlDraft>(buildDefaultFieldControlDraft);
   const [loading, setLoading] = useState(true);
 

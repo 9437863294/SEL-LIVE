@@ -171,7 +171,8 @@ export default function ProjectPurchaseOrderDetailPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
 
-  const canView = can("View", PO_PERMISSION_RESOURCE) || can("View", "Project Management.RFQ");
+  // Purchase Orders View only — RFQ View no longer opens a purchase order.
+  const canView = can("View", PO_PERMISSION_RESOURCE);
   const canIssue = can("Issue", PO_PERMISSION_RESOURCE);
   const canReceive = can("Receive", PO_PERMISSION_RESOURCE);
   const canCancel = can("Cancel", PO_PERMISSION_RESOURCE);

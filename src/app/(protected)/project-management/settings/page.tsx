@@ -17,9 +17,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useBackNavigation } from "@/hooks/use-back-navigation";
-import { PmSettingsHubView } from "@/components/project-management/settings-hub-view";
+import {
+  PM_SETTINGS_SECTIONS,
+  PmSettingsHubView,
+} from "@/components/project-management/settings-hub-view";
 
 const SETTINGS_PERMISSION = "Project Management.Settings";
+const MODULE_NAME = "Project Management";
 
 export default function ProjectManagementSettingsPage() {
   const { can, isLoading } = useAuthorization();
@@ -38,7 +42,19 @@ export default function ProjectManagementSettingsPage() {
     );
   }
 
-  if (!can("View", SETTINGS_PERMISSION)) {
+  // Each card answers to the permission its own page checks, and the hub opens for anybody who may
+  // use at least one of them — a Clients administrator without Settings View can still get in.
+  const canViewSettings = can("View", SETTINGS_PERMISSION);
+  const sectionAllowed: Record<string, boolean> = {
+    projects: can("View", `${MODULE_NAME}.Project Mappings`),
+    clients: can("View", `${MODULE_NAME}.Clients`),
+    general: canViewSettings,
+    boq: canViewSettings,
+    "field-control": canViewSettings || can("Manage Field Control", SETTINGS_PERMISSION),
+  };
+  const sections = PM_SETTINGS_SECTIONS.filter((section) => sectionAllowed[section.key] ?? canViewSettings);
+
+  if (sections.length === 0) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <PageHeader title="Project Management Settings" />
@@ -57,5 +73,5 @@ export default function ProjectManagementSettingsPage() {
     );
   }
 
-  return <PmSettingsHubView back={back} />;
+  return <PmSettingsHubView back={back} sections={sections} />;
 }

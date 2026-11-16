@@ -111,12 +111,11 @@ export default function RequirementPlannerPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const canView =
-    can("View", REQUIREMENT_PLANNER_PERMISSION_RESOURCE) ||
-    can("View", "Project Management.Indent") ||
-    can("View", "Project Management.BOQ");
+  // The planner's own View; raising an indent from it is Indent Add. Indent View, BOQ View and BOQ
+  // Import used to stand in for these.
+  const canView = can("View", REQUIREMENT_PLANNER_PERMISSION_RESOURCE);
   const canEditSchedule = can("Edit Schedule", REQUIREMENT_PLANNER_PERMISSION_RESOURCE);
-  const canCreateIndent = can("Add", "Project Management.Indent") || can("Import", "Project Management.BOQ");
+  const canCreateIndent = can("Add", "Project Management.Indent");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [rows, setRows] = useState<PlannerRow[]>([]);

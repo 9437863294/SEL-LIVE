@@ -116,7 +116,11 @@ export default function VariationOrdersPage() {
 
   const canView = can("View", VARIATION_PERMISSION_RESOURCE);
   const canAdd = can("Add", VARIATION_PERMISSION_RESOURCE);
-  const canDecide = can("Approve", VARIATION_PERMISSION_RESOURCE) || can("Reject", VARIATION_PERMISSION_RESOURCE);
+  // Separate rights: approving rewrites a BOQ quantity, rejecting does not. Both buttons used to show
+  // for whoever held either one, so a reject-only reviewer could approve.
+  const canApprove = can("Approve", VARIATION_PERMISSION_RESOURCE);
+  const canReject = can("Reject", VARIATION_PERMISSION_RESOURCE);
+  const canDecide = canApprove || canReject;
 
   const [variations, setVariations] = useState<BoqVariation[]>([]);
   const [mappings, setMappings] = useState<ProjectMapping[]>([]);
@@ -283,6 +287,14 @@ export default function VariationOrdersPage() {
 
   const decide = async (variation: BoqVariation, status: "Approved" | "Rejected") => {
     if (!user) return;
+    if (status === "Approved" ? !canApprove : !canReject) {
+      toast({
+        title: "No permission",
+        description: `You are not allowed to ${status === "Approved" ? "approve" : "reject"} variation orders.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setDecidingId(variation.id);
     try {
       await updateDoc(doc(db, VARIATION_COLLECTION, variation.id), {
@@ -407,28 +419,32 @@ export default function VariationOrdersPage() {
         variation.status === "Pending" && canDecide ? (
           // Icon-only in the table; on a phone card each stretches into a labelled button.
           <div className="flex w-full justify-end gap-1 sm:w-auto">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="max-sm:border"
-              disabled={decidingId === variation.id}
-              onClick={() => void decide(variation, "Approved")}
-              title="Approve"
-            >
-              {decidingId === variation.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-emerald-600" />}
-              <span className="ml-2 sm:hidden">Approve</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="max-sm:border"
-              disabled={decidingId === variation.id}
-              onClick={() => void decide(variation, "Rejected")}
-              title="Reject"
-            >
-              <X className="h-4 w-4 text-destructive" />
-              <span className="ml-2 sm:hidden">Reject</span>
-            </Button>
+            {canApprove && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="max-sm:border"
+                disabled={decidingId === variation.id}
+                onClick={() => void decide(variation, "Approved")}
+                title="Approve"
+              >
+                {decidingId === variation.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 text-emerald-600" />}
+                <span className="ml-2 sm:hidden">Approve</span>
+              </Button>
+            )}
+            {canReject && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="max-sm:border"
+                disabled={decidingId === variation.id}
+                onClick={() => void decide(variation, "Rejected")}
+                title="Reject"
+              >
+                {decidingId === variation.id && !canApprove ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4 text-destructive" />}
+                <span className="ml-2 sm:hidden">Reject</span>
+              </Button>
+            )}
           </div>
         ) : (
           <span className="text-xs text-muted-foreground">

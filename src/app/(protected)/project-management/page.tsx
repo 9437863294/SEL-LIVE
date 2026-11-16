@@ -256,15 +256,39 @@ export default function ProjectManagementPage() {
   const [projects, setProjects] = useState<ProjectMapping[]>([]);
   const [isFetchingProjects, setIsFetchingProjects] = useState(true);
 
+  // Every tile, figure and link answers to its own permission. These used to fall back on BOQ View
+  // (and DPR on Civil/Erection), which made BOQ View a master key to the whole module and lit up
+  // tiles whose screens then refused the same person.
   const canViewModule = can("View Module", MODULE_NAME);
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
-  const canViewMdl = can("View", `${MODULE_NAME}.MDL`) || canViewBoq;
-  const canViewSupply = can("View", `${MODULE_NAME}.Supply`) || canViewBoq;
-  const canViewCivil = can("View", `${MODULE_NAME}.Civil`) || canViewBoq;
-  const canViewErection = can("View", `${MODULE_NAME}.Erection`) || canViewBoq;
-  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE) || canViewCivil || canViewErection;
-  const canViewDocuments = can("View", `${MODULE_NAME}.Documents`) || canViewBoq;
-  const canViewSettings = can("View", `${MODULE_NAME}.Settings`);
+  const canViewMdl = can("View", `${MODULE_NAME}.MDL`);
+  const canViewSupply = can("View", `${MODULE_NAME}.Supply`);
+  const canViewCivil = can("View", `${MODULE_NAME}.Civil`);
+  const canViewErection = can("View", `${MODULE_NAME}.Erection`);
+  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE);
+  const canViewDocuments = can("View", `${MODULE_NAME}.Documents`);
+  const canViewReports = can("View", `${MODULE_NAME}.Reports`);
+  const canViewPurchaseOrders = can("View", `${MODULE_NAME}.Purchase Orders`);
+  // The Settings hub opens for anybody who may use at least one of its pages.
+  const canViewSettings =
+    can("View", `${MODULE_NAME}.Settings`) ||
+    can("View", `${MODULE_NAME}.Project Mappings`) ||
+    can("View", `${MODULE_NAME}.Clients`);
+  /** Whether each "Needs attention" / "Coming up" row's register may be opened by this person. */
+  const targetAllowed: Record<ProjectAttentionTarget, boolean> = {
+    boq: canViewBoq,
+    "requirement-planner": can("View", `${MODULE_NAME}.Requirement Planner`),
+    mdl: canViewMdl,
+    "purchase-orders": canViewPurchaseOrders,
+    inspections: can("View", `${MODULE_NAME}.Inspections`),
+    mdcc: can("View", `${MODULE_NAME}.MDCC`),
+    "dispatch-instructions": can("View", `${MODULE_NAME}.Dispatch Instructions`),
+    grn: can("View", `${MODULE_NAME}.GRN`),
+    mvac: can("View", `${MODULE_NAME}.MVAC`),
+    projects: canViewModule,
+    civil: canViewCivil,
+    jmc: can("View", `${MODULE_NAME}.JMC`),
+  };
   const selectedProjectId = searchParams?.get("project") ?? "";
 
   useEffect(() => {
@@ -352,7 +376,7 @@ export default function ProjectManagementPage() {
       stats: [],
     },
     {
-      show: canViewBoq,
+      show: canViewReports,
       href: withProject("/project-management/reports"),
       title: "Reports",
       description: "Commercial, engineering, procurement and site-control indicators.",
@@ -376,6 +400,9 @@ export default function ProjectManagementPage() {
     erection: canViewErection,
   };
   const visibleScopes = summary?.scopes.filter((scope) => scopeAllowed[scope.key]) ?? [];
+  // A row about purchase orders is news only to someone who may open them.
+  const attentionItems = summary?.attention.filter((item) => targetAllowed[item.target]) ?? [];
+  const upcomingItems = summary?.upcoming.filter((item) => targetAllowed[item.target]) ?? [];
 
   if (isAuthLoading) {
     return (
@@ -502,26 +529,32 @@ export default function ProjectManagementPage() {
                   </p>
                 </div>
               </div>
-              <KpiCard
-                label="BOQ value"
-                value={summary ? formatCurrency(summary.boq.budgetValue) : "—"}
-                detail={summary ? `${formatCount(summary.boq.itemCount)} line items` : "Loading"}
-                fillPct={100}
-                gradient="from-sky-400 to-blue-600"
-                isLoading={isLoadingSummary}
-              />
-              <KpiCard
-                label="Committed"
-                value={summary ? formatCurrency(summary.cost.committedValue) : "—"}
-                detail={summary ? `${summary.cost.committedPct}% of budget · POs and work orders` : "Loading"}
-                fillPct={summary?.cost.committedPct ?? null}
-                gradient={
-                  summary?.cost.overBudget
-                    ? "from-rose-400 to-red-600"
-                    : "from-emerald-400 to-teal-600"
-                }
-                isLoading={isLoadingSummary}
-              />
+              {/* Commercial figures: the BOQ's value is the BOQ's to show, and what has been
+                  committed against it is the purchase orders'. */}
+              {canViewBoq ? (
+                <KpiCard
+                  label="BOQ value"
+                  value={summary ? formatCurrency(summary.boq.budgetValue) : "—"}
+                  detail={summary ? `${formatCount(summary.boq.itemCount)} line items` : "Loading"}
+                  fillPct={100}
+                  gradient="from-sky-400 to-blue-600"
+                  isLoading={isLoadingSummary}
+                />
+              ) : null}
+              {canViewPurchaseOrders ? (
+                <KpiCard
+                  label="Committed"
+                  value={summary ? formatCurrency(summary.cost.committedValue) : "—"}
+                  detail={summary ? `${summary.cost.committedPct}% of budget · POs and work orders` : "Loading"}
+                  fillPct={summary?.cost.committedPct ?? null}
+                  gradient={
+                    summary?.cost.overBudget
+                      ? "from-rose-400 to-red-600"
+                      : "from-emerald-400 to-teal-600"
+                  }
+                  isLoading={isLoadingSummary}
+                />
+              ) : null}
               <KpiCard
                 label="Schedule"
                 value={
@@ -749,9 +782,9 @@ export default function ProjectManagementPage() {
               <CardTitle className="flex items-center gap-2 text-sm font-bold">
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
                 Needs attention
-                {summary && summary.attention.length > 0 ? (
+                {attentionItems.length > 0 ? (
                   <StatusBadge status="count" tone="danger" className="px-2">
-                    {summary.attention.length}
+                    {attentionItems.length}
                   </StatusBadge>
                 ) : null}
               </CardTitle>
@@ -767,13 +800,13 @@ export default function ProjectManagementPage() {
                     <Skeleton key={index} className="h-10 rounded-lg" />
                   ))}
                 </div>
-              ) : !summary || summary.attention.length === 0 ? (
+              ) : attentionItems.length === 0 ? (
                 <p className="py-3 text-xs text-muted-foreground">
                   Nothing is flagged on this project right now.
                 </p>
               ) : (
                 <ul className="divide-y divide-dashed divide-border">
-                  {summary.attention.slice(0, 6).map((item) => (
+                  {attentionItems.slice(0, 6).map((item) => (
                     <li key={item.id}>
                       <Link
                         href={withProject(`/project-management/${targetPath[item.target]}`)}
@@ -818,13 +851,13 @@ export default function ProjectManagementPage() {
                     <Skeleton key={index} className="h-10 rounded-lg" />
                   ))}
                 </div>
-              ) : !summary || summary.upcoming.length === 0 ? (
+              ) : upcomingItems.length === 0 ? (
                 <p className="py-3 text-xs text-muted-foreground">
                   Nothing dated falls due in the next 45 days.
                 </p>
               ) : (
                 <ul className="divide-y divide-dashed divide-border">
-                  {summary.upcoming.map((item) => {
+                  {upcomingItems.map((item) => {
                     const date = new Date(`${item.date}T00:00:00`);
                     return (
                       <li key={item.id}>
@@ -894,7 +927,7 @@ export default function ProjectManagementPage() {
             </Link>
           ) : null}
 
-          {selectedProject && summary?.cost.overBudget ? (
+          {selectedProject && canViewPurchaseOrders && summary?.cost.overBudget ? (
             <div className="flex items-start gap-2.5 rounded-2xl border border-destructive/40 bg-destructive/5 p-3.5">
               <IndianRupee className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
               <p className="text-xs text-muted-foreground">

@@ -84,18 +84,21 @@ function ProjectManagementBottomNavInner() {
   const withProject = (path: string) =>
     hasProject ? `${path}?project=${encodeURIComponent(mappingId)}` : path;
 
-  // The landing hub's own gates, so the bar never offers a screen the hub would not.
+  // The landing hub's own gates, so the bar never offers a screen the hub would not. Each screen
+  // answers to its own permission — none of them borrows BOQ View any more.
   const canViewModule = can("View Module", MODULE_NAME);
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
-  const canViewMdl = can("View", `${MODULE_NAME}.MDL`) || canViewBoq;
-  const canViewSupply = can("View", `${MODULE_NAME}.Supply`) || canViewBoq;
-  const canViewCivil = can("View", `${MODULE_NAME}.Civil`) || canViewBoq;
-  const canViewErection = can("View", `${MODULE_NAME}.Erection`) || canViewBoq;
-  const canViewDocuments = can("View", `${MODULE_NAME}.Documents`) || canViewBoq;
-  const canViewSettings = can("View", `${MODULE_NAME}.Settings`);
-  // The Tower Progress screens' own rule (tower-progress-provider): its resource, or Erection View.
-  const canViewTowerProgress =
-    can("View", TOWER_PROGRESS_PERMISSION_RESOURCE) || can("View", `${MODULE_NAME}.Erection`);
+  const canViewMdl = can("View", `${MODULE_NAME}.MDL`);
+  const canViewSupply = can("View", `${MODULE_NAME}.Supply`);
+  const canViewCivil = can("View", `${MODULE_NAME}.Civil`);
+  const canViewErection = can("View", `${MODULE_NAME}.Erection`);
+  const canViewDocuments = can("View", `${MODULE_NAME}.Documents`);
+  const canViewReports = can("View", `${MODULE_NAME}.Reports`);
+  const canViewSettings =
+    can("View", `${MODULE_NAME}.Settings`) ||
+    can("View", `${MODULE_NAME}.Project Mappings`) ||
+    can("View", `${MODULE_NAME}.Clients`);
+  const canViewTowerProgress = can("View", TOWER_PROGRESS_PERMISSION_RESOURCE);
 
   // Daily Progress has its own module shell, whose phone bar would otherwise stack on this one.
   if (under(pathname, [`${BASE}/dpr`])) return null;
@@ -141,7 +144,7 @@ function ProjectManagementBottomNavInner() {
   const moreLinks: Array<ModuleMoreLink & { show: boolean }> = [
     { show: true, href: `${BASE}/projects`, label: "Projects", icon: FolderKanban, group: "Overview" },
     {
-      show: hasProject && canViewBoq,
+      show: hasProject && canViewReports,
       href: withProject(`${BASE}/reports`),
       label: "Reports",
       icon: FileBarChart2,

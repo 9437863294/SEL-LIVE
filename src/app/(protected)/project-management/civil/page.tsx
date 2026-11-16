@@ -209,11 +209,14 @@ export default function CivilPage() {
   const mappingId = searchParams?.get("project") ?? "";
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
+  // Each answers to its own permission. Civil used to open on BOQ View, Daily Progress on Civil View
+  // and JMC on Billing Recon's JMC right — but the DPR and JMC screens these tiles lead to check
+  // their own resources, so the borrowed rights only produced tiles that ended in Access Denied.
+  const canView = can("View", PERMISSION_RESOURCE);
+  /** Only for the "Full BOQ" link — the BOQ screen is the BOQ's to open. */
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
-  const canView = can("View", PERMISSION_RESOURCE) || canViewBoq;
-  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE) || can("View", `${MODULE_NAME}.Civil`);
-  // JMC is hosted by both modules against the same registers, so either view right opens it.
-  const canViewJmc = can("View", `${MODULE_NAME}.JMC`) || can("View", "Billing Recon.JMC");
+  const canViewDpr = can("View", DPR_PERMISSION_RESOURCE);
+  const canViewJmc = can("View", `${MODULE_NAME}.JMC`);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [isResolving, setIsResolving] = useState(true);

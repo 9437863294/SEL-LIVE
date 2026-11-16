@@ -95,7 +95,8 @@ export default function NewManufacturingClearancePage() {
   const { context, isResolving, notFound, projectName } = useProjectManagementMcContext(mappingId);
 
   const canView = can("View", MC_PERMISSION_RESOURCE);
-  const canCreate = can("Clear", MC_PERMISSION_RESOURCE) || can("Add", MC_PERMISSION_RESOURCE);
+  // Raising is "Add"; "Clear" decides. Raising used to need Clear, since Add was never grantable.
+  const canCreate = can("Add", MC_PERMISSION_RESOURCE);
 
   const [workspace, setWorkspace] = useState<McWorkspace | null>(null);
   const [isLoading, setIsLoading] = useState(true);

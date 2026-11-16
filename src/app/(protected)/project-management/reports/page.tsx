@@ -48,11 +48,9 @@ export default function ProjectManagementReportsPage() {
   const [projects, setProjects] = useState<ProjectMapping[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
 
-  const canViewModule = can("View Module", MODULE_NAME);
-  const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
-  // The tower reads across BOQ, MDL, procurement and the supply gates, so it is gated on the same
-  // permission the hub used before it moved here.
-  const canViewReports = canViewModule && canViewBoq;
+  // Its own permission (Project Management › Reports › View). It used to borrow BOQ View, which
+  // could not be granted or withheld separately from the BOQ itself.
+  const canViewReports = can("View", `${MODULE_NAME}.Reports`);
   const selectedProjectId = searchParams?.get("project") ?? "";
 
   useEffect(() => {

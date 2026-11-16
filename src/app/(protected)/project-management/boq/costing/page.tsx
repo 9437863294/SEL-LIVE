@@ -255,6 +255,9 @@ export default function ViewBoqPage() {
   const canView = can('View', 'Project Management.BOQ');
   const canAddManual = can('Add Manual', 'Project Management.BOQ');
   const canDelete = can('Delete', 'Project Management.BOQ');
+  // Changing an existing line (quantities, rates, dates). Before BOQ › Edit existed, the row's Edit
+  // button was open to anybody who could view the BOQ.
+  const canEdit = can('Edit', 'Project Management.BOQ');
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get('project') ?? '';
   // Arriving with ?scope2=Supply/Civil/Erection means we came from that module's own page —
@@ -1019,6 +1022,10 @@ export default function ViewBoqPage() {
 
   const handleSaveChanges = async () => {
     if (!editingItem || !currentProject) return;
+    if (!canEdit) {
+      toast({ title: 'No permission', description: 'You are not allowed to edit BOQ items.', variant: 'destructive' });
+      return;
+    }
 
     const startDate = String(editingItem['Start Date'] ?? '').trim();
     const endDate = String(editingItem['End Date'] ?? '').trim();
@@ -1610,9 +1617,11 @@ export default function ViewBoqPage() {
                                       </Link>
                                     </Button>
                                   )}
-                                  <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
-                                    <Edit className="mr-2 h-4 w-4" /> Edit
-                                  </Button>
+                                  {canEdit && (
+                                    <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
+                                      <Edit className="mr-2 h-4 w-4" /> Edit
+                                    </Button>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>

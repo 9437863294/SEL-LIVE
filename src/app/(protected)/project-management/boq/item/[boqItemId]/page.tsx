@@ -153,7 +153,11 @@ const TRACE_STAGE_TONES: Record<TraceStage["status"], StatusTone> = {
 const resolveLane = (boqItem: BoqItemDoc | null): TraceLane =>
   ["civil", "erection"].includes(text(boqItem?.["Scope 2"]).toLowerCase()) ? "civil" : "supply";
 
-/** Where each timeline stage lives, so a user can jump straight to it. */
+/**
+ * Where each timeline stage lives, so a user can jump straight to it. MDCC, Dispatch Instructions,
+ * GRN and MVAC have no index page — their registers are the `/documents` screens. The civil-lane
+ * stages go to Civil or Erection by the line's scope (see `stageHref`).
+ */
 const STAGE_ROUTES: Partial<Record<TraceStage["key"], string>> = {
   survey: "survey",
   indent: "indent",
@@ -162,14 +166,35 @@ const STAGE_ROUTES: Partial<Record<TraceStage["key"], string>> = {
   drawing: "mdl",
   mc: "manufacturing-clearance",
   inspection: "inspections",
-  mdcc: "mdcc",
-  di: "dispatch-instructions",
-  grn: "grn",
-  mvac: "mvac",
+  mdcc: "mdcc/documents",
+  di: "dispatch-instructions/documents",
+  grn: "grn/documents",
+  mvac: "mvac/documents",
   workOrder: "civil",
   workPackage: "civil",
   jmc: "civil",
 };
+
+/** The permission each stage's register checks; a stage links only for someone who may open it. */
+const STAGE_RESOURCES: Partial<Record<TraceStage["key"], string>> = {
+  survey: "Project Management.Survey",
+  indent: "Project Management.Indent",
+  rfq: "Project Management.RFQ",
+  po: "Project Management.Purchase Orders",
+  drawing: "Project Management.MDL",
+  mc: "Project Management.Manufacturing Clearance",
+  inspection: "Project Management.Inspections",
+  mdcc: "Project Management.MDCC",
+  di: "Project Management.Dispatch Instructions",
+  grn: "Project Management.GRN",
+  mvac: "Project Management.MVAC",
+  workOrder: "Project Management.Civil",
+  workPackage: "Project Management.Civil",
+  jmc: "Project Management.Civil",
+};
+
+/** The stages delivered through Civil or Erection, whose route and permission follow the scope. */
+const SCOPE_STAGES = new Set<TraceStage["key"]>(["workOrder", "workPackage", "jmc"]);
 
 export default function BoqItem360Page() {
   const { boqItemId } = useParams() as { boqItemId: string };
@@ -533,11 +558,19 @@ export default function BoqItem360Page() {
   const progressPct = computeBoqProgressPct(stages);
   const current = currentTraceStage(stages);
 
+  // Civil and Erection share the civil lane, so an Erection line's work packages live under Erection.
+  const isErectionScope = text(boqItem?.["Scope 2"]).toLowerCase() === "erection";
+  const scopeResource = isErectionScope ? "Project Management.Erection" : "Project Management.Civil";
+  const canViewScopeRecords = can("View", scopeResource);
+  const canViewDocuments = can("View", "Project Management.Documents");
+
+  // A link only where the register behind it would open for this person.
   const stageHref = (stage: TraceStage) => {
-    const route = STAGE_ROUTES[stage.key];
-    return route
-      ? `/project-management/${route}?project=${encodeURIComponent(mappingId)}`
-      : undefined;
+    const isScopeStage = SCOPE_STAGES.has(stage.key);
+    const route = isScopeStage ? (isErectionScope ? "erection" : "civil") : STAGE_ROUTES[stage.key];
+    const resource = isScopeStage ? scopeResource : STAGE_RESOURCES[stage.key];
+    if (!route || !resource || !can("View", resource)) return undefined;
+    return `/project-management/${route}?project=${encodeURIComponent(mappingId)}`;
   };
 
   /* ---- render ---- */
@@ -866,6 +899,7 @@ export default function BoqItem360Page() {
 
       {/* Civil commercial records — the work orders, measurements, and bills behind the lane */}
       {civilRecords &&
+        canViewScopeRecords &&
         (civilRecords.workOrders.length > 0 ||
           civilRecords.measurements.length > 0 ||
           civilRecords.bills.length > 0) && (
@@ -887,22 +921,24 @@ export default function BoqItem360Page() {
           </TableCard>
         )}
 
-      {/* Linked documents */}
-      <TableCard
-        title="Linked documents"
-        description="Evidence filed against this BOQ item in the document vault."
-        scroll="natural"
-      >
-        {documents.length ? (
-          <div className="p-3 sm:p-0">
-            <PmDataList rows={documents} columns={documentColumns} className={IN_CARD_LIST} />
-          </div>
-        ) : (
-          <p className="p-6 text-center text-sm text-muted-foreground">
-            No documents filed against this BOQ item yet.
-          </p>
-        )}
-      </TableCard>
+      {/* Linked documents — the document vault's, so Documents › View. */}
+      {canViewDocuments ? (
+        <TableCard
+          title="Linked documents"
+          description="Evidence filed against this BOQ item in the document vault."
+          scroll="natural"
+        >
+          {documents.length ? (
+            <div className="p-3 sm:p-0">
+              <PmDataList rows={documents} columns={documentColumns} className={IN_CARD_LIST} />
+            </div>
+          ) : (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              No documents filed against this BOQ item yet.
+            </p>
+          )}
+        </TableCard>
+      ) : null}
     </main>
   );
 }

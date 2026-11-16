@@ -157,6 +157,8 @@ export default function DprReportsPage() {
   const mappingId = searchParams?.get("project") ?? "";
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = !isAuthLoading && can("View", DPR_PERMISSION_RESOURCE);
+  // Taking the figures away as a file is DPR › Export, not merely being able to read them.
+  const canExport = !isAuthLoading && can("Export", DPR_PERMISSION_RESOURCE);
 
   const {
     projectName,
@@ -403,13 +405,15 @@ export default function DprReportsPage() {
         active={view}
         onTabChange={setView}
         actions={
-          <Button
-            onClick={downloadCsv}
-            disabled={exportRows.rows.length === 0}
-            className={DPR_HERO_PRIMARY}
-          >
-            <Download className="mr-2 h-4 w-4" /> Export CSV
-          </Button>
+          canExport ? (
+            <Button
+              onClick={downloadCsv}
+              disabled={exportRows.rows.length === 0}
+              className={DPR_HERO_PRIMARY}
+            >
+              <Download className="mr-2 h-4 w-4" /> Export CSV
+            </Button>
+          ) : undefined
         }
       />
 

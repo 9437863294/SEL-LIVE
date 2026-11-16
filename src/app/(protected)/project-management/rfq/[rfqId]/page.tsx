@@ -153,7 +153,7 @@ export default function RfqDetailPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
 
-  const canView = can("View", RFQ_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  const canView = can("View", RFQ_PERMISSION_RESOURCE);
   const canSend = can("Send", RFQ_PERMISSION_RESOURCE);
   const canEnterQuote = can("Enter Quote", RFQ_PERMISSION_RESOURCE);
   const canAward = can("Award", RFQ_PERMISSION_RESOURCE);

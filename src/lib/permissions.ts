@@ -769,7 +769,9 @@ export const permissionModules = {
     // order against (see src/lib/project-management-boq-subitems.ts). It is deliberately separate
     // from "Add Manual": adding a line extends the BOQ, but subdividing one changes what every
     // register downstream can book against, and it cannot be undone once work starts on a part.
-    BOQ: ["View", "Import", "Add Manual", "Break Down", "Delete", "Export"],
+    // "Edit" changes an existing line (quantities, rates, dates) from BOQ Costing; before it existed
+    // that button was open to anybody who could view the BOQ.
+    BOQ: ["View", "Import", "Add Manual", "Edit", "Break Down", "Delete", "Export"],
     // Indents route through a configurable approval workflow before their quantities reserve
     // against the BOQ (see src/lib/project-management-indent-workflow.ts).
     Indent: ["View", "Add", "Delete", "View Settings", "Edit Settings"],
@@ -823,10 +825,12 @@ export const permissionModules = {
     // BOQ item (see src/lib/project-management-survey-workflow.ts), so Survey now carries the
     // same settings/reports actions the other workflow-backed modules do.
     Survey: ["View", "Record", "View Settings", "Edit Settings", "View Reports"],
-    Drawing: ["View"],
+    // "Collect" records a vendor drawing as received on the Drawing screen.
+    Drawing: ["View", "Collect"],
     // Clearing routes through a configurable approval workflow, since clearing is what lets a
-    // vendor begin production (see src/lib/project-management-mc-workflow.ts).
-    "Manufacturing Clearance": ["View", "Clear", "Reject", "View Settings", "Edit Settings"],
+    // vendor begin production (see src/lib/project-management-mc-workflow.ts). "Add" raises an MC;
+    // "Clear" decides one — kept apart so the buyer who raises a clearance need not be able to grant it.
+    "Manufacturing Clearance": ["View", "Add", "Clear", "Reject", "View Settings", "Edit Settings"],
     // A passing result routes through a configurable approval workflow, since passing is what
     // opens the MDCC gate (see src/lib/project-management-inspection-workflow.ts).
     Inspections: ["View", "Request", "Record Result", "View Settings", "Edit Settings"],
@@ -852,6 +856,8 @@ export const permissionModules = {
     Clients: ["View", "Add", "Edit", "Delete"],
     "Variation Orders": ["View", "Add", "Approve", "Reject"],
     Documents: ["View", "Add", "Delete"],
+    // The module's Reports screen: the control tower across BOQ, MDL, procurement and the gates.
+    Reports: ["View"],
     Settings: ["View", "Edit", "Manage Field Control"],
   },
   "Vendor Management": {

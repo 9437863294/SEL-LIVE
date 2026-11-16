@@ -42,8 +42,6 @@ import {
   type TowerProjectContext,
 } from "@/lib/project-management-tower-service";
 
-const ERECTION_RESOURCE = "Project Management.Erection";
-
 export interface TowerProgressPermissions {
   view: boolean;
   addTower: boolean;
@@ -100,28 +98,24 @@ export function TowerProgressProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState("");
 
   /**
-   * Tower Progress has its own permission resource, but an existing Erection right also grants the
-   * equivalent action. Without that fallback the feature would be invisible to everyone on the day it
-   * ships — including the site engineers who already hold Erection rights — until an administrator
-   * had gone through every role. The module already pairs resources this way (Erection falls back to
-   * BOQ, JMC to Billing Recon), so this follows the same rule rather than inventing one.
+   * Every action answers to Tower Progress's own permission. It used to fall back on the matching
+   * Erection right (Erection Edit → edit towers and update progress, Erection Add → import a tower
+   * schedule), which made Tower Progress's own, finer-grained actions impossible to withhold from
+   * anyone who could edit Erection. Verification was already separate and stays so: an engineer who
+   * records progress must not be able to sign off their own claim.
    */
   const permissions = useMemo<TowerProgressPermissions>(() => {
-    const allow = (action: string, erectionAction?: string) =>
-      can(action, TOWER_PROGRESS_PERMISSION_RESOURCE) ||
-      (erectionAction ? can(erectionAction, ERECTION_RESOURCE) : false);
+    const allow = (action: string) => can(action, TOWER_PROGRESS_PERMISSION_RESOURCE);
     return {
-      view: allow("View", "View"),
-      addTower: allow("Add Tower", "Add"),
-      editTower: allow("Edit Tower", "Edit"),
-      deleteTower: allow("Delete Tower", "Delete"),
-      importTowers: allow("Import Towers", "Add"),
-      updateProgress: allow("Update Progress", "Edit"),
-      // Verification is a distinct authority — an engineer who can record progress must not be able
-      // to sign off their own claim — so it never falls back to a generic Erection edit right.
+      view: allow("View"),
+      addTower: allow("Add Tower"),
+      editTower: allow("Edit Tower"),
+      deleteTower: allow("Delete Tower"),
+      importTowers: allow("Import Towers"),
+      updateProgress: allow("Update Progress"),
       verifyProgress: allow("Verify Progress"),
-      viewReports: allow("View Reports", "View"),
-      export: allow("Export", "Export"),
+      viewReports: allow("View Reports"),
+      export: allow("Export"),
       viewSettings: allow("View Settings"),
       editSettings: allow("Edit Settings"),
     };

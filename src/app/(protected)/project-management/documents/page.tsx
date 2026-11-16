@@ -122,7 +122,7 @@ export default function ProjectDocumentsPage() {
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const canView = can("View", DOCUMENT_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  const canView = can("View", DOCUMENT_PERMISSION_RESOURCE);
   const canAdd = can("Add", DOCUMENT_PERMISSION_RESOURCE);
   const canDelete = can("Delete", DOCUMENT_PERMISSION_RESOURCE);
 

@@ -145,7 +145,7 @@ export default function RecordSurveyPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { context, isResolving, notFound, projectName } = useProjectManagementSurveyContext(mappingId);
 
-  const canView = can("View", SURVEY_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  const canView = can("View", SURVEY_PERMISSION_RESOURCE);
   const canRecord = can("Record", SURVEY_PERMISSION_RESOURCE);
 
   const [rows, setRows] = useState<SurveyRow[]>([]);

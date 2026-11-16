@@ -108,7 +108,8 @@ export default function PurchaseOrderRegisterPage() {
 
   const { context, isResolving, notFound } = useProjectManagementPoContext(mappingId);
 
-  const canView = can("View", PO_PERMISSION_RESOURCE) || can("View", "Project Management.RFQ");
+  // Purchase Orders View only — RFQ View no longer opens the PO register.
+  const canView = can("View", PO_PERMISSION_RESOURCE);
   const canAdd = can("Add", PO_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
