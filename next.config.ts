@@ -129,6 +129,15 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: lanAddresses,
   experimental: {
     turbopackFileSystemCacheForDev: false,
+    // Next 16.3+ writes a Turbopack cache to .next/cache on every `next build` by default. App Hosting
+    // starts each build from a clean machine, so nothing ever reads that cache back. Writing it still
+    // costs memory: Turbopack keeps a dependency graph for the whole app, then saves the cache to disk
+    // *while* "Collecting page data" loads every route. That step is where builds were Killed for lack
+    // of memory, and from 2026-11-13 most builds either died there or ran to Cloud Build's 57-minute
+    // timeout. Off, as Next's docs advise for build machines that don't keep .next/cache; the deployed
+    // app is unaffected.
+    // (node_modules/next/dist/docs/01-app/03-api-reference/05-config/01-next-config-js/turbopackFileSystemCache.md)
+    turbopackFileSystemCacheForBuild: false,
     // These are all imported by name across hundreds of files. Without this the
     // barrel entry point is pulled into the shared chunk graph wholesale.
     optimizePackageImports: [
