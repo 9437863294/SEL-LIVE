@@ -112,9 +112,9 @@ export function deriveLegacyStatus(lifecycle: ProjectLifecycleState): "Active" |
 }
 
 /**
- * Rules that apply at every save. Deliberately light for a Draft — the whole point of Draft is to
- * let someone start a project record before every detail is known. `canActivateProject` below is
- * where the real bar sits.
+ * Rules that apply at every save: a name, a global project, and well-formed dates and code when they
+ * are given. Deliberately light — a project record should be able to exist, and go live, before
+ * every detail is known.
  */
 export function validatePmProject(draft: PmProjectDraft): PmProjectValidationError[] {
   const errors: PmProjectValidationError[] = [];
@@ -138,29 +138,27 @@ export function validatePmProject(draft: PmProjectDraft): PmProjectValidationErr
 }
 
 /**
- * The additional bar a project must clear before it goes live. A project that is Active is one the
- * business will raise commitments against, so it needs an owner, a scope, and a schedule — leaving
- * those blank is how a project ends up with nobody accountable for it.
+ * What a project must have before it goes live: a name and the global project it maps to — the same
+ * as any save. Everything else (code, type, scope, manager, site in-charge, dates, team) is optional
+ * and can be filled in later; the user asked for that on 2026-11-16, so a project can go Active as
+ * soon as it is named and mapped. Field Control can still make a field required, and the wizard and
+ * Manage Projects page enforce that separately. `missingOptionalDetails` lists what is still blank,
+ * for a reminder that does not block.
  */
 export function canActivateProject(draft: PmProjectDraft): PmProjectValidationError[] {
-  const errors = validatePmProject(draft);
+  return validatePmProject(draft);
+}
 
-  if (!draft.projectCode?.trim()) {
-    errors.push({ field: "projectCode", message: "A project code is required before activation." });
-  }
-  if (!draft.scopes?.length) {
-    errors.push({ field: "scopes", message: "Select at least one scope before activation." });
-  }
-  if (!draft.projectManagerId) {
-    errors.push({ field: "projectManagerId", message: "Assign a project manager before activation." });
-  }
-  if (!draft.startDate) {
-    errors.push({ field: "startDate", message: "A start date is required before activation." });
-  }
-  if (!draft.endDate) {
-    errors.push({ field: "endDate", message: "A completion date is required before activation." });
-  }
-  return errors;
+/** The optional details still blank, by display name, in the order the wizard asks for them. */
+export function missingOptionalDetails(draft: PmProjectDraft): string[] {
+  const missing: string[] = [];
+  if (!draft.startDate || !draft.endDate) missing.push("Start and end dates");
+  if (!draft.projectCode?.trim()) missing.push("Project code");
+  if (!draft.projectType) missing.push("Project type");
+  if (!draft.scopes?.length) missing.push("Scope");
+  if (!draft.projectManagerId) missing.push("Project manager");
+  if (!draft.siteInChargeId) missing.push("Site in-charge");
+  return missing;
 }
 
 /** Whether a lifecycle transition is allowed. Status is changed through explicit actions, never by

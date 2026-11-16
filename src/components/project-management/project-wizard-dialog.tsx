@@ -10,9 +10,10 @@
  * and `onSave`, which runs every rule again (duplicates, timeline, lifecycle transitions) before it
  * writes — the checks here are early warnings, not the gate.
  *
- * A later step opens only once Project details passes; Scope & team has no rule of its own (its
- * fields matter for activation, which the review step checks). Create stays disabled while the
- * status being saved has blocking problems — light rules for a Draft, the activation bar for Active.
+ * Only Project Name and Global Project are needed, for any status, Active included (the user's rule,
+ * 2026-11-16). Create works from step 1, so Scope & team and Review can be skipped; the review step
+ * lists the details still blank as a reminder, not a block. A later step opens only once Project
+ * details passes. Field Control can still make description or dates required.
  */
 
 import { useMemo, useState, type ReactNode } from "react";
@@ -41,6 +42,7 @@ import {
   PROJECT_SCOPES,
   PROJECT_TYPES,
   canActivateProject,
+  missingOptionalDetails,
   nextLifecycleStates,
   resolveLifecycle,
   validatePmProject,
@@ -96,7 +98,7 @@ export const emptyMappingForm: MappingForm = {
   description: "",
   startDate: "",
   endDate: "",
-  status: "Inactive",
+  status: "Active",
   projectCode: "",
   scopes: [],
   projectManagerId: "",
@@ -104,9 +106,9 @@ export const emptyMappingForm: MappingForm = {
   siteInChargeId: "",
   siteInChargeName: "",
   team: {},
-  // New projects start as drafts. A project record should be able to exist before every detail is
-  // known; going live is a deliberate act that has to clear the activation bar.
-  lifecycle: "Draft",
+  // New projects start Active: a name and a global project are all going live needs, and the rest
+  // can follow. Draft or Review on the last step holds a project back.
+  lifecycle: "Active",
 };
 
 export function mappingToForm(mapping: ProjectMapping): MappingForm {
@@ -138,6 +140,9 @@ export const formatMappingDate = (value?: string) => (value ? value.split("-").r
 /** Three steps, because the fields genuinely group into three decisions: what and where it is,
  * who runs it, and whether it is ready to go live. */
 const WIZARD_STEPS = ["Project details", "Scope & team", "Review & activate"] as const;
+
+/** Steps whose every field may stay blank; Create works without visiting them. */
+const OPTIONAL_STEPS: ReadonlySet<number> = new Set([1]);
 
 const HEADER_STYLE = {
   backgroundImage:
@@ -305,13 +310,14 @@ function WizardBody({
   const detailsPass = detailErrors.size === 0;
 
   // Blocking problems for the lifecycle the user is actually trying to save.
-  const activationErrors = canActivateProject(form);
-  const blockingErrors = form.lifecycle === "Active" ? activationErrors : validatePmProject(form);
+  const blockingErrors = form.lifecycle === "Active" ? canActivateProject(form) : validatePmProject(form);
   const canCreate = blockingErrors.length === 0 && detailsPass && !saving;
+  const stillBlank = missingOptionalDetails(form);
 
+  // A new project has no status to move from, so it may start at any intake status.
   const lifecycleChoices: ProjectLifecycleState[] = editing
     ? Array.from(new Set([resolveLifecycle(editing), ...nextLifecycleStates(resolveLifecycle(editing))]))
-    : ["Draft", "Review"];
+    : ["Draft", "Review", "Active"];
 
   const goTo = (next: number) => {
     if (next > step && step === 0 && !detailsPass) {
@@ -405,7 +411,12 @@ function WizardBody({
               >
                 {done ? <Check className="h-3.5 w-3.5" /> : index + 1}
               </span>
-              <span className="truncate">{label}</span>
+              <span className="min-w-0">
+                <span className="block truncate">{label}</span>
+                {OPTIONAL_STEPS.has(index) ? (
+                  <span className="block truncate text-[10.5px] font-semibold text-muted-foreground">Optional — can skip</span>
+                ) : null}
+              </span>
             </button>
           );
         })}
@@ -710,31 +721,23 @@ function WizardBody({
                 })}
               </div>
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Only transitions valid from the current status are offered. A new project starts as a Draft and is
-                activated once it clears the checklist below.
+                {editing
+                  ? "Only transitions valid from the current status are offered."
+                  : "A new project starts Active. Choose Draft or Review to hold it back."}
               </p>
             </div>
 
-            {activationErrors.length ? (
-              <div
-                className={cn(
-                  "rounded-[14px] border px-3.5 py-3 text-xs",
-                  form.lifecycle === "Active" ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50",
-                )}
-              >
-                <p className={cn("mb-1 font-extrabold", form.lifecycle === "Active" ? "text-rose-700" : "text-amber-800")}>
-                  {form.lifecycle === "Active" ? "Clear these before it can go Active" : "Needed before this project can be activated"}
+            {stillBlank.length ? (
+              <div className="rounded-[14px] border border-border bg-muted/40 px-3.5 py-3 text-xs">
+                <p className="mb-0.5 font-extrabold text-foreground">Optional details not filled in yet</p>
+                <p className="text-muted-foreground">
+                  {stillBlank.join(", ")}. You can add them any time with Edit.
                 </p>
-                <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
-                  {activationErrors.map((error) => (
-                    <li key={`${error.field}-${error.message}`}>{error.message}</li>
-                  ))}
-                </ul>
               </div>
             ) : (
               <div className="flex items-center gap-2.5 rounded-[14px] border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs font-bold text-emerald-800">
                 <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
-                Everything required to activate this project is in place.
+                Every project detail is filled in.
               </div>
             )}
           </div>

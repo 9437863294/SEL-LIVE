@@ -27,6 +27,7 @@ import {
   canActivateProject,
   canTransitionLifecycle,
   deriveLegacyStatus,
+  missingOptionalDetails,
   projectRunsScope,
   resolveLifecycle,
   validatePmProject,
@@ -527,16 +528,31 @@ test('project validation rejects an end date before the start date and a malform
   assert.ok(errors.some((e) => e.field === 'projectCode'));
 });
 
-test('activation demands an owner, a scope, a code and a schedule', () => {
+test('activation needs only a name and a global project; every other detail is optional', () => {
   assert.deepEqual(canActivateProject(activeReadyProject), []);
+  assert.deepEqual(canActivateProject({ projectName: 'Job', globalProjectId: 'gp-1', status: 'Active', lifecycle: 'Active' }), []);
 
-  const bare = canActivateProject({ projectName: 'Job', globalProjectId: 'gp-1', status: 'Inactive' });
-  const fields = bare.map((e) => e.field);
-  assert.ok(fields.includes('projectCode'));
-  assert.ok(fields.includes('scopes'));
-  assert.ok(fields.includes('projectManagerId'));
-  assert.ok(fields.includes('startDate'));
-  assert.ok(fields.includes('endDate'));
+  const unnamed = canActivateProject({ projectName: ' ', globalProjectId: '', status: 'Active', lifecycle: 'Active' });
+  assert.deepEqual(unnamed.map((e) => e.field).sort(), ['globalProjectId', 'projectName']);
+
+  // Optional details that are given must still be well-formed.
+  const malformed = canActivateProject({ ...activeReadyProject, projectCode: 'BAD CODE!', endDate: '2025-12-31' });
+  assert.deepEqual(malformed.map((e) => e.field).sort(), ['endDate', 'projectCode']);
+});
+
+test('the blank optional details are listed as a reminder', () => {
+  assert.deepEqual(missingOptionalDetails({ projectName: 'Job', globalProjectId: 'gp-1', status: 'Active' }), [
+    'Start and end dates',
+    'Project code',
+    'Project type',
+    'Scope',
+    'Project manager',
+    'Site in-charge',
+  ]);
+  assert.deepEqual(
+    missingOptionalDetails({ ...activeReadyProject, projectType: 'EPC', siteInChargeId: 'user-2' }),
+    [],
+  );
 });
 
 test('lifecycle transitions follow the allowed graph rather than free-form editing', () => {
