@@ -17,7 +17,10 @@ import { TableCard } from "@/components/shared/table-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { CourtBadge, CourtChips } from "@/components/master-drawing-list/mdl-ui";
 import { cn } from "@/lib/utils";
+import type { DrawingItem } from "@/lib/master-drawing-list/drawings";
+import { courtCounts, inCourt, type CourtFilter } from "@/lib/master-drawing-list/register";
 import {
   computeMdlCycleAgeDays,
   computeMdlDrawingStage,
@@ -37,7 +40,10 @@ import {
 
 // A queue line as the phone renders it: one card per item, its sub-drawings nested beneath.
 type PendingCardRow = MdlRow & { id: string; rollup: MdlRollup; outline: number[]; hasPo: boolean };
-type PendingSubCardRow = { id: string; itemId: string; sub: MdlSubDrawing; outline: number[]; hasPo: boolean };
+type PendingSubCardRow = { id: string; itemId: string; sub: MdlSubDrawing; subIndex: number; outline: number[]; hasPo: boolean };
+
+// The Master Drawing List's queue filters: where the ball is, or overdue against plan.
+const PENDING_COURT_FILTERS = ["sel", "client", "not_started", "overdue"] as const;
 
 // Lighter nested cards, so a sub-drawing reads as part of its item's card rather than a second one.
 const NESTED_CARD_CLASS = "border-border bg-muted/30 p-2.5 shadow-none";
@@ -58,27 +64,62 @@ const onStripKey = (event: KeyboardEvent, action: () => void) => {
 // A drawing is outstanding once somebody has committed to it and it hasn't been approved — either
 // a PO was placed for the item, or the drawing was planned in the register. Items merely flagged
 // MDL = Yes and never touched stay out, so the queue doesn't fill with untouched lines.
+//
+// The chips above the queue are the Master Drawing List's: narrow it to what is with SEL, with the
+// client, not yet submitted, or overdue. They only filter what is shown — which items are pending,
+// and how they are grouped, is unchanged.
 export default function MdlPendingTasks({
   rows,
   purchaseOrders,
   mappingId,
+  drawingItems,
+  today,
   onSelectItem,
 }: {
   rows: MdlRow[];
   purchaseOrders: MdlGroupablePo[];
   mappingId: string;
+  /** The same rows read as drawing items (`mdl-drawing-items.ts`), by BOQ item id — for the ball in court. */
+  drawingItems: ReadonlyMap<string, DrawingItem>;
+  /** 'YYYY-MM-DD'. */
+  today: string;
   onSelectItem: (boqItemId: string, subDrawingId?: string) => void;
 }) {
-  const { poGroups, plannedOnlyRows } = useMemo(() => {
+  const [court, setCourt] = useState<CourtFilter | null>(null);
+
+  const { allPoGroups, allPlannedOnlyRows } = useMemo(() => {
     const { groups, ungrouped } = groupMdlRowsByPo(rows, purchaseOrders);
     return {
-      poGroups: groups
+      allPoGroups: groups
         .map((group) => ({ ...group, rows: group.rows.filter((row) => isMdlPendingTask(row.drawing, true)) }))
         .filter((group) => group.rows.length),
       // Planned in the register but not ordered yet — real work, just not yet a commitment.
-      plannedOnlyRows: ungrouped.filter((row) => isMdlPendingTask(row.drawing, false)),
+      allPlannedOnlyRows: ungrouped.filter((row) => isMdlPendingTask(row.drawing, false)),
     };
   }, [rows, purchaseOrders]);
+
+  // Every pending item once, however many purchase orders it sits under — what the chips count.
+  const pendingItems = useMemo(() => {
+    const seen = new Map<string, DrawingItem>();
+    for (const row of [...allPoGroups.flatMap((group) => group.rows), ...allPlannedOnlyRows]) {
+      const item = drawingItems.get(row.item.id);
+      if (item) seen.set(item.id, item);
+    }
+    return [...seen.values()];
+  }, [allPoGroups, allPlannedOnlyRows, drawingItems]);
+  const counts = useMemo(() => courtCounts(pendingItems, today), [pendingItems, today]);
+
+  const { poGroups, plannedOnlyRows } = useMemo(() => {
+    if (!court) return { poGroups: allPoGroups, plannedOnlyRows: allPlannedOnlyRows };
+    const keep = (row: MdlRow) => {
+      const item = drawingItems.get(row.item.id);
+      return item ? inCourt(item, court, today) : false;
+    };
+    return {
+      poGroups: allPoGroups.map((group) => ({ ...group, rows: group.rows.filter(keep) })).filter((group) => group.rows.length),
+      plannedOnlyRows: allPlannedOnlyRows.filter(keep),
+    };
+  }, [court, allPoGroups, allPlannedOnlyRows, drawingItems, today]);
 
   const total = useMemo(
     () => poGroups.reduce((sum, group) => sum + group.rows.length, 0) + plannedOnlyRows.length,
@@ -86,9 +127,11 @@ export default function MdlPendingTasks({
   );
 
   // Groups start closed, so the queue opens as a list of orders to chase. The overdue count sits
-  // on the closed row precisely so triage does not require expanding anything.
+  // on the closed row precisely so triage does not require expanding anything. A chip opens every
+  // group that still has rows, as the Master Drawing List's filters do.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const PLANNED_ONLY_KEY = "planned-only";
+  const isGroupOpen = (key: string) => Boolean(court) || expandedGroups.has(key);
 
   const allGroupKeys = useMemo(
     () => [
@@ -130,7 +173,7 @@ export default function MdlPendingTasks({
   // Every cell holds one line. The drawing roll-up and a sub-drawing's assignee and vendor link
   // used to sit stacked under the description; each now has its own column, so a row is one line
   // tall and a column can be scanned down rather than re-read per row.
-  const PENDING_COLUMN_COUNT = 10;
+  const PENDING_COLUMN_COUNT = 11;
 
   const pendingHead = (
     <TableHeader>
@@ -143,11 +186,22 @@ export default function MdlPendingTasks({
         <TableHead>Planned End</TableHead>
         <TableHead>Cycle Age</TableHead>
         <TableHead>Stage</TableHead>
+        <TableHead>Ball in Court</TableHead>
         <TableHead>Status</TableHead>
         <TableHead className="w-20" />
       </TableRow>
     </TableHeader>
   );
+
+  /** Who has to act next on an item's own drawing — only when it has no sub-drawings, which carry their own. */
+  const itemCourt = (itemId: string) => {
+    const item = drawingItems.get(itemId);
+    return item && !item.subDrawings.length ? <CourtBadge record={item} today={today} /> : null;
+  };
+  const subCourt = (itemId: string, subIndex: number) => {
+    const sub = drawingItems.get(itemId)?.subDrawings[subIndex];
+    return sub ? <CourtBadge record={sub} today={today} /> : null;
+  };
 
   // Shared by the desktop rows and the phone cards, so both number a line the same.
   const sortPendingRows = (groupRows: MdlRow[]) =>
@@ -217,6 +271,7 @@ export default function MdlPendingTasks({
               ) : "—"}
             </TableCell>
             <TableCell />
+            <TableCell className="whitespace-nowrap">{itemCourt(item.id)}</TableCell>
             <TableCell className="whitespace-nowrap">
               <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />
             </TableCell>
@@ -284,6 +339,7 @@ export default function MdlPendingTasks({
                 <TableCell className="whitespace-nowrap">
                   <StatusBadge status={stage} tone={pmStatusTone(stage)} />
                 </TableCell>
+                <TableCell className="whitespace-nowrap">{subCourt(item.id, subIndex)}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
                 </TableCell>
@@ -340,6 +396,7 @@ export default function MdlPendingTasks({
         ) : "—";
       },
     },
+    { header: "Ball in Court", cell: ({ item }) => itemCourt(item.id) ?? <span className="text-muted-foreground">—</span> },
     {
       header: "Drawings",
       cell: ({ drawing, rollup }) =>
@@ -380,11 +437,12 @@ export default function MdlPendingTasks({
       // "Re-collect from Vendor" beside the title would leave it a word wide.
       header: "Stage",
       mobile: "title",
-      cell: ({ sub, hasPo }) => {
+      cell: ({ itemId, sub, subIndex, hasPo }) => {
         const stage = computeMdlDrawingStage(sub, hasPo);
         return (
           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <StatusBadge status={stage} tone={pmStatusTone(stage)} />
+            {subCourt(itemId, subIndex)}
             <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
             <span className={cn(sub.assignedToName && "text-foreground")}>{sub.assignedToName || "Unassigned"}</span>
             {sub.collection?.fileUrl && (
@@ -448,6 +506,7 @@ export default function MdlPendingTasks({
               id: sub.id,
               itemId: row.item.id,
               sub,
+              subIndex,
               outline: [...row.outline, subIndex],
               hasPo: row.hasPo,
             }))}
@@ -462,7 +521,7 @@ export default function MdlPendingTasks({
 
   /** A collapsible purchase-order strip, and its cards when open. */
   const phoneGroup = (key: string, heading: ReactNode, cards: () => ReactNode) => {
-    const isOpen = expandedGroups.has(key);
+    const isOpen = isGroupOpen(key);
     return (
       <div key={key}>
         <div
@@ -480,7 +539,7 @@ export default function MdlPendingTasks({
     );
   };
 
-  if (!total) {
+  if (!pendingItems.length) {
     return (
       <TableCard title="Pending Tasks" icon={ListTodo} scroll="natural">
         <div className="flex flex-col items-center gap-3 p-8 text-center">
@@ -573,15 +632,18 @@ export default function MdlPendingTasks({
       icon={ListTodo}
       description={
         <>
-          {total} pending item{total === 1 ? "" : "s"} across {poGroups.length} purchase order
+          Every drawing not yet approved — overdue first, then by planned end date. {total} item{total === 1 ? "" : "s"} across {poGroups.length} purchase order
           {poGroups.length === 1 ? "" : "s"}
           {plannedOnlyRows.length ? " · plus items not yet ordered" : ""}
         </>
       }
+      count={total}
+      noun="item"
+      toolbar={<CourtChips counts={counts} total={pendingItems.length} value={court} onChange={setCourt} filters={PENDING_COURT_FILTERS} />}
       // With every group closed by default there has to be a way to the full queue in one
-      // action rather than N clicks.
+      // action rather than N clicks. A chip opens every group, so the buttons step aside.
       actions={
-        <>
+        court || !total ? undefined : <>
           <Button
             variant="ghost"
             size="sm"
@@ -605,12 +667,20 @@ export default function MdlPendingTasks({
         </>
       }
     >
+      {!total ? (
+        <div className="flex flex-col items-center gap-2 p-8 text-center">
+          <ClipboardCheck className="h-9 w-9 text-muted-foreground/60" />
+          <p className="font-medium">Nothing under this filter</p>
+          <p className="text-sm text-muted-foreground">Choose All to see every open drawing.</p>
+        </div>
+      ) : (
+        <>
           <Table containerClassName="hidden sm:block">
             {pendingHead}
             <TableBody>
               {poGroups.map((group, groupIndex) => {
                 const key = `po:${group.po.poId}`;
-                const isOpen = expandedGroups.has(key);
+                const isOpen = isGroupOpen(key);
                 return [
                   <TableRow
                     key={key}
@@ -630,7 +700,7 @@ export default function MdlPendingTasks({
 
               {plannedOnlyRows.length > 0 &&
                 (() => {
-                  const isOpen = expandedGroups.has(PLANNED_ONLY_KEY);
+                  const isOpen = isGroupOpen(PLANNED_ONLY_KEY);
                   return [
                     <TableRow
                       key={PLANNED_ONLY_KEY}
@@ -653,15 +723,17 @@ export default function MdlPendingTasks({
         <div className="divide-y sm:hidden">
           {poGroups.map((group, groupIndex) => {
             const key = `po:${group.po.poId}`;
-            return phoneGroup(key, poGroupHeading(group, groupIndex, expandedGroups.has(key)), () =>
+            return phoneGroup(key, poGroupHeading(group, groupIndex, isGroupOpen(key)), () =>
               phoneCards(group.rows, [groupIndex], true),
             );
           })}
           {plannedOnlyRows.length > 0 &&
-            phoneGroup(PLANNED_ONLY_KEY, plannedOnlyHeading(expandedGroups.has(PLANNED_ONLY_KEY)), () =>
+            phoneGroup(PLANNED_ONLY_KEY, plannedOnlyHeading(isGroupOpen(PLANNED_ONLY_KEY)), () =>
               phoneCards(plannedOnlyRows, [], false),
             )}
         </div>
+        </>
+      )}
     </TableCard>
   );
 }

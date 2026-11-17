@@ -289,13 +289,22 @@ export function progressTree(items: DrawingItem[], today: string, order?: ListOr
   }));
 }
 
+/** What the three levels are called: the module's Scope › Schedule › Group unless a caller names them. */
+export interface LevelNames {
+  scope: string;
+  schedule: string;
+  group: string;
+}
+
+export const DEFAULT_LEVEL_NAMES: LevelNames = { scope: 'Scope', schedule: 'Schedule', group: 'Group' };
+
 /**
  * The status summary as one sheet: a row per scope, schedule and group in the register's order,
  * then the drawing list's total. Each row names its scope and schedule, so a filter on either
  * column keeps a level's rows together.
  */
-export function progressSheet(tree: ProgressRow[], total: Progress, project: { short: string }): ExcelSheet {
-  const LEVEL = { scope: 'Scope', schedule: 'Schedule', group: 'Group' } as const;
+export function progressSheet(tree: ProgressRow[], total: Progress, project: { short: string }, levels: LevelNames = DEFAULT_LEVEL_NAMES): ExcelSheet {
+  const LEVEL = levels;
   const figures = (progress: Progress) => ({
     items: progress.items,
     drawings: progress.drawings,
@@ -318,9 +327,9 @@ export function progressSheet(tree: ProgressRow[], total: Progress, project: { s
     name: sheetName(`Summary ${project.short}`),
     columns: [
       { header: 'Level', key: 'level', width: 10 },
-      { header: 'Scope', key: 'scope', width: 18 },
-      { header: 'Schedule', key: 'schedule', width: 14 },
-      { header: 'Group', key: 'group', width: 40 },
+      { header: levels.scope, key: 'scope', width: 18 },
+      { header: levels.schedule, key: 'schedule', width: 14 },
+      { header: levels.group, key: 'group', width: 40 },
       count('Items', 'items'),
       count('Drawings', 'drawings'),
       count('Approved', 'approved'),

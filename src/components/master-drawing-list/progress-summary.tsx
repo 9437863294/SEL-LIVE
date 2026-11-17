@@ -14,7 +14,7 @@ import { ChevronRight, Download, Folder, FolderTree, Layers, Sigma } from 'lucid
 import { TableCard } from '@/components/shared/table-card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import type { Progress, ProgressRow } from '@/lib/master-drawing-list/analytics';
+import { DEFAULT_LEVEL_NAMES, type LevelNames, type Progress, type ProgressRow } from '@/lib/master-drawing-list/analytics';
 import { cn } from '@/lib/utils';
 
 // The app's status tones as fills — approved emerald, with client blue, with SEL amber, not
@@ -143,7 +143,7 @@ const LEVEL_ICON = {
  * The status summary: scopes open with their schedules; a schedule opens to its groups. "Show
  * groups" opens every one.
  */
-export function StatusSummary({ tree, total, onDownload }: { tree: ProgressRow[]; total: Progress; onDownload?: () => void }) {
+export function StatusSummary({ tree, total, onDownload, levels = DEFAULT_LEVEL_NAMES }: { tree: ProgressRow[]; total: Progress; onDownload?: () => void; levels?: LevelNames }) {
   const [closedScopes, setClosedScopes] = useState<Set<string>>(new Set());
   const [openSchedules, setOpenSchedules] = useState<Set<string>>(new Set());
   const scheduleKeys = tree.flatMap((scope) => scope.children.map((schedule) => schedule.key));
@@ -158,7 +158,7 @@ export function StatusSummary({ tree, total, onDownload }: { tree: ProgressRow[]
     const label = (
       <>
         {LEVEL_ICON[row.level]}
-        {row.level !== 'group' && <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{row.level === 'scope' ? 'Scope' : 'Schedule'}</span>}
+        {row.level !== 'group' && <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{row.level === 'scope' ? levels.scope : levels.schedule}</span>}
         <span className={cn('min-w-0 break-words', row.level === 'scope' && 'font-bold', row.level === 'schedule' && 'font-semibold', row.level === 'group' && !row.group && 'italic text-muted-foreground')}>{row.name}</span>
       </>
     );
@@ -177,7 +177,7 @@ export function StatusSummary({ tree, total, onDownload }: { tree: ProgressRow[]
     <TableCard
       title="Status summary"
       icon={Sigma}
-      description="Every scope, schedule and group: drawings approved, with the client, with SEL, not submitted and overdue."
+      description={`Every ${levels.scope.toLowerCase()}, ${levels.schedule.toLowerCase()} and ${levels.group.toLowerCase()}: drawings approved, with the client, with SEL, not submitted and overdue.`}
       scroll="natural"
       actions={
         <>
@@ -207,7 +207,9 @@ export function StatusSummary({ tree, total, onDownload }: { tree: ProgressRow[]
       <Table containerClassName="hidden sm:block">
         <TableHeader>
           <TableRow>
-            <TableHead className="min-w-[16rem]">Scope › Schedule › Group</TableHead>
+            <TableHead className="min-w-[16rem]">
+              {levels.scope} › {levels.schedule} › {levels.group}
+            </TableHead>
             {NUMBER_COLUMNS.map(([header]) => (
               <TableHead key={header} className="text-right">
                 {header}

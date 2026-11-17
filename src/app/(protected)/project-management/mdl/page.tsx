@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
+  Download,
   FileBarChart2,
   FileStack,
   GanttChart,
@@ -22,6 +23,7 @@ import {
   ShoppingCart,
   Table2,
   Trash2,
+  type LucideIcon,
 } from "lucide-react";
 import {
   collection,
@@ -140,6 +142,10 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
 import { Badge } from "@/components/ui/badge";
+import { CourtBadge, CourtChips } from "@/components/master-drawing-list/mdl-ui";
+import { courtCounts, inCourt, isCourtFilter, matchesSearch, type CourtFilter } from "@/lib/master-drawing-list/register";
+import { localToday, pmMdlFileName, pmRegisterSheet, toDrawingItems } from "@/lib/mdl-drawing-items";
+import { exportWorkbook } from "@/lib/report-excel";
 
 type ProjectMapping = {
   id: string;
@@ -232,6 +238,22 @@ const onStripKey = (event: KeyboardEvent, action: () => void) => {
   }
 };
 
+// The views, in the Master Drawing List's order and tones: Reports first — the page opens on the
+// register's figures, as the module does — then the worklists and the two plan views.
+type MdlView = "reports" | "pending" | "register" | "calendar" | "gantt";
+const DEFAULT_VIEW: MdlView = "reports";
+const VIEWS: Record<MdlView, { label: string; icon: LucideIcon; color: string; bg: string }> = {
+  reports: { label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
+  pending: { label: "Pending Tasks", icon: ListTodo, color: "text-rose-600", bg: "bg-rose-100" },
+  register: { label: "Register", icon: Table2, color: "text-sky-600", bg: "bg-sky-100" },
+  calendar: { label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
+  gantt: { label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
+};
+const isMdlView = (value: string | null | undefined): value is MdlView => Boolean(value && Object.prototype.hasOwnProperty.call(VIEWS, value));
+
+// Sentinel for "no filter" in the register's selects — Radix Select cannot hold an empty string.
+const ALL = "all";
+
 export default function MdlPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -249,14 +271,21 @@ export default function MdlPage() {
   );
 
   // The active view is kept in the URL (`?view=`) so refreshing, sharing a link, or navigating
-  // back doesn't silently reset you to "Pending Tasks".
-  const activeTab = searchParams?.get("view") || "pending";
+  // back doesn't silently reset you to Reports.
+  const viewParam = searchParams?.get("view");
+  const activeTab: MdlView = isMdlView(viewParam) ? viewParam : DEFAULT_VIEW;
   const setActiveTab = (value: string) => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
-    if (value === "pending") params.delete("view");
+    if (value === DEFAULT_VIEW) params.delete("view");
     else params.set("view", value);
     router.replace(`/project-management/mdl?${params.toString()}`);
   };
+
+  // The register's filters, as on the Master Drawing List's register. They only narrow what is shown.
+  const [registerCourt, setRegisterCourt] = useState<CourtFilter | null>(null);
+  const [registerSearch, setRegisterSearch] = useState("");
+  const [registerScope, setRegisterScope] = useState<string>(ALL);
+  const [registerStatus, setRegisterStatus] = useState<string>(ALL);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
@@ -424,11 +453,37 @@ export default function MdlPage() {
     [boqItems, drawings],
   );
 
+  // The same rows read as the Master Drawing List's drawing items, for its figures and its ball in
+  // court. Read-only: every action below still works on the BOQ item and its drawing record.
+  const today = localToday();
+  const drawingItems = useMemo(() => toDrawingItems(mdlRows, mappingId), [mdlRows, mappingId]);
+  const drawingItemById = useMemo(() => new Map(drawingItems.map((entry) => [entry.id, entry])), [drawingItems]);
+
+  const registerScopes = useMemo(() => [...new Set(drawingItems.map((entry) => entry.scope))], [drawingItems]);
+  const registerFiltering = Boolean(registerCourt || registerSearch.trim() || registerScope !== ALL || registerStatus !== ALL);
+  const registerRows = useMemo(() => {
+    if (!registerFiltering) return mdlRows;
+    return mdlRows.filter((row) => {
+      const entry = drawingItemById.get(row.item.id);
+      if (!entry) return false;
+      if (registerScope !== ALL && entry.scope !== registerScope) return false;
+      if (registerStatus !== ALL && getMdlRollup(row.drawing).status !== registerStatus) return false;
+      if (registerCourt && !inCourt(entry, registerCourt, today)) return false;
+      return matchesSearch(entry, registerSearch);
+    });
+  }, [registerFiltering, mdlRows, drawingItemById, registerScope, registerStatus, registerCourt, registerSearch, today]);
+  const clearRegisterFilters = () => {
+    setRegisterCourt(null);
+    setRegisterSearch("");
+    setRegisterScope(ALL);
+    setRegisterStatus(ALL);
+  };
+
   // Purchase order → BOQ item → sub-drawing. Items not on any live PO fall back to the Scope 1
   // grouping the register has always used, so nothing marked MDL = Yes disappears from view.
   const { groups: poGroups, ungrouped: unorderedRows } = useMemo(
-    () => groupMdlRowsByPo(mdlRows, purchaseOrders),
-    [mdlRows, purchaseOrders],
+    () => groupMdlRowsByPo(registerRows, purchaseOrders),
+    [registerRows, purchaseOrders],
   );
 
   const scopeGroups = useMemo(() => {
@@ -473,6 +528,24 @@ export default function MdlPage() {
     () => mdlRows.filter((row) => isMdlPendingTask(row.drawing, poInfoByBoqItemId.has(row.item.id))).length,
     [mdlRows, poInfoByBoqItemId],
   );
+  const poItemIds = useMemo(() => new Set(poInfoByBoqItemId.keys()), [poInfoByBoqItemId]);
+
+  /** A group strip is open when it was opened, or while a filter is on — as the module's register does. */
+  const isGroupOpen = (key: string) => registerFiltering || expandedGroups.has(key);
+
+  /** The register as on screen (filters applied), one row per BOQ item and sub-drawing. */
+  const exportRegister = async () => {
+    if (!mapping) return;
+    try {
+      const entries = registerRows.flatMap((row) => {
+        const entry = drawingItemById.get(row.item.id);
+        return entry ? [{ row, item: entry, poNumbers: poInfoByBoqItemId.get(row.item.id)?.poNumbers ?? [] }] : [];
+      });
+      await exportWorkbook(pmMdlFileName(mapping.projectName, today), [pmRegisterSheet(entries, mapping.projectName, today)]);
+    } catch (error) {
+      toast({ variant: "destructive", title: "Export failed", description: error instanceof Error ? error.message : "The workbook could not be built." });
+    }
+  };
 
   const toggleExpanded = (itemId: string) => {
     setExpandedItems((current) => {
@@ -839,7 +912,17 @@ export default function MdlPage() {
   // Every cell holds one line. What used to sit stacked under the description — the drawing
   // roll-up bar, and a sub-drawing's assignee and vendor link — now has its own column, so a row
   // is one line tall and the eye can scan down a column instead of re-reading a block per row.
-  const REGISTER_COLUMN_COUNT = 16;
+  const REGISTER_COLUMN_COUNT = 17;
+
+  /**
+   * Who has to act next: on a sub-drawing (`subIndex`), or on an item's own drawing when it has no
+   * sub-drawings — an item with them has no single court, as it has no single stage.
+   */
+  const registerCourtCell = (itemId: string, subIndex?: number) => {
+    const entry = drawingItemById.get(itemId);
+    const record = subIndex === undefined ? (entry && !entry.subDrawings.length ? entry : undefined) : entry?.subDrawings[subIndex];
+    return record ? <CourtBadge record={record} today={today} /> : <span className="text-muted-foreground">—</span>;
+  };
 
   const registerHead = (
     <TableHeader>
@@ -849,6 +932,9 @@ export default function MdlPage() {
         <TableHead className="min-w-[200px]">Item Description</TableHead>
         <TableHead>Drawings</TableHead>
         <TableHead>Stage</TableHead>
+        {/* Who has to act next, and for how long — the Master Drawing List's column, beside PM's
+            stage, which also covers the vendor's side of the chain. */}
+        <TableHead>Ball in Court</TableHead>
         <TableHead>Assigned To</TableHead>
         <TableHead>Doc No.</TableHead>
         <TableHead>Drawing No.</TableHead>
@@ -950,6 +1036,7 @@ export default function MdlPage() {
               <span className="text-muted-foreground">—</span>
             )}
           </TableCell>
+          <TableCell className="whitespace-nowrap">{registerCourtCell(item.id)}</TableCell>
           {/* Assignment is a property of a sub-drawing, not of the BOQ item's own record, so this
               column is only ever filled on the expanded rows. */}
           <TableCell>—</TableCell>
@@ -1051,6 +1138,7 @@ export default function MdlPage() {
                   <TableCell className="whitespace-nowrap">
                     <StatusBadge status={subStage} tone={pmStatusTone(subStage)} />
                   </TableCell>
+                  <TableCell className="whitespace-nowrap">{registerCourtCell(item.id, subIndex)}</TableCell>
                   <TableCell className="max-w-[140px] whitespace-nowrap">
                     <span className="flex items-center gap-1 truncate text-xs">
                       <span className={cn("truncate", !sub.assignedToName && "text-muted-foreground")}>
@@ -1254,6 +1342,7 @@ export default function MdlPage() {
         return <StatusBadge status={stage} tone={pmStatusTone(stage)} />;
       },
     },
+    { header: "Ball in Court", cell: ({ item }) => registerCourtCell(item.id) },
     { header: "Doc No.", cell: ({ drawing }) => drawing?.docNo || "—" },
     { header: "Drawing No.", cell: ({ drawing }) => <span title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</span> },
     { header: "Planned Start", cell: ({ rollup }) => formatMdlDate(rollup.plannedStartDate) },
@@ -1354,11 +1443,12 @@ export default function MdlPage() {
       // "Re-collect from Vendor" beside the title would leave it a word wide.
       header: "Stage",
       mobile: "title",
-      cell: ({ item, sub }) => {
+      cell: ({ item, sub, outline }) => {
         const subStage = computeMdlDrawingStage(sub, poInfoByBoqItemId.has(item.id));
         return (
           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
             <StatusBadge status={subStage} tone={pmStatusTone(subStage)} />
+            {registerCourtCell(item.id, outline[outline.length - 1])}
             <StatusBadge status={sub.status} tone={pmStatusTone(sub.status)} />
             <span className={cn(sub.assignedToName && "text-foreground")}>{sub.assignedToName || "Unassigned"}</span>
             {sub.collection?.fileUrl && (
@@ -1480,7 +1570,7 @@ export default function MdlPage() {
 
   /** A collapsible group strip, and its cards when open. */
   const phoneGroup = (key: string, heading: ReactNode, cards: () => ReactNode) => {
-    const isOpen = expandedGroups.has(key);
+    const isOpen = isGroupOpen(key);
     return (
       <div key={key}>
         <div
@@ -1543,51 +1633,75 @@ export default function MdlPage() {
     <main className={cn(JMC_MAIN_CLASS, "max-sm:[--card-pad:1rem]")}>
       {/* The shared Project Management header — the module's own furniture, which happens to live
           in jmc-page-shell.tsx because that is where it was first factored out. */}
+      {/* As on the Master Drawing List: the header names the view on screen, under the module's
+          name, with the view's own action (Export on the Register) beside Add BOQ Item. */}
       <PageHeader
-        title="Design & Engineering"
+        eyebrow="Design & Engineering"
+        title={VIEWS[activeTab].label}
         description={`Drawing submission and approval for every BOQ item marked MDL = Yes in ${mapping.projectName}.`}
-        icon={FileStack}
+        icon={VIEWS[activeTab].icon}
         backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
         backLabel="Back to Project Management"
         actions={
-          canEdit ? (
-            <Button size="sm" onClick={() => setIsAddDialogOpen(true)}>
-              <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
-            </Button>
+          activeTab === "register" || canEdit ? (
+            <>
+              {activeTab === "register" && (
+                <Button size="sm" variant="outline" onClick={() => void exportRegister()} disabled={!registerRows.length}>
+                  <Download className="mr-2 h-4 w-4" /> Export
+                </Button>
+              )}
+              {canEdit && (
+                <Button size="sm" onClick={() => setIsAddDialogOpen(true)}>
+                  <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
+                </Button>
+              )}
+            </>
           ) : undefined
         }
       />
 
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         <SidebarTabsList
-          items={[
-            { value: "pending", label: "Pending Tasks", icon: ListTodo, color: "text-rose-600", bg: "bg-rose-100", count: pendingTaskCount },
-            { value: "register", label: "Register", icon: Table2, color: "text-sky-600", bg: "bg-sky-100" },
-            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
-            { value: "gantt", label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
-            { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
-          ]}
+          items={(Object.keys(VIEWS) as MdlView[]).map((value) => ({
+            value,
+            ...VIEWS[value],
+            ...(value === "pending" ? { count: pendingTaskCount } : {}),
+          }))}
           activeValue={activeTab}
           onChange={setActiveTab}
           title="MDL Views"
-          description="Pending tasks, register, calendar, Gantt & reports"
+          description="Reports, pending tasks, register, calendar & Gantt"
           icon={FileStack}
           gradient="from-sky-500 to-blue-600"
         />
 
         <div className="min-w-0 flex-1 space-y-4">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsContent value="pending" className="mt-0">
-          <MdlPendingTasks
+        <TabsContent value="reports" className="mt-0">
+          <MdlReports
+            items={drawingItems}
             rows={mdlRows}
-            purchaseOrders={purchaseOrders}
+            poItemIds={poItemIds}
+            today={today}
+            projectName={mapping.projectName}
             mappingId={mappingId}
             onSelectItem={handleSelectMdlItem}
           />
         </TabsContent>
 
+        <TabsContent value="pending" className="mt-0">
+          <MdlPendingTasks
+            rows={mdlRows}
+            purchaseOrders={purchaseOrders}
+            mappingId={mappingId}
+            drawingItems={drawingItemById}
+            today={today}
+            onSelectItem={handleSelectMdlItem}
+          />
+        </TabsContent>
+
         <TabsContent value="register" className="mt-0 space-y-5">
-          {poGroups.length || scopeGroups.length ? (
+          {mdlRows.length ? (
             <TableCard
               description={
                 <>
@@ -1595,12 +1709,62 @@ export default function MdlPage() {
                   {scopeGroups.length
                     ? ` · ${scopeGroups.length} group${scopeGroups.length === 1 ? "" : "s"} not yet ordered`
                     : ""}
+                  {` · ${registerRows.length} of ${mdlRows.length} item${mdlRows.length === 1 ? "" : "s"}`}
                 </>
               }
+              // The Master Drawing List's register filters: where the ball is, then search, Scope 1
+              // and status. They narrow what is shown; the groups and every action are unchanged.
+              toolbar={
+                <div className="space-y-3">
+                  <CourtChips
+                    counts={courtCounts(drawingItems, today)}
+                    total={drawingItems.length}
+                    value={registerCourt}
+                    onChange={(value) => setRegisterCourt(isCourtFilter(value) ? value : null)}
+                  />
+                  <FilterBar
+                    search={{
+                      value: registerSearch,
+                      onChange: setRegisterSearch,
+                      placeholder: "Search description, numbers, category, remark…",
+                      label: "Search the register",
+                    }}
+                    activeCount={[registerScope, registerStatus].filter((value) => value !== ALL).length}
+                    onClear={clearRegisterFilters}
+                  >
+                    <Select value={registerScope} onValueChange={setRegisterScope}>
+                      <SelectTrigger aria-label="Scope 1" className="text-left">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ALL}>All Scope 1</SelectItem>
+                        {registerScopes.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={registerStatus} onValueChange={setRegisterStatus}>
+                      <SelectTrigger aria-label="Status" className="text-left">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={ALL}>All statuses</SelectItem>
+                        {MDL_OVERALL_STATUSES.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {value}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FilterBar>
+                </div>
+              }
               // With every group closed by default, there has to be a way back to the full view
-              // in one action rather than N clicks.
+              // in one action rather than N clicks. A filter opens every group, so they step aside.
               actions={
-                <>
+                registerFiltering || !(poGroups.length || scopeGroups.length) ? undefined : <>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1624,12 +1788,23 @@ export default function MdlPage() {
                 </>
               }
             >
+              {!(poGroups.length || scopeGroups.length) ? (
+                <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
+                  <FileStack className="h-9 w-9 text-muted-foreground/60" />
+                  <p className="font-medium">No item matches these filters</p>
+                  <p className="text-sm text-muted-foreground">Clear a filter or the search to see more.</p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={clearRegisterFilters}>
+                    Clear filters
+                  </Button>
+                </div>
+              ) : (
+                <>
                   <Table containerClassName="hidden sm:block">
                     {registerHead}
                     <TableBody>
                       {poGroups.map((group, groupIndex) => {
                         const key = `po:${group.po.poId}`;
-                        const isOpen = expandedGroups.has(key);
+                        const isOpen = isGroupOpen(key);
                         return [
                           <TableRow
                             key={key}
@@ -1649,7 +1824,7 @@ export default function MdlPage() {
 
                       {scopeGroups.map(([scope, rows]) => {
                         const key = `scope:${scope}`;
-                        const isOpen = expandedGroups.has(key);
+                        const isOpen = isGroupOpen(key);
                         return [
                           <TableRow
                             key={key}
@@ -1672,17 +1847,19 @@ export default function MdlPage() {
                 <div className="divide-y sm:hidden">
                   {poGroups.map((group, groupIndex) => {
                     const key = `po:${group.po.poId}`;
-                    return phoneGroup(key, poGroupHeading(group, groupIndex, expandedGroups.has(key)), () =>
+                    return phoneGroup(key, poGroupHeading(group, groupIndex, isGroupOpen(key)), () =>
                       registerPhoneCards(group.rows, [groupIndex]),
                     );
                   })}
                   {scopeGroups.map(([scope, rows]) => {
                     const key = `scope:${scope}`;
-                    return phoneGroup(key, scopeGroupHeading(scope, rows, expandedGroups.has(key)), () =>
+                    return phoneGroup(key, scopeGroupHeading(scope, rows, isGroupOpen(key)), () =>
                       registerPhoneCards(rows, []),
                     );
                   })}
                 </div>
+                </>
+              )}
             </TableCard>
           ) : (
             <Card className="border-dashed">
@@ -1727,9 +1904,6 @@ export default function MdlPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="reports" className="mt-0">
-          <MdlReports rows={mdlRows} onSelectItem={handleSelectMdlItem} />
-        </TabsContent>
         </Tabs>
         </div>
       </div>

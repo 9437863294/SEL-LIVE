@@ -1,301 +1,399 @@
 "use client";
 
+/**
+ * Design & Engineering › Reports — the Master Drawing List's dashboard over Project Management's MDL
+ * register, laid out the way EPC document control reviews a drawing register:
+ *
+ *   1. Where the ball is: approved share, and how many drawings sit with the client, with SEL or are
+ *      not yet submitted, with how long they have waited.
+ *   2. Control figures: overdue against plan, late to submit, what the vendors still owe and what is
+ *      collected but not yet submitted (PM's own chain), turnaround on both sides, first-time
+ *      approvals, rounds to approval.
+ *   3. Trends: planned against actual submissions and approvals (S-curve), monthly throughput, the
+ *      client's verdict per round, ageing, and progress per Scope 1 and Scope 2.
+ *   4. The status summary: every Scope 1, Scope 2 and Category 1, downloadable.
+ *   5. What needs attention, each row opening its drawing.
+ *
+ * Figures count drawings — each sub-drawing, else the BOQ item itself — and come from the module's own
+ * functions (`master-drawing-list/analytics.ts`) over the register read as drawing items
+ * (`mdl-drawing-items.ts`). Nothing here writes.
+ */
+
 import { useMemo } from "react";
-import { AlertTriangle, CalendarClock, CheckCircle2, Clock, FileStack, Layers } from "lucide-react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { chartChrome } from "@/components/ui/chart";
-import StatCard from "@/components/project-management/stat-card";
-import { PmDataList, type PmListColumn } from "@/components/project-management/pm-shell";
-import { pmStatusTone } from "@/components/project-management/pm-status-tones";
-import { TableCard } from "@/components/shared/table-card";
+  AlarmClock,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardCheck,
+  FileStack,
+  Hourglass,
+  PackageSearch,
+  Repeat,
+  Send,
+  Target,
+  TrendingUp,
+  Undo2,
+  type LucideIcon,
+} from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { DataList, type ListColumn } from "@/components/shared/data-list";
+import { KpiCard, KpiGrid } from "@/components/shared/kpi-card";
+import { SectionHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { TableCard } from "@/components/shared/table-card";
+import { Card, CardContent } from "@/components/ui/card";
+import { chartChrome } from "@/components/ui/chart";
+import { MDL_COLOURS, ScopeProgress, StatusSummary } from "@/components/master-drawing-list/progress-summary";
+import { useToast } from "@/hooks/use-toast";
+import { dashboardStats, progressOf, progressSheet, progressTree, type UnitDays } from "@/lib/master-drawing-list/analytics";
+import { COURT_LABEL, formatMdlDate, type DrawingItem, type DrawingUnit } from "@/lib/master-drawing-list/drawings";
+import { PM_MDL_LEVELS, pmMdlFileName } from "@/lib/mdl-drawing-items";
+import { computeMdlDrawingStage, getMdlSubDrawings, isAwaitingVendorCollection, type MdlRow } from "@/lib/mdl";
+import { exportWorkbook } from "@/lib/report-excel";
 import { cn } from "@/lib/utils";
-import {
-  MDL_OVERALL_STATUSES,
-  MDL_REVISION_ROUNDS,
-  formatMdlDate,
-  getLatestRevisionAcrossItem,
-  getMdlRollup,
-  isMdlApproved,
-  type MdlOverallStatus,
-  type MdlRollup,
-  type MdlRow,
-} from "@/lib/mdl";
 
-const STATUS_COLORS: Record<MdlOverallStatus, string> = {
-  Pending: "#94a3b8",
-  "In Progress": "#3b82f6",
-  Approved: "#10b981",
-  "Approved with Comments": "#f59e0b",
-  Rejected: "#ef4444",
-};
+const C = MDL_COLOURS;
 
-const UPCOMING_WINDOW_DAYS = 14;
+function ChartCard({ title, description, children, className }: { title: string; description?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <Card className={cn("min-w-0", className)}>
+      <CardContent className="p-4 sm:p-5">
+        <SectionHeader title={title} description={description} />
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
 
-// `id` is the BOQ item's, so the overdue and due-soon lists can render through PmDataList.
-type ReportRow = MdlRow & { id: string; rollup: MdlRollup };
+function Ring({ value }: { value: number }) {
+  const radius = 42;
+  const length = 2 * Math.PI * radius;
+  return (
+    <svg viewBox="0 0 100 100" className="h-24 w-24 shrink-0 sm:h-28 sm:w-28" role="img" aria-label={`${value}% approved`}>
+      <circle cx="50" cy="50" r={radius} fill="none" stroke="rgb(255 255 255 / 0.15)" strokeWidth="9" />
+      <circle cx="50" cy="50" r={radius} fill="none" stroke="#34d399" strokeWidth="9" strokeLinecap="round" strokeDasharray={`${(value / 100) * length} ${length}`} transform="rotate(-90 50 50)" />
+      <text x="50" y="49" textAnchor="middle" className="fill-white text-[22px] font-bold">
+        {value}%
+      </text>
+      <text x="50" y="65" textAnchor="middle" className="fill-white/70 text-[9px] font-medium uppercase tracking-wider">
+        approved
+      </text>
+    </svg>
+  );
+}
+
+function HeroTile({ label, value, hint, icon: Icon, dot }: { label: string; value: number; hint?: string; icon: LucideIcon; dot: string }) {
+  return (
+    <div className="min-w-0 rounded-xl bg-white/10 p-3 ring-1 ring-inset ring-white/15 backdrop-blur-sm">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-white/75">
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: dot }} aria-hidden="true" />
+        <span className="truncate">{label}</span>
+      </p>
+      <p className="mt-1 flex items-baseline gap-1.5">
+        <span className="text-2xl font-bold tabular-nums text-white">{value.toLocaleString("en-IN")}</span>
+        <Icon className="h-3.5 w-3.5 text-white/60" aria-hidden="true" />
+      </p>
+      {hint && <p className="mt-0.5 truncate text-[11px] text-white/70">{hint}</p>}
+    </div>
+  );
+}
+
+/** A drawing in an attention list, with the Scope 1 › Scope 2 › Category 1 it sits under. */
+function UnitName({ unit }: { unit: DrawingUnit }) {
+  return (
+    <span className="block min-w-0">
+      <span className="block truncate" title={unit.label}>
+        {unit.label}
+      </span>
+      <span className="block truncate text-[11px] text-muted-foreground">
+        {unit.item.slNo ? `BOQ SL ${unit.item.slNo} · ` : ""}
+        {unit.item.scope} › {unit.item.schedule}
+        {unit.item.group ? ` › ${unit.item.group}` : ""}
+      </span>
+    </span>
+  );
+}
+
+const days = (value: number | null, unit = "d") => (value === null ? "—" : `${value}${unit}`);
 
 export default function MdlReports({
+  items,
   rows,
+  poItemIds,
+  today,
+  projectName,
+  mappingId,
   onSelectItem,
 }: {
+  /** The register as drawing items, in the same order as `rows`. */
+  items: DrawingItem[];
   rows: MdlRow[];
-  onSelectItem: (boqItemId: string) => void;
+  /** BOQ items with a live purchase order — what puts a vendor on the hook for their drawings. */
+  poItemIds: ReadonlySet<string>;
+  today: string;
+  projectName: string;
+  mappingId: string;
+  onSelectItem: (boqItemId: string, subDrawingId?: string) => void;
 }) {
-  const total = rows.length;
+  const { toast } = useToast();
+  // PM has no contract review periods to measure against, so "overdue at the client / with SEL" are
+  // not shown rather than guessed.
+  const stats = useMemo(() => dashboardStats(items, today), [items, today]);
+  const tree = useMemo(() => progressTree(items, today), [items, today]);
+  const total = useMemo(() => progressOf(items, today), [items, today]);
 
-  // Every figure below is driven by the rolled-up state of each BOQ item, so an item whose
-  // sub-drawings are still outstanding never reports as approved here while the register
-  // shows it as in progress.
-  const reportRows = useMemo<ReportRow[]>(
-    () => rows.map((row) => ({ ...row, id: row.item.id, rollup: getMdlRollup(row.drawing) })),
-    [rows],
-  );
-
-  const subDrawingTotals = useMemo(
-    () =>
-      reportRows.reduce(
-        (totals, { rollup }) => ({
-          total: totals.total + rollup.subTotal,
-          approved: totals.approved + rollup.subApproved,
-        }),
-        { total: 0, approved: 0 },
-      ),
-    [reportRows],
-  );
-
-  const statusCounts = useMemo(() => {
-    const counts = new Map<MdlOverallStatus, number>(MDL_OVERALL_STATUSES.map((status) => [status, 0]));
-    for (const { rollup } of reportRows) {
-      counts.set(rollup.status, (counts.get(rollup.status) ?? 0) + 1);
+  // The vendor side of PM's chain, by the Drawing page's own rule: a placed PO makes the vendor owe a
+  // sub-drawing until it is collected (or re-collection is asked for), and approval settles it.
+  const vendor = useMemo(() => {
+    let awaiting = 0;
+    let ready = 0;
+    for (const { item, drawing } of rows) {
+      const hasPo = poItemIds.has(item.id);
+      for (const sub of getMdlSubDrawings(drawing)) {
+        if (isAwaitingVendorCollection(sub, hasPo)) awaiting += 1;
+        else if (computeMdlDrawingStage(sub, hasPo) === "Ready for Review") ready += 1;
+      }
     }
-    return counts;
-  }, [reportRows]);
+    return { awaiting, ready };
+  }, [rows, poItemIds]);
 
-  const statusData = useMemo(
-    () =>
-      MDL_OVERALL_STATUSES.map((status) => ({ name: status, value: statusCounts.get(status) ?? 0 })).filter(
-        (entry) => entry.value > 0,
-      ),
-    [statusCounts],
-  );
-
-  const stageData = useMemo(() => {
-    const counts = new Map(MDL_REVISION_ROUNDS.map((round) => [round, 0]));
-    for (const { drawing } of reportRows) {
-      if (!drawing) continue;
-      const round = getLatestRevisionAcrossItem(drawing)?.round ?? "R0";
-      counts.set(round, (counts.get(round) ?? 0) + 1);
+  const downloadSummary = async () => {
+    try {
+      await exportWorkbook(pmMdlFileName(projectName, today, "MDL-Summary"), [progressSheet(tree, total, { short: projectName }, PM_MDL_LEVELS)]);
+    } catch (error) {
+      toast({ variant: "destructive", title: "Download failed", description: error instanceof Error ? error.message : "The workbook could not be built." });
     }
-    return MDL_REVISION_ROUNDS.map((round) => ({ name: round, count: counts.get(round) ?? 0 }));
-  }, [reportRows]);
+  };
 
-  const overdueRows = useMemo(
-    () =>
-      reportRows
-        .filter((row) => row.rollup.overdue)
-        .sort((a, b) => a.rollup.plannedEndDate.localeCompare(b.rollup.plannedEndDate)),
-    [reportRows],
-  );
+  if (!items.length) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
+          <FileStack className="h-10 w-10 text-muted-foreground" />
+          <div>
+            <p className="font-medium">No MDL items yet</p>
+            <p className="text-sm text-muted-foreground">Mark a BOQ item&apos;s MDL field as &quot;Yes&quot;, or add one with Add BOQ Item, and its figures appear here.</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const upcomingRows = useMemo(() => {
-    const today = new Date();
-    const horizon = new Date();
-    horizon.setDate(horizon.getDate() + UPCOMING_WINDOW_DAYS);
-    return reportRows
-      .filter(({ drawing, rollup }) => {
-        if (!drawing || rollup.overdue || isMdlApproved(rollup.status)) return false;
-        if (!rollup.plannedEndDate) return false;
-        const end = new Date(`${rollup.plannedEndDate}T00:00:00`);
-        return end >= today && end <= horizon;
-      })
-      .sort((a, b) => a.rollup.plannedEndDate.localeCompare(b.rollup.plannedEndDate));
-  }, [reportRows]);
+  const nowPoint = stats.sCurve.find((point) => point.month === today.slice(0, 7));
+  const variance = nowPoint ? nowPoint.actualSubmission - nowPoint.plannedSubmission : null;
+  const avgWait = (list: UnitDays[]) => (list.length ? Math.round(list.reduce((sum, entry) => sum + entry.days, 0) / list.length) : null);
+  const courtData = [
+    { name: COURT_LABEL.closed, value: stats.courts.closed, fill: C.approved },
+    { name: COURT_LABEL.client, value: stats.courts.client, fill: C.client },
+    { name: COURT_LABEL.sel, value: stats.courts.sel, fill: C.sel },
+    { name: COURT_LABEL.not_started, value: stats.courts.not_started, fill: C.notStarted },
+  ].filter((entry) => entry.value > 0);
+  const hasPlan = stats.sCurve.some((point) => point.plannedSubmission || point.plannedApproval);
+  const drawingPageHref = `/project-management/drawing?project=${encodeURIComponent(mappingId)}`;
 
-  const scopeProgress = useMemo(() => {
-    const map = new Map<string, { total: number; approved: number }>();
-    for (const { item, rollup } of reportRows) {
-      const scope = String(item["Scope 1"] ?? "").trim() || "Ungrouped";
-      const entry = map.get(scope) ?? { total: 0, approved: 0 };
-      entry.total += 1;
-      if (isMdlApproved(rollup.status)) entry.approved += 1;
-      map.set(scope, entry);
-    }
-    return Array.from(map.entries()).map(([scope, { total: scopeTotal, approved }]) => ({
-      scope,
-      total: scopeTotal,
-      approved,
-      percent: scopeTotal ? Math.round((approved / scopeTotal) * 100) : 0,
-    }));
-  }, [reportRows]);
-
-  const approvedCount = (statusCounts.get("Approved") ?? 0) + (statusCounts.get("Approved with Comments") ?? 0);
-  const rejectedCount = statusCounts.get("Rejected") ?? 0;
-  const inProgressCount = (statusCounts.get("Pending") ?? 0) + (statusCounts.get("In Progress") ?? 0);
-
-  // Shared by the Overdue and Due-soon lists: a card per item on a phone, the three-column table
-  // from `sm`. `overdue` only colours the date.
-  const dueColumns = (overdue: boolean): PmListColumn<ReportRow>[] => [
-    {
-      header: "Item",
-      mobile: "title",
-      className: "max-w-[200px] truncate",
-      cell: ({ item }) => String(item.Description ?? "—"),
-    },
-    {
-      header: "Planned End",
-      className: "whitespace-nowrap",
-      cell: ({ rollup }) => (
-        <span className={overdue ? "text-red-600" : undefined}>{formatMdlDate(rollup.plannedEndDate)}</span>
-      ),
-    },
-    {
-      header: "Status",
-      mobile: "aside",
-      cell: ({ rollup }) => <StatusBadge status={rollup.status} tone={pmStatusTone(rollup.status)} />,
-    },
+  const unitColumns = (kind: "client" | "sel" | "overdue"): ListColumn<UnitDays & { id: string }>[] => [
+    { header: "Drawing", mobile: "title", className: "max-w-[18rem]", cell: ({ unit }) => <UnitName unit={unit} /> },
+    { header: kind === "overdue" ? "Planned end" : "Since", className: "whitespace-nowrap", cell: ({ since }) => formatMdlDate(since) },
+    { header: "Days", mobile: "aside", align: "right", cell: ({ days: d }) => <span className={cn("font-semibold tabular-nums", d > 30 ? "text-rose-700" : "text-slate-800")}>{d}</span> },
   ];
-
-  // The list sits inside the section's TableCard, so its desktop frame is dropped (the TableCard is
-  // the frame) and on a phone the cards get the padding the TableCard body does not give them.
-  const DUE_LIST_CLASS = "max-sm:px-3 max-sm:pb-3 sm:rounded-none sm:border-0 sm:shadow-none";
+  const listOf = (list: UnitDays[]) => list.map((entry, index) => ({ ...entry, id: `${entry.unit.item.id}-${entry.unit.sub?.id ?? "item"}-${index}` }));
+  const openUnit = (unit: DrawingUnit) => onSelectItem(unit.item.id, unit.sub?.id);
 
   return (
     <div className="space-y-5">
-      <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3", subDrawingTotals.total ? "lg:grid-cols-6" : "lg:grid-cols-5")}>
-        <StatCard label="Total Items" value={total} icon={FileStack} tone="bg-slate-100 text-slate-700" />
-        {subDrawingTotals.total > 0 && (
-          <StatCard
-            label="Sub-drawings Approved"
-            value={`${subDrawingTotals.approved}/${subDrawingTotals.total}`}
-            icon={Layers}
-            tone="bg-sky-100 text-sky-700"
-          />
-        )}
-        <StatCard label="Approved" value={approvedCount} icon={CheckCircle2} tone="bg-emerald-100 text-emerald-700" />
-        <StatCard label="Pending / In Progress" value={inProgressCount} icon={Clock} tone="bg-blue-100 text-blue-700" />
-        <StatCard label="Rejected" value={rejectedCount} icon={AlertTriangle} tone="bg-red-100 text-red-700" />
-        <StatCard label="Overdue" value={overdueRows.length} icon={CalendarClock} tone="bg-orange-100 text-orange-700" />
+      {/* 1 · where the ball is */}
+      <section className="wd-hero keep-light relative overflow-hidden rounded-2xl p-4 text-white shadow-lg sm:p-6">
+        <div className="wd-hero-dots pointer-events-none absolute inset-0" aria-hidden="true" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center">
+          <div className="flex min-w-0 items-center gap-4 lg:w-[22rem] lg:shrink-0">
+            <Ring value={stats.approvedPct} />
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">Master Drawing List</p>
+              <h2 className="mt-0.5 line-clamp-2 text-lg font-semibold leading-snug sm:text-xl">{projectName}</h2>
+              <p className="mt-1 text-xs text-white/75">
+                {stats.units.toLocaleString("en-IN")} drawings in {stats.items.toLocaleString("en-IN")} BOQ items · {stats.submittedPct}% submitted
+              </p>
+              {variance !== null && hasPlan && (
+                <p className={cn("mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium", variance >= 0 ? "bg-emerald-400/20 text-emerald-100" : "bg-rose-400/20 text-rose-100")}>
+                  <TrendingUp className="h-3 w-3" aria-hidden="true" />
+                  {variance >= 0 ? `${variance} ahead of` : `${-variance} behind`} the submission plan
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <HeroTile label={COURT_LABEL.client} value={stats.courts.client} hint={stats.longestClient.length ? `avg ${avgWait(stats.longestClient)} d waiting` : "nothing waiting"} icon={Send} dot={C.client} />
+            <HeroTile label={COURT_LABEL.sel} value={stats.courts.sel} hint={stats.longestSel.length ? `avg ${avgWait(stats.longestSel)} d to comply` : "nothing to comply"} icon={Undo2} dot={C.sel} />
+            <HeroTile label={COURT_LABEL.not_started} value={stats.courts.not_started} hint={stats.lateToSubmit ? `${stats.lateToSubmit} past planned date` : "none late"} icon={Hourglass} dot={C.notStarted} />
+            <HeroTile label={COURT_LABEL.closed} value={stats.courts.closed} hint={stats.firstTime.pct !== null ? `${stats.firstTime.pct}% at first submission` : undefined} icon={CheckCircle2} dot={C.approved} />
+          </div>
+        </div>
+      </section>
+
+      {/* 2 · control figures */}
+      <KpiGrid>
+        <KpiCard label="Overdue vs plan" value={stats.overdue} hint="planned end passed" icon={AlarmClock} tone="rose" accent />
+        <KpiCard label="Late to submit" value={stats.lateToSubmit} hint="planned start passed" icon={CalendarClock} tone="orange" accent />
+        <KpiCard label="Awaiting vendor" value={vendor.awaiting} hint="PO placed, not collected" icon={PackageSearch} tone="amber" accent href={drawingPageHref} />
+        <KpiCard label="Ready for review" value={vendor.ready} hint="collected, not submitted" icon={ClipboardCheck} tone="indigo" accent />
+        <KpiCard label="Client turnaround" value={days(stats.avgClientDays, " d")} hint="average per round" icon={Send} tone="cyan" accent />
+        <KpiCard label="SEL resubmission" value={days(stats.avgSelDays, " d")} hint="comments to next round" icon={Repeat} tone="violet" accent />
+        <KpiCard label="First-time approval" value={stats.firstTime.pct === null ? "—" : `${stats.firstTime.pct}%`} hint={`${stats.firstTime.atFirst} of ${stats.firstTime.approved} at R0`} icon={Target} tone="emerald" accent />
+        <KpiCard label="Rounds to approval" value={stats.avgRounds ?? "—"} hint="average submissions" icon={FileStack} tone="slate" accent />
+      </KpiGrid>
+
+      {/* 3 · trends */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <ChartCard title="Planned vs actual" description="Cumulative submissions and approvals against the plan (planned dashed)." className="xl:col-span-2">
+          {hasPlan || stats.sCurve.some((point) => point.actualSubmission) ? (
+            <div className="h-72">
+              <ResponsiveContainer>
+                <LineChart data={stats.sCurve} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
+                  <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" stroke={chartChrome.axis} tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={16} />
+                  <YAxis stroke={chartChrome.axis} tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip {...chartChrome.tooltip} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line name="Planned submission" dataKey="plannedSubmission" stroke={C.submission} strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  <Line name="Submitted" dataKey="actualSubmission" stroke={C.submission} strokeWidth={2.5} dot={false} connectNulls={false} />
+                  <Line name="Planned approval" dataKey="plannedApproval" stroke={C.approved} strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  <Line name="Approved" dataKey="actualApproval" stroke={C.approved} strokeWidth={2.5} dot={false} connectNulls={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="py-16 text-center text-sm text-muted-foreground">Set planned dates or record submissions to draw the curve.</p>
+          )}
+        </ChartCard>
+        <ChartCard title="Ball in court" description="Who has to act next, per drawing.">
+          <div className="h-72">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={courtData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={2} stroke={chartChrome.surface}>
+                  {courtData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.fill} />
+                  ))}
+                </Pie>
+                <Tooltip {...chartChrome.tooltip} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartCard>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Status distribution</CardTitle>
-          </CardHeader>
-          <CardContent className="h-64">
-            {statusData.length ? (
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie stroke={chartChrome.surface} data={statusData} dataKey="value" nameKey="name" outerRadius={85} label>
-                    {statusData.map((entry) => (
-                      <Cell key={entry.name} fill={STATUS_COLORS[entry.name as MdlOverallStatus] ?? "#94a3b8"} />
-                    ))}
-                  </Pie>
-                  <Tooltip {...chartChrome.tooltip} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="flex h-full items-center justify-center text-sm text-muted-foreground">No data yet</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Current submission stage</CardTitle>
-            <CardDescription>How many drawings are currently sitting at each revision round</CardDescription>
-          </CardHeader>
-          <CardContent className="h-56 sm:h-64">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <ChartCard title="Monthly throughput" description="Rounds submitted, comments received and approvals, by month.">
+          <div className="h-64">
             <ResponsiveContainer>
-              <BarChart data={stageData}>
-                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" />
-                <XAxis stroke={chartChrome.axis} dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis stroke={chartChrome.axis} allowDecimals={false} tick={{ fontSize: 12 }} />
+              <BarChart data={stats.monthly} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barGap={2}>
+                <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="label" stroke={chartChrome.axis} tick={{ fontSize: 11 }} />
+                <YAxis stroke={chartChrome.axis} tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip {...chartChrome.tooltip} />
-                <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar name="Submitted" dataKey="submitted" fill={C.submission} radius={[4, 4, 0, 0]} />
+                <Bar name="Comments" dataKey="comments" fill={C.sel} radius={[4, 4, 0, 0]} />
+                <Bar name="Approved" dataKey="approved" fill={C.approved} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          </div>
+        </ChartCard>
+        <ChartCard title="Client verdict per round" description="How each revision round came back.">
+          {stats.outcomes.length ? (
+            <div className="h-64">
+              <ResponsiveContainer>
+                <BarChart data={stats.outcomes} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                  <CartesianGrid stroke={chartChrome.grid} strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="round" stroke={chartChrome.axis} tick={{ fontSize: 11 }} />
+                  <YAxis stroke={chartChrome.axis} tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip {...chartChrome.tooltip} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar name="Approved" dataKey="approved" stackId="v" fill={C.approved} />
+                  <Bar name="Approved with Comments" dataKey="approvedWithComments" stackId="v" fill={C.withComments} />
+                  <Bar name="Resubmission Required" dataKey="resubmission" stackId="v" fill={C.resubmit} />
+                  <Bar name="Rejected" dataKey="rejected" stackId="v" fill={C.rejected} />
+                  <Bar name="Under Review" dataKey="underReview" stackId="v" fill={C.review} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="py-16 text-center text-sm text-muted-foreground">No round submitted yet.</p>
+          )}
+        </ChartCard>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Scope-wise progress</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {scopeProgress.length ? (
-            scopeProgress.map(({ scope, total: scopeTotal, approved, percent }) => (
-              <div key={scope}>
-                <div className="mb-1 flex items-center justify-between gap-3 text-sm">
-                  <span className="min-w-0 truncate font-medium" title={scope}>{scope}</span>
-                  <span className="shrink-0 whitespace-nowrap text-muted-foreground">
-                    {approved}/{scopeTotal} approved · {percent}%
-                  </span>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <ChartCard title="Ageing" description="How long open drawings have waited, with the client and with SEL.">
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: C.client }} aria-hidden="true" /> With client
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: C.sel }} aria-hidden="true" /> With SEL
+              </span>
+            </div>
+            {stats.ageing.map((band) => {
+              const max = Math.max(1, ...stats.ageing.flatMap((entry) => [entry.client, entry.sel]));
+              return (
+                <div key={band.band} className="grid grid-cols-[4.5rem,1fr] items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="row-span-2 text-muted-foreground">{band.band}</span>
+                  {(["client", "sel"] as const).map((side) => (
+                    <span key={side} className="flex items-center gap-2" title={`${side === "client" ? "With client" : "With SEL"}, ${band.band}: ${band[side]}`}>
+                      <span className="h-2 flex-1 overflow-hidden rounded-r-[4px] bg-muted">
+                        <span className="block h-2 rounded-r-[4px]" style={{ width: `${(band[side] / max) * 100}%`, backgroundColor: side === "client" ? C.client : C.sel }} />
+                      </span>
+                      <span className="w-7 text-right tabular-nums text-foreground">{band[side]}</span>
+                    </span>
+                  ))}
                 </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-emerald-500" style={{ width: `${percent}%` }} />
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">No data yet.</p>
-          )}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </div>
+        </ChartCard>
+        <ChartCard title={`Progress by ${PM_MDL_LEVELS.scope} and ${PM_MDL_LEVELS.schedule}`} description={`Each ${PM_MDL_LEVELS.scope}, then its ${PM_MDL_LEVELS.schedule} lines: approved, with the client, with SEL and not submitted.`}>
+          <ScopeProgress tree={tree} />
+        </ChartCard>
+      </div>
 
+      {/* 4 · the status summary */}
+      <StatusSummary tree={tree} total={total} levels={PM_MDL_LEVELS} onDownload={() => void downloadSummary()} />
+
+      {/* 5 · what needs attention */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <TableCard
-          title="Overdue"
-          description="Planned end date has passed without approval"
-          icon={CalendarClock}
-          count={overdueRows.length}
-          noun="item"
-          scroll="natural"
-        >
-          {overdueRows.length ? (
-            <PmDataList
-              rows={overdueRows}
-              columns={dueColumns(true)}
-              onRowClick={({ item }) => onSelectItem(item.id)}
-              className={DUE_LIST_CLASS}
-            />
-          ) : (
-            <p className="p-4 text-sm text-muted-foreground">Nothing overdue.</p>
-          )}
+        <TableCard title="Longest with the client" description="Submitted and waiting for comments or approval" icon={Send} count={stats.courts.client} noun="drawing" scroll="natural">
+          {stats.longestClient.length ? <DataList rows={listOf(stats.longestClient)} columns={unitColumns("client")} onRowClick={({ unit }) => openUnit(unit)} frameless dense /> : <p className="p-4 text-sm text-muted-foreground">Nothing with the client.</p>}
         </TableCard>
-
-        <TableCard
-          title={`Due in the next ${UPCOMING_WINDOW_DAYS} days`}
-          icon={Clock}
-          count={upcomingRows.length}
-          noun="item"
-          scroll="natural"
-        >
-          {upcomingRows.length ? (
-            <PmDataList
-              rows={upcomingRows}
-              columns={dueColumns(false)}
-              onRowClick={({ item }) => onSelectItem(item.id)}
-              className={DUE_LIST_CLASS}
+        <TableCard title="Longest with SEL" description="Comments back from the client, to revise and resubmit" icon={Undo2} count={stats.courts.sel} noun="drawing" scroll="natural">
+          {stats.longestSel.length ? <DataList rows={listOf(stats.longestSel)} columns={unitColumns("sel")} onRowClick={({ unit }) => openUnit(unit)} frameless dense /> : <p className="p-4 text-sm text-muted-foreground">No comments to comply with.</p>}
+        </TableCard>
+        <TableCard title="Overdue against plan" description="Planned end date passed without approval" icon={AlarmClock} count={stats.overdue} noun="drawing" scroll="natural">
+          {stats.overdueList.length ? <DataList rows={listOf(stats.overdueList)} columns={unitColumns("overdue")} onRowClick={({ unit }) => openUnit(unit)} frameless dense /> : <p className="p-4 text-sm text-muted-foreground">Nothing overdue.</p>}
+        </TableCard>
+        <TableCard title="Coming up in 14 days" description="Planned submissions and approvals due soon" icon={CalendarClock} count={stats.upcoming.length} noun="drawing" scroll="natural">
+          {stats.upcoming.length ? (
+            <DataList
+              rows={stats.upcoming.map((entry, index) => ({ ...entry, id: `${entry.unit.item.id}-${entry.unit.sub?.id ?? "item"}-${index}` }))}
+              columns={[
+                { header: "Drawing", mobile: "title", className: "max-w-[18rem]", cell: ({ unit }) => <UnitName unit={unit} /> },
+                { header: "Due", className: "whitespace-nowrap", cell: ({ date }) => formatMdlDate(date) },
+                {
+                  header: "For",
+                  mobile: "aside",
+                  cell: ({ kind }) => (
+                    <StatusBadge status={kind === "submission" ? "Pending" : "Under Review"} tone={kind === "submission" ? "neutral" : "info"}>
+                      {kind === "submission" ? "Submission" : "Approval"}
+                    </StatusBadge>
+                  ),
+                },
+              ]}
+              onRowClick={({ unit }) => openUnit(unit)}
+              frameless
+              dense
             />
           ) : (
-            <p className="p-4 text-sm text-muted-foreground">Nothing due soon.</p>
+            <p className="p-4 text-sm text-muted-foreground">Nothing planned in the next two weeks.</p>
           )}
         </TableCard>
       </div>
