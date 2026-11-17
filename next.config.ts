@@ -146,6 +146,9 @@ const nextConfig: NextConfig = {
       'recharts',
       '@radix-ui/react-icons',
     ],
+    // Set by `next upgrade --agent=security`: `next dev` and `next build` remind about Next.js
+    // security releases that affect the installed version.
+    agentUpgrade: 'security',
   },
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
