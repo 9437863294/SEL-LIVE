@@ -1,7 +1,7 @@
 'use client';
 
 import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
-import React, { useState, useEffect, useMemo, useRef, Fragment, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -173,6 +173,9 @@ const baseTableHeaders = [
 // src/lib/supply-gates.ts) — one row per BOQ item, each column a live aggregate from that stage's
 // own collection. Only meaningful for items actually placed on an issued PO; see
 // SUPPLY_GATE_STATUS_COLUMNS/SUPPLY_GATE_QTY_COLUMNS below for the "not on a PO yet" blank state.
+/** Columns sorted by SL-No segments rather than as plain strings, so 2.10 follows 2.9. */
+const SL_NO_SORT_KEYS = new Set(['BOQ SL No', 'ERP SL NO']);
+
 const SUPPLY_GATE_STATUS_COLUMNS = new Set(['MC Status', 'MDCC Status']);
 const SUPPLY_GATE_QTY_COLUMNS = new Set([
   'Inspection Accepted Qty',
@@ -267,12 +270,6 @@ export default function ViewBoqPage() {
   const backHref = scopeBackPaths[scope2Param]
     ? `/project-management/${scopeBackPaths[scope2Param]}?project=${encodeURIComponent(mappingId)}`
     : `/project-management/boq?project=${encodeURIComponent(mappingId)}`;
-  const [isClient, setIsClient] = useState(false);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
-
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -352,23 +349,6 @@ export default function ViewBoqPage() {
     'Scope 2': searchParams?.get('scope2') ?? 'all',
     'Category 1': 'all',
   }));
-
-  // If the page was opened with a ?scope2= param (e.g. from the Supply/Civil module cards),
-  // snap it to the exact casing found in the data once loaded — matching is already
-  // case-insensitive below, this just keeps the dropdown's displayed value looking right.
-  const appliedUrlScope2Ref = useRef(false);
-  useEffect(() => {
-    if (appliedUrlScope2Ref.current) return;
-    const urlScope2 = searchParams?.get('scope2');
-    if (!urlScope2 || !boqItems.length) return;
-    appliedUrlScope2Ref.current = true;
-    const match = boqItems.find(
-      (item) => String(item['Scope 2'] ?? '').trim().toLowerCase() === urlScope2.trim().toLowerCase(),
-    );
-    if (match) {
-      setFilters((prev) => ({ ...prev, 'Scope 2': String(match['Scope 2']) }));
-    }
-  }, [boqItems, searchParams]);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
@@ -577,8 +557,15 @@ export default function ViewBoqPage() {
   }, [mappingId, toast]);
 
   useEffect(() => {
-    if (isClient) void fetchProjectAndBoq();
-  }, [fetchProjectAndBoq, isClient]);
+    // This used to wait on an `isClient` flag set by its own effect, which was ceremony: an effect
+    // never runs during server rendering, so by the time this fires we are already in the browser.
+    //
+    // `fetchProjectAndBoq` sets its own loading flag as it starts, which the rule reads as a
+    // setState in this effect. Loading the register when the project resolves is precisely what an
+    // effect is for — synchronising React with an external system.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchProjectAndBoq();
+  }, [fetchProjectAndBoq]);
 
   /** PRE-AGGREGATE EXECUTED/CERTIFIED COUNTS (fast lookups) **
    * Rejected/Cancelled entries are excluded — a rejected measurement is not executed quantity,
@@ -817,6 +804,27 @@ export default function ViewBoqPage() {
     return { 'Scope 1': s1Options, 'Scope 2': s2Options, 'Category 1': c1Options };
   }, [boqItems, filters]);
 
+  /**
+   * A filter's value as the dropdown's own options spell it.
+   *
+   * `?scope2=supply` arrives in whatever casing the link was written with, while the options carry
+   * the casing the imported sheet used ("Supply"). Radix matches a Select's value to its items by
+   * exact string, so a mismatch leaves the trigger blank.
+   *
+   * This used to be fixed by an effect that wrote the corrected casing back into `filters` once the
+   * BOQ had loaded. Deriving it is the same answer without the extra render: filtering is already
+   * case-insensitive everywhere, so the stored value can stay exactly as it arrived and only what
+   * is *shown* needs snapping.
+   */
+  const selectedFilterValue = (key: keyof typeof filters, options: readonly string[]): string => {
+    const current = String(filters[key] ?? 'all');
+    if (current === 'all') return 'all';
+    const match = options.find(
+      (option) => String(option).trim().toLowerCase() === current.trim().toLowerCase(),
+    );
+    return match ?? current;
+  };
+
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
@@ -879,7 +887,6 @@ export default function ViewBoqPage() {
     }
     return 0;
   };
-  const SL_NO_SORT_KEYS = new Set(['BOQ SL No', 'ERP SL NO']);
 
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
@@ -1320,7 +1327,7 @@ export default function ViewBoqPage() {
             return (
               <Select
                 key={key}
-                value={filters[key as keyof typeof filters]}
+                value={selectedFilterValue(key as keyof typeof filters, options)}
                 onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
               >
                 <SelectTrigger>
