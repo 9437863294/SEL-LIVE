@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DEFAULT_DEDUCTION_TYPES } from '../src/lib/bill-tracking/defaults.ts';
-import { deductionTypesByProject, describeDeductionChanges, differsFromMaster, normaliseDeductionOverrides, projectDeductionChanges, projectDeductionTypes, projectsOverridingHead, projectsWithOwnDeductions, setOverride, withProjectDeductions } from '../src/lib/bill-tracking/deduction-types.ts';
+import { deductionChangeShort, deductionTypesByProject, describeDeductionChanges, ownSettingsByChange, ownSettingsGrid, differsFromMaster, normaliseDeductionOverrides, projectDeductionChanges, projectDeductionTypes, projectsOverridingHead, projectsWithOwnDeductions, setOverride, withProjectDeductions } from '../src/lib/bill-tracking/deduction-types.ts';
 import { computeDeductions } from '../src/lib/bill-tracking/gst.ts';
 import { billRetentionSlabs } from '../src/lib/bill-tracking/retention.ts';
+import { projectBasisRuleGroups } from '../src/lib/bill-tracking/value-basis.ts';
 
 const types = DEFAULT_DEDUCTION_TYPES;
 const head = (id) => types.find((type) => type.id === id);
@@ -125,4 +126,45 @@ test('reading many projects: each bill’s project view, worked out once per pro
   assert.equal(typesFor('p1').find((type) => type.id === 'dt-ret-inv').defaultPercent, 5);
   assert.equal(typesFor('p2'), types);
   assert.equal(typesFor(undefined), types);
+});
+
+test('the own-settings overview: projects against the heads they set, and the same grouped by setting', () => {
+  const masters = config([
+    p1([{ deductionTypeId: 'dt-bcess', percentBase: 'gross' }, { deductionTypeId: 'dt-ret-inv', percentBase: 'gross' }]),
+    { projectId: 'p2', deductionTypes: [{ deductionTypeId: 'dt-bcess', percentBase: 'gross' }, { deductionTypeId: 'dt-itds', baseLessTypeIds: [] }] },
+    { projectId: 'p3', deductionTypes: [{ deductionTypeId: 'dt-ret-inv', percentBase: 'value', defaultPercent: 5 }], valueBasisRules: [{ id: 'r1', name: '90% billed', active: true, billTypeIds: [], discountPercent: 0, taxableShare: 90, valueShare: 100 }] },
+    { projectId: 'p4', valueBasisRules: [{ id: 'r2', name: 'Same terms, other name', active: true, billTypeIds: [], discountPercent: 0, taxableShare: 90, valueShare: 100 }] },
+    { projectId: 'p5', dgmOffice: 'Cuttack' },
+  ]);
+  const { columns, rows } = ownSettingsGrid(masters);
+  // Columns: only heads some project sets, in the master's order, each with the defaults of the fields set.
+  assert.deepEqual(
+    columns.map((column) => [column.name, column.defaults]),
+    [
+      ['Building Cess', ['% of Taxable']],
+      ['Income TDS', ['Less Mobilization Advance']],
+      ['Retention Against Invoice', ['Rate 10%', '% of Taxable']],
+    ],
+  );
+  assert.deepEqual(rows.map((row) => [row.projectId, row.heads, row.basisRules]), [['p1', 2, 0], ['p2', 2, 0], ['p3', 1, 1], ['p4', 0, 1]], 'a project with only value basis rules has a row; one with neither has none');
+  assert.deepEqual(rows[2].cells['dt-ret-inv'].map(deductionChangeShort), ['Rate 5%', '% of Value']);
+  assert.equal(rows[0].cells['dt-itds'], undefined, 'a head a project does not set: the default');
+
+  // Grouped: the same value for the same field together, the most shared first within a head.
+  assert.deepEqual(
+    ownSettingsByChange(masters).map((group) => [group.name, deductionChangeShort(group.change), group.projectIds]),
+    [
+      ['Building Cess', '% of Gross', ['p1', 'p2']],
+      ['Income TDS', 'Less nothing', ['p2']],
+      ['Retention Against Invoice', 'Rate 5%', ['p3']],
+      ['Retention Against Invoice', '% of Gross', ['p1']],
+      ['Retention Against Invoice', '% of Value', ['p3']],
+    ],
+  );
+  assert.deepEqual(projectBasisRuleGroups(masters.projectProfiles).map((group) => group.projectIds), [['p3', 'p4']], 'value basis rules alike, the name aside');
+  // Every field reads short.
+  assert.deepEqual(
+    [['calculation', 'Fixed amount'], ['gstApplicable', 'on'], ['gstApplicable', 'off'], ['gstRate', '18%'], ['gstRate', 'blank'], ['active', 'off'], ['active', 'on'], ['defaultPercent', 'blank'], ['baseLessTypeIds', '− Mobilization Advance, Other']].map(([field, value]) => deductionChangeShort({ field, value })),
+    ['Fixed amount', 'GST on it', 'No GST on it', 'GST 18%', 'No GST rate', 'Switched off', 'Switched on', 'No default rate', 'Less Mobilization Advance, Other'],
+  );
 });

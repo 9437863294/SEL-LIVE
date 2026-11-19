@@ -71,11 +71,24 @@ written and served only by the API.
     head* drop them.
   - A head switched off in the master and on for one project is that project's own head.
   - Where it shows (2026-11-11), all worded by `projectDeductionChanges`: the tab's badge ("2 own");
-    on the default, a list of every project with its own settings and what each sets differently
-    (with the default beside it), and a *Projects* column per head; on a project, a line saying it
-    uses its own settings or the default throughout; a *Deduction types* column on Projects & DGM
-    offices; and a notice above the deductions on the bill and certification forms of such a
-    project. `?tab=deductions&project=<id>` opens a project's heads.
+    on the default, an overview of every project with its own settings, and a *Projects* column per
+    head; on a project, a table of what it sets beside the default (or a line saying it uses the
+    default throughout); a *Deduction types* column on Projects & DGM offices; and a notice above
+    the deductions on the bill and certification forms of such a project.
+    `?tab=deductions&project=<id>` opens a project's heads.
+  - The overview (2026-11-18, `own-settings-overview.tsx`) has two views. *By project* is a grid:
+    projects down the side, the heads any of them sets across the top, each with its default.
+    A cell holds the project's own figure as an amber chip, or "—" for the default. *By setting*
+    groups the same value for the same field together ("Building Cess · % of Gross instead of
+    % of Taxable"), with the projects that use it. Value basis rules are grouped by their terms.
+    A project name opens that project's settings. The grid scrolls sideways on a phone, with the
+    project column held in place. Its data comes from `ownSettingsGrid` and `ownSettingsByChange`
+    (`deduction-types.ts`) and `projectBasisRuleGroups` (`value-basis.ts`).
+    Grid rows are one line (2026-11-19). From `sm` a project's name stays on one line, its column
+    as wide as the name up to 22rem; the count of what it sets is in the name's hover text. A value
+    basis rule shows as its name, its terms on hover (the *By setting* view and the project's own
+    table still print them). Head columns are at least 7.5rem, so eight heads fit about 1,570px
+    without scrolling sideways. On a phone a name wraps to three lines at most.
   - Every place that works out or reads back a bill's deductions uses the bill's project's heads
     (`projectDeductionTypes` in `deduction-types.ts`): the bill and certification forms, the server's
     save and certification (`resolveDeductions` takes the project), note rules, the bill's Retention

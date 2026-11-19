@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { collection, getDocs, limit, query } from 'firebase/firestore';
-import { BellRing, Building2, CalendarClock, Coins, Database, Hash, Lock, Plus, RotateCcw, Save, Settings, ShieldCheck, Trash2, Unlock } from 'lucide-react';
+import { BellRing, CalendarClock, Coins, Database, Hash, Lock, Plus, RotateCcw, Save, Settings, ShieldCheck, Trash2, Unlock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -56,12 +56,13 @@ import {
   setOverride,
   type OverridableDeductionField,
 } from '@/lib/bill-tracking/deduction-types';
-import { describeTerms, normaliseValueBasisRules, projectBasisRules, ruleScope, valueBasisRulesProblem, valueHeads } from '@/lib/bill-tracking/value-basis';
+import { describeTerms, normaliseValueBasisRules, projectBasisRules, valueBasisRulesProblem, valueHeads } from '@/lib/bill-tracking/value-basis';
 import { normaliseNoteRules, noteRulesProblem } from '@/lib/bill-tracking/note-rules';
 
 import { BillCategoriesEditor } from './bill-categories-settings';
 import { NoteRulesSettings } from './note-rules-settings';
 import { ValueBasisSettings } from './value-basis-ui';
+import { OwnSettingsOverview, ProjectOwnSettings } from './own-settings-overview';
 import { WorkflowSettings } from './workflow-settings';
 import { BtApiError, btFetch, useBt, useBtQuery, useLookups } from './bt-client';
 import { BtError, BtLoading, FySelect, InfoTip, Notice, BT_TAB, BT_TABS_LIST, FormField } from './bt-ui';
@@ -651,64 +652,14 @@ function DeductionTypesTab({ config, setConfig, manage, scope, setScope }: { con
         {project ? (
           // Which view this is, in words: own settings (and what they are) or the default throughout.
           changes.length || ownBasisRules.length ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm">
-              <p className="flex items-center gap-2 font-semibold text-amber-900">
-                <Building2 className="h-4 w-4 shrink-0" />
-                {projectName(project)} uses its own settings for {ownSettingsCount({ heads: changes.length, basisRules: ownBasisRules.length })}
-              </p>
-              <ul className="mt-1.5 space-y-0.5 pl-6 text-xs text-slate-700">
-                {changes.map((head) => (
-                  <li key={head.deductionTypeId}>
-                    <span className="font-medium text-slate-900">{head.name}</span>: {head.changes.map(changeWithDefault).join(', ')}
-                  </li>
-                ))}
-                {ownBasisRules.map((rule) => (
-                  <li key={rule.id}>
-                    <span className="font-medium text-slate-900">Value basis{rule.name ? ` “${rule.name}”` : ''}</span> ({ruleScope(rule, config.billTypes)}): {describeTerms(rule)}
-                    {rule.active ? '' : ' — switched off'}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1.5 pl-6 text-xs text-slate-600">Everything else follows the default. Marked cells below are this project’s own; Reset sends a head back to the default.</p>
-            </div>
+            <ProjectOwnSettings name={projectName(project)} heads={changes} basisRules={ownBasisRules} billTypes={config.billTypes} />
           ) : (
             <Notice tone="blue">{projectName(project)} uses the default for every head and the default value basis. Change a figure below, or add a value basis rule, to give it a setting of its own — only that differs; the rest keeps following the default.</Notice>
           )
         ) : ownSettings.length ? (
           // On the default: every project that differs from it, and how — so a change to the default
-          // is made knowing who it does not reach.
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-sm">
-            <p className="flex items-center gap-2 font-semibold text-amber-900">
-              <Building2 className="h-4 w-4 shrink-0" />
-              {ownSettings.length} project{ownSettings.length === 1 ? ' has its' : 's have their'} own deduction settings
-            </p>
-            <p className="mt-0.5 pl-6 text-xs text-amber-900/80">These projects use the default below except where listed. A change to the default does not change a figure a project sets for itself.</p>
-            <ul className="mt-2 divide-y divide-amber-200/80 border-t border-amber-200/80">
-              {ownSettings.map((item) => (
-                <li key={item.projectId} className="flex flex-col gap-1.5 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-                  <div className="min-w-0 pl-6">
-                    <p className="font-medium text-slate-900">{projectName(item.projectId)}</p>
-                    <ul className="mt-0.5 space-y-0.5 text-xs text-slate-700">
-                      {projectDeductionChanges(config, item.projectId).map((head) => (
-                        <li key={head.deductionTypeId} className="break-words">
-                          <span className="font-medium">{head.name}</span>: {head.changes.map(changeWithDefault).join(', ')}
-                        </li>
-                      ))}
-                      {projectBasisRules(config.projectProfiles, item.projectId).map((rule) => (
-                        <li key={rule.id} className="break-words">
-                          <span className="font-medium">Value basis{rule.name ? ` “${rule.name}”` : ''}</span> ({ruleScope(rule, config.billTypes)}): {describeTerms(rule)}
-                          {rule.active ? '' : ' — switched off'}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <Button type="button" size="sm" variant="outline" className="ml-6 shrink-0 self-start bg-white sm:ml-0" onClick={() => setScope(item.projectId)}>
-                    {manage ? 'View or change' : 'View'}
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          // is made knowing who it does not reach. A grid of projects × heads, or grouped by setting.
+          <OwnSettingsOverview config={config} projectName={projectName} onOpen={setScope} manage={manage} />
         ) : null}
 
         <MasterTable<DeductionTypeMaster>

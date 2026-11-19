@@ -191,7 +191,24 @@ export const ruleScope = (rule: Pick<ValueBasisRule, 'billTypeIds'>, billTypes: 
   rule.billTypeIds.length ? rule.billTypeIds.map((id) => billTypes.find((type) => type.id === id)?.name ?? 'a removed sub category').join(', ') : 'Every invoice';
 
 /** The heads taken of the value — for the warning that a basis does nothing without one. */
-export const valueHeads = <T extends { percentBase: string; active: boolean }>(types: readonly T[]): T[] => types.filter((type) => type.percentBase === 'value' && type.active);
+/**
+ * The value basis rules projects set for themselves, alike ones together — the same terms, the same
+ * sub categories, on or off (the name aside) — the most shared first. For the Settings overview.
+ */
+export function projectBasisRuleGroups(profiles: readonly ProjectProfile[]): { rule: ValueBasisRule; projectIds: string[] }[] {
+  const groups = new Map<string, { rule: ValueBasisRule; projectIds: string[] }>();
+  for (const profile of profiles) {
+    for (const rule of profile.valueBasisRules ?? []) {
+      const key = [rule.discountPercent, rule.taxableShare, rule.valueShare, [...rule.billTypeIds].sort().join(','), rule.active].join('|');
+      const group = groups.get(key) ?? { rule, projectIds: [] };
+      if (!group.projectIds.includes(profile.projectId)) group.projectIds.push(profile.projectId);
+      groups.set(key, group);
+    }
+  }
+  return [...groups.values()].sort((a, b) => b.projectIds.length - a.projectIds.length);
+}
+
+export const valueHeads =<T extends { percentBase: string; active: boolean }>(types: readonly T[]): T[] => types.filter((type) => type.percentBase === 'value' && type.active);
 
 /** Settings keeps the rules on `settings`; the type for code that reads them off the whole config. */
 export type ValueBasisConfig = Pick<BillTrackingConfig, 'settings' | 'projectProfiles'>;

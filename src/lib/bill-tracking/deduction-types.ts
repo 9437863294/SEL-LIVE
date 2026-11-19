@@ -202,6 +202,102 @@ export const deductionChangeWithDefault = (change: DeductionFieldChange): string
 export const describeDeductionChanges = (heads: readonly ProjectDeductionHead[]): string =>
   heads.map((head) => `${head.name}: ${head.changes.map(deductionChangeText).join(', ')}`).join('; ');
 
+/**
+ * A field's value as a chip reads it, short enough for a grid cell: "% of Gross", "Less nothing",
+ * "Rate 5%", "Switched off". Read a change's `defaultValue` the same way for the default.
+ */
+export function deductionChangeShort(change: Pick<DeductionFieldChange, 'field' | 'value'>): string {
+  const { field, value } = change;
+  switch (field) {
+    case 'percentBase':
+      return `% of ${value}`;
+    case 'baseLessTypeIds': {
+      const less = value.replace(/^−\s*/, '');
+      return less === 'Nothing' ? 'Less nothing' : `Less ${less}`;
+    }
+    case 'defaultPercent':
+      return value === 'blank' ? 'No default rate' : `Rate ${value}`;
+    case 'calculation':
+      return value;
+    case 'gstApplicable':
+      return value === 'on' ? 'GST on it' : 'No GST on it';
+    case 'gstRate':
+      return value === 'blank' ? 'No GST rate' : `GST ${value}`;
+    case 'active':
+      return value === 'on' ? 'Switched on' : 'Switched off';
+  }
+}
+
+/** A head some project sets for itself — a column of the own-settings grid — with the default of each field set. */
+export interface OwnSettingsColumn {
+  deductionTypeId: string;
+  name: string;
+  /** The default of every field a project sets on this head, as chips read it ("% of Taxable"). */
+  defaults: string[];
+}
+
+/** A project with settings of its own — a row of the grid: its changes head by head (absent = the default). */
+export interface OwnSettingsRow {
+  projectId: string;
+  /** Heads it sets differently, and its own value basis rules. */
+  heads: number;
+  basisRules: number;
+  cells: Record<string, DeductionFieldChange[]>;
+}
+
+/**
+ * Every project with settings of its own against the heads any of them sets, in the master's order —
+ * the Settings overview's grid. A project with only value basis rules has a row with no cells.
+ */
+export function ownSettingsGrid(config: Masters): { columns: OwnSettingsColumn[]; rows: OwnSettingsRow[] } {
+  const rows = projectsWithOwnDeductions(config.projectProfiles).map((entry): OwnSettingsRow => {
+    const heads = projectDeductionChanges(config, entry.projectId);
+    return { projectId: entry.projectId, heads: heads.length, basisRules: entry.basisRules, cells: Object.fromEntries(heads.map((head) => [head.deductionTypeId, head.changes])) };
+  });
+  const columns = [...config.deductionTypes]
+    .sort((a, b) => a.sequence - b.sequence)
+    .flatMap((master): OwnSettingsColumn[] => {
+      const set = rows.flatMap((row) => row.cells[master.id] ?? []);
+      if (!set.length) return [];
+      const fields = OVERRIDABLE_DEDUCTION_FIELDS.filter((field) => set.some((change) => change.field === field));
+      return [{ deductionTypeId: master.id, name: master.name || master.code || master.id, defaults: fields.map((field) => deductionChangeShort({ field, value: deductionFieldText(master, field, config.deductionTypes) })) }];
+    });
+  return { columns, rows: rows.filter((row) => row.heads || row.basisRules) };
+}
+
+/** One setting projects share: a head, one field, the value they use instead of the default — and which projects. */
+export interface OwnSettingGroup {
+  deductionTypeId: string;
+  name: string;
+  change: DeductionFieldChange;
+  projectIds: string[];
+}
+
+/**
+ * The own settings grouped by what they change — the projects using the same value for the same field
+ * of a head together — in the master's order of heads, then fields, the most shared first.
+ */
+export function ownSettingsByChange(config: Masters): OwnSettingGroup[] {
+  const groups = new Map<string, OwnSettingGroup>();
+  for (const { projectId } of projectsWithOwnDeductions(config.projectProfiles)) {
+    for (const head of projectDeductionChanges(config, projectId)) {
+      for (const change of head.changes) {
+        const key = `${head.deductionTypeId}|${change.field}|${change.value}`;
+        const group = groups.get(key) ?? { deductionTypeId: head.deductionTypeId, name: head.name, change, projectIds: [] };
+        group.projectIds.push(projectId);
+        groups.set(key, group);
+      }
+    }
+  }
+  const order = new Map([...config.deductionTypes].sort((a, b) => a.sequence - b.sequence).map((type, index) => [type.id, index]));
+  return [...groups.values()].sort(
+    (a, b) =>
+      (order.get(a.deductionTypeId) ?? 0) - (order.get(b.deductionTypeId) ?? 0) ||
+      OVERRIDABLE_DEDUCTION_FIELDS.indexOf(a.change.field) - OVERRIDABLE_DEDUCTION_FIELDS.indexOf(b.change.field) ||
+      b.projectIds.length - a.projectIds.length,
+  );
+}
+
 /** The projects that set one head for themselves — the master table's "Projects" column. */
 export const projectsOverridingHead = (profiles: readonly ProjectProfile[], deductionTypeId: string): string[] =>
   profiles.filter((profile) => profile.deductionTypes?.some((entry) => entry.deductionTypeId === deductionTypeId)).map((profile) => profile.projectId);
