@@ -210,6 +210,22 @@ const HEADER_ROW_BLANK_COLUMNS = new Set([
   'Qty Reconciliation',
 ]);
 
+/**
+ * A scope or category value reduced to what the reader actually sees.
+ *
+ * These come out of imported spreadsheets, which routinely carry zero-width joiners, soft hyphens,
+ * non-breaking spaces and doubled inner spaces. `trim()` and `toLowerCase()` leave all of those in
+ * place and the screen shows none of them, so two values that read identically compare unequal —
+ * and the symptom is maddening: picking "Supply" from the dropdown filters correctly, while the
+ * same word arriving in a link (`?scope2=Supply`) matches nothing at all.
+ */
+const scopeKey = (value: unknown): string =>
+  String(value ?? '')
+    .replace(/[​-‍⁠﻿­]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
@@ -766,10 +782,11 @@ export default function ViewBoqPage() {
         String(item['Category 2'] ?? '').toLowerCase().includes(search) ||
         String(item['Category 3'] ?? '').toLowerCase().includes(search);
 
-      const scope1Match = s1 === 'all' || item['Scope 1'] === s1;
-      const scope2Match =
-        s2 === 'all' || String(item['Scope 2'] ?? '').trim().toLowerCase() === s2.trim().toLowerCase();
-      const category1Match = c1 === 'all' || item['Category 1'] === c1;
+      // Compared through `scopeKey`, not raw: a value selected from the dropdown carries the
+      // sheet's own invisible characters, while one arriving in the URL never does.
+      const scope1Match = s1 === 'all' || scopeKey(item['Scope 1']) === scopeKey(s1);
+      const scope2Match = s2 === 'all' || scopeKey(item['Scope 2']) === scopeKey(s2);
+      const category1Match = c1 === 'all' || scopeKey(item['Category 1']) === scopeKey(c1);
 
       return searchMatch && scope1Match && scope2Match && category1Match;
     });
@@ -781,22 +798,23 @@ export default function ViewBoqPage() {
     const s1Options = [...new Set(base.map((i) => i['Scope 1']).filter(Boolean))] as string[];
 
     if (filters['Scope 1'] !== 'all') {
-      base = base.filter((i) => i['Scope 1'] === filters['Scope 1']);
+      base = base.filter((i) => scopeKey(i['Scope 1']) === scopeKey(filters['Scope 1']));
     }
 
-    // Dedupe case-insensitively — the same scope often appears with inconsistent casing in imports.
+    // Dedupe on what the reader sees — the same scope often appears with inconsistent casing, and
+    // with stray invisible characters, in imports.
     const s2Options = Array.from(
       new Map(
         base
           .map((i) => i['Scope 2'])
           .filter(Boolean)
-          .map((v) => [String(v).trim().toLowerCase(), v]),
+          .map((v) => [scopeKey(v), v]),
       ).values(),
     ) as string[];
 
     if (filters['Scope 2'] !== 'all') {
-      const s2Filter = filters['Scope 2'].trim().toLowerCase();
-      base = base.filter((i) => String(i['Scope 2'] ?? '').trim().toLowerCase() === s2Filter);
+      const s2Filter = scopeKey(filters['Scope 2']);
+      base = base.filter((i) => scopeKey(i['Scope 2']) === s2Filter);
     }
 
     const c1Options = [...new Set(base.map((i) => i['Category 1']).filter(Boolean))] as string[];
@@ -819,11 +837,37 @@ export default function ViewBoqPage() {
   const selectedFilterValue = (key: keyof typeof filters, options: readonly string[]): string => {
     const current = String(filters[key] ?? 'all');
     if (current === 'all') return 'all';
-    const match = options.find(
-      (option) => String(option).trim().toLowerCase() === current.trim().toLowerCase(),
-    );
+    const match = options.find((option) => scopeKey(option) === scopeKey(current));
     return match ?? current;
   };
+
+  /**
+   * The lane — Supply / Civil / Erection — belongs in `Scope 2`. That is where the Supply hub, the
+   * Civil hub, Daily Progress and the execution workspaces all read it from, and what the
+   * `?scope2=Supply` links those hubs build mean.
+   *
+   * Some imports put the lane in `Scope 1` instead; the BOQ import template's own sample row does
+   * exactly that. Those links then open an empty sheet. Spot the case so the empty state can say
+   * where the value actually lives and offer the filter that works, rather than silently filtering
+   * a different column from the one the dropdown names.
+   */
+  const misplacedScope = useMemo(() => {
+    const wanted = String(filters['Scope 2'] ?? 'all');
+    if (wanted === 'all' || boqItems.length === 0) return null;
+    const needle = scopeKey(wanted);
+    const inColumn = (key: string) =>
+      boqItems.some((item) => scopeKey((item as Record<string, unknown>)[key]) === needle);
+    if (inColumn('Scope 2') || !inColumn('Scope 1')) return null;
+    return { column: 'Scope 1' as const, value: wanted };
+  }, [boqItems, filters]);
+
+  /**
+   * The scope filters currently in force, named for the empty-state message — a link that arrives
+   * with `?scope2=Supply` sets one before the reader has touched anything.
+   */
+  const hiddenByFilters = (['Scope 1', 'Scope 2', 'Category 1'] as const)
+    .filter((key) => filters[key] !== 'all')
+    .map((key) => `${key} "${filters[key]}"`);
 
   const handleFilterChange = (key: keyof typeof filters, value: string) => {
     setFilters((prev) => {
@@ -1322,20 +1366,29 @@ export default function ViewBoqPage() {
           }
         >
           {Object.keys(filterOptions).map((key) => {
-            const options = filterOptions[key as keyof typeof filterOptions] as string[];
-            if (!options || options.length === 0) return null;
+            const filterKey = key as keyof typeof filters;
+            const options = (filterOptions[key as keyof typeof filterOptions] as string[]) ?? [];
+            const current = selectedFilterValue(filterKey, options);
+            // A filter can arrive from the URL (`?scope2=Supply`) naming a value this project's BOQ
+            // does not carry. Hiding the dropdown because it has no options then leaves a filter
+            // that is hiding every row with no control of its own to turn it off, and no sign of
+            // why the table is empty — so keep the control, and list the orphan value in it, for as
+            // long as it is the one in force.
+            if (options.length === 0 && current === 'all') return null;
+            const selectableOptions =
+              current !== 'all' && !options.includes(current) ? [...options, current] : options;
             return (
               <Select
                 key={key}
-                value={selectedFilterValue(key as keyof typeof filters, options)}
-                onValueChange={(v) => handleFilterChange(key as keyof typeof filters, v)}
+                value={current}
+                onValueChange={(v) => handleFilterChange(filterKey, v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder={`Filter by ${key}`} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All {key}s</SelectItem>
-                  {options.map((opt) => (
+                  {selectableOptions.map((opt) => (
                     <SelectItem key={opt} value={opt}>
                       {opt}
                     </SelectItem>
@@ -1669,8 +1722,58 @@ export default function ViewBoqPage() {
                       })
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={visibleHeaders.length + 3} className="text-center">
-                          No BOQ items found.
+                        {/* This sheet is several times wider than the window, and a centred cell
+                            spanning every column puts its text roughly a thousand pixels to the
+                            right of where the reader is looking — which is why an empty result has
+                            always appeared as a blank sheet with no explanation at all. Sticky
+                            pins the message to the left edge of the scroll box instead.
+
+                            The message itself used to be "No BOQ items found", which read the same
+                            whether the project had no BOQ or a filter matched nothing — and the
+                            filter is often one that arrived in the link, like `?scope2=Supply`,
+                            that the reader never chose. */}
+                        <TableCell colSpan={visibleHeaders.length + 3} className="p-0">
+                          <div className="sticky left-0 flex max-w-[min(100%,46rem)] flex-col items-start gap-3 p-6 text-sm text-muted-foreground">
+                            {boqItems.length === 0 ? (
+                              <span>No BOQ items found. Import or add the BOQ for this project first.</span>
+                            ) : (
+                              <>
+                                <span>
+                                  No BOQ item matches{' '}
+                                  {hiddenByFilters.length > 0 ? hiddenByFilters.join(' and ') : 'the search'}. This
+                                  project has {boqItems.length} BOQ line{boqItems.length === 1 ? '' : 's'}.
+                                </span>
+                                {misplacedScope && (
+                                  <span>
+                                    This project records &quot;{misplacedScope.value}&quot; under{' '}
+                                    {misplacedScope.column}, not Scope 2.
+                                  </span>
+                                )}
+                                {/* Naming the values the sheet actually carries turns "nothing
+                                    matched" into something the reader can act on without opening
+                                    every dropdown to go looking. */}
+                                {filters['Scope 2'] !== 'all' && filterOptions['Scope 2'].length > 0 && (
+                                  <span>
+                                    Scope 2 values in this BOQ: {filterOptions['Scope 2'].join(', ')}.
+                                  </span>
+                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  {misplacedScope && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleFilterChange(misplacedScope.column, misplacedScope.value)}
+                                    >
+                                      Filter {misplacedScope.column} instead
+                                    </Button>
+                                  )}
+                                  <Button size="sm" variant="ghost" onClick={clearFilters}>
+                                    Clear filters
+                                  </Button>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     )}

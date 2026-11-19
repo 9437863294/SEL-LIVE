@@ -67,6 +67,12 @@ export const HERO_BANDS = {
     "radial-gradient(520px 260px at 40% 150%, rgba(129, 140, 248, 0.63), transparent 65%)",
     "linear-gradient(115deg, #581c87, #9333ea 45%, #4f46e5)",
   ],
+  /** JMC — emerald into teal, from the `sel-jmc-hub` mock-up. */
+  emerald: [
+    "radial-gradient(520px 230px at 92% 0%, rgba(253, 224, 71, 0.63), transparent 65%)",
+    "radial-gradient(520px 260px at 35% 150%, rgba(34, 211, 238, 0.63), transparent 65%)",
+    "linear-gradient(115deg, #064e3b, #059669 45%, #0e7490)",
+  ],
   /** Field Control. */
   sky: [
     "radial-gradient(520px 230px at 92% 0%, rgba(103, 232, 249, 0.63), transparent 65%)",

@@ -3,14 +3,24 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Save, Loader2, Plus, Trash2, Library, FilePlus } from 'lucide-react';
+import {
+  Save,
+  Loader2,
+  Plus,
+  Trash2,
+  Library,
+  FilePlus,
+  CalendarDays,
+  FolderOpen,
+  Hash,
+  ListOrdered,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, getDoc, Timestamp, runTransaction } from 'firebase/firestore';
-import { Label } from '@/components/ui/label';
 import { PmDataList, type PmListColumn } from '@/components/project-management/pm-shell';
 import type {
   BoqItem as BoqItemBase,
@@ -32,14 +42,25 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { jmcSerialConfigId, jmcSlugify } from '@/lib/jmc-module';
 import { projectJmcSerialCollection } from '@/lib/billing-recon/register';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
-import {
-  JMC_GRADIENT,
-  JmcAccessDenied,
+import {  JmcAccessDenied,
   JmcLoadingState,
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { PageHeader } from '@/components/shared/page-header';
+import { HeroBand, HERO_PRIMARY_BUTTON } from '@/components/project-management/hero-band';
+import { useJmcRegister } from '@/components/jmc/jmc-shell';
+import {
+  JMC_FIELD_COLOURS,
+  JMC_FIELD_INPUT,
+  JmcFieldLabel,
+  JmcItemsFooter,
+  JmcQtyNote,
+  JmcRowNumber,
+  JmcStageStepper,
+} from '@/components/jmc/jmc-entry-parts';
+import { jmcQuantityCheck } from '@/lib/project-management-jmc-dashboard';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { cn } from '@/lib/utils';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -147,6 +168,10 @@ export default function JmcEntryPage() {
   const mappingId = searchParams?.get('project') ?? '';
   const { context, isResolving, notFound, projectName } = useProjectManagementJmcContext(mappingId);
   const { can, isLoading: authIsLoading } = useAuthorization();
+  // The module's shared register, for the stage run across the band. Already loaded by the layout,
+  // so showing it costs no read.
+  const { steps: workflowSteps } = useJmcRegister();
+  const back = useBackNavigation(context.jmcHref(), { fallbackLabel: 'Back to JMC' });
 
   const canCreate = useMemo(() => {
     if (authIsLoading) return false;
@@ -426,6 +451,41 @@ export default function JmcEntryPage() {
       return;
     }
 
+    // A certificate with nothing measured on it certifies nothing, and a line measured past what
+    // its BOQ line has left cannot be certified at all. Both were only caught downstream before,
+    // after the certificate had already been raised and routed.
+    if (!items.some((it) => num0(it.executedQty) > 0)) {
+      toast({
+        title: 'Nothing measured',
+        description: 'Enter an executed quantity on at least one line before saving.',
+        variant: 'destructive',
+      });
+      setIsSaving(false);
+      return;
+    }
+
+    const overLines = items.filter(
+      (it) =>
+        String(it.boqSlNo ?? '').trim() !== '' &&
+        jmcQuantityCheck({
+          executedQty: it.executedQty,
+          boqQty: it.boqQty,
+          totalCertifiedQty: it.totalCertifiedQty,
+        }).over,
+    );
+    if (overLines.length > 0) {
+      toast({
+        title: 'Executed quantity is above the BOQ balance',
+        description: `${overLines.length} line${overLines.length === 1 ? '' : 's'} (${overLines
+          .slice(0, 3)
+          .map((it) => it.boqSlNo)
+          .join(', ')}${overLines.length > 3 ? '…' : ''}) measure more than the BOQ line has left.`,
+        variant: 'destructive',
+      });
+      setIsSaving(false);
+      return;
+    }
+
     try {
       const firstItem = items[0];
       const configSlug = jmcSerialConfigId(currentProject!.id, firstItem.scope1, firstItem.scope2);
@@ -523,6 +583,19 @@ export default function JmcEntryPage() {
       Number.isFinite(amount) ? amount : 0
     );
 
+  /* ---------- what the footer reports, and what Save checks ---------- */
+  /** Rows that actually name a BOQ line; a blank starter row is not an item yet. */
+  const filledItems = items.filter((item) => String(item.boqSlNo ?? '').trim() !== '');
+  const itemsTotalAmount = filledItems.reduce((sum, item) => sum + num0(item.totalAmount), 0);
+  const overQtyCount = filledItems.filter(
+    (item) =>
+      jmcQuantityCheck({
+        executedQty: item.executedQty,
+        boqQty: item.boqQty,
+        totalCertifiedQty: item.totalCertifiedQty,
+      }).over,
+  ).length;
+
   /* ---------- line-item register: cards on a phone, the table from `sm` ---------- */
   const itemRows: JmcItemRow[] = items.map((item, index) => ({
     ...item,
@@ -531,18 +604,27 @@ export default function JmcEntryPage() {
   }));
 
   const itemColumns: PmListColumn<JmcItemRow>[] = [
+    {
+      header: '#',
+      className: 'w-10',
+      cell: (item) => <JmcRowNumber index={item.index} />,
+    },
     { header: 'ERP Sl. No.', cell: (item) => item.erpSlNo || '-', className: 'whitespace-nowrap' },
     {
       // The card's headline on a phone: picking the BOQ item is what fills in the rest of the row.
       header: 'BOQ Sl. No.',
       mobile: 'title',
       cell: (item) => (
-        <BoqItemSelector
-          boqItems={boqItems}
-          selectedSlNo={item.boqSlNo}
-          onSelect={(boq) => handleBoqSelect(item.index, boq)}
-          isLoading={isBoqLoading}
-        />
+        // The selector is shared with Billing Recon, so its own trigger keeps the default
+        // control height; it is shortened here, where it sits in a one-line register row.
+        <div className="min-w-[8.5rem] sm:[&_button]:h-8">
+          <BoqItemSelector
+            boqItems={boqItems}
+            selectedSlNo={item.boqSlNo}
+            onSelect={(boq) => handleBoqSelect(item.index, boq)}
+            isLoading={isBoqLoading}
+          />
+        </div>
       ),
     },
     {
@@ -569,17 +651,36 @@ export default function JmcEntryPage() {
     { header: 'Total Certified Qty', cell: (item) => item.totalCertifiedQty, className: 'whitespace-nowrap' },
     {
       header: 'Executed Qty',
-      cell: (item) => (
-        <Input
-          name="executedQty"
-          type="number"
-          step="any"
-          min={0}
-          value={item.executedQty}
-          onChange={(e) => handleItemChange(item.index, e)}
-          className="w-full sm:w-28"
-        />
-      ),
+      cell: (item) => {
+        const check = jmcQuantityCheck({
+          executedQty: item.executedQty,
+          boqQty: item.boqQty,
+          totalCertifiedQty: item.totalCertifiedQty,
+        });
+        return (
+          <div className="flex items-center gap-2">
+            <Input
+              name="executedQty"
+              type="number"
+              step="any"
+              min={0}
+              value={item.executedQty}
+              onChange={(e) => handleItemChange(item.index, e)}
+              aria-invalid={check.over || undefined}
+              className={cn(
+                'h-8 w-full text-right font-bold sm:w-24',
+                check.over && 'border-rose-400 bg-rose-50 text-rose-700',
+              )}
+            />
+            <JmcQtyNote
+              executedQty={item.executedQty}
+              boqQty={item.boqQty}
+              totalCertifiedQty={item.totalCertifiedQty}
+              unit={item.unit}
+            />
+          </div>
+        );
+      },
     },
     {
       header: 'Total Amount',
@@ -598,7 +699,15 @@ export default function JmcEntryPage() {
       mobile: 'footer',
       className: 'w-20',
       cell: (item) => (
-        <Button variant="ghost" size="icon" onClick={() => removeItem(item.index)} aria-label="Remove row">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => removeItem(item.index)}
+          aria-label="Remove row"
+          // The row is one line tall now; a 40px icon button would set the height on its own.
+          // It keeps a 44px touch target on a phone, where this sits in the card's footer.
+          className="sm:h-8 sm:w-8"
+        >
           <Trash2 className="h-4 w-4 text-destructive" />
           <span className="ml-2 text-destructive sm:hidden">Remove</span>
         </Button>
@@ -624,23 +733,32 @@ export default function JmcEntryPage() {
   return (
     <>
       <JmcPageShell className="max-sm:[--card-pad:1rem]">
-        <PageHeader
+        <HeroBand
+          band="emerald"
+          icon={FilePlus}
+          back={back}
+          crumbs={[{ label: 'JMC Management', href: context.jmcHref() }, { label: 'Stage 1' }]}
           title="Create JMC Entry"
           description={
             projectName
               ? `Raise a new Joint Measurement Certificate for ${projectName}`
               : 'Raise a new Joint Measurement Certificate'
           }
-          icon={FilePlus}
-          backHref={context.jmcHref()}
-          backLabel="Back to JMC"
           actions={
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className={cn(HERO_PRIMARY_BUTTON, 'text-emerald-900')}
+            >
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Save Entry
             </Button>
           }
-        />
+        >
+          {/* Saving hands the certificate to the next desk rather than finishing it, which the
+              form never said. The run is the configured workflow, so it is this installation's. */}
+          <JmcStageStepper steps={workflowSteps} />
+        </HeroBand>
 
 
         <Card className="border-border/60">
@@ -650,10 +768,16 @@ export default function JmcEntryPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4 md:gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="project">Project</Label>
+              <div>
+                <JmcFieldLabel htmlFor="project" icon={FolderOpen} colour={JMC_FIELD_COLOURS[0]}>
+                  Project
+                </JmcFieldLabel>
                 <Select value={selectedProjectId} onValueChange={handleProjectChange}>
-                  <SelectTrigger id="project">
+                  <SelectTrigger
+                    id="project"
+                    className={JMC_FIELD_INPUT}
+                    style={{ borderLeftColor: JMC_FIELD_COLOURS[0] }}
+                  >
                     <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -665,23 +789,53 @@ export default function JmcEntryPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="jmcNo">JMC No</Label>
-                <Input id="jmcNo" name="jmcNo" value={details.jmcNo} readOnly className="font-semibold bg-muted/50" />
+              <div>
+                {/* The number is drawn from this scope's serial counter inside the save
+                    transaction, so it is shown, never typed: an edited one would be rejected as a
+                    mismatch, and a typed one would break the series. */}
+                <JmcFieldLabel
+                  htmlFor="jmcNo"
+                  icon={Hash}
+                  colour={JMC_FIELD_COLOURS[1]}
+                  hint="· allocated"
+                >
+                  JMC No
+                </JmcFieldLabel>
+                <Input
+                  id="jmcNo"
+                  name="jmcNo"
+                  value={details.jmcNo}
+                  readOnly
+                  className={cn(JMC_FIELD_INPUT, 'bg-muted/50')}
+                  style={{ borderLeftColor: JMC_FIELD_COLOURS[1] }}
+                />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="woNo">WO No</Label>
+              <div>
+                <JmcFieldLabel htmlFor="woNo" icon={ListOrdered} colour={JMC_FIELD_COLOURS[2]}>
+                  WO No
+                </JmcFieldLabel>
                 <Input
                   id="woNo"
                   name="woNo"
                   value={details.woNo || '— not set —'}
                   readOnly
-                  className="bg-muted/50 cursor-not-allowed"
+                  className={cn(JMC_FIELD_INPUT, 'cursor-not-allowed bg-muted/50')}
+                  style={{ borderLeftColor: JMC_FIELD_COLOURS[2] }}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="jmcDate">JMC Date</Label>
-                <Input id="jmcDate" name="jmcDate" type="date" value={details.jmcDate} onChange={handleDetailChange} />
+              <div>
+                <JmcFieldLabel htmlFor="jmcDate" icon={CalendarDays} colour={JMC_FIELD_COLOURS[3]}>
+                  JMC Date
+                </JmcFieldLabel>
+                <Input
+                  id="jmcDate"
+                  name="jmcDate"
+                  type="date"
+                  value={details.jmcDate}
+                  onChange={handleDetailChange}
+                  className={JMC_FIELD_INPUT}
+                  style={{ borderLeftColor: JMC_FIELD_COLOURS[3] }}
+                />
               </div>
             </div>
           </CardContent>
@@ -707,17 +861,30 @@ export default function JmcEntryPage() {
           <CardContent className="p-0">
             {/* Inside this card the register keeps only top and bottom rules on a desktop; on a
                 phone its cards sit inset under the card's heading. */}
+            {/* Dense: every cell is one line, so the default 32px of cell padding would make a
+                20-line JMC scroll for no reason. */}
             <PmDataList
+              dense
               rows={itemRows}
               columns={itemColumns}
               className="max-sm:px-4 sm:rounded-none sm:border-x-0 sm:shadow-none"
             />
 
-            <div className="p-4 sm:p-6">
-              <Button variant="outline" size="sm" onClick={addItem} className="w-full sm:w-auto">
-                <Plus className="mr-2 h-4 w-4" /> Add Item
-              </Button>
-            </div>
+            <JmcItemsFooter
+              itemCount={filledItems.length}
+              withQtyCount={filledItems.filter((item) => num0(item.executedQty) > 0).length}
+              totalAmount={formatCurrency(itemsTotalAmount)}
+              action={
+                <Button variant="outline" size="sm" onClick={addItem} className="max-sm:w-full">
+                  <Plus className="mr-2 h-4 w-4" /> Add Item
+                </Button>
+              }
+              note={
+                overQtyCount > 0
+                  ? `${overQtyCount} line${overQtyCount === 1 ? '' : 's'} measured beyond the BOQ balance — fix before saving.`
+                  : undefined
+              }
+            />
           </CardContent>
         </Card>
       </JmcPageShell>

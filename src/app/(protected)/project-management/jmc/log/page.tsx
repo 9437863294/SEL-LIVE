@@ -2,22 +2,16 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Download,
   Trash2,
-  History,
   File as FileIcon,
 } from 'lucide-react';
+import { JmcLogView, type JmcLogRow } from '@/components/jmc/jmc-log-view';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
+import { jmcStageIndex, jmcTotals } from '@/lib/project-management-jmc-dashboard';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  PmDataList,
-  PmEmptyState,
-  type PmListColumn,
-} from '@/components/project-management/pm-shell';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, orderBy, query, deleteDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import type { JmcEntry, WorkflowStep, ActionLog, BoqItem, Bill, Project, Attachment } from '@/lib/types';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
@@ -27,7 +21,6 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
 import {
   JmcAccessDenied,
-  JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
 import { jmcSlugify } from '@/lib/jmc-module';
@@ -44,8 +37,6 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
-import { PageHeader } from '@/components/shared/page-header';
-import { StatusBadge } from '@/components/shared/status-badge';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -107,6 +98,7 @@ export default function JmcLogPage() {
   const { context, isResolving, notFound, projectName } =
     useProjectManagementJmcContext(mappingId);
   const { can, isLoading: authIsLoading } = useAuthorization();
+  const back = useBackNavigation(context.jmcHref(), { fallbackLabel: 'Back to JMC' });
   const [jmcEntries, setJmcEntries] = useState<EnrichedJmcEntry[]>([]);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -128,6 +120,15 @@ export default function JmcLogPage() {
     }
   }, [authIsLoading, can, context.permissionResource]);
 
+  const canCreateJmc = useMemo(() => {
+    if (authIsLoading) return false;
+    try {
+      return can('Create JMC Entry', context.permissionResource);
+    } catch {
+      return false;
+    }
+  }, [authIsLoading, can, context.permissionResource]);
+
   const canDeleteJmc = useMemo(() => {
     if (authIsLoading) return false;
     try {
@@ -141,28 +142,12 @@ export default function JmcLogPage() {
      to take from the URL slug. */
   const projectHandle = jmcSlugify(projectName || mappingId);
 
-  const computeTotals = (items: any[] = []) => {
-    let total = 0;
-    let certified = 0;
-    for (const it of items) {
-      const rate = Number(it?.rate ?? 0);
-      const explicit = Number(it?.totalAmount ?? NaN);
-      const qtyForTotal = Number.isFinite(explicit)
-        ? null
-        : Number(it?.certifiedQty ?? it?.executedQty ?? 0);
-      total += Number.isFinite(explicit)
-        ? explicit
-        : Number.isFinite(qtyForTotal) && Number.isFinite(rate)
-        ? (qtyForTotal as number) * rate
-        : 0;
-
-      const certQty = Number(it?.certifiedQty ?? 0);
-      certified += Number.isFinite(certQty) && Number.isFinite(rate)
-        ? certQty * rate
-        : 0;
-    }
-    return { total, certified };
-  };
+  /**
+   * The value arithmetic moved to `jmcTotals`, which the dashboard reads too — the two screens
+   * must never report different totals for the same certificates. It is the same rule this screen
+   * had inline, now with tests on it.
+   */
+  const computeTotals = jmcTotals;
 
   const getStageDetails = (steps: WorkflowStep[], history: ActionLog[] = []) => {
     const stageDates: Record<string, string> = {};
@@ -384,119 +369,92 @@ export default function JmcLogPage() {
   /* Hold the table's existing skeleton until auth, the project mapping and the data have settled. */
   const showSkeleton = authIsLoading || isResolving || isLoading;
 
-  /* The register: a card per JMC on a phone, the wide stage-date table from `sm`. Each workflow
-     stage is its own column, so the column list is built from the configured steps. */
-  const columns: PmListColumn<EnrichedJmcEntry>[] = [
-    {
-      header: 'JMC No.',
-      mobile: 'title',
-      cell: (entry) => <span className="font-medium">{entry.jmcNo ?? '-'}</span>,
-    },
-    {
-      header: 'JMC Date',
-      cell: (entry) => {
-        const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
-        return jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-';
-      },
-    },
-    ...workflowSteps.map(
-      (step): PmListColumn<EnrichedJmcEntry> => ({
-        header: step.name,
-        cell: (entry) => entry.stageDates[step.name] ?? '-',
-      })
-    ),
-    { header: 'JMC Value', cell: (entry) => formatCurrency(entry.totalAmount) },
-    { header: 'Certified Value', cell: (entry) => formatCurrency(entry.certifiedValue) },
-    { header: 'Stage', cell: (entry) => entry.stage ?? '-' },
-    {
-      header: 'Stage Status',
-      mobile: 'aside',
-      cell: (entry) => (
-        <StatusBadge status={entry.status} />
-      ),
-    },
-    {
-      header: 'Actions',
-      align: 'right',
-      mobile: 'footer',
-      cell: (entry) => {
-        // Prefer workflow attachment, fallback to first certifiedAttachments
-        const docUrl =
-          entry.certifiedJmcAttachment?.url ||
-          (Array.isArray(entry.certifiedAttachments) && entry.certifiedAttachments[0]?.url);
+  /* The configured stage names, in order — the tracker on every row is built from these. */
+  const stepNames = workflowSteps.map((step) => step.name);
 
-        return (
-          <div className="flex w-full justify-end gap-2 sm:w-auto sm:gap-1">
-            {/* A card with actions is not itself a tap target, so the phone gets the row
-                click's destination as a button of its own. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="sm:hidden"
-              onClick={() => handleViewDetails(entry)}
-            >
-              Details
-            </Button>
-            {/* Action button: ONLY for opening uploaded doc */}
-            {docUrl ? (
+  /**
+   * The register as the log view reads it: identity, where it has got to, and what it is worth.
+   *
+   * `jmcStageIndex` is the dashboard's rule, not a second one — a step counts as done when the
+   * history holds an approving action naming it, and the certificate sits at the earliest step
+   * that has none. The stored `stage` field is kept only for its label.
+   */
+  const logRows: JmcLogRow[] = jmcEntries.map((entry) => {
+    const jmcDate = toDateSafe((entry as any).jmcDate) ?? toDateSafe(entry.createdAt);
+    return {
+      id: entry.id,
+      jmcNo: String(entry.jmcNo ?? ''),
+      dateLabel: jmcDate ? format(jmcDate, 'dd MMM, yyyy') : '-',
+      stageIndex: jmcStageIndex(entry as any, workflowSteps as any),
+      stageName: String((entry as any).stage ?? ''),
+      status: String((entry as any).status ?? ''),
+      value: entry.totalAmount,
+      certified: entry.certifiedValue,
+      stageDates: entry.stageDates ?? {},
+    };
+  });
+
+  /**
+   * A row's own buttons — the certified document, and deleting it.
+   *
+   * Passed into the view rather than built there: what may be deleted is this page's question,
+   * and the confirm dialog belongs with the handler that does the deleting.
+   */
+  const rowActions = (entry: EnrichedJmcEntry) => {
+    // Prefer the workflow attachment, falling back to the first uploaded certified document.
+    const docUrl =
+      entry.certifiedJmcAttachment?.url ||
+      (Array.isArray(entry.certifiedAttachments) && entry.certifiedAttachments[0]?.url);
+
+    return (
+      <>
+        {docUrl ? (
+          <Button variant="outline" size="sm" className="h-8" asChild>
+            <a href={docUrl} target="_blank" rel="noopener noreferrer">
+              <FileIcon className="mr-2 h-4 w-4" /> View Doc
+            </a>
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 border-dashed text-muted-foreground"
+            disabled
+            title="No document attached to this JMC yet"
+          >
+            <FileIcon className="mr-2 h-4 w-4" /> No Doc
+          </Button>
+        )}
+
+        {canDeleteJmc && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
               <Button
                 variant="outline"
-                size="sm"
-                className="h-8 max-sm:min-h-11 max-sm:flex-1"
-                asChild
-                onClick={(e) => e.stopPropagation()} // don't trigger row click
+                size="icon"
+                className="h-8 w-8 text-destructive"
+                aria-label={`Delete JMC ${entry.jmcNo ?? ''}`}
               >
-                <a href={docUrl} target="_blank" rel="noopener noreferrer">
-                  <FileIcon className="mr-2 h-4 w-4" /> View Doc
-                </a>
+                <Trash2 className="h-4 w-4" />
               </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8"
-                disabled
-                onClick={(e) => e.stopPropagation()}
-              >
-                <FileIcon className="mr-2 h-4 w-4" /> No Doc
-              </Button>
-            )}
-
-            {canDeleteJmc && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive h-8 w-8"
-                    aria-label="Delete"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete JMC {entry.jmcNo}. This action cannot be
-                      undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => handleDelete(entry)}>
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </div>
-        );
-      },
-    },
-  ];
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete JMC {entry.jmcNo}. This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => handleDelete(entry)}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </>
+    );
+  };
 
   if (!authIsLoading && !canViewLog) {
     return <JmcAccessDenied description="You do not have permission to view the JMC log." />;
@@ -510,51 +468,31 @@ export default function JmcLogPage() {
 
   return (
     <>
-      <JmcPageShell>
-        <PageHeader
-          title="JMC Log"
-          description={
-            projectName
-              ? `Every JMC raised on ${projectName}, with its workflow stage dates and certified value`
-              : 'Every JMC raised on this project, with its workflow stage dates and certified value'
-          }
-          icon={History}
-          backHref={context.jmcHref()}
-          backLabel="Back to JMC"
-          actions={
-            <Button
-              onClick={handleExportAll}
-              disabled={jmcEntries.length === 0}
-              aria-label="Export All as Excel"
-            >
-              <Download className="mr-2 h-4 w-4" />
-              <span className="sm:hidden">Export</span>
-              <span className="hidden sm:inline">Export All as Excel</span>
-            </Button>
-          }
-        />
-
-
-        {showSkeleton ? (
-          <Card className="border-border/60">
-            <CardContent className="space-y-2 p-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-5" />
-              ))}
-            </CardContent>
-          </Card>
-        ) : (
-          <PmDataList
-            rows={jmcEntries}
-            columns={columns}
-            onRowClick={handleViewDetails}
-            // A sensible min width so the stage-date columns don’t squish; the table scrolls
-            // sideways inside its own frame.
-            tableClassName="min-w-[1200px]"
-            empty={<PmEmptyState icon={History} title="No JMC entries found." />}
-          />
-        )}
-      </JmcPageShell>
+      <JmcLogView
+        back={back}
+        crumbs={[{ label: 'JMC Management', href: context.jmcHref() }]}
+        projectName={projectName}
+        description={
+          projectName
+            ? `Every JMC raised on ${projectName}, with its workflow stage dates and certified value`
+            : 'Every JMC raised on this project, with its workflow stage dates and certified value'
+        }
+        steps={stepNames}
+        rows={logRows}
+        // Raising a certificate starts here, at the register it joins — the dashboard reports on
+        // the register rather than being the way in to it.
+        create={canCreateJmc ? { href: context.jmcHref('entry') } : undefined}
+        onExport={handleExportAll}
+        onOpen={(row) => {
+          const entry = jmcEntries.find((candidate) => candidate.id === row.id);
+          if (entry) handleViewDetails(entry);
+        }}
+        renderActions={(row) => {
+          const entry = jmcEntries.find((candidate) => candidate.id === row.id);
+          return entry ? rowActions(entry) : null;
+        }}
+        isLoading={showSkeleton}
+      />
 
       <ViewJmcEntryDialog
         isOpen={isViewOpen}

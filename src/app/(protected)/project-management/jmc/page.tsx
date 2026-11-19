@@ -1,74 +1,73 @@
-
 'use client';
 
+/**
+ * Project Management's JMC dashboard — the module's landing screen.
+ *
+ * This file turns the shared register into the dashboard's props and answers the permission
+ * questions; the screen itself is `JmcDashboardView`, built from the user's `sel-jmc-hub` mock-up.
+ * Navigation between the JMC screens is the module sidebar's job (`layout.tsx`), so nothing here
+ * lists pages.
+ */
+
 import {
-  ClipboardList,
+  Award,
+  ClipboardCheck,
+  FileCheck2,
   FilePlus,
-  History,
-  type LucideIcon,
-  Settings,
   GitMerge,
-  BarChart3,
-  Users,
+  Ruler,
+  Send,
+  type LucideIcon,
 } from 'lucide-react';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
 import { useSearchParams } from 'next/navigation';
+import { useMemo } from 'react';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { useMemo, useState, useEffect, useCallback } from 'react';
-import type { WorkflowStep } from '@/lib/types';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { useToast } from '@/hooks/use-toast';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
+import { JmcProjectNotFound } from '@/components/jmc/jmc-page-shell';
 import {
-  JMC_GRADIENT,
-  JMC_SETTINGS_GRADIENT,
-  JmcAccessDenied,
-  JmcCardGridLoadingState,
-  JmcNavCard,
-  JmcNavCardGrid,
-  JmcPageShell,
-  JmcProjectNotFound,
-} from '@/components/jmc/jmc-page-shell';
-import { PageHeader } from '@/components/shared/page-header';
+  JmcDashboardView,
+  type JmcDashboardStage,
+  type JmcRecentEntry,
+} from '@/components/jmc/jmc-hub-view';
+import { jmcStagePath, jmcTabHref, useJmcRegister } from '@/components/jmc/jmc-shell';
+import {
+  jmcRaisedOn,
+  jmcStageIndex,
+  jmcTotals,
+} from '@/lib/project-management-jmc-dashboard';
 
-/* ---------------- types ---------------- */
-type JmcItem = {
-  icon: LucideIcon;
-  text: string;
-  href: string;
-  description: string;
-  disabled?: boolean;
-  gradient?: string;
-};
+/**
+ * A stage's icon, chosen from its configured name.
+ *
+ * The workflow is configurable, so the stage names are whatever this installation calls them —
+ * there is no fixed list to map. Matching on the verb in the name gives a meaningful icon for the
+ * stages every site has (measure, verify, submit, certify) and a neutral one for anything else.
+ */
+const STAGE_ICONS: ReadonlyArray<{ match: RegExp; icon: LucideIcon }> = [
+  { match: /creat|raise|draft|initiat|new/i, icon: FilePlus },
+  { match: /measur|joint|survey/i, icon: Ruler },
+  { match: /verif|check|review|scrutin/i, icon: ClipboardCheck },
+  { match: /submi|send|forward|dispatch/i, icon: Send },
+  { match: /certif|award/i, icon: Award },
+  { match: /approv|accept|sign/i, icon: FileCheck2 },
+];
 
-/* ---------------- page ---------------- */
-export default function JmcPage() {
-  const { toast } = useToast();
+const stageIcon = (name: string): LucideIcon =>
+  STAGE_ICONS.find((entry) => entry.match.test(name))?.icon ?? GitMerge;
+
+const formatDate = (value: Date | null): string =>
+  value
+    ? `${String(value.getDate()).padStart(2, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${value.getFullYear()}`
+    : '—';
+
+export default function JmcDashboardPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get('project') ?? '';
-  const { context, isResolving, notFound, projectName } = useProjectManagementJmcContext(mappingId);
-
+  const { context, isResolving, notFound } = useProjectManagementJmcContext(mappingId);
+  const back = useBackNavigation(context.parentHref, { fallbackLabel: 'Back' });
   const { can, isLoading: authIsLoading } = useAuthorization();
-
-  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
-  const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
-  const [workflowError, setWorkflowError] = useState<string | null>(null);
-
-  /* ---------- permission checks ---------- */
-  const canViewModule = useMemo(() => {
-    if (authIsLoading) return false;
-    try {
-      return can('View', context.permissionResource);
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can, context]);
+  const { projectName, steps, entries, reading, isLoading, loadError } = useJmcRegister();
 
   const canCreate = useMemo(() => {
     if (authIsLoading) return false;
@@ -77,216 +76,62 @@ export default function JmcPage() {
     } catch {
       return false;
     }
-  }, [authIsLoading, can, context]);
+  }, [authIsLoading, can, context.permissionResource]);
 
-  const canViewLog = useMemo(() => {
-    if (authIsLoading) return false;
-    try {
-      return can('View Log', context.permissionResource);
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can, context]);
+  const stages: JmcDashboardStage[] = useMemo(
+    () =>
+      reading.stages.map((stage) => ({
+        ...stage,
+        href: jmcTabHref(jmcStagePath(stage.id), mappingId),
+        icon: stageIcon(stage.name),
+      })),
+    [reading.stages, mappingId],
+  );
 
-  const canManageSubcontractors = useMemo(() => {
-    if (authIsLoading) return false;
-    try {
-      return can('Manage Subcontractors', 'Subcontractors Management');
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can]);
+  /** The five most recently raised, with where each one currently sits. */
+  const recent: JmcRecentEntry[] = useMemo(
+    () =>
+      entries.slice(0, 5).map((entry) => {
+        const index = jmcStageIndex(entry, steps);
+        return {
+          id: entry.id,
+          jmcNo: String(entry.jmcNo ?? ''),
+          date: formatDate(jmcRaisedOn(entry)),
+          value: jmcTotals(entry.items ?? []).total,
+          stage:
+            steps.length === 0
+              ? 'No workflow configured'
+              : index >= steps.length
+                ? 'Through every stage'
+                : `Waiting at ${steps[index]!.name}`,
+        };
+      }),
+    [entries, steps],
+  );
 
-  const canViewReports = useMemo(() => {
-    if (authIsLoading) return false;
-    try {
-      return can('View Reports', context.permissionResource);
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can, context]);
-
-  const canViewSettings = useMemo(() => {
-    if (authIsLoading) return false;
-    try {
-      return can('View Settings', context.permissionResource);
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can, context]);
-
-  const canViewStages = useMemo(() => {
-    if (authIsLoading) return false;
-    // Broad view permission for stages
-    try {
-      return can('View', context.permissionResource);
-    } catch {
-      return false;
-    }
-  }, [authIsLoading, can, context]);
-
-  /* ---------- fetch workflow ---------- */
-  useEffect(() => {
-    const fetchWorkflow = async () => {
-      if (authIsLoading) return;
-      setIsWorkflowLoading(true);
-      setWorkflowError(null);
-
-      try {
-        const workflowRef = doc(db, 'workflows', 'jmc-workflow');
-        const snap = await getDoc(workflowRef);
-
-        const rawSteps = (snap.exists() ? (snap.data()?.steps as WorkflowStep[] | undefined) : []) ?? [];
-
-        // Defensive: ensure valid array of steps with id + name
-        const steps: WorkflowStep[] = (Array.isArray(rawSteps) ? rawSteps : [])
-          .filter((s) => s && (s as any).name)
-          .map((s, index) => ({
-            ...s,
-            id: String(s.id || index + 1), // Ensure every step has an ID
-            name: (s as any).name,
-          }));
-
-        setWorkflowSteps(steps);
-      } catch (error) {
-        console.error('Failed to fetch workflow steps:', error);
-        setWorkflowError('Failed to load workflow configuration.');
-        toast({
-          title: 'Could not load workflow',
-          description: 'Please try again later.',
-          variant: 'destructive',
-        });
-      } finally {
-        setIsWorkflowLoading(false);
-      }
-    };
-
-    fetchWorkflow();
-  }, [authIsLoading, toast]);
-
-  /* ---------- cards ---------- */
-  const jmcItems: JmcItem[] = useMemo(() => {
-    if (authIsLoading || isWorkflowLoading) return [];
-
-    const staticItems: JmcItem[] = [
-      {
-        icon: FilePlus,
-        text: 'Create JMC',
-        href: context.jmcHref('entry'),
-        description: 'Create a Joint Measurement Certificate.',
-        disabled: !canCreate || !mappingId,
-      },
-      {
-        icon: History,
-        text: 'JMC Log',
-        href: context.jmcHref('log'),
-        description: 'View and manage all existing JMC entries.',
-        disabled: !canViewLog || !mappingId,
-      },
-      {
-        icon: BarChart3,
-        text: 'Reports',
-        href: context.jmcHref('reports'),
-        description: 'View JMC-related reports.',
-        disabled: !canViewReports || !mappingId,
-      },
-      {
-        icon: Settings,
-        text: 'Settings',
-        href: context.jmcHref('settings'),
-        description: 'Configure JMC module settings.',
-        disabled: !canViewSettings || !mappingId,
-        gradient: JMC_SETTINGS_GRADIENT,
-      },
-    ];
-
-    const workflowItems: JmcItem[] = (workflowSteps || []).map((step) => ({
-      icon: GitMerge,
-      text: step.name,
-      href: context.jmcHref(`stage/${step.id}`),
-      description: `Tasks for the ${step.name} stage.`,
-      disabled: !canViewStages || !mappingId,
-    }));
-
-    return [...staticItems.slice(0, 1), ...workflowItems, ...staticItems.slice(1)];
-  }, [
-    mappingId,
-    context,
-    authIsLoading,
-    isWorkflowLoading,
-    workflowSteps,
-    canCreate,
-    canManageSubcontractors,
-    canViewLog,
-    canViewSettings,
-    canViewStages,
-    canViewReports,
-  ]);
-
-  const isLoading = authIsLoading || isWorkflowLoading || isResolving;
-
-  /* ---------- rendering ---------- */
-  if (isLoading) {
-    return <JmcCardGridLoadingState tiles={6} />;
-  }
-
-  if (!canViewModule) {
-    return <JmcAccessDenied description="You do not have permission to access JMC management." />;
-  }
-
-  if (notFound) {
+  if (!isResolving && notFound) {
     return (
       <JmcProjectNotFound description="This JMC workspace could not be matched to a Project Management project. Pick a project from the Civil workspace and open JMC from there." />
     );
   }
 
-  const showEmpty = !workflowError && jmcItems.length === 0;
-
   return (
-    <JmcPageShell>
-      <PageHeader
-        title="JMC Management"
-        description={
-          projectName
-            ? `Joint Measurement Certificates for ${projectName} — raise entries, work each stage, and review the log.`
-            : 'Joint Measurement Certificates — raise entries, work each stage, and review the log.'
-        }
-        icon={ClipboardList}
-        backHref={context.parentHref}
-      />
-
-
-      {workflowError ? (
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle>Workflow unavailable</CardTitle>
-            <CardDescription>{workflowError}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : showEmpty ? (
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle>No JMC actions available</CardTitle>
-            <CardDescription>
-              You might not have permissions for any JMC actions, or the workflow has no stages configured.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        <JmcNavCardGrid>
-          {jmcItems.map((item) => (
-            <JmcNavCard
-              key={`${item.text}-${item.href}`}
-              title={item.text}
-              description={item.description}
-              href={item.href}
-              icon={item.icon}
-              gradient={item.gradient}
-              disabled={item.href === '#' || item.disabled}
-            />
-          ))}
-        </JmcNavCardGrid>
-      )}
-    </JmcPageShell>
+    <JmcDashboardView
+      back={back}
+      crumbs={[{ label: 'Project Management', href: context.parentHref }]}
+      projectName={projectName}
+      description={
+        projectName
+          ? `Joint Measurement Certificates for ${projectName} — where each one stands, and what has been certified.`
+          : 'Joint Measurement Certificates — where each one stands, and what has been certified.'
+      }
+      reading={reading}
+      stages={stages}
+      recent={recent}
+      logHref={jmcTabHref('log', mappingId)}
+      create={canCreate && mappingId ? { href: jmcTabHref('entry', mappingId) } : undefined}
+      isLoading={isLoading || isResolving || authIsLoading}
+      loadError={loadError}
+    />
   );
 }

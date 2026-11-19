@@ -1,23 +1,9 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  Check,
-  Clock,
-  GitMerge,
-  Loader2,
-  MoreHorizontal,
-  Calendar as CalendarIcon,
-} from 'lucide-react';
+import { Loader2, MoreHorizontal, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  PM_DIALOG,
-  PmDataList,
-  PmEmptyState,
-  type PmListColumn,
-} from '@/components/project-management/pm-shell';
+import { PM_DIALOG } from '@/components/project-management/pm-shell';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import {
@@ -48,13 +34,17 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { jmcSlugify } from '@/lib/jmc-module';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
 import {
-  JMC_GRADIENT,
   JmcAccessDenied,
   JmcLoadingState,
-  JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+  JmcStageView,
+  type JmcStageTab,
+  type JmcStageTask,
+} from '@/components/jmc/jmc-stage-view';
+import { jmcTotals } from '@/lib/project-management-jmc-dashboard';
+import { useBackNavigation } from '@/hooks/use-back-navigation';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import {
   DropdownMenu,
@@ -76,8 +66,6 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
-import { PageHeader } from '@/components/shared/page-header';
-import { StatusBadge } from '@/components/shared/status-badge';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -114,31 +102,49 @@ function pastTense(action: string) {
   return map[action] ?? `${action.toLowerCase()}ed`;
 }
 
-function formatINR(n?: number) {
-  const v = Number.isFinite(n as number) ? (n as number) : 0;
-  try {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 2,
-    }).format(v);
-  } catch {
-    return `₹${v.toFixed(2)}`;
-  }
-}
-
+/**
+ * What a certificate is worth: its stored total if it has one, otherwise its lines added up.
+ *
+ * The line rule itself is `jmcTotals`, which the dashboard and the log also read, so a certificate
+ * cannot be worth one figure on this desk and another in the register.
+ */
 function computeTotalAmount(entry: JmcEntry | undefined): number {
   if (!entry) return 0;
   const explicit = (entry as any).totalAmount;
   if (Number.isFinite(explicit)) return explicit as number;
-  const items = entry.items ?? [];
-  let total = 0;
-  for (const it of items) {
-    const qty = Number(it.certifiedQty ?? it.executedQty ?? 0);
-    const rate = Number(it.rate ?? 0);
-    if (Number.isFinite(qty) && Number.isFinite(rate)) total += qty * rate;
+  return jmcTotals((entry.items ?? []) as any).total;
+}
+
+/**
+ * The deadline as a person reads it. Returned only where the certificate has one — most completed
+ * tasks do not, and "no deadline" is not the same as "on time".
+ */
+function dueFrom(value: any, now: Date): JmcStageTask['due'] {
+  const deadline = toDateSafe(value);
+  if (!deadline) return null;
+  const days = Math.round(
+    (new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate()).getTime() -
+      new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
+      86400000
+  );
+  if (days < 0) {
+    const late = Math.abs(days);
+    return { label: `${late} day${late === 1 ? '' : 's'} overdue`, overdue: true };
   }
-  return total;
+  if (days === 0) return { label: 'Due today', overdue: false };
+  return { label: `Due in ${days} day${days === 1 ? '' : 's'}`, overdue: false };
+}
+
+/** A certificate as the queue shows it. */
+function toStageTask(entry: JmcEntry, now: Date): JmcStageTask {
+  return {
+    id: entry.id!,
+    jmcNo: String(entry.jmcNo ?? ''),
+    dateLabel: humanDate(entry.jmcDate),
+    amount: computeTotalAmount(entry),
+    status: String(entry.status ?? ''),
+    due: dueFrom((entry as any).deadline, now),
+  };
 }
 
 /* -------- component -------- */
@@ -165,8 +171,19 @@ export default function StagePage() {
     }
   }, [authIsLoading, can, context.permissionResource]);
 
+  // The empty state offers "Create JMC", so it has to know whether this person may.
+  const canCreate = useMemo(() => {
+    if (authIsLoading) return false;
+    try {
+      return can('Create JMC Entry', context.permissionResource);
+    } catch {
+      return false;
+    }
+  }, [authIsLoading, can, context.permissionResource]);
+
   const { toast } = useToast();
   const router = useRouter();
+  const back = useBackNavigation(context.jmcHref(), { fallbackLabel: 'Back to JMC' });
 
   const [tasks, setTasks] = useState<JmcEntry[]>([]);
   const [stage, setStage] = useState<WorkflowStep | null>(null);
@@ -500,142 +517,102 @@ export default function StagePage() {
     }
   }
 
-  /* A card per task on a phone, the table from `sm`. */
-  const taskColumns = (type: 'pending' | 'completed'): PmListColumn<JmcEntry>[] => [
-    {
-      header: 'JMC No.',
-      mobile: 'title',
-      className: 'whitespace-nowrap',
-      cell: (entry) => entry.jmcNo ?? '-',
-    },
-    {
-      header: 'JMC Date',
-      className: 'whitespace-nowrap',
-      cell: (entry) => humanDate(entry.jmcDate),
-    },
-    {
-      header: 'Total Amount',
-      align: 'right',
-      className: 'whitespace-nowrap',
-      cell: (entry) => formatINR(computeTotalAmount(entry)),
-    },
-    {
-      header: 'Status',
-      mobile: 'aside',
-      className: 'whitespace-nowrap',
-      cell: (entry) => (
-        <StatusBadge status={entry.status} />
-      ),
-    },
-    {
-      header: 'Actions',
-      align: 'right',
-      mobile: 'footer',
-      cell: (entry) => {
-        const currentStep = workflow?.find(
-          (s) => s.id === entry.currentStepId
-        );
-        const actions = Array.isArray(currentStep?.actions)
-          ? (currentStep!.actions as (string | ActionConfig)[])
-          : [];
+  /* The configured run, and where this stage sits in it. */
+  const stepNames = useMemo(() => workflow.map((step) => step.name), [workflow]);
+  const stageIndex = useMemo(
+    () => workflow.findIndex((step) => step.id === stageId),
+    [workflow, stageId]
+  );
 
-        return (
-          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-            {/* A card with actions is not itself a tap target, so the phone gets the row
-                click's destination as a button of its own. */}
-            <Button
-              variant="outline"
-              size="sm"
-              className="sm:hidden"
-              onClick={() => handleViewDetails(entry)}
-            >
-              Details
-            </Button>
-            {isActionLoading === entry.id ? (
-              <Loader2 className="ml-auto h-4 w-4 animate-spin" />
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label="Actions"
+  /* The two queues as the view reads them. One `now` for the whole render, so two rows cannot
+     word the same deadline differently. */
+  const stageRows = useMemo(() => {
+    const now = new Date();
+    return {
+      pending: pendingTasks.map((entry) => toStageTask(entry, now)),
+      completed: completedTasks.map((entry) => toStageTask(entry, now)),
+    };
+  }, [pendingTasks, completedTasks]);
+
+  /* The view carries the certificate's figures, not the record; the handlers need the record. */
+  const entriesById = useMemo(
+    () => new Map(tasks.filter((entry) => entry.id).map((entry) => [entry.id!, entry])),
+    [tasks]
+  );
+
+  /**
+   * A task's own buttons.
+   *
+   * Passed into the view rather than built there: which actions a step offers is configured on
+   * the workflow, and taking one runs a transaction that belongs with this page.
+   */
+  const renderActions = (task: JmcStageTask, tab: JmcStageTab) => {
+    const entry = entriesById.get(task.id);
+    if (!entry) return null;
+
+    const currentStep = workflow?.find((s) => s.id === entry.currentStepId);
+    const actions = Array.isArray(currentStep?.actions)
+      ? (currentStep!.actions as (string | ActionConfig)[])
+      : [];
+
+    return (
+      <>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={() => handleViewDetails(entry)}
+        >
+          Details
+        </Button>
+
+        {isActionLoading === entry.id ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-label="Working" />
+        ) : tab === 'pending' && actions.length > 0 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                className="h-8"
+                aria-label={`Actions for JMC ${entry.jmcNo ?? ''}`}
+              >
+                Actions
+                <MoreHorizontal className="ml-1.5 h-4 w-4" aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {actions.map((action) => {
+                const actionName = typeof action === 'string' ? action : action.name;
+                const isVerify = actionName.toLowerCase().includes('verify');
+                const isUpdateQty = actionName === 'Update Certified Qty';
+                const isComplete = actionName === 'Complete';
+
+                return (
+                  <DropdownMenuItem
+                    key={actionName}
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      if (isVerify) {
+                        handleVerifyClick(entry);
+                      } else if (isUpdateQty) {
+                        handleUpdateQtyClick(entry);
+                      } else if (isComplete) {
+                        openCompleteDialog(entry);
+                      } else {
+                        handleAction(entry.id!, action);
+                      }
+                    }}
                   >
-                    <MoreHorizontal className="h-4 w-4" />
-                    <span className="ml-2 sm:hidden">Actions</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="end"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {type === 'pending' &&
-                    actions.map((action) => {
-                      const actionName =
-                        typeof action === 'string'
-                          ? action
-                          : action.name;
-                      const isVerify = actionName
-                        .toLowerCase()
-                        .includes('verify');
-                      const isUpdateQty =
-                        actionName === 'Update Certified Qty';
-                      const isComplete = actionName === 'Complete';
-
-                      return (
-                        <DropdownMenuItem
-                          key={actionName}
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (isVerify) {
-                              handleVerifyClick(entry);
-                            } else if (isUpdateQty) {
-                              handleUpdateQtyClick(entry);
-                            } else if (isComplete) {
-                              openCompleteDialog(entry);
-                            } else {
-                              handleAction(entry.id!, action);
-                            }
-                          }}
-                        >
-                          {actionName}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        );
-      },
-    },
-  ];
-
-  const renderTable = (data: JmcEntry[], type: 'pending' | 'completed') =>
-    isLoading ? (
-      <Card className="border-border/60">
-        <CardContent className="space-y-2 p-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-8" />
-          ))}
-        </CardContent>
-      </Card>
-    ) : (
-      <PmDataList
-        rows={data}
-        columns={taskColumns(type)}
-        onRowClick={handleViewDetails}
-        empty={
-          <PmEmptyState
-            icon={type === 'pending' ? Clock : Check}
-            title={`No ${type} tasks found.`}
-          />
-        }
-      />
+                    {actionName}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </>
     );
+  };
 
   if (isResolving || authIsLoading) {
     return <JmcLoadingState />;
@@ -657,36 +634,32 @@ export default function StagePage() {
 
   return (
     <>
-      <JmcPageShell>
-        <PageHeader
-          title={stage?.name || 'JMC Stage'}
-          description={
-            projectName
-              ? `Workflow stage tasks assigned to you for ${projectName}`
-              : 'Workflow stage tasks assigned to you'
-          }
-          icon={GitMerge}
-          backHref={context.jmcHref()}
-        />
-
-
-        <Tabs defaultValue="pending">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="pending">
-              <Clock className="mr-2 h-4 w-4" /> Pending ({pendingTasks.length})
-            </TabsTrigger>
-            <TabsTrigger value="completed">
-              <Check className="mr-2 h-4 w-4" /> Completed ({completedTasks.length})
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="pending" className="mt-4">
-            {renderTable(pendingTasks, 'pending')}
-          </TabsContent>
-          <TabsContent value="completed" className="mt-4">
-            {renderTable(completedTasks, 'completed')}
-          </TabsContent>
-        </Tabs>
-      </JmcPageShell>
+      <JmcStageView
+        back={back}
+        crumbs={[
+          { label: 'JMC Management', href: context.jmcHref() },
+          ...(stageIndex >= 0 ? [{ label: `Stage ${stageIndex + 1}` }] : []),
+        ]}
+        stageName={stage?.name || 'JMC Stage'}
+        stageIndex={stageIndex}
+        steps={stepNames}
+        projectName={projectName}
+        description={
+          projectName
+            ? `Workflow stage tasks assigned to you for ${projectName}`
+            : 'Workflow stage tasks assigned to you'
+        }
+        pending={stageRows.pending}
+        completed={stageRows.completed}
+        logHref={context.jmcHref('log')}
+        createHref={canCreate ? context.jmcHref('entry') : undefined}
+        onOpen={(task) => {
+          const entry = entriesById.get(task.id);
+          if (entry) handleViewDetails(entry);
+        }}
+        renderActions={renderActions}
+        isLoading={isLoading}
+      />
 
       {/* Complete dialog with custom date */}
       <Dialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
