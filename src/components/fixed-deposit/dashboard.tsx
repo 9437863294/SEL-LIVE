@@ -1,28 +1,35 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
-  AlertTriangle,
   ArrowUpRight,
-  Banknote,
+  BadgeIndianRupee,
   Building2,
   CalendarClock,
+  CalendarDays,
   Check,
   ChevronDown,
-  CircleDollarSign,
-  Clock3,
+  CircleCheck,
   Download,
-  FilePlus2,
-  FileSpreadsheet,
+  Filter,
+  Folder,
   Landmark,
-  Link2,
+  LayoutDashboard,
   Loader2,
+  Lock,
+  Plus,
+  Printer,
   RefreshCw,
+  Shield,
   ShieldCheck,
-  WalletCards,
+  SquareCheck,
+  Target,
+  TriangleAlert,
+  UserRound,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
@@ -47,9 +54,6 @@ import {
   type FixedDeposit,
 } from '@/lib/fixed-deposit';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -57,9 +61,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { PageHeader } from '@/components/shared/page-header';
-import { TableCard } from '@/components/shared/table-card';
-import { FilterBar } from '@/components/shared/filter-bar';
+import styles from './dashboard.module.css';
 
 type Option = { value: string; label: string };
 type Filters = {
@@ -86,7 +88,62 @@ const LINKAGE_OPTIONS: Option[] = [
   { value: 'RESERVED_LC', label: 'Reserved for LC' },
 ];
 
+// ─── Colour tones ────────────────────────────────────────────────────────────────────────────
+// [light, deep] gradient pairs. The tint (10%) and border (25%) are 8-digit hex, never color-mix()
+// — Chrome 109 on the office's Windows 7 PCs drops it (see dashboard.module.css).
+const TONES = {
+  violet: ['#c4b5fd', '#7c3aed'],
+  blue: ['#93c5fd', '#2563eb'],
+  cyan: ['#67e8f9', '#0891b2'],
+  emerald: ['#6ee7b7', '#059669'],
+  green: ['#86efac', '#16a34a'],
+  amber: ['#fcd34d', '#d97706'],
+  orange: ['#fdba74', '#ea580c'],
+  rose: ['#fda4af', '#e11d48'],
+  pink: ['#f9a8d4', '#db2777'],
+  indigo: ['#a5b4fc', '#4f46e5'],
+  purple: ['#d8b4fe', '#9333ea'],
+  // The BG / LC tiles carry white text across the whole gradient, so they start deeper.
+  bg: ['#8b5cf6', '#5b21b6'],
+  lc: ['#0ea5e9', '#075985'],
+} as const;
+type Tone = keyof typeof TONES;
+
+const toneStyle = (name: Tone): CSSProperties => {
+  const [a, b] = TONES[name];
+  return { '--a': a, '--b': b, '--t': `${b}1a`, '--tb': `${b}40` } as CSSProperties;
+};
+
+const FILTERS: Array<{ id: keyof Filters; label: string; icon: LucideIcon; tone: Tone }> = [
+  { id: 'organization', label: 'Organization', icon: LayoutDashboard, tone: 'violet' },
+  { id: 'bank', label: 'Bank', icon: Landmark, tone: 'blue' },
+  { id: 'holder', label: 'FD Holder', icon: UserRound, tone: 'pink' },
+  { id: 'financialYear', label: 'Financial Year', icon: CalendarDays, tone: 'cyan' },
+  { id: 'status', label: 'Status', icon: CircleCheck, tone: 'emerald' },
+  { id: 'project', label: 'Project', icon: Folder, tone: 'orange' },
+  { id: 'linkage', label: 'Instrument Linkage', icon: ShieldCheck, tone: 'indigo' },
+  { id: 'purpose', label: 'FD Purpose', icon: Target, tone: 'amber' },
+];
+
+const QUICK_LINKS: Array<{ href: string; label: string; icon: LucideIcon; tone: Tone }> = [
+  { href: '/fixed-deposit/maturity-calendar', label: 'Maturity Calendar', icon: CalendarDays, tone: 'orange' },
+  { href: '/fixed-deposit/assignments', label: 'BG / LC Assignments', icon: ShieldCheck, tone: 'indigo' },
+  { href: '/fixed-deposit/approvals', label: 'Pending Approvals', icon: SquareCheck, tone: 'purple' },
+  { href: '/fixed-deposit/import', label: 'Import & Reconcile', icon: Download, tone: 'green' },
+];
+
+const AGEING_TONES: Record<string, Tone> = {
+  '0–7 days': 'rose',
+  '8–30 days': 'amber',
+  '31–90 days': 'orange',
+  '91–180 days': 'cyan',
+  'More than 180 days': 'blue',
+  'Already matured': 'purple',
+};
+
 const sum = (values: number[]) => values.reduce((total, value) => total + Number(value || 0), 0);
+const percent = (value: number) => `${value.toFixed(1)}%`;
+const fdCount = (count: number) => `${count} FD${count === 1 ? '' : 's'}`;
 const isBeforeToday = (value: FixedDeposit['maturityDate'], asOn: Date) => {
   const date = toDate(value);
   if (!date) return false;
@@ -104,32 +161,45 @@ const daysFrom = (value: FixedDeposit['maturityDate'], asOn: Date) => {
   return Math.ceil((target.getTime() - compare.getTime()) / 86_400_000);
 };
 
-function MultiFilter({ label, values, options, onChange }: {
+// ─── Pieces ──────────────────────────────────────────────────────────────────────────────────
+
+function FilterChip({ label, icon: Icon, tone, values, options, onChange }: {
   label: string;
+  icon: LucideIcon;
+  tone: Tone;
   values: string[];
   options: Option[];
   onChange: (values: string[]) => void;
 }) {
   const toggle = (value: string) => onChange(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  const count = values.length;
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" className={cn('justify-between font-normal', values.length && 'border-cyan-300 bg-cyan-50/70 text-cyan-900')}>
-          <span className="max-w-32 truncate">{values.length ? `${label} (${values.length})` : label}</span>
-          <ChevronDown className="ml-2 h-3.5 w-3.5 opacity-60" />
-        </Button>
+        <button
+          type="button"
+          className={cn(styles.chip, count > 0 && styles.chipSet)}
+          style={toneStyle(tone)}
+          title={label}
+          aria-label={count ? `${label}, ${count} selected` : label}
+        >
+          <span className={styles.chipIcon} aria-hidden><Icon strokeWidth={2.5} /></span>
+          <span className={styles.chipText}>{label}</span>
+          {count > 0 && <span className={styles.chipCount}>{count}</span>}
+          <ChevronDown className={styles.chipCaret} aria-hidden />
+        </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2">
         <div className="mb-2 flex items-center justify-between px-1">
           <p className="text-xs font-semibold">{label}</p>
-          {values.length > 0 && <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => onChange([])}>Clear</Button>}
+          {count > 0 && <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => onChange([])}>Clear</Button>}
         </div>
         <div className="max-h-64 space-y-1 overflow-y-auto">
           {options.length ? options.map((option) => (
-            <button key={option.value} type="button" onClick={() => toggle(option.value)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-slate-100">
-              <Checkbox checked={values.includes(option.value)} aria-label={`Filter by ${option.label}`} />
+            <label key={option.value} className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted">
+              <Checkbox checked={values.includes(option.value)} onCheckedChange={() => toggle(option.value)} />
               <span className="truncate">{option.label}</span>
-            </button>
+            </label>
           )) : <p className="px-2 py-4 text-center text-xs text-muted-foreground">No options available</p>}
         </div>
       </PopoverContent>
@@ -137,48 +207,87 @@ function MultiFilter({ label, values, options, onChange }: {
   );
 }
 
-function MetricCard({ label, value, secondary, icon: Icon, tone = 'cyan', alert = false }: {
-  label: string; value: string; secondary?: string; icon: LucideIcon; tone?: 'cyan' | 'blue' | 'amber' | 'emerald' | 'violet' | 'rose'; alert?: boolean;
-}) {
-  const styles = {
-    cyan: 'from-cyan-500/15 to-sky-500/5 text-cyan-700 ring-cyan-100',
-    blue: 'from-blue-500/15 to-indigo-500/5 text-blue-700 ring-blue-100',
-    amber: 'from-amber-500/15 to-orange-500/5 text-amber-700 ring-amber-100',
-    emerald: 'from-emerald-500/15 to-teal-500/5 text-emerald-700 ring-emerald-100',
-    violet: 'from-violet-500/15 to-indigo-500/5 text-violet-700 ring-violet-100',
-    rose: 'from-rose-500/15 to-red-500/5 text-rose-700 ring-rose-100',
-  }[tone];
+function CardHead({ icon: Icon, title, description, children }: { icon: LucideIcon; title: string; description: string; children?: ReactNode }) {
   return (
-    <Card className={cn('relative overflow-hidden border-white/80 bg-gradient-to-br shadow-sm', styles)}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
-            <p className="mt-1 truncate text-xl font-bold tracking-tight text-slate-900">{value}</p>
-            {secondary && <p className={cn('mt-1 text-xs text-slate-500', alert && 'font-medium text-rose-600')}>{secondary}</p>}
-          </div>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-sm ring-1 ring-inherit"><Icon className="h-4 w-4" /></div>
-        </div>
-      </CardContent>
-    </Card>
+    <header className={styles.cardHead}>
+      <span className={styles.headIcon} aria-hidden><Icon /></span>
+      <div className="min-w-0">
+        <h2 className={styles.cardTitle}>{title}</h2>
+        <span className={styles.cardSub}>{description}</span>
+      </div>
+      <span className={styles.spacer} />
+      {children}
+    </header>
   );
 }
+
+/** A tinted figure tile. `op` is the operator it shows when the FD-position equation folds. */
+function Figure({ tone, label, value, note, op }: { tone: Tone; label: string; value: string; note?: string; op?: string }) {
+  return (
+    <div className={styles.cell} style={toneStyle(tone)}>
+      {op && <span className={styles.opBadge} aria-hidden>{op}</span>}
+      <span className={styles.cellLabel}><i aria-hidden />{label}</span>
+      <b className={cn(styles.cellValue, styles.num)}>{value}</b>
+      {note && <span className={styles.cellNote}>{note}</span>}
+    </div>
+  );
+}
+
+function Operator({ symbol }: { symbol: string }) {
+  return <div className={styles.op} aria-hidden><span>{symbol}</span></div>;
+}
+
+function InstrumentTile({ tone, icon: Icon, label, value, linked, share }: { tone: Tone; icon: LucideIcon; label: string; value: number; linked: number; share: number }) {
+  return (
+    <div className={styles.instrument} style={toneStyle(tone)}>
+      <span className={styles.instrumentIcon} aria-hidden><Icon /></span>
+      <div className="min-w-0">
+        <span className={styles.instrumentLabel}>{label}</span>
+        <b className={cn(styles.instrumentValue, styles.num)}>{formatFdCurrency(value)}</b>
+        <span className={styles.instrumentNote}>{linked} linked FD{linked === 1 ? '' : 's'}</span>
+      </div>
+      <span className={styles.spacer} />
+      <span className={styles.instrumentPct} title="Share of eligible value">{percent(share)}</span>
+    </div>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-3.5" aria-busy>
+      <Skeleton className="h-[104px] w-full rounded-[24px]" />
+      <Skeleton className="h-14 w-full rounded-[18px]" />
+      <div className="grid gap-3.5 lg:grid-cols-[1.75fr_1fr]">
+        <Skeleton className="h-[420px] rounded-[22px]" />
+        <Skeleton className="h-[300px] rounded-[22px]" />
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────────────────────
 
 export default function FixedDepositDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const gaugeId = `fd-gauge-${useId().replace(/[^\w-]/g, '')}`;
   const [deposits, setDeposits] = useState<FixedDeposit[]>([]);
   const [assignments, setAssignments] = useState<FDAssignment[]>([]);
   const [closures, setClosures] = useState<FDClosure[]>([]);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [asOn, setAsOn] = useState(() => new Date().toISOString().slice(0, 10));
-  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  // The first load shows the skeleton; a refresh (see the Refresh button) keeps the figures on
+  // screen and spins the button. Nothing is set before the first await, so the mount effect never
+  // sets state synchronously.
+  const organizationId = user?.organizationId;
+  const role = user?.role;
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const scoped = (name: string) => user?.role === 'Super Admin' || !user?.organizationId ? collection(db, name) : query(collection(db, name), where('organizationId', '==', user.organizationId));
+      const scoped = (name: string) => role === 'Super Admin' || !organizationId ? collection(db, name) : query(collection(db, name), where('organizationId', '==', organizationId));
       const [fdSnap, assignmentSnap, closureSnap] = await Promise.all([
         getDocs(scoped(FD_COLLECTIONS.deposits)),
         getDocs(scoped(FD_COLLECTIONS.assignments)),
@@ -191,10 +300,12 @@ export default function FixedDepositDashboard() {
       console.error('Unable to load fixed deposit dashboard', error);
       toast({ title: 'Unable to load FD dashboard', description: 'Please check your connection and permissions, then try again.', variant: 'destructive' });
     } finally {
-      setLoading(false);
+      setRefreshing(false);
+      setLoaded(true);
     }
-  }, [toast, user?.organizationId, user?.role]);
+  }, [organizationId, role, toast]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads from Firestore on open; state is only set after the await
   useEffect(() => { void load(); }, [load]);
 
   const liveDeposits = useMemo(() => deposits.filter((fd) => !fd.isDeleted), [deposits]);
@@ -279,6 +390,15 @@ export default function FixedDepositDashboard() {
   const reserved = sum(activeDeposits.map((fd) => valuesByFd.get(fd.id)?.reserved || 0));
   const available = Math.max(0, eligibleValue - utilized - reserved);
   const utilisationPct = eligibleValue > 0 ? (utilized / eligibleValue) * 100 : 0;
+  const shareOfEligible = (value: number) => (eligibleValue > 0 ? (value / eligibleValue) * 100 : 0);
+
+  /** FDs carrying an active assignment, of one instrument type or either. */
+  const linkedFdCount = (type?: 'BG' | 'LC') => new Set(metricAssignments
+    .filter((a) => ACTIVE_ASSIGNMENT_STATUSES.includes(a.status) && (!type || a.instrumentType === type))
+    .map((a) => a.fdId)).size;
+  const utilisedFdCount = linkedFdCount();
+  const bgLinkedFdCount = linkedFdCount('BG');
+  const lcLinkedFdCount = linkedFdCount('LC');
 
   const maturityMetric = (maximumDays: number) => {
     const rows = activeDeposits.filter((fd) => { const days = daysFrom(fd.maturityDate, asOnDate); return days !== null && days >= 0 && days <= maximumDays; });
@@ -291,6 +411,13 @@ export default function FixedDepositDashboard() {
   const closurePending = filteredDeposits.filter((fd) => fd.status === 'CLOSURE_PENDING' || String(fd.closureStatus || '').toUpperCase().includes('PENDING'));
   const expiredBgAssignments = metricAssignments.filter((item) => { const expiry = item.obligationEndDate || item.expectedReleaseDate; return item.instrumentType === 'BG' && ACTIVE_ASSIGNMENT_STATUSES.includes(item.status) && expiry && (toDate(expiry)?.getTime() || Infinity) < asOnDate.getTime(); });
   const expiredBgFdCount = new Set(expiredBgAssignments.map((item) => item.fdId)).size;
+
+  const attention: Array<{ title: string; amount: number; count: number; icon: LucideIcon; tone: Tone; href: string }> = [
+    { title: 'Matured but not closed', amount: sum(maturedNotClosed.map((fd) => fd.principalAmount)), count: maturedNotClosed.length, icon: CalendarDays, tone: 'orange', href: '/fixed-deposit/closures' },
+    { title: 'Closure pending', amount: sum(closurePending.map((fd) => fd.principalAmount)), count: closurePending.length, icon: Lock, tone: 'rose', href: '/fixed-deposit/closures' },
+    { title: 'FD linked to expired BG', amount: sum(expiredBgAssignments.map(assignmentOutstanding)), count: expiredBgFdCount, icon: Shield, tone: 'indigo', href: '/fixed-deposit/releases' },
+  ];
+  const openAttention = attention.filter((item) => item.count > 0).length;
 
   const bankSummary = useMemo(() => {
     const rows = new Map<string, { bank: string; count: number; principal: number; eligible: number; bg: number; lc: number; reserved: number; available: number; maturing30: number }>();
@@ -346,15 +473,19 @@ export default function FixedDepositDashboard() {
       return { label: bucket.label, count: rows.length, amount: sum(rows.map((fd) => fd.principalAmount)) };
     });
   }, [asOnDate, filteredDeposits]);
+  const largestAgeingAmount = Math.max(0, ...ageing.map((row) => row.amount));
 
   const interestReceived = useMemo(() => {
     const closureInterest = new Map(closures.filter((item) => filteredIds.has(item.fdId)).map((item) => [item.fdId, Number(item.actualInterest || 0)]));
     return sum(filteredDeposits.map((fd) => Number(fd.interestReceived || closureInterest.get(fd.id) || 0)));
   }, [closures, filteredDeposits, filteredIds]);
   const expectedInterest = sum(filteredDeposits.map((fd) => Number(fd.expectedInterest || 0)));
+  const pendingInterest = Math.max(0, expectedInterest - interestReceived);
+  const realisedPct = expectedInterest > 0 ? Math.min(100, (interestReceived / expectedInterest) * 100) : 0;
 
   const updateFilter = (key: keyof Filters, values: string[]) => setFilters((current) => ({ ...current, [key]: values }));
-  const hasFilters = Object.values(filters).some((values) => values.length > 0);
+  const activeFilterCount = Object.values(filters).filter((values) => values.length > 0).length;
+  const hasFilters = activeFilterCount > 0;
 
   const triggerDownload = (blob: Blob, name: string) => {
     const href = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = href; anchor.download = name; anchor.click(); URL.revokeObjectURL(href);
@@ -377,9 +508,9 @@ export default function FixedDepositDashboard() {
         const kpi = workbook.addWorksheet('Dashboard KPIs');
         kpi.columns = [{ header: 'Metric', key: 'metric', width: 34 }, { header: 'Count', key: 'count', width: 14 }, { header: 'Amount', key: 'amount', width: 20 }];
         [
-          ['Active FD Principal', activeDeposits.length, activePrincipal], ['Total Utilised FD', new Set(metricAssignments.filter((a) => ACTIVE_ASSIGNMENT_STATUSES.includes(a.status)).map((a) => a.fdId)).size, utilized],
-          ['FD Utilised Against BG', new Set(metricAssignments.filter((a) => a.instrumentType === 'BG' && ACTIVE_ASSIGNMENT_STATUSES.includes(a.status)).map((a) => a.fdId)).size, bgUtilized],
-          ['FD Utilised Against LC', new Set(metricAssignments.filter((a) => a.instrumentType === 'LC' && ACTIVE_ASSIGNMENT_STATUSES.includes(a.status)).map((a) => a.fdId)).size, lcUtilized],
+          ['Active FD Principal', activeDeposits.length, activePrincipal], ['Total Utilised FD', utilisedFdCount, utilized],
+          ['FD Utilised Against BG', bgLinkedFdCount, bgUtilized],
+          ['FD Utilised Against LC', lcLinkedFdCount, lcUtilized],
           ['Available FD Balance', activeDeposits.filter((fd) => (valuesByFd.get(fd.id)?.active || 0) < Number(fd.eligibleValue || fd.principalAmount)).length, available],
           ['Maturing Within 7 Days', maturity7.count, maturity7.amount], ['Maturing Within 30 Days', maturity30.count, maturity30.amount], ['Maturing Within 90 Days', maturity90.count, maturity90.amount],
           ['Matured but Not Closed', maturedNotClosed.length, sum(maturedNotClosed.map((fd) => fd.principalAmount))], ['Closure Pending', closurePending.length, sum(closurePending.map((fd) => fd.principalAmount))],
@@ -408,77 +539,243 @@ export default function FixedDepositDashboard() {
     </TableBody></Table>
   );
 
-  if (loading) return <div className="space-y-4"><Skeleton className="h-36 w-full rounded-2xl" /><div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-2xl" />)}</div></div>;
+  if (!loaded) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Treasury Control"
-        title="Fixed Deposit Management"
-        description="Monitor principal, BG/LC utilisation, availability, maturity exposure, and interest realisation."
-        meta={[{ label: 'As on', value: new Date(`${asOn}T12:00:00`).toLocaleDateString('en-IN') }]}
-        actions={
-          <>
-            <Button asChild size="sm"><Link href="/fixed-deposit/new"><FilePlus2 className="mr-2 h-4 w-4" />Create New FD</Link></Button>
-            <Button asChild size="sm" variant="outline"><Link href="/fixed-deposit/register">View FD Register<ArrowUpRight className="ml-2 h-4 w-4" /></Link></Button>
-          </>
-        }
-      />
+    <>
+      <div className={styles.backdrop} aria-hidden />
+      <div className={styles.page}>
+        {/* ── Banner ── */}
+        <section className={styles.hero}>
+          <div className={styles.heroRow}>
+            <div>
+              <p className={styles.eyebrow}>Treasury Control</p>
+              <h1 className={styles.heroTitle}>Fixed Deposit Management</h1>
+              <p className={styles.heroText}>Monitor principal, BG/LC utilisation, availability, maturity exposure, and interest realisation.</p>
+            </div>
+            <span className={styles.spacer} />
+            <label className={styles.asOn}>
+              <span className={styles.asOnLabel} aria-hidden>AS<br />ON</span>
+              <input
+                type="date"
+                className={styles.asOnInput}
+                value={asOn}
+                aria-label="As-on date"
+                // An emptied date box would make every figure "Invalid Date"; keep the last date.
+                onChange={(event) => { if (event.target.value) setAsOn(event.target.value); }}
+              />
+            </label>
+            <Link href="/fixed-deposit/register" className={styles.heroBtn}>View FD Register<ArrowUpRight aria-hidden /></Link>
+            <Link href="/fixed-deposit/new" className={cn(styles.heroBtn, styles.heroBtnPrimary)}><Plus aria-hidden />Create New FD</Link>
+          </div>
+        </section>
 
-      <Card>
-        <CardContent className="p-3 sm:p-4">
-          <FilterBar
-            activeCount={Object.values(filters).filter((values) => values.length > 0).length}
-            onClear={() => setFilters(EMPTY_FILTERS)}
-            actions={<Button variant="ghost" size="icon" onClick={() => void load()} aria-label="Refresh dashboard"><RefreshCw className="h-4 w-4" /></Button>}
-          >
-            {(Object.keys(EMPTY_FILTERS) as Array<keyof Filters>).map((key) => <MultiFilter key={key} label={({ organization: 'Organization', bank: 'Bank', holder: 'FD Holder', financialYear: 'Financial Year', status: 'Status', project: 'Project', linkage: 'Instrument Linkage', purpose: 'FD Purpose' } as Record<keyof Filters, string>)[key]} values={filters[key]} options={optionSets[key]} onChange={(values) => updateFilter(key, values)} />)}
-            <label className="flex h-[var(--control-h,2.5rem)] items-center gap-2 rounded-md border border-input bg-background px-3"><span className="whitespace-nowrap text-xs text-muted-foreground">As on</span><Input type="date" value={asOn} onChange={(event) => setAsOn(event.target.value)} className="h-auto border-0 p-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" /></label>
-          </FilterBar>
-        </CardContent>
-      </Card>
+        {/* ── Filters ── */}
+        <section className={styles.filters} aria-label="Dashboard filters">
+          <span className={styles.filterLabel}><Filter aria-hidden />FILTER</span>
+          {FILTERS.map((filter) => (
+            <FilterChip
+              key={filter.id}
+              label={filter.label}
+              icon={filter.icon}
+              tone={filter.tone}
+              values={filters[filter.id]}
+              options={optionSets[filter.id]}
+              onChange={(values) => updateFilter(filter.id, values)}
+            />
+          ))}
+          <span className={styles.spacer} />
+          <button type="button" className={styles.reset} disabled={!hasFilters} onClick={() => setFilters(EMPTY_FILTERS)}>
+            Reset{hasFilters ? ` (${activeFilterCount})` : ''}
+          </button>
+          <button type="button" className={cn(styles.btn, refreshing && styles.spinning)} disabled={refreshing} onClick={() => { setRefreshing(true); void load(); }}>
+            <RefreshCw aria-hidden />Refresh
+          </button>
+        </section>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Active FD Principal" value={formatFdCurrency(activePrincipal)} secondary={`${activeDeposits.length} active FD${activeDeposits.length === 1 ? '' : 's'}`} icon={Banknote} />
-        <MetricCard label="Total Utilised FD" value={formatFdCurrency(utilized)} secondary={`${utilisationPct.toFixed(1)}% of eligible value`} icon={Link2} tone="blue" />
-        <MetricCard label="FD Utilised Against BG" value={formatFdCurrency(bgUtilized)} secondary={`${new Set(metricAssignments.filter((a) => a.instrumentType === 'BG' && ACTIVE_ASSIGNMENT_STATUSES.includes(a.status)).map((a) => a.fdId)).size} linked FDs`} icon={ShieldCheck} tone="violet" />
-        <MetricCard label="FD Utilised Against LC" value={formatFdCurrency(lcUtilized)} secondary={`${new Set(metricAssignments.filter((a) => a.instrumentType === 'LC' && ACTIVE_ASSIGNMENT_STATUSES.includes(a.status)).map((a) => a.fdId)).size} linked FDs`} icon={Landmark} tone="blue" />
-        <MetricCard label="Available FD Balance" value={formatFdCurrency(available)} secondary={`${formatFdCurrency(eligibleValue)} eligible − utilised − reserved`} icon={WalletCards} tone="emerald" />
-        <MetricCard label="Maturing Within 7 Days" value={formatFdCurrency(maturity7.amount)} secondary={`${maturity7.count} FD${maturity7.count === 1 ? '' : 's'}`} icon={Clock3} tone="rose" alert={maturity7.count > 0} />
-        <MetricCard label="Maturing Within 30 Days" value={formatFdCurrency(maturity30.amount)} secondary={`${maturity30.count} FDs`} icon={CalendarClock} tone="amber" />
-        <MetricCard label="Maturing Within 90 Days" value={formatFdCurrency(maturity90.amount)} secondary={`${maturity90.count} FDs`} icon={CalendarClock} tone="amber" />
-        <MetricCard label="Matured but Not Closed" value={formatFdCurrency(sum(maturedNotClosed.map((fd) => fd.principalAmount)))} secondary={`${maturedNotClosed.length} FDs`} icon={AlertTriangle} tone="rose" alert={maturedNotClosed.length > 0} />
-        <MetricCard label="Closure Pending" value={formatFdCurrency(sum(closurePending.map((fd) => fd.principalAmount)))} secondary={`${closurePending.length} FDs`} icon={Clock3} tone="amber" />
-        <MetricCard label="FD Linked to Expired BG" value={formatFdCurrency(sum(expiredBgAssignments.map(assignmentOutstanding)))} secondary={`${expiredBgFdCount} FDs`} icon={AlertTriangle} tone="rose" alert={expiredBgFdCount > 0} />
-        <MetricCard label="Reserved Assignments" value={formatFdCurrency(reserved)} secondary="Approved or blocked, not yet active" icon={CircleDollarSign} tone="violet" />
+        <div className={styles.row}>
+          {/* ── FD position ── */}
+          <section className={styles.card} style={toneStyle('violet')}>
+            <CardHead icon={Wallet} title="FD position" description="Eligible value allocation across the active portfolio.">
+              <span className={cn(styles.pill, styles.pillViolet)}>{percent(utilisationPct)} utilised</span>
+            </CardHead>
+            <div className={styles.position}>
+              <div className={styles.gauge} role="img" aria-label={`${percent(utilisationPct)} of eligible value utilised`}>
+                <svg viewBox="0 0 36 36" aria-hidden>
+                  <defs>
+                    <linearGradient id={gaugeId}><stop offset="0" stopColor="#a78bfa" /><stop offset="1" stopColor="#6d28d9" /></linearGradient>
+                  </defs>
+                  <circle cx="18" cy="18" r="15.9155" fill="none" strokeWidth="3.2" className={styles.gaugeTrack} />
+                  {utilisationPct > 0 && (
+                    <circle
+                      cx="18" cy="18" r="15.9155" fill="none" strokeWidth="3.2" strokeLinecap="round"
+                      stroke={`url(#${gaugeId})`}
+                      strokeDasharray={`${Math.min(100, utilisationPct)} 100`}
+                      className={styles.gaugeArc}
+                    />
+                  )}
+                </svg>
+                <div className={styles.gaugeCenter}>
+                  <div><b className={cn(styles.gaugeValue, styles.num)}>{percent(utilisationPct)}</b><small className={styles.gaugeLabel}>UTILISED</small></div>
+                </div>
+              </div>
+              <div className={styles.kicker}>
+                <span className={styles.kickerLabel}>Active FD principal</span>
+                <div className={cn(styles.big, styles.num)}>{formatFdCurrency(activePrincipal)}</div>
+                <div className={styles.sub}>
+                  <span className={cn(styles.pill, styles.pillSlate)}>{activeDeposits.length} active FD{activeDeposits.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className={styles.bar} aria-hidden>
+                  <i style={{ width: `${Math.min(100, shareOfEligible(utilized))}%`, background: TONES.violet[1] }} />
+                  <i style={{ width: `${Math.min(100, shareOfEligible(reserved))}%`, background: TONES.amber[1] }} />
+                  <i style={{ width: `${Math.min(100, shareOfEligible(available))}%`, background: TONES.emerald[1] }} />
+                </div>
+                <div className={cn(styles.barCap, styles.num)}>
+                  {eligibleValue > 0
+                    ? ([['Utilised', utilized, 'violet'], ['Reserved', reserved, 'amber'], ['Available', available, 'emerald']] as const).map(([label, value, tone]) => (
+                      <span key={label} className={styles.legend} style={toneStyle(tone)}><i aria-hidden />{label} {formatFdCurrency(value)} · {percent(shareOfEligible(value))}</span>
+                    ))
+                    : <span>Utilised {formatFdCurrency(0)} · {percent(0)} — no eligible value to allocate yet.</span>}
+                </div>
+              </div>
+            </div>
+            <div className={styles.equation}>
+              <Figure tone="blue" label="Eligible value" value={formatFdCurrency(eligibleValue)} />
+              <Operator symbol="−" />
+              <Figure tone="violet" label="Total utilised" value={formatFdCurrency(utilized)} note={`${percent(utilisationPct)} of eligible value`} op="−" />
+              <Operator symbol="−" />
+              <Figure tone="amber" label="Reserved" value={formatFdCurrency(reserved)} note="Approved or blocked, not yet active" op="−" />
+              <Operator symbol="=" />
+              <Figure tone="emerald" label="Available balance" value={formatFdCurrency(available)} op="=" />
+            </div>
+            <div className={styles.instruments}>
+              <InstrumentTile tone="bg" icon={ShieldCheck} label="Utilised against BG" value={bgUtilized} linked={bgLinkedFdCount} share={shareOfEligible(bgUtilized)} />
+              <InstrumentTile tone="lc" icon={Landmark} label="Utilised against LC" value={lcUtilized} linked={lcLinkedFdCount} share={shareOfEligible(lcUtilized)} />
+            </div>
+          </section>
+
+          {/* ── Needs attention ── */}
+          <section className={styles.card} style={toneStyle('amber')}>
+            <CardHead icon={TriangleAlert} title="Needs attention" description="Exceptions to clear.">
+              <span className={cn(styles.pill, openAttention ? styles.pillRose : styles.pillGreen)}>{openAttention ? `${openAttention} to clear` : 'All clear'}</span>
+            </CardHead>
+            <div className={styles.stack}>
+              {attention.map((item) => {
+                const Icon = item.icon;
+                const body = (
+                  <>
+                    <span className={styles.tile} aria-hidden><Icon /></span>
+                    <div className="min-w-0">
+                      <b className={styles.attTitle}>{item.title}</b>
+                      <span className={cn(styles.attText, styles.num)}>{formatFdCurrency(item.amount)} · {fdCount(item.count)}</span>
+                    </div>
+                    <span className={styles.spacer} />
+                    {item.count > 0
+                      ? <span className={styles.flagChip}>Review<ArrowUpRight aria-hidden /></span>
+                      : <span className={styles.okChip}><Check aria-hidden />Clear</span>}
+                  </>
+                );
+                return item.count > 0
+                  ? <Link key={item.title} href={item.href} className={styles.attItem} style={toneStyle(item.tone)}>{body}</Link>
+                  : <div key={item.title} className={styles.attItem} style={toneStyle(item.tone)}>{body}</div>;
+              })}
+            </div>
+            {!openAttention && <div className={styles.allClear}><CircleCheck aria-hidden />Nothing to clear as on this date.</div>}
+          </section>
+        </div>
+
+        <div className={cn(styles.row, styles.rowStretch)}>
+          {/* ── Maturity exposure ── */}
+          <section className={styles.card} style={toneStyle('orange')}>
+            <CardHead icon={CalendarClock} title="Maturity exposure" description="Active principal maturing from the as-on date.">
+              <span className={cn(styles.pill, maturity7.count ? styles.pillRose : styles.pillSlate)}>
+                {maturity7.count ? `${fdCount(maturity7.count)} this week` : `${fdCount(maturity30.count)} in 30 days`}
+              </span>
+            </CardHead>
+            <div className={styles.tiles}>
+              <Figure tone="rose" label="Within 7 days" value={formatFdCurrency(maturity7.amount)} note={fdCount(maturity7.count)} />
+              <Figure tone="amber" label="Within 30 days" value={formatFdCurrency(maturity30.amount)} note={fdCount(maturity30.count)} />
+              <Figure tone="orange" label="Within 90 days" value={formatFdCurrency(maturity90.amount)} note={fdCount(maturity90.count)} />
+            </div>
+            <div className={styles.ladder}>
+              <span className={styles.kickerLabel}>Maturity ageing</span>
+              {ageing.map((row) => (
+                <div key={row.label} className={styles.rung} style={toneStyle(AGEING_TONES[row.label] ?? 'blue')}>
+                  <span className={styles.rungLabel}>{row.label}</span>
+                  <span className={styles.rungBar} aria-hidden>
+                    <i style={{ width: `${largestAgeingAmount > 0 ? (row.amount / largestAgeingAmount) * 100 : 0}%` }} />
+                  </span>
+                  <span className={cn(styles.rungValue, styles.num)}>{formatFdCurrency(row.amount)} · {row.count}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* ── Interest realisation ── */}
+          <section className={styles.card} style={toneStyle('emerald')}>
+            <CardHead icon={BadgeIndianRupee} title="Interest realisation" description="Expected versus received.">
+              <span className={cn(styles.pill, expectedInterest > 0 ? styles.pillGreen : styles.pillSlate)}>
+                {expectedInterest > 0 ? `${percent(realisedPct)} realised` : 'None expected'}
+              </span>
+            </CardHead>
+            <div className={styles.stack}>
+              <Figure tone="blue" label="Expected interest" value={formatFdCurrency(expectedInterest)} />
+              <Figure tone="emerald" label="Interest received" value={formatFdCurrency(interestReceived)} />
+              <Figure tone="amber" label="Pending interest" value={formatFdCurrency(pendingInterest)} />
+              <div className={styles.bar} aria-hidden style={{ marginTop: 4 }}>
+                <i style={{ width: `${realisedPct}%`, background: TONES.emerald[1] }} />
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* ── Breakdown ── */}
+        <section className={styles.card} style={toneStyle('blue')}>
+          <CardHead icon={Building2} title="Portfolio breakdown" description="Active holdings and BG/LC allocation by bank, holder, purpose and maturity month.">
+            <div className={styles.headActions}>
+              <button type="button" className={styles.btn} disabled={exporting} onClick={() => void exportWorkbook(false)}>
+                {exporting ? <Loader2 className="animate-spin" aria-hidden /> : <Download aria-hidden />}Export dashboard
+              </button>
+              <button type="button" className={styles.btn} disabled={exporting} onClick={() => void exportWorkbook(true)}><Building2 aria-hidden />Bank-wise summary</button>
+              <button type="button" className={styles.btn} onClick={() => window.print()}><Printer aria-hidden />Print</button>
+            </div>
+          </CardHead>
+          <Tabs defaultValue="bank" className={styles.tabs}>
+            <TabsList className="h-auto flex-wrap justify-start">
+              <TabsTrigger value="bank">Bank-wise</TabsTrigger>
+              <TabsTrigger value="holder">Holder-wise</TabsTrigger>
+              <TabsTrigger value="purpose">Purpose-wise</TabsTrigger>
+              <TabsTrigger value="maturity">Maturity Month-wise</TabsTrigger>
+            </TabsList>
+            <TabsContent value="bank">
+              <Table><TableHeader><TableRow><TableHead>Bank</TableHead><TableHead className="text-right">FDs</TableHead><TableHead className="text-right">Principal</TableHead><TableHead className="text-right">BG Utilised</TableHead><TableHead className="text-right">LC Utilised</TableHead><TableHead className="text-right">Available</TableHead><TableHead className="text-right">Maturing ≤30d</TableHead></TableRow></TableHeader><TableBody>
+                {bankSummary.map((row) => <TableRow key={row.bank}><TableCell className="font-medium">{row.bank}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.principal)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.bg)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.lc)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{formatFdCurrency(row.available)}</TableCell><TableCell className="text-right tabular-nums">{row.maturing30}</TableCell></TableRow>)}
+                {!bankSummary.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No active FDs found.</TableCell></TableRow>}
+              </TableBody></Table>
+            </TabsContent>
+            <TabsContent value="holder">{summaryTable(holderSummary, 'FD Holder')}</TabsContent>
+            <TabsContent value="purpose">{summaryTable(purposeSummary, 'FD Purpose')}</TabsContent>
+            <TabsContent value="maturity">
+              <Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>
+                {maturityMonths.map((row) => <TableRow key={row.month}><TableCell className="font-medium">{row.month}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}
+                {!maturityMonths.length && <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No upcoming maturities.</TableCell></TableRow>}
+              </TableBody></Table>
+            </TabsContent>
+          </Tabs>
+        </section>
+
+        {/* ── Quick links ── */}
+        <nav className={styles.quick} aria-label="Fixed deposit shortcuts">
+          {QUICK_LINKS.map((link) => {
+            const Icon = link.icon;
+            return (
+              <Link key={link.href} href={link.href} className={styles.quickLink} style={toneStyle(link.tone)}>
+                <span className={styles.tile} aria-hidden><Icon /></span>{link.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2"><CardHeader className="flex flex-row items-start justify-between"><div><CardTitle>Available versus Utilised FD</CardTitle><CardDescription>Eligible value allocation across the active portfolio.</CardDescription></div><Badge variant="outline">{utilisationPct.toFixed(1)}% utilised</Badge></CardHeader><CardContent className="space-y-4">
-          {[{ label: 'Utilised', value: utilized, color: 'bg-blue-500' }, { label: 'Reserved', value: reserved, color: 'bg-violet-500' }, { label: 'Available', value: available, color: 'bg-emerald-500' }].map((item) => { const pct = eligibleValue ? Math.min(100, (item.value / eligibleValue) * 100) : 0; return <div key={item.label}><div className="mb-1 flex justify-between text-sm"><span className="font-medium">{item.label}</span><span>{formatFdCurrency(item.value)} · {pct.toFixed(1)}%</span></div><div className="h-2.5 overflow-hidden rounded-full bg-slate-100"><div className={cn('h-full rounded-full', item.color)} style={{ width: `${pct}%` }} /></div></div>; })}
-        </CardContent></Card>
-        <Card><CardHeader><CardTitle>Interest Realisation</CardTitle><CardDescription>Expected versus received.</CardDescription></CardHeader><CardContent><div className="space-y-4"><div><p className="text-xs text-muted-foreground">Expected Interest</p><p className="text-2xl font-bold">{formatFdCurrency(expectedInterest)}</p></div><div><p className="text-xs text-muted-foreground">Interest Received</p><p className="text-2xl font-bold text-emerald-700">{formatFdCurrency(interestReceived)}</p></div><div className="rounded-xl bg-amber-50 p-3"><p className="text-xs text-amber-700">Pending Interest</p><p className="font-semibold text-amber-900">{formatFdCurrency(Math.max(0, expectedInterest - interestReceived))}</p></div></div></CardContent></Card>
-      </div>
-
-      <Tabs defaultValue="bank" className="space-y-3">
-        <TabsList className="h-auto justify-start bg-white/80 p-1"><TabsTrigger value="bank">Bank-wise</TabsTrigger><TabsTrigger value="holder">Holder-wise</TabsTrigger><TabsTrigger value="purpose">Purpose-wise</TabsTrigger><TabsTrigger value="maturity">Maturity Month-wise</TabsTrigger><TabsTrigger value="ageing">Maturity Ageing</TabsTrigger></TabsList>
-        <TabsContent value="bank"><TableCard title="Bank-wise FD Principal and Utilisation" description="Active holdings and BG/LC allocation by issuing bank."><Table><TableHeader><TableRow><TableHead>Bank</TableHead><TableHead className="text-right">FDs</TableHead><TableHead className="text-right">Principal</TableHead><TableHead className="text-right">BG Utilised</TableHead><TableHead className="text-right">LC Utilised</TableHead><TableHead className="text-right">Available</TableHead><TableHead className="text-right">Maturing ≤30d</TableHead></TableRow></TableHeader><TableBody>{bankSummary.map((row) => <TableRow key={row.bank}><TableCell className="font-medium">{row.bank}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.principal)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.bg)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.lc)}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums text-emerald-700">{formatFdCurrency(row.available)}</TableCell><TableCell className="text-right tabular-nums">{row.maturing30}</TableCell></TableRow>)}{!bankSummary.length && <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No active FDs found.</TableCell></TableRow>}</TableBody></Table></TableCard></TabsContent>
-        <TabsContent value="holder"><TableCard title="FD Holder-wise Summary">{summaryTable(holderSummary, 'FD Holder')}</TableCard></TabsContent>
-        <TabsContent value="purpose"><TableCard title="FD Purpose-wise Summary">{summaryTable(purposeSummary, 'FD Purpose')}</TableCard></TabsContent>
-        <TabsContent value="maturity"><TableCard title="FD Maturity Month-wise"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>{maturityMonths.map((row) => <TableRow key={row.month}><TableCell className="font-medium">{row.month}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}{!maturityMonths.length && <TableRow><TableCell colSpan={3} className="h-24 text-center text-muted-foreground">No upcoming maturities.</TableCell></TableRow>}</TableBody></Table></TableCard></TabsContent>
-        <TabsContent value="ageing"><TableCard title="FD Maturity Ageing" scroll="natural"><Table><TableHeader><TableRow><TableHead>Ageing Bucket</TableHead><TableHead className="text-right">FD Count</TableHead><TableHead className="text-right">Principal Amount</TableHead></TableRow></TableHeader><TableBody>{ageing.map((row) => <TableRow key={row.label}><TableCell className="font-medium">{row.label}</TableCell><TableCell className="text-right tabular-nums">{row.count}</TableCell><TableCell className="whitespace-nowrap text-right tabular-nums">{formatFdCurrency(row.amount)}</TableCell></TableRow>)}</TableBody></Table></TableCard></TabsContent>
-      </Tabs>
-
-      <Card><CardHeader><CardTitle>Dashboard Actions</CardTitle><CardDescription>Work with the current FD portfolio.</CardDescription></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Button asChild variant="outline" className="justify-start"><Link href="/fixed-deposit/new"><FilePlus2 className="mr-2 h-4 w-4 text-cyan-600" />Create New FD</Link></Button>
-        <Button asChild variant="outline" className="justify-start"><Link href="/fixed-deposit/register"><FileSpreadsheet className="mr-2 h-4 w-4 text-blue-600" />View FD Register</Link></Button>
-        <Button asChild variant="outline" className="justify-start"><Link href="/fixed-deposit/maturity-calendar"><CalendarClock className="mr-2 h-4 w-4 text-amber-600" />View Maturity Calendar</Link></Button>
-        <Button asChild variant="outline" className="justify-start"><Link href="/fixed-deposit/available"><Check className="mr-2 h-4 w-4 text-emerald-600" />View Available FDs</Link></Button>
-        <Button asChild variant="outline" className="justify-start"><Link href="/fixed-deposit/approvals"><Clock3 className="mr-2 h-4 w-4 text-violet-600" />View Pending Approvals</Link></Button>
-        <Button variant="outline" className="justify-start" disabled={exporting} onClick={() => void exportWorkbook(false)}>{exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4 text-cyan-600" />}Export Dashboard</Button>
-        <Button variant="outline" className="justify-start" disabled={exporting} onClick={() => void exportWorkbook(true)}><Building2 className="mr-2 h-4 w-4 text-blue-600" />Download Bank-wise Summary</Button>
-        <Button variant="outline" className="justify-start" onClick={() => window.print()}><Download className="mr-2 h-4 w-4 text-slate-600" />Print / Save PDF</Button>
-      </CardContent></Card>
-    </div>
+    </>
   );
 }
