@@ -101,6 +101,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { todayIso, formatIsoDate } from "@/lib/iso-date";
 
 const VIEWS = [
   { key: "all", label: "All calls", icon: ClipboardList },
@@ -113,18 +114,7 @@ const VIEWS = [
 
 type ViewKey = (typeof VIEWS)[number]["key"];
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 /** What the result dialog holds per line while it is being filled in. */
 type ResultDraft = {
@@ -156,7 +146,7 @@ export default function InspectionCallsPage() {
 
   /** The call whose result is being recorded, and the per-line inputs. */
   const [resultCallId, setResultCallId] = useState("");
-  const [inspectionDate, setInspectionDate] = useState(today());
+  const [inspectionDate, setInspectionDate] = useState(todayIso());
   const [inspectorName, setInspectorName] = useState("");
   const [resultByItemId, setResultByItemId] = useState<Record<string, ResultDraft>>({});
 
@@ -248,7 +238,7 @@ export default function InspectionCallsPage() {
   const openResultDialog = (callId: string) => {
     const pending = (itemsByCallId.get(callId) ?? []).filter((item) => item.status === "Pending");
     setResultCallId(callId);
-    setInspectionDate(today());
+    setInspectionDate(todayIso());
     setInspectorName(workspace?.calls.find((call) => call.id === callId)?.inspectorName ?? "");
     setResultByItemId(
       Object.fromEntries(
@@ -570,8 +560,8 @@ export default function InspectionCallsPage() {
         ),
     },
     { header: "Call No.", mobile: "title", cell: (row) => <span className="font-medium">{row.callNumber}</span> },
-    { header: "Call date", className: "whitespace-nowrap", cell: (row) => formatDate(row.callDate) },
-    { header: "Inspected", className: "whitespace-nowrap", cell: (row) => formatDate(row.inspectionDate) },
+    { header: "Call date", className: "whitespace-nowrap", cell: (row) => formatIsoDate(row.callDate) },
+    { header: "Inspected", className: "whitespace-nowrap", cell: (row) => formatIsoDate(row.inspectionDate) },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName },
     { header: "Inspector", cell: (row) => row.inspectorName || "—" },
     { header: "Lines", className: "text-right tabular-nums", cell: (row) => row.itemCount },

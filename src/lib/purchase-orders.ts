@@ -104,11 +104,8 @@ export interface PurchaseOrder {
   issueOverrideByName?: string;
 }
 
-export const toNumber = (value: unknown): number => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
-  return Number.isFinite(parsed) ? parsed : 0;
-};
+/** Re-exported from `quantity-format.ts`, which holds the one implementation. */
+export { toNumber } from "./quantity-format.ts";
 
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -117,8 +114,7 @@ export const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-export const formatQuantity = (value: number) =>
-  new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 }).format(value);
+export { formatQuantity } from "./quantity-format.ts";
 
 export const generatePoNumber = (poDate: string, docId: string) => {
   const dateCode = poDate.replace(/-/g, "");

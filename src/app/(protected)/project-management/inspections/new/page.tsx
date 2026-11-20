@@ -66,11 +66,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { todayIso } from "@/lib/iso-date";
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 type CandidateRow = {
   key: string;
@@ -98,7 +95,7 @@ export default function NewInspectionCallPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [vendorId, setVendorId] = useState("");
-  const [callDate, setCallDate] = useState(today());
+  const [callDate, setCallDate] = useState(todayIso());
   const [inspectorName, setInspectorName] = useState("");
   const [agency, setAgency] = useState("");
   const [remarks, setRemarks] = useState("");

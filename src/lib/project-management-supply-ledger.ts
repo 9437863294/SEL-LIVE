@@ -582,6 +582,18 @@ export function supplyItemStatusFor(acceptedQty: number): SupplyItemStatus {
 
 /* ── Document status ────────────────────────────────────────────────────────────────────────── */
 
+/**
+ * Whether a document may still be changed in place.
+ *
+ * Only a draft. A draft holds no quantity — nothing downstream has been told about it and no
+ * balance is reserved against it — so its lines, its date and its party are still the author's to
+ * change. The moment it is raised, quantity is in flight against every line's ceiling and other
+ * documents have been refused balance because of it; editing it then would move figures other
+ * people have already acted on, which is what `Cancel` and a fresh document are for.
+ */
+export const canEditSupplyDraft = (status: SupplyDocStatus | string | undefined): boolean =>
+  status === "Draft";
+
 export function deriveSupplyDocStatus(
   items: readonly Pick<SupplyDocItem, "status">[],
   current: SupplyDocStatus,

@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Download,
   FileStack,
   Hourglass,
   Layers,
@@ -31,6 +32,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Search,
   Send,
   Trash2,
   Wrench,
@@ -44,6 +46,7 @@ import { formatQuantity, toNumber } from "@/lib/purchase-orders";
 import { PUNCH_SEVERITIES, type PunchItem, type PunchSeverity } from "@/lib/supply-gates";
 import {
   buildSupplyRegisterRows,
+  canEditSupplyDraft,
   supplyPoLineKey,
   supplyRejectedQtyOf,
   supplyStage,
@@ -62,7 +65,9 @@ import {
   loadSupplyChain,
   rebuildSupplyBalances,
   recordSupplyDecision,
+  submitSupplyDraft,
   syncSupplyGateRecords,
+  updateSupplyDraft,
   upstreamQtyByLineKey,
   type SupplyChain,
   type SupplyDecisionLine,
@@ -77,6 +82,7 @@ import {
   PmSidebar,
   PmTableFoot,
   pmAccent,
+  usePmInModuleShell,
   type PmListColumn,
 } from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
@@ -103,6 +109,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { todayIso, formatIsoDate } from "@/lib/iso-date";
+import { exportRowsToExcel } from "@/lib/report-excel";
 
 /** Per-stage screen chrome the ledger definition does not carry. */
 export interface SupplyStageChrome {
@@ -146,20 +154,10 @@ export const SUPPLY_STAGE_CHROME: Record<SupplyLedgerStage, SupplyStageChrome> =
   },
 };
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
-const hrefWith = (path: string, mappingId: string, extra = "") =>
+/** A link into a supply screen, carrying the project on. Shared with the gate hubs. */
+export const hrefWith = (path: string, mappingId: string, extra = "") =>
   `${path}?project=${encodeURIComponent(mappingId)}${extra}`;
 
 /**
@@ -252,6 +250,7 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
   const chrome = SUPPLY_STAGE_CHROME[stage];
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
+  const draftId = searchParams?.get("draft") ?? "";
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -265,11 +264,17 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [vendorId, setVendorId] = useState("");
-  const [docDate, setDocDate] = useState(today());
+  const [docDate, setDocDate] = useState(todayIso());
   const [counterparty, setCounterparty] = useState("");
   const [meta, setMeta] = useState<Record<string, string>>({});
   const [remarks, setRemarks] = useState("");
   const [qtyByKey, setQtyByKey] = useState<Record<string, string>>({});
+  /**
+   * The draft this form is editing, if any, and whether its values have been put into the
+   * fields yet. Prefilling is a one-shot: after it, the fields belong to the person typing.
+   */
+  const [loadedDraftId, setLoadedDraftId] = useState("");
+  const [itemIdByKey, setItemIdByKey] = useState<Record<string, string>>({});
 
   const loadData = useCallback(async () => {
     if (!globalProjectId) {
@@ -296,6 +301,48 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
   }, [canView, isAuthLoading, loadData]);
 
   const state = chain?.stages[stage];
+
+  /** The draft being edited, straight out of the chain this form already loaded. */
+  const draft = useMemo(
+    () => (draftId ? (state?.docs.find((entry) => entry.id === draftId) ?? null) : null),
+    [draftId, state],
+  );
+  const draftItems = useMemo(
+    () => (draftId ? (state?.items.filter((item) => item.docId === draftId) ?? []) : []),
+    [draftId, state],
+  );
+  const isEditing = Boolean(draft);
+
+
+  /*
+   * Putting the draft into the form. Once only — `loadedDraftId` is the latch — so a re-render
+   * while somebody is typing does not snap their changes back to what was saved.
+   */
+  if (draft && loadedDraftId !== draft.id) {
+    setLoadedDraftId(draft.id);
+    setVendorId(String(draft.vendorId ?? ""));
+    setDocDate(String(draft.docDate ?? todayIso()));
+    setCounterparty(String(draft.counterparty ?? ""));
+    setMeta(
+      Object.fromEntries(
+        Object.entries(draft.meta ?? {}).map(([key, value]) => [key, String(value ?? "")]),
+      ),
+    );
+    setRemarks(String(draft.remarks ?? ""));
+    setQtyByKey(
+      Object.fromEntries(
+        draftItems.map((item) => [
+          supplyPoLineKey(item.poId, item.poLineId),
+          String(toNumber(item.presentedQty)),
+        ]),
+      ),
+    );
+    setItemIdByKey(
+      Object.fromEntries(
+        draftItems.map((item) => [supplyPoLineKey(item.poId, item.poLineId), item.id]),
+      ),
+    );
+  }
 
   const allCandidates = useMemo<Candidate[]>(() => {
     if (!state || !chain) return [];
@@ -326,10 +373,19 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
       if (row.ledger.availableQty > 0) entry.openLines += 1;
       byId.set(row.vendorId, entry);
     }
-    return [...byId.values()]
-      .filter((entry) => entry.openLines > 0)
-      .sort((a, b) => a.vendorName.localeCompare(b.vendorName));
-  }, [allCandidates]);
+    const open = [...byId.values()].filter((entry) => entry.openLines > 0);
+    // The draft's own vendor stays on the list whatever its balance, so the form it belongs to
+    // can still show it.
+    const draftVendorId = String(draft?.vendorId ?? "");
+    if (draftVendorId && !open.some((entry) => entry.vendorId === draftVendorId)) {
+      open.push({
+        vendorId: draftVendorId,
+        vendorName: String(draft?.vendorName ?? byId.get(draftVendorId)?.vendorName ?? "Unknown vendor"),
+        openLines: 0,
+      });
+    }
+    return open.sort((a, b) => a.vendorName.localeCompare(b.vendorName));
+  }, [allCandidates, draft]);
 
   const rows = useMemo(
     () =>
@@ -403,33 +459,72 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
         itemDescription: row.ledger.itemDescription,
         unit: row.ledger.unit,
         presentedQty: qty,
+        // Carried so an edited line is updated where it is rather than replaced.
+        itemId: itemIdByKey[row.key],
       }));
 
       const cleanMeta = Object.fromEntries(
         Object.entries(meta).filter(([, value]) => value.trim()),
       );
 
-      const { docNumber } = await createSupplyDoc({
-        globalProjectId,
-        stage,
-        vendorId: vendor.vendorId,
-        vendorName: vendor.vendorName,
-        docDate,
-        counterparty,
-        meta: cleanMeta,
-        remarks,
-        lines,
-        upstreamQtyByLineKey: upstreamQtyByLineKey(state),
-        submit,
-        actor: { id: user.id, name: user.name },
-      });
+      /*
+       * Three paths, one form: a new document, a draft saved again, and a draft raised. The
+       * last two keep the document that already exists — its id, and the number that was
+       * allocated with it — rather than leaving an orphan behind.
+       */
+      const existingItemIds = draftItems.map((item) => item.id);
+      const { docNumber } = isEditing
+        ? submit
+          ? await submitSupplyDraft({
+              globalProjectId,
+              stage,
+              docId: draft!.id,
+              docDate,
+              counterparty,
+              meta: cleanMeta,
+              remarks,
+              lines,
+              existingItemIds,
+              upstreamQtyByLineKey: upstreamQtyByLineKey(state),
+              actor: { id: user.id, name: user.name },
+            })
+          : await updateSupplyDraft({
+              globalProjectId,
+              stage,
+              docId: draft!.id,
+              docDate,
+              counterparty,
+              meta: cleanMeta,
+              remarks,
+              lines,
+              existingItemIds,
+              actor: { id: user.id, name: user.name },
+            })
+        : await createSupplyDoc({
+            globalProjectId,
+            stage,
+            vendorId: vendor.vendorId,
+            vendorName: vendor.vendorName,
+            docDate,
+            counterparty,
+            meta: cleanMeta,
+            remarks,
+            lines,
+            upstreamQtyByLineKey: upstreamQtyByLineKey(state),
+            submit,
+            actor: { id: user.id, name: user.name },
+          });
 
       void logUserActivity({
         userId: user.id,
         userName: user.name,
         userEmail: user.email,
         module: "Project Management",
-        action: submit ? `Raise ${definition.label}` : `Create ${definition.label} Draft`,
+        action: submit
+          ? `Raise ${definition.label}`
+          : isEditing
+            ? `Edit ${definition.label} Draft`
+            : `Create ${definition.label} Draft`,
         details: {
           project: projectName,
           docNumber,
@@ -442,7 +537,11 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
       });
 
       toast({
-        title: submit ? `${docNumber} raised` : `${docNumber} saved as draft`,
+        title: submit
+          ? `${docNumber} raised`
+          : isEditing
+            ? `${docNumber} updated`
+            : `${docNumber} saved as draft`,
         description: submit
           ? `${formatQuantity(totalQty)} on ${lines.length} purchase order line(s).`
           : `Draft ${definition.docNoun}s hold no quantity until they are raised.`,
@@ -612,10 +711,10 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
   return (
     <PmShell>
       <PageHeader sticky
-        title={`New ${definition.label}`}
+        title={isEditing ? `Edit ${draft!.docNumber}` : `New ${definition.label}`}
         breadcrumbs={[
           { label: definition.label, href: hrefWith(`${chrome.basePath}/documents`, mappingId) },
-          { label: "New" },
+          { label: isEditing ? "Edit draft" : "New" },
         ]}
         backHref={hrefWith(`${chrome.basePath}/documents`, mappingId)}
         backLabel={`Back to ${definition.label} documents`}
@@ -629,7 +728,7 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
               aria-label="Save draft"
             >
               <Save className="h-4 w-4 sm:mr-1.5" />
-              <span className="hidden sm:inline">Save draft</span>
+              <span className="hidden sm:inline">{isEditing ? "Save changes" : "Save draft"}</span>
             </Button>
             <Button size="sm" disabled={!canRaise || !canSubmit} onClick={() => void handleSave(true)}>
               {isSaving ? (
@@ -844,8 +943,11 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
   const [isLoading, setIsLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Inside a module shell the view rail is suppressed (see PmShell), so the views move inline.
+  const inModuleShell = usePmInModuleShell();
+  const [search, setSearch] = useState("");
   const [decisionDocId, setDecisionDocId] = useState("");
-  const [decidedDate, setDecidedDate] = useState(today());
+  const [decidedDate, setDecidedDate] = useState(todayIso());
   const [counterparty, setCounterparty] = useState("");
   const [decisionByItemId, setDecisionByItemId] = useState<Record<string, DecisionDraft>>({});
 
@@ -900,7 +1002,23 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
     return row.status === key;
   }, []);
 
-  const rows = useMemo(() => allRows.filter((row) => matchesView(row, view)), [allRows, matchesView, view]);
+  /**
+   * Finding one document.
+   *
+   * The register had views and nothing else: on a project with three hundred receipts, "where is
+   * GRN-0147" or "what did we take from Polycab" meant scrolling. The search reads the number, the
+   * vendor and the party who decided, which is how people name a document out loud.
+   */
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return allRows.filter((row) => {
+      if (!matchesView(row, view)) return false;
+      if (!needle) return true;
+      return `${row.docNumber} ${row.vendorName ?? ""} ${row.counterparty ?? ""}`
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [allRows, matchesView, view, search]);
   /** The same rows with the `id` the responsive list keys its cards and table rows by. */
   const listRows = useMemo(() => rows.map((row) => ({ ...row, id: row.docId })), [rows]);
   const countFor = useCallback(
@@ -923,7 +1041,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
   const openDecision = (docId: string) => {
     const pending = (itemsByDocId.get(docId) ?? []).filter((item) => item.status === "Pending");
     setDecisionDocId(docId);
-    setDecidedDate(today());
+    setDecidedDate(todayIso());
     setCounterparty(state?.docs.find((entry) => entry.id === docId)?.counterparty ?? "");
     setDecisionByItemId(
       Object.fromEntries(
@@ -1151,6 +1269,45 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
     }
   };
 
+  /**
+   * The register as a workbook.
+   *
+   * What is exported is what is on screen — the active view and the search — because the
+   * alternative, always exporting everything, means the file and the screen disagree and the
+   * person has to filter twice.
+   */
+  const handleExport = async () => {
+    if (rows.length === 0) return;
+    setBusyId("export");
+    try {
+      await exportRowsToExcel(
+        `${definition.label} documents`,
+        rows.map((row) => ({
+          [`${definition.label} No.`]: row.docNumber,
+          Date: formatIsoDate(row.docDate),
+          Decided: formatIsoDate(row.decidedDate),
+          Vendor: row.vendorName || "",
+          [chrome.counterpartyLabel]: row.counterparty || "",
+          Status: row.status,
+          Lines: row.itemCount,
+          "Purchase orders": row.poCount,
+          [definition.presentedLabel]: row.presentedQty,
+          [definition.acceptedLabel]: row.acceptedQty,
+          "Not accepted": row.rejectedQty,
+          "Blocking observations": row.blockingObservationCount,
+        })),
+        {
+          filename: `${definition.numberPrefix}-register-${projectName || mappingId}.xlsx`,
+          sheetName: definition.label,
+        },
+      );
+    } catch (error) {
+      console.error("Failed to export the register:", error);
+      toast({ title: "Unable to export the register", variant: "destructive" });
+    } finally {
+      setBusyId("");
+    }
+  };
   const handleRebuild = async () => {
     if (!globalProjectId) return;
     setBusyId("rebuild");
@@ -1214,11 +1371,11 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
         ),
     },
     { header: "Number", className: "font-medium", mobile: "title", cell: (row) => row.docNumber },
-    { header: "Date", className: "whitespace-nowrap", cell: (row) => formatDate(row.docDate) },
+    { header: "Date", className: "whitespace-nowrap", cell: (row) => formatIsoDate(row.docDate) },
     {
       header: "Decided",
       className: "whitespace-nowrap",
-      cell: (row) => formatDate(row.decidedDate),
+      cell: (row) => formatIsoDate(row.decidedDate),
     },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName || "—" },
     /*
@@ -1342,16 +1499,31 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                   </Button>
                 )}
               </>
-            ) : row.status === "Draft" && canRaise ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-muted-foreground"
-                onClick={() => void handleDelete(row.docId, row.docNumber)}
-              >
-                <Trash2 className="mr-1 h-3.5 w-3.5" />
-                Delete
-              </Button>
+            ) : canEditSupplyDraft(row.status) && canRaise ? (
+              <>
+                {/* A draft reserves no quantity, so it is still the author's to change. */}
+                <Button variant="outline" size="sm" className="h-7 px-2" asChild>
+                  <Link
+                    href={hrefWith(
+                      `${chrome.basePath}/new`,
+                      mappingId,
+                      `&draft=${encodeURIComponent(row.docId)}`,
+                    )}
+                  >
+                    <PencilLine className="mr-1 h-3.5 w-3.5" />
+                    Edit
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-muted-foreground"
+                  onClick={() => void handleDelete(row.docId, row.docNumber)}
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              </>
             ) : (
               <span className="hidden text-xs text-muted-foreground sm:inline">—</span>
             )}
@@ -1447,16 +1619,38 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
     >
       <PageHeader sticky
         title={`${definition.label} Documents`}
-        // This register is the only screen under the module base, so its parent is the Supply hub
-        // rather than a module landing page.
+        /*
+         * Where "back" goes depends on where this register is hosted. On its own it hangs off the
+         * Supply hub; inside a module (MVAC) the hub would take you out of the module you are in,
+         * so it goes to that module's own landing screen instead.
+         */
         breadcrumbs={[
           { label: projectName || "Project" },
           { label: definition.label, href: hrefWith(`${chrome.basePath}/documents`, mappingId) },
         ]}
-        backHref={hrefWith("/project-management/supply", mappingId)}
-        backLabel="Back to Supply"
+        backHref={
+          inModuleShell
+            ? hrefWith(chrome.basePath, mappingId)
+            : hrefWith("/project-management/supply", mappingId)
+        }
+        backLabel={inModuleShell ? `Back to ${definition.label}` : "Back to Supply"}
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={rows.length === 0 || Boolean(busyId)}
+              onClick={() => void handleExport()}
+              title="Download what is on screen as an Excel workbook."
+              aria-label="Export to Excel"
+            >
+              {busyId === "export" ? (
+                <Loader2 className="h-4 w-4 animate-spin sm:mr-1.5" />
+              ) : (
+                <Download className="h-4 w-4 sm:mr-1.5" />
+              )}
+              <span className="hidden sm:inline">Export</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -1490,6 +1684,46 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
       />
 
       <PmContent>
+        {/*
+          * The views, where the module shell has taken the rail away.
+          *
+          * MVAC's register sits inside its own module, which supplies the sidebar; a second rail
+          * beside it was two sets of navigation for one screen. The views are the same list, as a
+          * row of tabs with the same counts.
+          */}
+        {inModuleShell ? (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {VIEWS.map((entry) => {
+              const count = countFor(entry.key);
+              const active = entry.key === view;
+              return (
+                <button
+                  key={entry.key}
+                  type="button"
+                  onClick={() => setView(entry.key)}
+                  aria-pressed={active}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-extrabold transition-colors",
+                    active
+                      ? "border-transparent bg-primary text-primary-foreground"
+                      : "border-border/60 bg-card text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <entry.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {entry.label}
+                  <span
+                    className={cn(
+                      "rounded-full px-1.5 text-[11px]",
+                      active ? "bg-white/20" : "bg-muted",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         <PmSectionHead
           title={VIEWS.find((entry) => entry.key === view)?.label ?? "All documents"}
           stats={[
@@ -1503,6 +1737,22 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
               ? [{ label: "blocked by observation", value: String(blockingTotal), tone: "flag" as const }]
               : []),
           ]}
+          actions={
+            <div className="relative w-full sm:w-[260px]">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={`Search ${definition.label} no., vendor or party`}
+                aria-label={`Search ${definition.label} documents`}
+                disabled={allRows.length === 0}
+                className="h-9 pl-9"
+              />
+            </div>
+          }
         />
 
         {isLoading ? (
@@ -1524,7 +1774,9 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                 <p className="text-sm font-medium">
                   {allRows.length === 0
                     ? `No ${definition.docNoun} has been raised yet`
-                    : `No ${(VIEWS.find((entry) => entry.key === view)?.label ?? "").toLowerCase()}`}
+                    : search.trim()
+                      ? `Nothing matches “${search.trim()}”`
+                      : `No ${(VIEWS.find((entry) => entry.key === view)?.label ?? "").toLowerCase()}`}
                 </p>
                 <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
                   A {definition.docNoun} may only cover quantity the stage above it has passed down.

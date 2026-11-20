@@ -10,6 +10,7 @@ import {
   canPresentPoLine,
   canReleaseBillingForItem,
   checkSupplyBalance,
+  canEditSupplyDraft,
   deriveSupplyDocStatus,
   generateSupplyDocNumber,
   rebuildSupplyPoLineBalance,
@@ -442,6 +443,17 @@ test('the item status follows the accepted quantity rather than being chosen', (
 });
 
 /* ── Document status ────────────────────────────────────────────────────────────────────────── */
+
+test('only a draft may be edited in place', () => {
+  assert.equal(canEditSupplyDraft('Draft'), true);
+  // Once it is raised its quantity is in flight against every line's ceiling, and other documents
+  // have already been refused balance because of it.
+  assert.equal(canEditSupplyDraft('Open'), false);
+  assert.equal(canEditSupplyDraft('Partially Completed'), false);
+  assert.equal(canEditSupplyDraft('Completed'), false);
+  assert.equal(canEditSupplyDraft('Cancelled'), false);
+  assert.equal(canEditSupplyDraft(undefined), false);
+});
 
 test('a document with every line still awaiting a decision stays open', () => {
   assert.equal(deriveSupplyDocStatus([{ status: 'Pending' }, { status: 'Pending' }], 'Open'), 'Open');

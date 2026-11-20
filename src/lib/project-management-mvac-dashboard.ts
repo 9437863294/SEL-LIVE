@@ -243,11 +243,20 @@ export function buildMvacCandidates({
   grnSources,
   vendorByPoId,
   boqItemIdByLineKey,
+  alwaysInclude,
 }: {
   ledgers: readonly MvacLedgerLike[];
   grnSources: ReadonlyMap<string, readonly MvacGrnSource[]>;
   vendorByPoId: ReadonlyMap<string, { vendorName?: string }>;
   boqItemIdByLineKey?: ReadonlyMap<string, string | undefined>;
+  /**
+   * Line keys to offer whatever their balance — the lines a draft being edited already holds.
+   *
+   * Without this, a draft line whose balance was taken by another document between saving and
+   * reopening would simply vanish from the form, and the person would have no way to see it, let
+   * alone remove it. It is shown with its real (possibly nil) balance, so saving still refuses it.
+   */
+  alwaysInclude?: ReadonlySet<string>;
 }): MvacCandidateLine[] {
   const out: MvacCandidateLine[] = [];
 
@@ -255,7 +264,8 @@ export function buildMvacCandidates({
     const key = supplyPoLineKey(ledger.poId, ledger.poLineId);
     const available = num(ledger.availableQty);
     const received = num(ledger.upstreamQty);
-    if (available <= 0 || received <= 0) continue;
+    const kept = alwaysInclude?.has(key) ?? false;
+    if (!kept && (available <= 0 || received <= 0)) continue;
 
     out.push({
       key,

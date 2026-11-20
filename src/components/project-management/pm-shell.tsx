@@ -431,14 +431,20 @@ export function PmShell({
    * Omit on a focused create/edit form. A form has no views to switch between, and a nav rail
    * beside it is navigation competing with the thing you came to fill in — so those screens run
    * full width, with the breadcrumb and the save action carrying the wayfinding instead.
+   *
+   * Dropped entirely inside a module shell: that page already has the module's sidebar, and two
+   * rails side by side is two sets of navigation for one screen. A screen that does this should
+   * offer its views another way — `usePmInModuleShell` is how it finds out.
    */
   sidebar?: ReactNode;
   children: ReactNode;
 }) {
+  const inModuleShell = useContext(PmInModuleShellContext);
+
   // A column below `lg`, so the sidebar's phone strip sits above the content, not beside it.
   return (
     <div className="flex min-h-[calc(100dvh-3.5rem)] flex-col md:min-h-[calc(100dvh-4rem)] lg:flex-row">
-      {sidebar}
+      {inModuleShell ? null : sidebar}
       <div className="flex min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );
@@ -452,6 +458,13 @@ export function PmShell({
  */
 const PmInModuleShellContext = createContext(false);
 
+/**
+ * True on a page hosted inside the shared ModuleShell.
+ *
+ * A screen asks because the module already supplies the sidebar and the back link: its own
+ * view rail would be a second one, and its own "back to the hub" would leave the module.
+ */
+export const usePmInModuleShell = (): boolean => useContext(PmInModuleShellContext);
 export function PmInModuleShell({ children }: { children: ReactNode }) {
   return <PmInModuleShellContext.Provider value>{children}</PmInModuleShellContext.Provider>;
 }

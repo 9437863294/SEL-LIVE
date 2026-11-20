@@ -214,6 +214,24 @@ test('a line with nothing left, or nothing received, is not offered', () => {
   assert.equal(rows.length, 0);
 });
 
+test('a draft keeps its own lines even once their balance has gone', () => {
+  const ledgers = [ledger({ availableQty: 0, inFlightQty: 100 })];
+  assert.equal(
+    buildMvacCandidates({ ledgers, grnSources: new Map(), vendorByPoId: vendors }).length,
+    0,
+    'not offered to a new certificate',
+  );
+
+  const [kept] = buildMvacCandidates({
+    ledgers,
+    grnSources: new Map(),
+    vendorByPoId: vendors,
+    alwaysInclude: new Set(['po1::l1']),
+  });
+  assert.equal(kept.key, 'po1::l1');
+  assert.equal(kept.availableQty, 0, 'shown with its real balance, so saving still refuses it');
+});
+
 test('what is already covered by a certificate is reported as used', () => {
   const [row] = buildMvacCandidates({
     ledgers: [ledger({ inFlightQty: 30, acceptedQty: 20, availableQty: 50 })],

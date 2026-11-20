@@ -104,6 +104,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { TableCard } from "@/components/shared/table-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { todayIso } from "@/lib/iso-date";
 
 type ProjectMapping = {
   id: string;
@@ -140,10 +141,6 @@ const emptyQuoteForm = (rfqItems: RfqItem[]): QuoteForm => ({
   gstPct: "",
 });
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 export default function RfqDetailPage() {
   const { rfqId } = useParams() as { rfqId: string };
@@ -333,7 +330,7 @@ export default function RfqDetailPage() {
         gstPct: existing.gstPct != null ? String(existing.gstPct) : "",
       });
     } else {
-      setQuoteForm({ ...emptyQuoteForm(rfq.items), submittedDate: today() });
+      setQuoteForm({ ...emptyQuoteForm(rfq.items), submittedDate: todayIso() });
     }
     setQuoteDialogVendorId(vendorId);
   };

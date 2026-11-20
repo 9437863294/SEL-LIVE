@@ -72,6 +72,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { FilterBar } from "@/components/shared/filter-bar";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { formatIsoDate } from "@/lib/iso-date";
 
 type ProjectMapping = {
   id: string;
@@ -91,13 +92,6 @@ type IndentRecord = {
   items: IndentLineItem[];
 };
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 export default function PurchaseOrderRegisterPage() {
   const router = useRouter();
@@ -266,7 +260,7 @@ export default function PurchaseOrderRegisterPage() {
   // stacked under the status badge; both now have a column of their own.
   const poColumns: PmListColumn<PurchaseOrder>[] = [
     { header: "PO Number", className: "whitespace-nowrap font-medium", mobile: "title", cell: (po) => po.poNumber },
-    { header: "PO Date", className: "whitespace-nowrap", cell: (po) => formatDate(po.poDate) },
+    { header: "PO Date", className: "whitespace-nowrap", cell: (po) => formatIsoDate(po.poDate) },
     {
       header: "Vendor",
       className: "max-w-[180px] truncate",

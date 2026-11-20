@@ -57,6 +57,7 @@ import {
   type RfqItem,
 } from "@/lib/rfq";
 import { VENDOR_COLLECTIONS, type Vendor } from "@/lib/vendor-management";
+import { todayIso } from "@/lib/iso-date";
 
 type ProjectMapping = {
   id: string;
@@ -80,10 +81,6 @@ type IndentRecord = {
   items: IndentLineItem[];
 };
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 const itemKey = (indentId: string, boqItemId: string) => `${indentId}__${boqItemId}`;
 
@@ -106,7 +103,7 @@ export default function NewRfqPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [expandedIndents, setExpandedIndents] = useState<Set<string>>(new Set());
 
-  const [rfqDate, setRfqDate] = useState(today());
+  const [rfqDate, setRfqDate] = useState(todayIso());
   const [dueDate, setDueDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [selectedItemKeys, setSelectedItemKeys] = useState<Set<string>>(new Set());

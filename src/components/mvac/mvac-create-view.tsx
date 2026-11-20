@@ -102,6 +102,8 @@ export interface MvacCreateViewProps {
   onCounterpartyChange: (value: string) => void;
   remarks: string;
   onRemarksChange: (value: string) => void;
+  /** Set when an existing draft is being edited — its number, for the heading. */
+  editingDocNumber?: string;
   canRaise: boolean;
   isLoading?: boolean;
   isSaving?: boolean;
@@ -174,6 +176,7 @@ export function MvacCreateView({
   onCounterpartyChange,
   remarks,
   onRemarksChange,
+  editingDocNumber,
   canRaise,
   isLoading,
   isSaving,
@@ -331,11 +334,13 @@ export function MvacCreateView({
           icon={FilePlus}
           back={back}
           crumbs={crumbs}
-          title="Create MVAC"
+          title={editingDocNumber ? `Edit ${editingDocNumber}` : "Create MVAC"}
           description={
-            projectName
-              ? `Raise a joint acceptance for material received on ${projectName}`
-              : "Raise a joint acceptance for material received at site"
+            editingDocNumber
+              ? "A draft holds no quantity until it is raised, so it is still yours to change."
+              : projectName
+                ? `Raise a joint acceptance for material received on ${projectName}`
+                : "Raise a joint acceptance for material received at site"
           }
           actions={
             <>
@@ -346,7 +351,7 @@ export function MvacCreateView({
                 onClick={() => onSave(false)}
               >
                 <Save className="mr-2 h-4 w-4" aria-hidden="true" />
-                Save draft
+                {editingDocNumber ? "Save changes" : "Save draft"}
               </Button>
               <Button
                 className={cn(HERO_PRIMARY_BUTTON, "text-rose-900")}
@@ -418,13 +423,13 @@ export function MvacCreateView({
                   htmlFor="mvac-no"
                   icon={Hash}
                   colour={ENTRY_FIELD_COLOURS[1]}
-                  hint="· allocated on save"
+                  hint={editingDocNumber ? "· draft" : "· allocated on save"}
                 >
                   MVAC No
                 </EntryFieldLabel>
                 <Input
                   id="mvac-no"
-                  value="— allocated when raised —"
+                  value={editingDocNumber || "— allocated when raised —"}
                   readOnly
                   className={cn(ENTRY_FIELD_INPUT, "cursor-not-allowed bg-muted/50")}
                   style={{ borderLeftColor: ENTRY_FIELD_COLOURS[1] }}

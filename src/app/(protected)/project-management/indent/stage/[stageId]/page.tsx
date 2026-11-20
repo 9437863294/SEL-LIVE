@@ -68,6 +68,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { formatIsoDate } from "@/lib/iso-date";
 
 type IndentLineItem = {
   boqItemId: string;
@@ -103,13 +104,6 @@ const formatQuantity = (value: number) =>
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -392,7 +386,7 @@ export default function IndentStagePage() {
       ),
     },
     { header: "Indent No.", mobile: "title", cell: (indent) => <span className="font-medium">{indent.indentNumber}</span> },
-    { header: "Date", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.indentDate) },
+    { header: "Date", className: "whitespace-nowrap", cell: (indent) => formatIsoDate(indent.indentDate) },
     { header: "Items", cell: (indent) => indent.items.length },
     {
       header: "Total Qty",
@@ -407,7 +401,7 @@ export default function IndentStagePage() {
       className: "whitespace-nowrap",
       cell: (indent) => <span className="font-medium">{formatCurrency(toNumber(indent.totalAmount))}</span>,
     },
-    { header: "Required", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.requiredDate) },
+    { header: "Required", className: "whitespace-nowrap", cell: (indent) => formatIsoDate(indent.requiredDate) },
     { header: "Raised By", cell: (indent) => indent.createdByName || "—" },
     {
       header: "Due",

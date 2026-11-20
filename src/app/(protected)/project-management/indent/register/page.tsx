@@ -80,6 +80,7 @@ import type { WorkflowStep } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { formatIsoDate } from "@/lib/iso-date";
 
 type ProjectMapping = {
   id: string;
@@ -143,17 +144,6 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   }).format(value);
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-};
 
 const getTimestampMillis = (value: unknown) => {
   if (value && typeof value === "object" && "toMillis" in value) {
@@ -397,8 +387,8 @@ export default function ProjectIndentRegisterPage() {
         ],
         rows: indents.map((indent) => ({
           indentNumber: indent.indentNumber,
-          indentDate: formatDate(indent.indentDate),
-          requiredDate: formatDate(indent.requiredDate),
+          indentDate: formatIsoDate(indent.indentDate),
+          requiredDate: formatIsoDate(indent.requiredDate),
           status: indent.status,
           itemCount: indent.items?.length ?? 0,
           totalAmount: toNumber(indent.totalAmount),
@@ -561,7 +551,7 @@ export default function ProjectIndentRegisterPage() {
       ),
     },
     { header: "Indent No.", mobile: "title", cell: (indent) => <span className="font-medium">{indent.indentNumber}</span> },
-    { header: "Indent Date", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.indentDate) },
+    { header: "Indent Date", className: "whitespace-nowrap", cell: (indent) => formatIsoDate(indent.indentDate) },
     { header: "Items", cell: (indent) => indent.items.length },
     {
       header: "Total Qty",
@@ -574,7 +564,7 @@ export default function ProjectIndentRegisterPage() {
       className: "whitespace-nowrap",
       cell: (indent) => <span className="font-medium">{formatCurrency(indent.totalAmount)}</span>,
     },
-    { header: "Required Date", className: "whitespace-nowrap", cell: (indent) => formatDate(indent.requiredDate) },
+    { header: "Required Date", className: "whitespace-nowrap", cell: (indent) => formatIsoDate(indent.requiredDate) },
     {
       header: "Status",
       mobile: "aside",

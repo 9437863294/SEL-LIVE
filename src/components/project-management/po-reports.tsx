@@ -31,6 +31,7 @@ import {
   type POStatus,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
+import { formatIsoDate } from "@/lib/iso-date";
 
 export type PoBoqItemLite = {
   id: string;
@@ -53,13 +54,6 @@ const STATUS_COLORS: Record<POStatus, string> = {
   Cancelled: "#ef4444",
 };
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 /**
  * A report Card whose body is a list: framed on a desktop, only its heading on a phone — the list
@@ -225,7 +219,7 @@ export default function PoReports({
     {
       header: "End Date",
       className: "whitespace-nowrap",
-      cell: (po) => <span className="text-red-600">{formatDate(po.endDate)}</span>,
+      cell: (po) => <span className="text-red-600">{formatIsoDate(po.endDate)}</span>,
     },
     {
       header: "Status",

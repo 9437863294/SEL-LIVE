@@ -72,6 +72,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { formatIsoDate } from "@/lib/iso-date";
 
 /** Register views. `all` first, then one per status that a reviewer actually works from. */
 const VIEWS = [
@@ -85,13 +86,6 @@ const VIEWS = [
 
 type ViewKey = (typeof VIEWS)[number]["key"];
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 export default function ManufacturingClearanceDocumentsPage() {
   const searchParams = useSearchParams();
@@ -318,7 +312,7 @@ export default function ManufacturingClearanceDocumentsPage() {
         ),
     },
     { header: "MC No.", className: "font-medium", mobile: "title", cell: (row) => row.mcNumber },
-    { header: "Date", className: "whitespace-nowrap", cell: (row) => formatDate(row.mcDate) },
+    { header: "Date", className: "whitespace-nowrap", cell: (row) => formatIsoDate(row.mcDate) },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName },
     {
       header: "POs",

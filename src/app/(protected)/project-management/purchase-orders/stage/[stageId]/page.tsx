@@ -75,15 +75,9 @@ import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { pmStatusTone } from "@/components/project-management/pm-status-tones";
+import { formatIsoDate } from "@/lib/iso-date";
 
 /** PO dates are plain yyyy-mm-dd strings, matching how the other PO screens render them. */
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 const toDateSafe = (value: unknown): Date | null => {
   if (!value) return null;
@@ -410,7 +404,7 @@ export default function PoIssueStagePage() {
       },
     },
     { header: "PO No.", className: "font-medium", mobile: "title", cell: (approval) => approval.poNumber },
-    { header: "PO Date", className: "whitespace-nowrap", cell: (approval) => formatDate(approval.poDate) },
+    { header: "PO Date", className: "whitespace-nowrap", cell: (approval) => formatIsoDate(approval.poDate) },
     { header: "Vendor", mobile: "title", cell: (approval) => approval.vendorName },
     { header: "Items", cell: (approval) => approval.itemCount },
     {

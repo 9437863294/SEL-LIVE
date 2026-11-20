@@ -43,6 +43,7 @@ import { BoqItemSelector } from "@/components/billing-recon/BoqItemSelector";
 import { BoqMultiSelectDialog } from "@/components/billing-recon/BoqMultiSelectDialog";
 import type { BoqItem } from "@/lib/types";
 import { indentReservesQuantity, type IndentLike } from "@/lib/project-management-indent-workflow";
+import { todayIso } from "@/lib/iso-date";
 
 const PERMISSION_RESOURCE = "Project Management.Indent";
 
@@ -78,10 +79,6 @@ const emptyRow = (): IndentRow => ({
   requestedQty: "",
 });
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 const toNumber = (value: unknown) => {
   const parsed = Number(String(value ?? "").replace(/,/g, "").trim());
@@ -121,7 +118,7 @@ export default function NewIndentPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isMultiSelectOpen, setIsMultiSelectOpen] = useState(false);
 
-  const [indentDate, setIndentDate] = useState(today());
+  const [indentDate, setIndentDate] = useState(todayIso());
   const [requiredDate, setRequiredDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [rows, setRows] = useState<IndentRow[]>([emptyRow()]);

@@ -70,11 +70,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { todayIso } from "@/lib/iso-date";
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 /** One selectable row: the PO line, its ledger, and what the user has typed against it. */
 type CandidateRow = {
@@ -103,7 +100,7 @@ export default function NewManufacturingClearancePage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [vendorId, setVendorId] = useState("");
-  const [mcDate, setMcDate] = useState(today());
+  const [mcDate, setMcDate] = useState(todayIso());
   const [remarks, setRemarks] = useState("");
   /** Typed quantity per PO line key. Absent means the line is not on this MC. */
   const [qtyByKey, setQtyByKey] = useState<Record<string, string>>({});

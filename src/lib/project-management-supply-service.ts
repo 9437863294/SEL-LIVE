@@ -44,6 +44,7 @@ import { inspectionPoLineKey } from "@/lib/project-management-inspection-quantit
 import {
   SUPPLY_LEDGER_STAGES,
   buildSupplyLedgers,
+  canEditSupplyDraft,
   checkSupplyBalance,
   deriveSupplyDocStatus,
   generateSupplyDocNumber,
@@ -58,6 +59,7 @@ import {
   type SupplyLedgerStage,
   type SupplyPoLine,
   type SupplyPoLineBalance,
+  type SupplyStageDefinition,
   type UpstreamSource,
 } from "@/lib/project-management-supply-ledger";
 
@@ -201,6 +203,13 @@ export async function loadSupplyChain(
 }
 
 export interface SupplyDraftLine {
+  /**
+   * The item document this line already is, when a draft is being edited.
+   *
+   * Absent on a new line. Carrying it means an edit updates the line in place rather than
+   * deleting and recreating it, so anything that referenced the item id still finds it.
+   */
+  itemId?: string;
   poId: string;
   poNumber: string;
   poLineId: string;
@@ -392,6 +401,308 @@ export async function createSupplyDoc({
   return { docId: docRef.id, docNumber };
 }
 
+/**
+ * The guard document a stage reads for its ceiling, and the field that holds it.
+ *
+ * MC's guard stores its output as `approvedQty`; every other stage as `acceptedQty`.
+ */
+const upstreamGuardFor = (definition: SupplyStageDefinition) => ({
+  collection:
+    definition.upstream === "mc"
+      ? MC_PO_LINE_BALANCE_COLLECTION
+      : definition.upstream === "inspection"
+        ? "inspectionPoLineBalances"
+        : supplyStage(definition.upstream as SupplyLedgerStage).balanceCollection,
+  field: definition.upstream === "mc" ? "approvedQty" : "acceptedQty",
+});
+
+/**
+ * What a draft's item documents should become.
+ *
+ * A line that carries an `itemId` is updated where it is; a new line gets a new document; an
+ * item whose line has been taken off the form is deleted. Returned as a plan rather than
+ * written here, so the caller can commit it in whichever way it needs — a batch for a save, a
+ * transaction for a raise.
+ */
+function planDraftItems(
+  globalProjectId: string,
+  definition: SupplyStageDefinition,
+  docId: string,
+  lines: readonly SupplyDraftLine[],
+  existingItemIds: readonly string[],
+  extra: Record<string, unknown> = {},
+) {
+  const itemsCollection = definition.itemCollection;
+  const keptIds = new Set<string>();
+
+  const writes = lines.map((line) => {
+    const ref = line.itemId
+      ? doc(db, "projects", globalProjectId, itemsCollection, line.itemId)
+      : doc(projectPath(globalProjectId, itemsCollection));
+    if (line.itemId) keptIds.add(line.itemId);
+
+    const payload: Record<string, unknown> = {
+      docId,
+      stage: definition.stage,
+      poId: line.poId,
+      poNumber: line.poNumber,
+      poLineId: line.poLineId,
+      itemDescription: line.itemDescription,
+      unit: line.unit,
+      presentedQty: line.presentedQty,
+      status: "Pending",
+      ...extra,
+    };
+    if (line.boqItemId) payload.boqItemId = line.boqItemId;
+    if (line.remarks?.trim()) payload.remarks = line.remarks.trim();
+    if (!line.itemId) payload.createdAt = serverTimestamp();
+    return { ref, payload };
+  });
+
+  const deletes = existingItemIds
+    .filter((id) => !keptIds.has(id))
+    .map((id) => doc(db, "projects", globalProjectId, itemsCollection, id));
+
+  return { writes, deletes };
+}
+
+/**
+ * The header fields an edit may change, with the number kept honest.
+ *
+ * The document number embeds the date it was raised for (`GRN-20261120-AB12C`), so moving a
+ * draft's date without renumbering it would leave a document whose number contradicts its own
+ * date field. A draft has never been seen outside this screen — nothing downstream has been told
+ * about it — so renumbering it is safe, and the id suffix keeps it unique and traceable.
+ */
+const draftHeaderFields = (
+  stage: SupplyLedgerStage,
+  docId: string,
+  {
+    docDate,
+    counterparty,
+    meta,
+    remarks,
+    actor,
+  }: {
+    docDate: string;
+    counterparty?: string;
+    meta?: Record<string, unknown>;
+    remarks?: string;
+    actor: SupplyActor;
+  },
+) => ({
+  docNumber: generateSupplyDocNumber(stage, docDate, docId),
+  docDate,
+  // Written even when empty, so clearing a field on the form actually clears it on the record.
+  counterparty: counterparty?.trim() ?? "",
+  meta: meta && Object.keys(meta).length ? meta : {},
+  remarks: remarks?.trim() ?? "",
+  updatedAt: serverTimestamp(),
+  updatedBy: actor.id,
+  updatedByName: actor.name,
+});
+
+/**
+ * Saves changes to a draft, leaving it a draft.
+ *
+ * No balance is touched: a draft reserves nothing, which is the whole reason it can be edited at
+ * all. The status is re-read first so an edit cannot land on a document somebody raised or
+ * cancelled in another tab while this form was open.
+ */
+export async function updateSupplyDraft({
+  globalProjectId,
+  stage,
+  docId,
+  docDate,
+  counterparty,
+  meta,
+  remarks,
+  lines,
+  existingItemIds,
+  actor,
+  docFields,
+}: {
+  globalProjectId: string;
+  stage: SupplyLedgerStage;
+  docId: string;
+  docDate: string;
+  counterparty?: string;
+  meta?: Record<string, unknown>;
+  remarks?: string;
+  lines: readonly SupplyDraftLine[];
+  /** Every item document currently under this draft, so removed lines can be cleared. */
+  existingItemIds: readonly string[];
+  actor: SupplyActor;
+  /**
+   * Extra header fields. MVAC uses it for the vendor, which follows the lines: a draft whose
+   * lines now cross two vendors should say so while it is still a draft.
+   */
+  docFields?: Record<string, unknown>;
+}): Promise<{ docNumber: string }> {
+  const definition = supplyStage(stage);
+  const docRef = doc(db, "projects", globalProjectId, definition.headerCollection, docId);
+
+  const snapshot = await getDoc(docRef);
+  if (!snapshot.exists()) throw new Error(`This ${definition.docNoun} no longer exists.`);
+  const current = snapshot.data() as SupplyDoc;
+  if (!canEditSupplyDraft(current.status)) {
+    throw new Error(
+      `${current.docNumber} is ${current.status.toLowerCase()} and can no longer be edited.`,
+    );
+  }
+
+  const header = draftHeaderFields(stage, docId, { docDate, counterparty, meta, remarks, actor });
+  const { writes, deletes } = planDraftItems(
+    globalProjectId,
+    definition,
+    docId,
+    lines,
+    existingItemIds,
+  );
+
+  const batch = writeBatch(db);
+  batch.set(docRef, { ...header, ...(docFields ?? {}) }, { merge: true });
+  writes.forEach(({ ref, payload }) => batch.set(ref, payload, { merge: true }));
+  deletes.forEach((ref) => batch.delete(ref));
+  await batch.commit();
+
+  return { docNumber: header.docNumber };
+}
+
+/**
+ * Raises a draft: its final lines and its reservation, in one transaction.
+ *
+ * This is `createSupplyDoc`'s submit path over a document that already exists. The ceiling is
+ * re-read inside the transaction from the upstream stage's own guard — an upstream amendment, or
+ * another document raised while this draft sat around, would otherwise let a stale balance
+ * through, and a draft can sit around for weeks.
+ */
+export async function submitSupplyDraft({
+  globalProjectId,
+  stage,
+  docId,
+  docDate,
+  counterparty,
+  meta,
+  remarks,
+  lines,
+  existingItemIds,
+  upstreamQtyByLineKey,
+  actor,
+  docFields,
+}: {
+  globalProjectId: string;
+  stage: SupplyLedgerStage;
+  docId: string;
+  docDate: string;
+  counterparty?: string;
+  meta?: Record<string, unknown>;
+  remarks?: string;
+  lines: readonly SupplyDraftLine[];
+  existingItemIds: readonly string[];
+  upstreamQtyByLineKey: ReadonlyMap<string, number>;
+  actor: SupplyActor;
+  /** Extra header fields — MVAC's workflow step, its assignees and its deadline. */
+  docFields?: Record<string, unknown>;
+}): Promise<{ docNumber: string }> {
+  const definition = supplyStage(stage);
+  const docRef = doc(db, "projects", globalProjectId, definition.headerCollection, docId);
+  const guard = upstreamGuardFor(definition);
+  const header = draftHeaderFields(stage, docId, { docDate, counterparty, meta, remarks, actor });
+  const { writes, deletes } = planDraftItems(
+    globalProjectId,
+    definition,
+    docId,
+    lines,
+    existingItemIds,
+  );
+
+  await runTransaction(db, async (transaction) => {
+    const balanceRefs = lines.map((line) =>
+      doc(
+        db,
+        "projects",
+        globalProjectId,
+        definition.balanceCollection,
+        mcPoLineBalanceId(line.poId, line.poLineId),
+      ),
+    );
+    const upstreamRefs = lines.map((line) =>
+      doc(
+        db,
+        "projects",
+        globalProjectId,
+        guard.collection,
+        mcPoLineBalanceId(line.poId, line.poLineId),
+      ),
+    );
+
+    const [headerSnapshot, balanceSnapshots, upstreamSnapshots] = await Promise.all([
+      transaction.get(docRef),
+      Promise.all(balanceRefs.map((ref) => transaction.get(ref))),
+      Promise.all(upstreamRefs.map((ref) => transaction.get(ref))),
+    ]);
+
+    if (!headerSnapshot.exists()) throw new Error(`This ${definition.docNoun} no longer exists.`);
+    const current = headerSnapshot.data() as SupplyDoc;
+    if (!canEditSupplyDraft(current.status)) {
+      throw new Error(
+        `${current.docNumber} is ${current.status.toLowerCase()} and can no longer be raised from here.`,
+      );
+    }
+
+    /** The binding ceiling at commit time: the lower of the form's figure and the guard's. */
+    const ceilingAt = (index: number, line: SupplyDraftLine): number => {
+      const atLoad = upstreamQtyByLineKey.get(supplyPoLineKey(line.poId, line.poLineId)) ?? 0;
+      const snapshot = upstreamSnapshots[index];
+      if (!snapshot.exists()) return atLoad;
+      const stored = toNumber((snapshot.data() as Record<string, unknown>)[guard.field]);
+      return Math.min(atLoad, stored);
+    };
+
+    // Check every line before writing anything, so the refusal names the real problem rather
+    // than whichever line happened to be reached first.
+    lines.forEach((line, index) => {
+      const snapshot = balanceSnapshots[index];
+      const balance = snapshot.exists() ? (snapshot.data() as SupplyPoLineBalance) : null;
+      const check = checkSupplyBalance(stage, line.presentedQty, ceilingAt(index, line), balance);
+      if (!check.ok) {
+        throw new Error(
+          `${SUPPLY_BALANCE_CONFLICT}: ${line.poNumber} · ${line.itemDescription} — ${check.message}`,
+        );
+      }
+    });
+
+    transaction.set(
+      docRef,
+      { ...header, status: "Open", ...(docFields ?? {}) },
+      { merge: true },
+    );
+    writes.forEach(({ ref, payload }) => transaction.set(ref, payload, { merge: true }));
+    deletes.forEach((ref) => transaction.delete(ref));
+
+    lines.forEach((line, index) => {
+      const snapshot = balanceSnapshots[index];
+      const existing = snapshot.exists() ? (snapshot.data() as SupplyPoLineBalance) : null;
+      transaction.set(
+        balanceRefs[index],
+        {
+          poId: line.poId,
+          poLineId: line.poLineId,
+          poNumber: line.poNumber,
+          upstreamQty: ceilingAt(index, line),
+          acceptedQty: existing ? toNumber(existing.acceptedQty) : 0,
+          inFlightQty: (existing ? toNumber(existing.inFlightQty) : 0) + line.presentedQty,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    });
+  });
+
+  await syncSupplyGateRecords(globalProjectId, stage);
+  return { docNumber: header.docNumber };
+}
 export interface SupplyDecisionLine {
   itemId: string;
   acceptedQty: number;

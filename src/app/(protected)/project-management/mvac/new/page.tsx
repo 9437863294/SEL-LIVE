@@ -39,6 +39,8 @@ import {
   SUPPLY_BALANCE_CONFLICT,
   createSupplyDoc,
   loadSupplyChain,
+  submitSupplyDraft,
+  updateSupplyDraft,
   upstreamQtyByLineKey,
   type SupplyChain,
   type SupplyDraftLine,
@@ -49,17 +51,15 @@ import {
   type MvacCandidateLine,
 } from "@/lib/project-management-mvac-dashboard";
 import type { ActionLog } from "@/lib/types";
+import { todayIso } from "@/lib/iso-date";
 
-const today = () => {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
 
 const blankRow = (id: string): MvacFormRow => ({ id, lineKey: "", qty: "" });
 
 export default function NewMvacPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
+  const draftId = searchParams?.get("draft") ?? "";
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
@@ -78,7 +78,7 @@ export default function NewMvacPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [docDate, setDocDate] = useState(today());
+  const [docDate, setDocDate] = useState(todayIso());
   const [counterparty, setCounterparty] = useState("");
   const [remarks, setRemarks] = useState("");
 
@@ -87,6 +87,12 @@ export default function NewMvacPage() {
   const nextRowId = useRef(1);
   const makeRowId = () => `row-${nextRowId.current++}`;
   const [rows, setRows] = useState<MvacFormRow[]>([blankRow("row-0")]);
+  /**
+   * The draft this form is editing, if any: which one has been put into the fields, and which
+   * item document each row already is.
+   */
+  const [loadedDraftId, setLoadedDraftId] = useState("");
+  const [itemIdByKey, setItemIdByKey] = useState<Record<string, string>>({});
 
   const loadData = useCallback(async () => {
     if (!globalProjectId || !canView) {
@@ -116,6 +122,17 @@ export default function NewMvacPage() {
 
   const state = chain?.stages.mvac ?? null;
 
+  /** The draft being edited, and its lines, straight out of the chain. */
+  const draft = useMemo(
+    () => (draftId ? (state?.docs.find((entry) => entry.id === draftId) ?? null) : null),
+    [draftId, state],
+  );
+  const draftItems = useMemo(
+    () => (draftId ? (state?.items.filter((item) => item.docId === draftId) ?? []) : []),
+    [draftId, state],
+  );
+  const isEditing = Boolean(draft);
+
   /** Every received line with balance left, with the GRNs behind it. */
   const candidates: MvacCandidateLine[] = useMemo(() => {
     if (!chain || !state) return [];
@@ -128,13 +145,47 @@ export default function NewMvacPage() {
       grnSources,
       vendorByPoId: chain.vendorByPoId,
       boqItemIdByLineKey,
+      // A draft's own lines stay on the form even if another document has taken their balance
+      // since: otherwise they would vanish and could not even be removed.
+      alwaysInclude: new Set(
+        draftItems.map((item) => supplyPoLineKey(String(item.poId), String(item.poLineId))),
+      ),
     });
-  }, [chain, state]);
+  }, [chain, state, draftItems]);
 
   const ledgerByKey = useMemo(
     () => new Map<string, SupplyLedger>(state ? [...state.ledgers.entries()] : []),
     [state],
   );
+
+  /*
+   * Putting the draft into the form. Once only — `loadedDraftId` is the latch — so a re-render
+   * while somebody is typing does not snap their changes back to what was saved.
+   */
+  if (draft && loadedDraftId !== draft.id) {
+    setLoadedDraftId(draft.id);
+    setDocDate(String(draft.docDate ?? todayIso()));
+    setCounterparty(String(draft.counterparty ?? ""));
+    setRemarks(String(draft.remarks ?? ""));
+    setRows(
+      draftItems.length > 0
+        ? draftItems.map((item, index) => ({
+            id: `draft-${index}`,
+            lineKey: supplyPoLineKey(String(item.poId), String(item.poLineId)),
+            qty: String(Number(item.presentedQty ?? 0)),
+          }))
+        // A fixed id, not the counter: this runs during render, where a ref may not be read.
+        : [blankRow("draft-blank")],
+    );
+    setItemIdByKey(
+      Object.fromEntries(
+        draftItems.map((item) => [
+          supplyPoLineKey(String(item.poId), String(item.poLineId)),
+          item.id,
+        ]),
+      ),
+    );
+  }
 
   /**
    * Why each typed quantity is refused — the ledger's own rule, not a second one.
@@ -239,6 +290,8 @@ export default function NewMvacPage() {
         itemDescription: line.itemDescription,
         unit: line.unit,
         presentedQty: Number(row.qty),
+        // Carried so an edited line is updated where it is rather than replaced.
+        itemId: itemIdByKey[line.key],
       }));
       const totalQty = lines.reduce((sum, line) => sum + line.presentedQty, 0);
 
@@ -283,30 +336,72 @@ export default function NewMvacPage() {
         };
       }
 
-      const { docNumber } = await createSupplyDoc({
-        globalProjectId,
-        stage: "mvac",
+      /*
+       * Three paths, one form: a new certificate, a draft saved again, and a draft raised. The
+       * last two keep the document that already exists rather than leaving an orphan behind.
+       */
+      const existingItemIds = draftItems.map((item) => item.id);
+      const vendorFields = {
         vendorId: singleVendorPoId
           ? (chain?.vendorByPoId.get(singleVendorPoId)?.vendorId ?? undefined)
           : undefined,
         vendorName: vendorNames.length === 1 ? vendorNames[0] : "Several vendors",
-        docDate,
-        counterparty,
-        meta,
-        remarks,
-        lines,
-        upstreamQtyByLineKey: upstreamQtyByLineKey(state),
-        submit,
-        actor: { id: user.id, name: user.name },
-        docFields,
-      });
+      };
+
+      const { docNumber } = isEditing
+        ? submit
+          ? await submitSupplyDraft({
+              globalProjectId,
+              stage: "mvac",
+              docId: draft!.id,
+              docDate,
+              counterparty,
+              meta,
+              remarks,
+              lines,
+              existingItemIds,
+              upstreamQtyByLineKey: upstreamQtyByLineKey(state),
+              actor: { id: user.id, name: user.name },
+              docFields: { ...vendorFields, ...(docFields ?? {}) },
+            })
+          : await updateSupplyDraft({
+              globalProjectId,
+              stage: "mvac",
+              docId: draft!.id,
+              docDate,
+              counterparty,
+              meta,
+              remarks,
+              lines,
+              existingItemIds,
+              actor: { id: user.id, name: user.name },
+              docFields: vendorFields,
+            })
+        : await createSupplyDoc({
+            globalProjectId,
+            stage: "mvac",
+            ...vendorFields,
+            docDate,
+            counterparty,
+            meta,
+            remarks,
+            lines,
+            upstreamQtyByLineKey: upstreamQtyByLineKey(state),
+            submit,
+            actor: { id: user.id, name: user.name },
+            docFields,
+          });
 
       void logUserActivity({
         userId: user.id,
         userName: user.name,
         userEmail: user.email,
         module: "Project Management",
-        action: submit ? "Raise MVAC" : "Create MVAC Draft",
+        action: submit
+          ? "Raise MVAC"
+          : isEditing
+            ? "Edit MVAC Draft"
+            : "Create MVAC Draft",
         details: {
           project: projectName,
           docNumber,
@@ -319,7 +414,11 @@ export default function NewMvacPage() {
       });
 
       toast({
-        title: submit ? `${docNumber} raised` : `${docNumber} saved as draft`,
+        title: submit
+          ? `${docNumber} raised`
+          : isEditing
+            ? `${docNumber} updated`
+            : `${docNumber} saved as draft`,
         description: submit
           ? `${totalQty} on ${lines.length} line${lines.length === 1 ? "" : "s"}${
               docFields ? `, now with ${String(docFields.workflowStage)}.` : "."
@@ -347,7 +446,11 @@ export default function NewMvacPage() {
   return (
     <MvacCreateView
       back={back}
-      crumbs={[{ label: "MVAC", href: mvacTabHref("", mappingId) }, { label: "New" }]}
+      crumbs={[
+        { label: "MVAC", href: mvacTabHref("", mappingId) },
+        { label: isEditing ? "Edit draft" : "New" },
+      ]}
+      editingDocNumber={isEditing ? String(draft!.docNumber ?? "") : undefined}
       projectName={projectName}
       steps={steps}
       candidates={candidates}

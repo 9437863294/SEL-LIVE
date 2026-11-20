@@ -113,6 +113,7 @@ import {
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
 import type { Client } from "@/lib/types";
 import { Textarea } from "@/components/ui/textarea";
+import { formatIsoDate } from "@/lib/iso-date";
 
 type ProjectMapping = {
   id: string;
@@ -121,13 +122,6 @@ type ProjectMapping = {
   globalProjectName: string;
 };
 
-const formatDate = (value?: string) => {
-  if (!value) return "—";
-  const date = new Date(`${value}T00:00:00`);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-};
 
 /**
  * A section Card whose body is a list: framed on a desktop, only its heading on a phone — the list
@@ -862,8 +856,8 @@ export default function ProjectPurchaseOrderDetailPage() {
       {/* Two a row on a phone, the total across the full width beneath; one row of five on a
           desktop. */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
-        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatDate(po.poDate)}</p></CardContent></Card>
-        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(po.startDate)}</p></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatIsoDate(po.poDate)}</p></CardContent></Card>
+        <Card><CardContent className="p-3 sm:p-4"><p className="text-xs text-muted-foreground">Start Date</p><p className="font-semibold">{formatIsoDate(po.startDate)}</p></CardContent></Card>
         <Card>
           <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
@@ -883,7 +877,7 @@ export default function ProjectPurchaseOrderDetailPage() {
               )}
             </div>
             <p className={`font-semibold ${isPoOverdue(po) ? "text-red-600" : ""}`}>
-              {formatDate(po.endDate)}
+              {formatIsoDate(po.endDate)}
               {isPoOverdue(po) && <StatusBadge status="Overdue" className="ml-1.5" />}
             </p>
           </CardContent>

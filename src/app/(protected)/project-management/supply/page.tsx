@@ -349,7 +349,7 @@ export default function SupplyPage() {
       items: [
         {
           show: canViewMdcc,
-          href: withProject("/project-management/mdcc/documents"),
+          href: withProject("/project-management/mdcc"),
           title: "MDCC",
           description: "The client's clearance to dispatch.",
           icon: BadgeCheck,
@@ -358,7 +358,7 @@ export default function SupplyPage() {
         },
         {
           show: canViewDi,
-          href: withProject("/project-management/dispatch-instructions/documents"),
+          href: withProject("/project-management/dispatch-instructions"),
           title: "Dispatch Instructions",
           description: "SEL's numbered instruction authorising vendor dispatch.",
           icon: Truck,
@@ -367,7 +367,7 @@ export default function SupplyPage() {
         },
         {
           show: canViewGrn,
-          href: withProject("/project-management/grn/documents"),
+          href: withProject("/project-management/grn"),
           title: "GRN",
           description: "Record material receipt at site.",
           icon: PackageCheck,
