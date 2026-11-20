@@ -14,6 +14,8 @@
  * Pure — no Firebase, no React — so it is tested with `node --experimental-strip-types --test`.
  */
 
+import { approvedStepNames, workflowRunPosition } from "./workflow-run-position.ts";
+
 /** The actions that complete a workflow step. Matches the JMC log's own list. */
 export const JMC_APPROVE_ACTIONS: readonly string[] = ["Approve", "Complete", "Verified"];
 
@@ -104,16 +106,15 @@ export function jmcTotals(items: readonly JmcValueItem[] = []): {
   return { total, certified };
 }
 
-/** The step names a certificate's history has an approving action for. */
-export function jmcApprovedSteps(history: readonly JmcHistoryAction[] = []): Set<string> {
-  const approved = new Set<string>();
-  for (const action of history) {
-    if (!JMC_APPROVE_ACTIONS.includes(String(action?.action ?? ""))) continue;
-    const step = String(action?.stepName ?? "").trim();
-    if (step) approved.add(step);
-  }
-  return approved;
-}
+/**
+ * The step names a certificate's history has an approving action for.
+ *
+ * The rule itself now lives in `workflow-run-position.ts`, because MVAC's certificates travel a
+ * configured run of the same shape and the two must not drift apart. These names stay so the JMC
+ * screens and their tests keep reading it as they always have.
+ */
+export const jmcApprovedSteps = (history: readonly JmcHistoryAction[] = []): Set<string> =>
+  approvedStepNames(history, JMC_APPROVE_ACTIONS);
 
 /**
  * How far through the run a certificate is: the index of the first step it has not completed, or
@@ -123,16 +124,10 @@ export function jmcApprovedSteps(history: readonly JmcHistoryAction[] = []): Set
  * when the workflow was reconfigured after it was raised — reports the earliest gap rather than
  * claiming the progress of the latest action on it.
  */
-export function jmcStageIndex(
+export const jmcStageIndex = (
   entry: JmcRegisterEntry,
   steps: readonly JmcWorkflowStepLike[],
-): number {
-  const approved = jmcApprovedSteps(entry.history ?? []);
-  for (let index = 0; index < steps.length; index += 1) {
-    if (!approved.has(String(steps[index]?.name ?? "").trim())) return index;
-  }
-  return steps.length;
-}
+): number => workflowRunPosition(entry.history ?? [], steps, JMC_APPROVE_ACTIONS);
 
 export interface JmcStageReading {
   id: string;

@@ -376,7 +376,9 @@ export default function SupplyPage() {
         },
         {
           show: canViewMvac,
-          href: withProject("/project-management/mvac/documents"),
+          // MVAC is a module of its own now, with a sidebar and a dashboard; the card opens that
+          // rather than dropping straight into its register.
+          href: withProject("/project-management/mvac"),
           title: "MVAC",
           description: "Joint acceptance with the client — the billing trigger.",
           icon: FileCheck2,

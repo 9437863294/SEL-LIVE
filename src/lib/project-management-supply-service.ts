@@ -232,6 +232,7 @@ export async function createSupplyDoc({
   upstreamQtyByLineKey,
   submit,
   actor,
+  docFields,
 }: {
   globalProjectId: string;
   stage: SupplyLedgerStage;
@@ -245,6 +246,15 @@ export async function createSupplyDoc({
   upstreamQtyByLineKey: ReadonlyMap<string, number>;
   submit: boolean;
   actor: SupplyActor;
+  /**
+   * Extra fields written on the header.
+   *
+   * MVAC travels a configured workflow, so a certificate is raised already sitting at its first
+   * step, with that step's assignees and deadline on it. The other three stages pass nothing and
+   * are unchanged. Undefined values are dropped, as everywhere else here — a null reads back as a
+   * value and defeats the tolerant readers.
+   */
+  docFields?: Record<string, unknown>;
 }): Promise<{ docId: string; docNumber: string }> {
   const definition = supplyStage(stage);
   const docRef = doc(projectPath(globalProjectId, definition.headerCollection));
@@ -270,6 +280,9 @@ export async function createSupplyDoc({
   if (counterparty?.trim()) docPayload.counterparty = counterparty.trim();
   if (meta && Object.keys(meta).length) docPayload.meta = meta;
   if (remarks?.trim()) docPayload.remarks = remarks.trim();
+  for (const [key, value] of Object.entries(docFields ?? {})) {
+    if (value !== undefined) docPayload[key] = value;
+  }
 
   const itemRefs = lines.map(() => doc(projectPath(globalProjectId, definition.itemCollection)));
   const itemPayload = (line: SupplyDraftLine): Record<string, unknown> => {

@@ -837,7 +837,19 @@ export const permissionModules = {
     MDCC: ["View", "Request", "Issue"],
     "Dispatch Instructions": ["View", "Issue", "Acknowledge", "Dispatch"],
     GRN: ["View", "Record"],
-    MVAC: ["View", "Request", "Verify", "Sign", "Release Billing"],
+    // Joint acceptance is a module of its own: a certificate is raised against what GRN has
+    // received, travels a configured run of desks, and is signed. The three settings/reports
+    // actions arrived with that module and are granted to nobody until a role ticks them.
+    MVAC: [
+      "View",
+      "Request",
+      "Verify",
+      "Sign",
+      "Release Billing",
+      "View Reports",
+      "View Settings",
+      "Edit Settings",
+    ],
     // Project Management's JMC register (the project register Subcontractors also uses). Billing
     // Recon shares it only for projects not yet separated — see src/lib/billing-recon/register.ts.
     // Actions mirror Billing Recon.JMC so roles read the same in both modules.

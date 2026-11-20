@@ -49,6 +49,7 @@ import {
   supplyStage,
   validatePresentedQty,
   validateSupplyDecision,
+  type SupplyDoc,
   type SupplyDocItem,
   type SupplyLedger,
   type SupplyLedgerStage,
@@ -161,8 +162,13 @@ const formatDate = (value?: string) => {
 const hrefWith = (path: string, mappingId: string, extra = "") =>
   `${path}?project=${encodeURIComponent(mappingId)}${extra}`;
 
-/** Shared project-mapping resolution, matching the other supply screens. */
-function useSupplyProject(mappingId: string) {
+/**
+ * Shared project-mapping resolution, matching the other supply screens.
+ *
+ * Exported because MVAC's module shell resolves the same mapping for its sidebar; a second copy
+ * would be a second place for the mapping's shape to be read differently.
+ */
+export function useSupplyProject(mappingId: string) {
   const [state, setState] = useState<{
     globalProjectId: string;
     projectName: string;
@@ -937,6 +943,33 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
     );
   };
 
+  /*
+   * Arriving from somewhere else with one document in mind.
+   *
+   * MVAC's workflow stage pages link here rather than keeping a second copy of the decision
+   * dialog: `?focus=` opens that document's lines, `?decide=` opens its decision. Honoured once,
+   * after the chain has loaded, so closing the dialog does not immediately reopen it.
+   */
+  const requestedDecideId = searchParams?.get("decide") ?? "";
+  const requestedFocusId = searchParams?.get("focus") ?? "";
+  const [handledRequestId, setHandledRequestId] = useState("");
+
+  /* eslint-disable react-hooks/set-state-in-effect -- opening a document named in the URL is
+     synchronising React with the address bar, which is what an effect is for. */
+  useEffect(() => {
+    const wanted = requestedDecideId || requestedFocusId;
+    if (!wanted || isLoading || !state || handledRequestId === wanted) return;
+    if (!state.docs.some((entry) => entry.id === wanted)) return;
+
+    setHandledRequestId(wanted);
+    setExpanded((current) => new Set(current).add(wanted));
+    if (requestedDecideId) openDecision(requestedDecideId);
+    // `openDecision` is rebuilt every render; the `handledRequestId` guard is what keeps this to
+    // one open, not the dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedDecideId, requestedFocusId, isLoading, state, handledRequestId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   const decisionErrors = useMemo(
     () =>
       decisionLines
@@ -1188,6 +1221,40 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
       cell: (row) => formatDate(row.decidedDate),
     },
     { header: "Vendor", mobile: "title", cell: (row) => row.vendorName || "—" },
+    /*
+     * Where the certificate has got to, for the one stage that travels a configured workflow.
+     *
+     * MVAC is raised into a run of desks; the other three stages are not, so the column would be
+     * an empty one on their registers.
+     */
+    ...(stage === "mvac"
+      ? [
+          {
+            header: "Stage",
+            cell: (row: (typeof listRows)[number]) => {
+              const doc = state?.docs.find((entry) => entry.id === row.docId) as
+                | (SupplyDoc & { workflowStage?: unknown; workflowStatus?: unknown })
+                | undefined;
+              const where = String(doc?.workflowStage ?? "");
+              const verdict = String(doc?.workflowStatus ?? "");
+              if (!where) {
+                return <span className="text-muted-foreground">Not in a workflow</span>;
+              }
+              return (
+                <span
+                  className={cn(
+                    "whitespace-nowrap",
+                    verdict === "Rejected" && "font-semibold text-red-700",
+                    verdict === "Completed" && "font-semibold text-emerald-700",
+                  )}
+                >
+                  {where}
+                </span>
+              );
+            },
+          } satisfies PmListColumn<(typeof listRows)[number]>,
+        ]
+      : []),
     {
       header: "Lines",
       align: "right",
