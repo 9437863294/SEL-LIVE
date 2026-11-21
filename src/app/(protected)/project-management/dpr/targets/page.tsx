@@ -3,8 +3,9 @@
 /**
  * Projections — the planned side of the DPR, in three views:
  *
- *  - **Projection list**: every projection, its spread and revision history. Revise changes the
- *    quantity with a reason and keeps the baseline (rule P7).
+ *  - **Projection list**: every projection record — the BOQ lines planned for one scope over the
+ *    same dates. A record opens to show its lines, and can be edited: quantities changed (each a
+ *    revision with a reason, baseline kept — rule P7), lines added, lines taken off.
  *  - **Plan several lines**: one period, a quantity against each BOQ line of a scope, checked as
  *    it is typed (rules P1–P6) and saved together.
  *  - **Six-week look-ahead**: planned per week whatever period each projection was set at, with
@@ -15,13 +16,19 @@
  * overlapping projections own the shared days, so nothing is ever counted twice.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarRange, ListChecks, Target } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
+import { useToast } from "@/hooks/use-toast";
 import { DPR_BASE_PATH, DPR_PERMISSION_RESOURCE, type DprTarget } from "@/lib/project-management-dpr";
 import { indexDprActuals } from "@/lib/project-management-dpr-plan";
+import {
+  buildDprProjectionRecords,
+  type DprProjectionRecord,
+  type DprRecordEditPlan,
+} from "@/lib/project-management-dpr-records";
 import { useDprData, type DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DPR_TABS,
@@ -30,6 +37,7 @@ import {
   DprPageShell,
   DprProjectNotFound,
   dprHref,
+  formatRangeCompact,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
 import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
@@ -37,11 +45,20 @@ import { ProjectionList } from "@/components/project-management/dpr/projections-
 import { ProjectionPlanner } from "@/components/project-management/dpr/projections-plan";
 import { ProjectionLookAhead } from "@/components/project-management/dpr/projections-look-ahead";
 import {
+  ProjectionRecordView,
+  changeSummary,
+  type ProjectionRecordMode,
+} from "@/components/project-management/dpr/projections-record";
+import {
   PlanWeekDialog,
   ReviseProjectionDialog,
   type PlanWeekRequest,
 } from "@/components/project-management/dpr/projections-dialogs";
-import type { ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
+import {
+  deleteProjectionRecord,
+  saveProjectionRecordEdit,
+  type ProjectionsContext,
+} from "@/components/project-management/dpr/projections-shared";
 import { Card, CardContent } from "@/components/ui/card";
 
 type ViewId = "list" | "plan" | "look";
@@ -63,6 +80,7 @@ export default function DprProjectionsPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { user } = useAuth();
+  const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = !isAuthLoading && can("View", DPR_PERMISSION_RESOURCE);
   const canEdit = !isAuthLoading && can("Edit", DPR_PERMISSION_RESOURCE);
@@ -76,6 +94,11 @@ export default function DprProjectionsPage() {
   const [view, setView] = useState<ViewId>(isViewId(requestedView) ? requestedView : "list");
   const [revising, setRevising] = useState<DprTarget | null>(null);
   const [planningWeek, setPlanningWeek] = useState<PlanWeekRequest | null>(null);
+  /** The open projection record (its key is in the address too), and whether it is being edited. */
+  const [recordKey, setRecordKey] = useState<string | null>(searchParams?.get("record") || null);
+  const [recordMode, setRecordMode] = useState<ProjectionRecordMode>(
+    searchParams?.get("edit") === "1" ? "edit" : "view",
+  );
 
   const actuals = useMemo(() => indexDprActuals(data.entries), [data.entries]);
 
@@ -84,10 +107,78 @@ export default function DprProjectionsPage() {
     [data, actuals, today, canEdit, canDelete, user],
   );
 
+  const records = useMemo(() => buildDprProjectionRecords(data.targets, today), [data.targets, today]);
+  const openRecord = records.find((record) => record.key === recordKey) ?? null;
+
+  /** The view, the open record and its mode live in the address, so a reload or a link lands there. */
+  const showRecord = useCallback(
+    (key: string | null, mode: ProjectionRecordMode = "view") => {
+      setRecordKey(key);
+      setRecordMode(mode);
+      const query: Record<string, string> = { view: "list" };
+      if (key) query.record = key;
+      if (key && mode === "edit") query.edit = "1";
+      // Opening or leaving a record starts at the top; switching its mode stays put.
+      router.replace(dprHref(`${DPR_BASE_PATH}/targets`, mappingId, query), { scroll: key !== recordKey });
+    },
+    [router, mappingId, recordKey],
+  );
+
   const changeView = (next: ViewId) => {
     setView(next);
+    setRecordKey(null);
+    setRecordMode("view");
     // Kept in the address so a reload, or a link from the dashboard, lands on the same view.
     router.replace(dprHref(`${DPR_BASE_PATH}/targets`, mappingId, { view: next }), { scroll: false });
+  };
+
+  const handleSaveRecord = async (
+    record: DprProjectionRecord,
+    plan: DprRecordEditPlan,
+    reason: string,
+  ): Promise<boolean> => {
+    if (!data.globalProjectId || !user || !canEdit) return false;
+    try {
+      await saveProjectionRecordEdit(context, record, plan, reason);
+      toast({
+        title: plan.removesAll ? "Record removed" : "Record saved",
+        description: `${record.scope} · ${formatRangeCompact(record.startDate, record.endDate)}: ${changeSummary(plan)}.`,
+      });
+      await data.reload();
+      showRecord(plan.removesAll ? null : record.key, "view");
+      return true;
+    } catch (error) {
+      console.error("Failed to save the projection record:", error);
+      toast({
+        title: "Save failed",
+        description: "The record could not be saved. Nothing was changed.",
+        variant: "destructive",
+      });
+      return false;
+    }
+  };
+
+  const handleDeleteRecord = async (record: DprProjectionRecord): Promise<boolean> => {
+    if (!data.globalProjectId || !user || !canDelete) return false;
+    try {
+      await deleteProjectionRecord(context, record);
+      const lines = record.targets.length;
+      toast({
+        title: "Record deleted",
+        description: `${record.scope} · ${formatRangeCompact(record.startDate, record.endDate)} · ${lines} BOQ line${lines === 1 ? "" : "s"}.`,
+      });
+      if (record.key === recordKey) showRecord(null);
+      await data.reload();
+      return true;
+    } catch (error) {
+      console.error("Failed to delete the projection record:", error);
+      toast({
+        title: "Delete failed",
+        description: "The record could not be deleted.",
+        variant: "destructive",
+      });
+      return false;
+    }
   };
 
   if (isAuthLoading || data.isResolving) return <DprLoadingState blocks={1} />;
@@ -122,8 +213,26 @@ export default function DprProjectionsPage() {
         </Card>
       ) : null}
 
-      {view === "list" ? (
-        <ProjectionList context={context} onRevise={setRevising} onPlan={() => changeView("plan")} />
+      {view === "list" && recordKey ? (
+        <ProjectionRecordView
+          // A fresh editor each time the record or its mode changes, so Cancel drops what was typed.
+          key={`${recordKey}-${recordMode}`}
+          context={context}
+          record={openRecord}
+          isLoading={data.isLoading}
+          mode={recordMode}
+          onModeChange={(mode) => showRecord(recordKey, mode)}
+          onBack={() => showRecord(null)}
+          onSave={handleSaveRecord}
+          onDelete={handleDeleteRecord}
+        />
+      ) : view === "list" ? (
+        <ProjectionList
+          context={context}
+          onOpen={(record, mode) => showRecord(record.key, mode)}
+          onPlan={() => changeView("plan")}
+          onDeleteRecord={handleDeleteRecord}
+        />
       ) : null}
       {/* Kept mounted while hidden, so quantities typed into the planner survive a look at the
           list or the look-ahead. */}

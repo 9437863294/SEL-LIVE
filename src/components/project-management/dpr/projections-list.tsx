@@ -1,13 +1,15 @@
 "use client";
 
 /**
- * Projection list — every projection on the project, newest period first, with its spread and
- * revision history. A projection is never edited in place: Revise changes the quantity with a
- * reason and keeps the baseline (rule P7).
+ * Projection records — every projection on the project, read as records: the BOQ lines planned
+ * for one scope over the same dates make one record (`buildDprProjectionRecords`). Newest period
+ * first, one row per record, with the BOQ lines given in it at a glance. Open shows a record's
+ * lines; Edit changes quantities (a revision with a reason, the baseline kept — rule P7), adds
+ * lines or takes lines off. Ended records are locked.
  *
  * Laid out after the user's mock-up (`sel-projections-colour`): four figures over what is shown,
- * the list in a card with the scope switch in its header, and a "Worth checking" grid of real
- * findings (`buildDprProjectionChecks`) under it.
+ * the records in a card with the scope switch in its header, and a "Worth checking" grid of real
+ * findings (`buildDprProjectionChecks`, over the lines of the records shown) under it.
  */
 
 import { useMemo, useState } from "react";
@@ -15,24 +17,14 @@ import {
   AlertTriangle,
   AlignJustify,
   CalendarDays,
-  History,
+  Eye,
   ListChecks,
   Pencil,
   RotateCcw,
   Target,
   Trash2,
 } from "lucide-react";
-import { deleteDoc, doc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { useToast } from "@/hooks/use-toast";
-import { logUserActivity } from "@/lib/activity-logger";
-import {
-  DPR_TARGET_COLLECTION,
-  daysInRange,
-  dprNumber,
-  type DprScope,
-  type DprTarget,
-} from "@/lib/project-management-dpr";
+import { daysInRange, type DprScope } from "@/lib/project-management-dpr";
 import {
   DPR_DISTRIBUTION_LABELS,
   DPR_PERIOD_LABELS,
@@ -43,12 +35,15 @@ import {
   type DprProjectionCheckLine,
 } from "@/lib/project-management-dpr-projection-checks";
 import {
+  buildDprProjectionRecords,
+  type DprProjectionRecord,
+  type DprRecordStatus,
+} from "@/lib/project-management-dpr-records";
+import {
   DprScopeTabs,
   formatDisplayDate,
-  formatQtyAt,
   formatRangeCompact,
 } from "@/components/project-management/dpr/dpr-shell";
-import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
 import { ScopeBadge, type ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
 import {
   DprFigureRow,
@@ -70,53 +65,63 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 const LIST_COLOURS = ["#c4b5fd", "#7c3aed"] as const;
 
+/** How many SL Nos the BOQ lines column shows before "+N". */
+const PREVIEW_COUNT = 3;
+
+const ACTION_BUTTON = "h-8 rounded-[10px] px-2.5 text-xs font-bold";
+
+/** Upcoming has no tone of its own among the report pills, so it is drawn here in the same shape. */
+function StatusPill({ status }: { status: DprRecordStatus }) {
+  if (status === "running") return <DprReportPill tone="success">Running</DprReportPill>;
+  if (status === "ended") return <DprReportPill tone="neutral">Ended · locked</DprReportPill>;
+  return (
+    <span className="whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-extrabold text-blue-700">
+      Upcoming
+    </span>
+  );
+}
+
+const periodLabelOf = (record: DprProjectionRecord): string =>
+  DPR_PERIOD_LABELS[record.periodType] ?? "Custom";
+
 export function ProjectionList({
   context,
-  onRevise,
+  onOpen,
   onPlan,
+  onDeleteRecord,
 }: {
   context: ProjectionsContext;
-  onRevise: (target: DprTarget) => void;
+  /** Opens a record's screen — to read it, or straight into editing. */
+  onOpen: (record: DprProjectionRecord, mode: "view" | "edit") => void;
   /** Switches to "Plan several lines" — the empty state's next step. */
   onPlan: () => void;
+  /** Deletes every projection in the record; resolves true when it was deleted. The page owns the write, toast and reload. */
+  onDeleteRecord: (record: DprProjectionRecord) => Promise<boolean>;
 }) {
-  const { toast } = useToast();
-  const { data, today, canEdit, canDelete, user } = context;
+  const { data, today, canEdit, canDelete } = context;
   const [scope, setScope] = useState<DprScope | "All">("All");
-  const [deleting, setDeleting] = useState<DprTarget | null>(null);
+  const [deleting, setDeleting] = useState<DprProjectionRecord | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const calendar = useMemo(() => dprCalendar(data.settings), [data.settings]);
-  const unitById = useMemo(
-    () => new Map(data.boqItems.map((item) => [item.id, item.unit])),
-    [data.boqItems],
-  );
-  /** Where each projection's line sits in the work breakdown (depth, and the lines above it). */
-  const itemById = useMemo(
-    () => new Map(data.boqItems.map((item) => [item.id, item])),
+  /** The current SL No of each line (a sub-item renumbered since keeps its record row current). */
+  const slNoById = useMemo(
+    () => new Map(data.boqItems.map((item) => [item.id, item.boqSlNo])),
     [data.boqItems],
   );
 
-  const rows = useMemo(() => {
-    const visible =
-      scope === "All" ? data.targets : data.targets.filter((target) => target.scope === scope);
-    return [...visible].sort(
-      (a, b) =>
-        b.startDate.localeCompare(a.startDate) ||
-        a.boqSlNo.localeCompare(b.boqSlNo, undefined, { numeric: true }),
-    );
-  }, [data.targets, scope]);
+  const records = useMemo(() => {
+    const all = buildDprProjectionRecords(data.targets, today);
+    return scope === "All" ? all : all.filter((record) => record.scope === scope);
+  }, [data.targets, today, scope]);
 
-  /** The four figures, over the projections shown. */
+  /** Every projection line in the records shown — what the figures and the checks read. */
+  const rows = useMemo(() => records.flatMap((record) => record.targets), [records]);
+
+  /** The four figures, over the records shown. */
   const figures = useMemo(() => {
     const lines = new Set(rows.map((target) => target.boqItemId)).size;
     const periods = new Map(rows.map((target) => [`${target.startDate}|${target.endDate}`, target]));
@@ -167,36 +172,11 @@ export function ProjectionList({
   }, [rows, scope, data.boqItems, data.decimalsFor, calendar]);
 
   const handleDelete = async () => {
-    const target = deleting;
-    if (!target || !data.globalProjectId || !user) return;
+    const record = deleting;
+    if (!record) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "projects", data.globalProjectId, DPR_TARGET_COLLECTION, target.id));
-      void logUserActivity({
-        userId: user.id ?? "",
-        userName: user.name ?? "",
-        userEmail: user.email ?? "",
-        module: "Project Management",
-        action: "Delete DPR Projection",
-        details: {
-          project: data.projectName,
-          scope: target.scope,
-          boqSlNo: target.boqSlNo,
-          startDate: target.startDate,
-          endDate: target.endDate,
-          plannedQty: dprNumber(target.plannedQty),
-        },
-      });
-      toast({ title: "Projection removed" });
-      setDeleting(null);
-      await data.reload();
-    } catch (error) {
-      console.error("Failed to delete the projection:", error);
-      toast({
-        title: "Delete failed",
-        description: "The projection could not be removed.",
-        variant: "destructive",
-      });
+      if (await onDeleteRecord(record)) setDeleting(null);
     } finally {
       setIsDeleting(false);
     }
@@ -209,8 +189,8 @@ export function ProjectionList({
           <DprFigureTile
             icon={ListChecks}
             colours={LIST_COLOURS}
-            label="Projections"
-            value={String(rows.length)}
+            label="Records"
+            value={String(records.length)}
             detail={`${figures.lines} BOQ line${figures.lines === 1 ? "" : "s"} planned`}
           />
           <DprFigureTile
@@ -242,14 +222,14 @@ export function ProjectionList({
       <DprReportCard
         icon={ListChecks}
         colours={LIST_COLOURS}
-        title="Projection list"
-        subtitle="Every projection made for a BOQ line, with its revision"
+        title="Projection records"
+        subtitle="Each period's projections for a scope, with the BOQ lines given in it"
         aside={
           <>
-            <InfoTip label="About the projection list">
-              Quantity, unit and spread stay visible however long the BOQ description is. Average per
-              day counts working days only. A revision changes the quantity with a reason; the
-              baseline is kept.
+            <InfoTip label="About projection records">
+              A record is every BOQ line planned for one scope over the same dates. Open it to see
+              its lines. Edit it to change a quantity (a revision with a reason; the baseline is
+              kept), add lines or take lines off. Records whose period has ended are locked.
             </InfoTip>
             <DprScopeTabs value={scope} onChange={setScope} includeAll asField />
           </>
@@ -261,7 +241,7 @@ export function ProjectionList({
               <div key={index} className="h-12 animate-pulse rounded bg-muted/50" />
             ))}
           </div>
-        ) : rows.length === 0 ? (
+        ) : records.length === 0 ? (
           <div>
             <DprReportZero
               icon={Target}
@@ -279,196 +259,158 @@ export function ProjectionList({
             ) : null}
           </div>
         ) : (
-          <TooltipProvider delayDuration={150}>
-            {/* One line per projection, all of it inside the table: fixed columns, a bounded
-                height under a pinned header, and a narrow screen scrolls it sideways. */}
-            <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[1290px] table-fixed">
-              <colgroup>
-                <col className="w-[210px]" />
-                <col className="w-[64px]" />
-                <col className="w-[84px]" />
-                <col className="w-[84px]" />
-                <col />
-                <col className="w-[80px]" />
-                <col className="w-[84px]" />
-                <col className="w-[88px]" />
-                <col className="w-[92px]" />
-                <col className="w-[116px]" />
-                <col className="w-[96px]" />
-                <col className="w-[120px]" />
-              </colgroup>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="truncate">Period</TableHead>
-                  <TableHead className="truncate text-right" title="Working days in the period">
-                    Days
-                  </TableHead>
-                  <TableHead className="truncate">Scope</TableHead>
-                  <TableHead className="truncate">SL No</TableHead>
-                  <TableHead className="truncate">BOQ line</TableHead>
-                  <TableHead className="truncate">Unit</TableHead>
-                  <TableHead className="truncate text-right" title="Quantity">
-                    Qty
-                  </TableHead>
-                  <TableHead className="truncate text-right" title="The quantity as first saved">
-                    Baseline
-                  </TableHead>
-                  <TableHead className="truncate text-right" title="Average per working day">
-                    Per day
-                  </TableHead>
-                  <TableHead className="truncate">Spread</TableHead>
-                  <TableHead className="truncate">Revision</TableHead>
-                  <TableHead className="truncate text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((target) => {
-                  const unit = unitById.get(target.boqItemId) || target.unit;
-                  const decimals = data.decimalsFor(unit);
-                  const qty = dprNumber(target.plannedQty);
-                  const working = calendar.workingDays(target.startDate, target.endDate).length;
-                  const revisionNo = target.revisionNo ?? 0;
-                  const ended = target.endDate < today;
-                  const range = formatRangeCompact(target.startDate, target.endDate);
-                  const spread = DPR_DISTRIBUTION_LABELS[target.distribution ?? "even"] ?? "Even";
-                  const periodLabel = DPR_PERIOD_LABELS[target.periodType] ?? "Custom";
-                  const slNo = itemById.get(target.boqItemId)?.boqSlNo || target.boqSlNo;
-                  return (
-                    <TableRow key={target.id}>
-                      <TableCell className="truncate text-sm tabular-nums" title={`${periodLabel} · ${range}`}>
-                        <span className="font-bold">{periodLabel}</span>
-                        <span className="text-muted-foreground"> · {range}</span>
-                      </TableCell>
-                      <TableCell
-                        className="truncate text-right text-sm tabular-nums"
-                        title={`${working} working day${working === 1 ? "" : "s"}`}
-                      >
-                        {working}
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <ScopeBadge scope={target.scope} />
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <DprSlNoPill slNo={slNo} seed={target.boqItemId} />
-                      </TableCell>
-                      <TableCell
-                        className="text-sm"
-                        title={breakdownTitle({
-                          description: target.description,
-                          path: itemById.get(target.boqItemId)?.path,
-                        })}
-                      >
-                        <DprIndentedText
-                          text={target.description}
-                          depth={itemById.get(target.boqItemId)?.depth ?? 0}
-                        />
-                      </TableCell>
-                      <TableCell className="truncate text-sm" title={unit}>
-                        {unit || "—"}
-                      </TableCell>
-                      <TableCell className="truncate text-right text-sm font-extrabold tabular-nums">
-                        {formatQtyAt(qty, decimals)}
-                      </TableCell>
-                      <TableCell className="truncate text-right text-sm tabular-nums text-muted-foreground">
-                        {revisionNo > 0 ? (
-                          <s title="The quantity as first saved">
-                            {formatQtyAt(dprNumber(target.baselineQty ?? qty), decimals)}
-                          </s>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                      <TableCell className="truncate text-right text-sm tabular-nums">
-                        {working > 0 ? (
-                          <span className="rounded-lg bg-cyan-50 px-2 py-0.5 font-extrabold text-cyan-800">
-                            {formatQtyAt(qty / working, 3)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="truncate text-sm" title={spread}>
-                        {spread}
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        {revisionNo > 0 ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                aria-label={`Revision history for ${slNo || "this projection"}`}
-                              >
-                                <DprReportPill tone="warning">
-                                  <History className="mr-1 inline h-3 w-3 align-[-2px]" aria-hidden="true" />
-                                  R{revisionNo}
-                                </DprReportPill>
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs space-y-1 text-xs">
-                              {(target.revisions ?? []).length === 0 ? (
-                                <span>Revised {revisionNo} time{revisionNo === 1 ? "" : "s"}.</span>
-                              ) : (
-                                (target.revisions ?? []).map((entry) => (
-                                  <span key={entry.revisionNo} className="block">
-                                    <span className="font-medium">R{entry.revisionNo}</span>:{" "}
-                                    {formatQtyAt(dprNumber(entry.fromQty), decimals)} →{" "}
-                                    {formatQtyAt(dprNumber(entry.toQty), decimals)} · {entry.reason}
-                                    {entry.changedByName ? ` · ${entry.changedByName}` : ""}
-                                    {entry.changedAt
-                                      ? ` · ${formatDisplayDate(String(entry.changedAt).slice(0, 10))}`
-                                      : ""}
-                                  </span>
-                                ))
-                              )}
-                            </TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <DprReportPill tone="neutral">Baseline</DprReportPill>
-                        )}
-                      </TableCell>
-                      <TableCell className="py-1.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+          // One line per record, all of it inside the table: short values, so the columns size to
+          // their content; a bounded height under a pinned header, and a narrow screen scrolls it
+          // sideways.
+          <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-full">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="whitespace-nowrap">SL No</TableHead>
+                <TableHead className="whitespace-nowrap">Period</TableHead>
+                <TableHead className="whitespace-nowrap">Scope</TableHead>
+                <TableHead className="whitespace-nowrap text-right" title="Working days in the period">
+                  Days
+                </TableHead>
+                <TableHead className="whitespace-nowrap">BOQ lines</TableHead>
+                <TableHead className="whitespace-nowrap">Revised</TableHead>
+                <TableHead className="whitespace-nowrap">Spread</TableHead>
+                <TableHead className="whitespace-nowrap">Status</TableHead>
+                <TableHead className="whitespace-nowrap">Made by</TableHead>
+                <TableHead className="whitespace-nowrap text-right">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {records.map((record, index) => {
+                const range = formatRangeCompact(record.startDate, record.endDate);
+                const periodLabel = periodLabelOf(record);
+                const working = calendar.workingDays(record.startDate, record.endDate).length;
+                const count = record.targets.length;
+                const slNos = record.targets.map((target) => slNoById.get(target.boqItemId) || target.boqSlNo || "—");
+                const preview = `${slNos.slice(0, PREVIEW_COUNT).join(" · ")}${
+                  count > PREVIEW_COUNT ? ` +${count - PREVIEW_COUNT}` : ""
+                }`;
+                const fullList = record.targets
+                  .map((target, lineIndex) => `${slNos[lineIndex]} ${target.description ?? ""}`.trim())
+                  .join("\n");
+                const spread =
+                  record.distribution === "mixed"
+                    ? "Mixed"
+                    : (DPR_DISTRIBUTION_LABELS[record.distribution] ?? "Even");
+                const ended = record.status === "ended";
+                const editTitle = ended
+                  ? "This period has ended. Past periods are locked."
+                  : !canEdit
+                    ? "Needs the Edit action on Daily Progress."
+                    : `Edit the ${record.scope} record for ${range}`;
+                const deleteTitle = canDelete
+                  ? `Delete the ${record.scope} record for ${range}`
+                  : "Needs the Delete action on Daily Progress.";
+                const madeBy =
+                  record.madeBy.length === 0
+                    ? "—"
+                    : `${record.madeBy[0]}${record.madeBy.length > 1 ? ` +${record.madeBy.length - 1}` : ""}`;
+                return (
+                  <TableRow
+                    key={record.key}
+                    className="cursor-pointer"
+                    onClick={() => onOpen(record, "view")}
+                  >
+                    <TableCell className="whitespace-nowrap py-1.5">
+                      <DprSlNoPill slNo={String(index + 1)} seed={record.key} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm tabular-nums" title={`${periodLabel} · ${range}`}>
+                      <span className="font-bold">{periodLabel}</span>
+                      <span className="text-muted-foreground"> · {range}</span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap py-1.5">
+                      <ScopeBadge scope={record.scope} />
+                    </TableCell>
+                    <TableCell
+                      className="whitespace-nowrap text-right text-sm tabular-nums"
+                      title={`${working} working day${working === 1 ? "" : "s"}`}
+                    >
+                      {working}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm" title={fullList}>
+                      <span className="flex min-w-0 items-baseline gap-2">
+                        <span className="shrink-0 font-extrabold tabular-nums">
+                          {count} line{count === 1 ? "" : "s"}
+                        </span>
+                        <span className="block max-w-[220px] truncate text-xs tabular-nums text-muted-foreground">
+                          {preview}
+                        </span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap py-1.5">
+                      {record.revisedCount > 0 ? (
+                        <DprReportPill tone="warning">
+                          {record.revisedCount} of {count}
+                        </DprReportPill>
+                      ) : (
+                        <DprReportPill tone="neutral">Baseline</DprReportPill>
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm">{spread}</TableCell>
+                    <TableCell className="whitespace-nowrap py-1.5">
+                      <StatusPill status={record.status} />
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm" title={record.madeBy.join(", ") || undefined}>
+                      <span className="block max-w-[160px] truncate">{madeBy}</span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap py-1.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={ACTION_BUTTON}
+                          aria-label={`Open the ${record.scope} record for ${range}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onOpen(record, "view");
+                          }}
+                        >
+                          <Eye className="mr-1 h-3.5 w-3.5" />
+                          Open
+                        </Button>
+                        {/* A disabled button takes no pointer events, so its reason sits on a wrapper. */}
+                        <span className="inline-flex" title={editTitle}>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-8 rounded-[10px] px-2.5 text-xs font-bold"
+                            className={ACTION_BUTTON}
+                            aria-label={`Edit the ${record.scope} record for ${range}`}
                             disabled={!canEdit || ended}
-                            title={
-                              ended
-                                ? "This period has ended. Past periods are locked."
-                                : !canEdit
-                                  ? "Needs the Edit action on Daily Progress."
-                                  : undefined
-                            }
-                            onClick={() => onRevise(target)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpen(record, "edit");
+                            }}
                           >
-                            {revisionNo > 0 ? (
-                              <History className="mr-1 h-3.5 w-3.5" />
-                            ) : (
-                              <Pencil className="mr-1 h-3.5 w-3.5" />
-                            )}
-                            Revise
+                            <Pencil className="mr-1 h-3.5 w-3.5" />
+                            Edit
                           </Button>
+                        </span>
+                        <span className="inline-flex" title={deleteTitle}>
                           <Button
                             size="icon"
                             variant="outline"
                             className="h-8 w-8 rounded-[10px] text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            aria-label="Delete projection"
-                            title="Delete projection"
+                            aria-label={`Delete the ${record.scope} record for ${range}`}
                             disabled={!canDelete}
-                            onClick={() => setDeleting(target)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeleting(record);
+                            }}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TooltipProvider>
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
       </DprReportCard>
 
@@ -500,15 +442,15 @@ export function ProjectionList({
         onOpenChange={(open) => (!open ? setDeleting(null) : undefined)}
         destructive
         loading={isDeleting}
-        title="Delete this projection?"
+        title="Delete this projection record?"
         description={
           deleting
-            ? `${deleting.boqSlNo || "BOQ line"} · ${formatDisplayDate(deleting.startDate)} – ${formatDisplayDate(
+            ? `${deleting.scope} · ${periodLabelOf(deleting)} ${formatDisplayDate(deleting.startDate)} – ${formatDisplayDate(
                 deleting.endDate,
-              )}. Its planned quantity leaves every report, including past periods.`
+              )} · ${deleting.targets.length} BOQ line${deleting.targets.length === 1 ? "" : "s"}. Their planned quantities leave every report, including past periods.`
             : undefined
         }
-        confirmLabel="Delete projection"
+        confirmLabel="Delete record"
         onConfirm={handleDelete}
       />
     </div>

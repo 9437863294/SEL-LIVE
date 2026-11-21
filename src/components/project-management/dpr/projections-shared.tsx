@@ -10,11 +10,14 @@ import { db } from "@/lib/firebase";
 import { logUserActivity } from "@/lib/activity-logger";
 import {
   DPR_TARGET_COLLECTION,
+  dprNumber,
   type DprDistribution,
   type DprProjectionPeriod,
+  type DprProjectionRevision,
   type DprScope,
 } from "@/lib/project-management-dpr";
 import type { DprActualIndex, DprProjectionCandidate } from "@/lib/project-management-dpr-plan";
+import type { DprProjectionRecord, DprRecordEditPlan } from "@/lib/project-management-dpr-records";
 import type { DprBoqItem, DprDataState } from "@/components/project-management/dpr/use-dpr-data";
 import { formatQtyAt } from "@/components/project-management/dpr/dpr-shell";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -95,6 +98,132 @@ export async function createProjections(
         endDate: candidate.endDate,
         plannedQty: candidate.plannedQty,
       })),
+    },
+  });
+}
+
+/**
+ * Saves an edit of a projection record in one batch: each quantity change as a revision (reason
+ * kept, baseline kept, history appended — rule P7), note-only changes in place, removed lines
+ * deleted, added lines created over the record's period at its spread.
+ */
+export async function saveProjectionRecordEdit(
+  context: ProjectionsContext,
+  record: DprProjectionRecord,
+  plan: DprRecordEditPlan,
+  reason: string,
+): Promise<void> {
+  const { data, user } = context;
+  if (!data.globalProjectId || !user || plan.changeCount === 0) return;
+  const gid = data.globalProjectId;
+  const batch = writeBatch(db);
+  const stamp = { updatedAt: serverTimestamp(), updatedBy: user.id ?? "", updatedByName: user.name ?? "" };
+  const changedAt = new Date().toISOString();
+
+  for (const { target, toQty, remarks } of plan.revise) {
+    const fromQty = dprNumber(target.plannedQty);
+    const revisionNo = (target.revisionNo ?? 0) + 1;
+    const revision: DprProjectionRevision = {
+      revisionNo,
+      fromQty,
+      toQty,
+      reason: reason.trim(),
+      changedAt,
+      changedBy: user.id ?? "",
+      changedByName: user.name ?? "",
+    };
+    batch.update(doc(db, "projects", gid, DPR_TARGET_COLLECTION, target.id), {
+      plannedQty: toQty,
+      revisionNo,
+      baselineQty: target.baselineQty ?? fromQty,
+      revisions: [...(target.revisions ?? []), revision],
+      remarks,
+      ...stamp,
+    });
+  }
+  for (const { target, remarks } of plan.remarksOnly) {
+    batch.update(doc(db, "projects", gid, DPR_TARGET_COLLECTION, target.id), { remarks, ...stamp });
+  }
+  for (const target of plan.remove) {
+    batch.delete(doc(db, "projects", gid, DPR_TARGET_COLLECTION, target.id));
+  }
+  const itemById = new Map(data.boqItems.map((item) => [item.id, item]));
+  const added: Array<{ boqSlNo: string; plannedQty: number }> = [];
+  for (const line of plan.add) {
+    const item = itemById.get(line.boqItemId);
+    if (!item) continue;
+    batch.set(doc(collection(db, "projects", gid, DPR_TARGET_COLLECTION)), {
+      scope: record.scope,
+      boqItemId: item.id,
+      boqSlNo: item.boqSlNo ?? "",
+      description: item.description ?? "",
+      unit: item.unit ?? "",
+      periodType: record.periodType,
+      startDate: record.startDate,
+      endDate: record.endDate,
+      plannedQty: line.qty,
+      baselineQty: line.qty,
+      revisionNo: 0,
+      revisions: [],
+      distribution: record.spreadForNew,
+      remarks: line.remarks,
+      createdAt: serverTimestamp(),
+      createdBy: user.id ?? "",
+      createdByName: user.name ?? "",
+      ...stamp,
+    });
+    added.push({ boqSlNo: item.boqSlNo ?? "", plannedQty: line.qty });
+  }
+  await batch.commit();
+
+  void logUserActivity({
+    userId: user.id ?? "",
+    userName: user.name ?? "",
+    userEmail: user.email ?? "",
+    module: "Project Management",
+    action: "Edit DPR Projection Record",
+    details: {
+      project: data.projectName,
+      scope: record.scope,
+      startDate: record.startDate,
+      endDate: record.endDate,
+      reason: reason.trim(),
+      revised: plan.revise.map(({ target, toQty }) => ({
+        boqSlNo: target.boqSlNo,
+        fromQty: dprNumber(target.plannedQty),
+        toQty,
+      })),
+      notesChanged: plan.remarksOnly.map(({ target }) => target.boqSlNo),
+      removed: plan.remove.map((target) => ({ boqSlNo: target.boqSlNo, plannedQty: dprNumber(target.plannedQty) })),
+      added,
+    },
+  });
+}
+
+/** Deletes every projection in a record, in one batch. */
+export async function deleteProjectionRecord(
+  context: ProjectionsContext,
+  record: DprProjectionRecord,
+): Promise<void> {
+  const { data, user } = context;
+  if (!data.globalProjectId || !user || record.targets.length === 0) return;
+  const batch = writeBatch(db);
+  for (const target of record.targets) {
+    batch.delete(doc(db, "projects", data.globalProjectId, DPR_TARGET_COLLECTION, target.id));
+  }
+  await batch.commit();
+  void logUserActivity({
+    userId: user.id ?? "",
+    userName: user.name ?? "",
+    userEmail: user.email ?? "",
+    module: "Project Management",
+    action: "Delete DPR Projection Record",
+    details: {
+      project: data.projectName,
+      scope: record.scope,
+      startDate: record.startDate,
+      endDate: record.endDate,
+      lines: record.targets.map((target) => ({ boqSlNo: target.boqSlNo, plannedQty: dprNumber(target.plannedQty) })),
     },
   });
 }
