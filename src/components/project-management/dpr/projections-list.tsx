@@ -15,15 +15,22 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
-  AlignJustify,
   CalendarDays,
   Eye,
+  IndianRupee,
   ListChecks,
   Pencil,
   RotateCcw,
   Target,
   Trash2,
 } from "lucide-react";
+import {
+  buildDprRateLookup,
+  dprPlannedValue,
+  dprUnpricedText,
+  formatDprValue,
+  formatDprValueCompact,
+} from "@/lib/project-management-dpr-values";
 import { daysInRange, type DprScope } from "@/lib/project-management-dpr";
 import {
   DPR_DISTRIBUTION_LABELS,
@@ -121,12 +128,19 @@ export function ProjectionList({
   /** Every projection line in the records shown — what the figures and the checks read. */
   const rows = useMemo(() => records.flatMap((record) => record.targets), [records]);
 
+  /** Planned quantity × the BOQ line's rate; lines with no rate are counted, never priced. */
+  const rates = useMemo(() => buildDprRateLookup(data.boqItems), [data.boqItems]);
+  const valueOf = useMemo(() => {
+    const byKey = new Map(records.map((record) => [record.key, dprPlannedValue(record.targets, rates)]));
+    return (record: DprProjectionRecord) => byKey.get(record.key) ?? dprPlannedValue(record.targets, rates);
+  }, [records, rates]);
+  const shownValue = useMemo(() => dprPlannedValue(rows, rates), [rows, rates]);
+
   /** The four figures, over the records shown. */
   const figures = useMemo(() => {
     const lines = new Set(rows.map((target) => target.boqItemId)).size;
     const periods = new Map(rows.map((target) => [`${target.startDate}|${target.endDate}`, target]));
     const revised = rows.filter((target) => (target.revisionNo ?? 0) > 0).length;
-    const spreads = new Set(rows.map((target) => target.distribution ?? "even"));
     const starts = rows.map((target) => target.startDate).sort();
     const ends = rows.map((target) => target.endDate).sort();
     const only = periods.size === 1 ? [...periods.values()][0] : null;
@@ -144,15 +158,6 @@ export function ProjectionList({
               detail: formatRangeCompact(starts[0], ends[ends.length - 1]),
             }
           : { value: "—", detail: "No projections" },
-      spread:
-        spreads.size === 1
-          ? { value: DPR_DISTRIBUTION_LABELS[[...spreads][0]] ?? "Even", detail: "across the period" }
-          : spreads.size > 1
-            ? {
-                value: "Mixed",
-                detail: [...spreads].map((spread) => DPR_DISTRIBUTION_LABELS[spread] ?? spread).join(" · "),
-              }
-            : { value: "—", detail: "No projections" },
     };
   }, [rows]);
 
@@ -209,12 +214,24 @@ export function ProjectionList({
             detail={`${rows.length - figures.revised} still on baseline`}
           />
           <DprFigureTile
-            icon={AlignJustify}
+            icon={IndianRupee}
             colours={["#6ee7b7", "#059669"]}
-            label="Spread"
-            value={figures.spread.value}
+            label="Planned value"
+            value={
+              rows.length > 0 ? (
+                <span title={`${formatDprValue(shownValue.value)} planned`}>
+                  {formatDprValueCompact(shownValue.value)}
+                </span>
+              ) : (
+                "—"
+              )
+            }
             valueClassName="text-xl"
-            detail={figures.spread.detail}
+            detail={
+              rows.length === 0
+                ? "No projections"
+                : dprUnpricedText(shownValue.unpriced) || "planned quantity × BOQ rate"
+            }
           />
         </DprFigureRow>
       ) : null}
@@ -229,7 +246,9 @@ export function ProjectionList({
             <InfoTip label="About projection records">
               A record is every BOQ line planned for one scope over the same dates. Open it to see
               its lines. Edit it to change a quantity (a revision with a reason; the baseline is
-              kept), add lines or take lines off. Records whose period has ended are locked.
+              kept), add lines or take lines off. Records whose period has ended are locked. Planned
+              value is each line&apos;s planned quantity × its BOQ rate; a line with no rate is left out
+              and marked *.
             </InfoTip>
             <DprScopeTabs value={scope} onChange={setScope} includeAll asField />
           </>
@@ -272,6 +291,12 @@ export function ProjectionList({
                   Days
                 </TableHead>
                 <TableHead className="whitespace-nowrap">BOQ lines</TableHead>
+                <TableHead
+                  className="whitespace-nowrap text-right"
+                  title="Planned quantity × BOQ rate, over the record's lines"
+                >
+                  Planned value
+                </TableHead>
                 <TableHead className="whitespace-nowrap">Revised</TableHead>
                 <TableHead className="whitespace-nowrap">Spread</TableHead>
                 <TableHead className="whitespace-nowrap">Status</TableHead>
@@ -305,6 +330,8 @@ export function ProjectionList({
                 const deleteTitle = canDelete
                   ? `Delete the ${record.scope} record for ${range}`
                   : "Needs the Delete action on Daily Progress.";
+                const value = valueOf(record);
+                const unpriced = dprUnpricedText(value.unpriced);
                 const madeBy =
                   record.madeBy.length === 0
                     ? "—"
@@ -340,6 +367,20 @@ export function ProjectionList({
                           {preview}
                         </span>
                       </span>
+                    </TableCell>
+                    <TableCell
+                      className="whitespace-nowrap text-right text-sm font-bold tabular-nums"
+                      title={unpriced ? `${unpriced} — left out of the value` : undefined}
+                    >
+                      {value.priced > 0 ? formatDprValue(value.value) : "—"}
+                      {unpriced ? (
+                        <>
+                          <span className="ml-1 text-xs font-semibold text-muted-foreground" aria-hidden="true">
+                            *
+                          </span>
+                          <span className="sr-only"> ({unpriced})</span>
+                        </>
+                      ) : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap py-1.5">
                       {record.revisedCount > 0 ? (

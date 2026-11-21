@@ -49,15 +49,20 @@ export interface DprProgressCheck {
 }
 
 export interface DprProgressCheckContext {
-  /** Working days in the period, by the project calendar. */
+  /**
+   * Days a sheet is expected on in the period: the recording days of the recording schedule, which
+   * are the working days of the project calendar while every scope shown records daily.
+   */
   workingDays: number;
-  /** Working days in the period up to today. */
+  /** The same, up to today. */
   workingDaysToDate: number;
   /** Dates in the period (up to today) with any work recorded on a counted sheet. */
   progressDays: number;
   /** "month", "week", "day" or "period". */
   periodNoun: string;
   decimalsFor: (unit: string) => number;
+  /** "recording day" when a weekly or specific-days schedule sets the expected days. Default: "working day". */
+  dayNoun?: string;
 }
 
 /** How many lines a finding names before it says "and N more". */
@@ -192,19 +197,22 @@ export function buildDprProgressChecks(
     }
   }
 
-  // d. Sparse recording: fewer days with progress than working days so far.
+  // d. Sparse recording: fewer days with progress than recording days so far.
   if (rows.length > 0 && ctx.workingDaysToDate > 0 && ctx.progressDays < ctx.workingDaysToDate) {
+    const noun = ctx.dayNoun ?? "working day";
     const everyLineOneDay = rows.every((row) => row.workedDays === 1);
     const title = everyLineOneDay
       ? "Each line has 1 day of progress"
       : ctx.progressDays === 0
-        ? `No progress recorded on any of the ${ctx.workingDaysToDate} working days so far`
-        : `Progress recorded on ${ctx.progressDays} of ${ctx.workingDaysToDate} working day${ctx.workingDaysToDate === 1 ? "" : "s"} so far`;
+        ? `No progress recorded on any of the ${ctx.workingDaysToDate} ${noun}s so far`
+        : `Progress recorded on ${ctx.progressDays} of ${ctx.workingDaysToDate} ${noun}${ctx.workingDaysToDate === 1 ? "" : "s"} so far`;
     checks.push({
       key: "sparse",
       tone: "info",
       title,
-      detail: `${ctx.workingDays} working day${ctx.workingDays === 1 ? "" : "s"} in the ${ctx.periodNoun} — check daily entries are being made.`,
+      detail: `${ctx.workingDays} ${noun}${ctx.workingDays === 1 ? "" : "s"} in the ${ctx.periodNoun} — check ${
+        noun === "working day" ? "daily entries are" : "the scheduled entries are"
+      } being made.`,
       ids: [],
     });
   }

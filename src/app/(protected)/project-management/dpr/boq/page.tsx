@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Daily Progress's BOQ register — this project's Civil and Erection BOQ lines with the sub-items
+ * Daily Progress's BOQ register — this project's Civil, Erection and Supply BOQ lines with the sub-items
  * each is broken into, and theirs under those.
  *
  * The page loads the register and checks access; everything on screen is `DprBoqRegisterView`,
@@ -11,7 +11,7 @@
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
-import { DPR_PERMISSION_RESOURCE } from "@/lib/project-management-dpr";
+import { DPR_PERMISSION_RESOURCE, DPR_SCOPES, type DprScope } from "@/lib/project-management-dpr";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DprAccessDenied,
@@ -54,7 +54,7 @@ export default function DprBoqRegisterPage() {
       canAdd={canAdd}
       canEdit={canEdit}
       canDelete={canDelete}
-      initialScope={linkedScope === "Erection" ? "Erection" : "Civil"}
+      initialScope={DPR_SCOPES.includes(linkedScope as DprScope) ? (linkedScope as DprScope) : "Civil"}
     />
   );
 }

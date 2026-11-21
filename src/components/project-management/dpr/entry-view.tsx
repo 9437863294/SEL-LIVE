@@ -17,6 +17,13 @@
  * day. `plannedQty` is still written onto each saved line as a snapshot, so the log can show plan
  * against actual without re-deriving it.
  *
+ * **The recording schedule** (Daily Progress › Settings, per scope: daily, weekly, or chosen
+ * weekdays) says on which days a sheet is expected. The Date tile says whether this is one; a day
+ * off the schedule can still be recorded. On a weekly or specific-days scope a sheet covers the
+ * days since the previous recording day, so its Planned — the column, the snapshot written on save,
+ * the lines a fresh sheet opens with, and every check — is the plan over those days. A daily sheet
+ * covers its own day exactly as before.
+ *
  * The sheet is held as typed text, so an Actual left empty is told apart from a 0 — the checks
  * (`checkDprSheet`, rules D1–D10) require every row to say which it is. Submitting locks the
  * sheet; only a DPR approver (`Reopen`) can turn it back into a draft. "Worth checking" is a
@@ -33,6 +40,7 @@ import {
   AlertCircle,
   AlertTriangle,
   Anchor,
+  ArrowLeft,
   BrickWall,
   CalendarDays,
   CheckCircle2,
@@ -86,14 +94,26 @@ import {
 } from "@/lib/project-management-dpr";
 import {
   checkDprSheet,
+  dprCalendar,
   dprCompletionOn,
-  dprSuggestions,
+  dprShortDate,
   indexDprActuals,
   roundToDecimals,
   type DprActualIndex,
   type DprCompletion,
   type DprSheet,
 } from "@/lib/project-management-dpr-plan";
+import {
+  describeDprSchedule,
+  describeDprScheduleShort,
+  dprCoverIsWindow,
+  dprIsRecordingDay,
+  dprLatestRecordingDay,
+  dprNextRecordingDay,
+  dprScheduleIsDaily,
+  dprScopeScheduleOf,
+  dprSheetCover,
+} from "@/lib/project-management-dpr-schedule";
 import { dprTradeOrder } from "@/lib/project-management-dpr-reports";
 import {
   buildDprSheetChecks,
@@ -111,10 +131,11 @@ import {
   dprHref,
   formatQty,
   formatQtyAt,
+  formatRangeCompact,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
 import { DprBranchMark, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
-import { DprReportsHero } from "@/components/project-management/dpr/reports-hero";
+import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
 import {
   DprGradientChip,
   DprReportCallout,
@@ -614,6 +635,13 @@ export interface DprEntryViewProps {
   onSave: (request: DprEntrySaveRequest) => Promise<boolean>;
   /** Turn a submitted sheet back into a draft; resolve true once done. */
   onReopen: (existing: DprEntry) => Promise<boolean>;
+  /** The page's views (Record a day / Progress records), shown as tabs in the headline band. */
+  tabs?: readonly DprReportTab<string>[];
+  activeTab?: string;
+  onTabChange?: (next: string) => void;
+  /** Opened from a progress record: a back button above the sheet returns to it. */
+  onBack?: () => void;
+  backLabel?: string;
   /** Defaults to the real today; fixed for a test. */
   today?: string;
 }
@@ -629,6 +657,11 @@ export function DprEntryView({
   preparedByName,
   onSave,
   onReopen,
+  tabs,
+  activeTab,
+  onTabChange,
+  onBack,
+  backLabel = "Back to the record",
   today: todayProp,
 }: DprEntryViewProps) {
   const { boqItems, entries, settings, projectDates, plan, decimalsFor, isLoading, projectName } = data;
@@ -653,10 +686,38 @@ export function DprEntryView({
     return map;
   }, [boqItems]);
 
-  /** BOQ lines the plan puts work on for this date — what a fresh sheet opens with. */
+  /**
+   * The scope's recording schedule (Daily Progress › Settings) and the days this sheet covers: its
+   * own day on a daily scope; on a weekly or specific-days scope, the days since the previous
+   * recording day — so Planned is the plan over those days, and a weekly sheet is read against the
+   * week's plan.
+   */
+  const calendar = useMemo(() => dprCalendar(settings), [settings]);
+  const schedule = dprScopeScheduleOf(settings.recordingSchedule, scope);
+  const cover = useMemo(() => dprSheetCover(schedule, calendar, date), [schedule, calendar, date]);
+  const coverWindow = dprCoverIsWindow(cover);
+  const coverText = coverWindow ? formatRangeCompact(cover.startDate, cover.endDate) : "";
+  const isRecordingDay = dprIsRecordingDay(schedule, calendar, date);
+  const scheduleWords = describeDprScheduleShort(schedule);
+  /**
+   * Off the schedule, the sheet this day's work belongs on: the next recording day (its sheet covers
+   * this day) once it has come, else the latest recording day before it.
+   */
+  const jumpTarget = useMemo(() => {
+    if (isRecordingDay) return null;
+    const next = dprNextRecordingDay(schedule, calendar, date);
+    return next && next <= today ? next : dprLatestRecordingDay(schedule, calendar, date);
+  }, [isRecordingDay, schedule, calendar, date, today]);
+  /** Planned for the days the sheet covers — exactly the day's plan on a one-day sheet. */
+  const plannedFor = useCallback(
+    (boqItemId: string) => (coverWindow ? plan.qtyInRange(boqItemId, cover) : plan.onDate(boqItemId, date)),
+    [coverWindow, plan, cover, date],
+  );
+
+  /** BOQ lines the plan puts work on in the days the sheet covers — what a fresh sheet opens with. */
   const plannedItems = useMemo(
-    () => scopeItems.filter((item) => plan.onDate(item.id, date) > 0),
-    [scopeItems, plan, date],
+    () => scopeItems.filter((item) => plannedFor(item.id) > 0),
+    [scopeItems, plannedFor],
   );
 
   /** Everything counted except this sheet, so "done before" and the BOQ check exclude it. */
@@ -666,24 +727,23 @@ export function DprEntryView({
   );
 
   /**
-   * Planned lines whose work was already done before this day — the BOQ quantity reached, or the
-   * projection owning the day met early. The plan still spreads quantity on their remaining days,
-   * but there is nothing left to record, so a sheet leaves them off.
+   * Planned lines whose work was already done before the sheet's days — the BOQ quantity reached,
+   * or the projection owning the first covered day met early. The plan still spreads quantity on
+   * their remaining days, but there is nothing left to record, so a sheet leaves them off. (On a
+   * one-day sheet the first covered day is the sheet's own day, as always.)
    */
   const completionFor = useCallback(
     (actuals: DprActualIndex) => {
       const map = new Map<string, DprCompletion>();
       for (const item of plannedItems) {
-        const completion = dprCompletionOn({ item, isoDate: date, plan, actuals });
+        const completion = dprCompletionOn({ item, isoDate: cover.startDate, plan, actuals });
         if (completion) map.set(item.id, completion);
       }
       return map;
     },
-    [plannedItems, date, plan],
+    [plannedItems, cover.startDate, plan],
   );
   const completed = useMemo(() => completionFor(actualsBefore), [completionFor, actualsBefore]);
-
-  const suggestions = useMemo(() => dprSuggestions(entries), [entries]);
 
   const loadForDate = useCallback(() => {
     const filed = entries.find((entry) => entry.date === date && entry.scope === scope) ?? null;
@@ -827,7 +887,7 @@ export function DprEntryView({
             unit: item?.unit ?? "",
             decimals: decimalsFor(item?.unit ?? ""),
             boqQty: item?.boqQty ?? 0,
-            planned: item ? plan.onDate(item.id, date) : 0,
+            planned: item ? plannedFor(item.id) : 0,
             doneBefore: item ? actualsBefore.total(item.id) : 0,
             actual: row.actual,
             location: row.location,
@@ -838,8 +898,9 @@ export function DprEntryView({
         lostTimeHours: sheet.lostTimeHours,
         lostTimeReason: sheet.lostTimeReason,
         tolerancePct: settings.tolerancePct,
+        coverText: coverWindow ? coverText : undefined,
       }),
-    [sheet, itemById, decimalsFor, plan, date, actualsBefore, settings.tolerancePct],
+    [sheet, itemById, decimalsFor, plannedFor, actualsBefore, settings.tolerancePct, coverWindow, coverText],
   );
 
   /* ── Saving ────────────────────────────────────────────────────────────────────────────── */
@@ -886,7 +947,7 @@ export function DprEntryView({
           description: item?.description ?? "",
           unit: item?.unit ?? "",
           // A snapshot of the plan as it stands, so the log can show plan against actual.
-          plannedQty: roundToDecimals(plan.onDate(row.boqItemId, date), decimals),
+          plannedQty: roundToDecimals(plannedFor(row.boqItemId), decimals),
           actualQty: dprNumber(row.actual),
           actualEntered: row.actual.trim() !== "",
           location: row.location.trim(),
@@ -946,6 +1007,7 @@ export function DprEntryView({
         projectDates,
         today,
         canRecordAnyDate: canReopen,
+        cover,
       });
       // The structural guard catches anything the sheet checks do not word themselves.
       const errors =
@@ -987,8 +1049,6 @@ export function DprEntryView({
     : "";
   const status = STATUS_LOOK[statusKey];
   const sheetDay = displayDate(date);
-  const noLocations = settings.locations.length === 0;
-  const noAgencies = settings.agencies.length === 0;
 
   const barText = locked
     ? `This sheet is submitted and locked${lockedBy ? ` (by ${lockedBy})` : ""}. Only a DPR approver can reopen it.`
@@ -1009,6 +1069,9 @@ export function DprEntryView({
         description="One sheet per scope per day: what was planned, what was done, and the site diary behind it."
         icon={recordTab.icon}
         band="violet"
+        tabs={tabs}
+        active={activeTab}
+        onTabChange={onTabChange}
         actions={
           <span
             className="inline-flex max-w-full items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-3.5 py-2 text-sm font-extrabold backdrop-blur"
@@ -1030,6 +1093,15 @@ export function DprEntryView({
           </span>
         }
       />
+
+      {onBack ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 gap-1.5 font-bold" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            {backLabel}
+          </Button>
+        </div>
+      ) : null}
 
       {!canRecord ? (
         <DprReportCallout tone="warning" title="Read only">
@@ -1055,7 +1127,30 @@ export function DprEntryView({
           </Select>
         </SheetTile>
 
-        <SheetTile icon={CalendarDays} colours={["#93c5fd", "#2563eb"]} label="Date" htmlFor="dpr-date">
+        <SheetTile
+          icon={CalendarDays}
+          colours={["#93c5fd", "#2563eb"]}
+          label="Date"
+          htmlFor="dpr-date"
+          info={
+            // Whether the scope's recording schedule expects a sheet on this date.
+            <span
+              className={cn(
+                "ml-auto shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-extrabold",
+                isRecordingDay ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800",
+              )}
+              title={`${scope} is recorded ${scheduleWords}${coverWindow ? ` · this sheet covers ${coverText}` : ""}`}
+            >
+              {isRecordingDay
+                ? dprScheduleIsDaily(schedule)
+                  ? "Recording day"
+                  : `Recording day · ${describeDprSchedule(schedule).replace(/^Weekly on /, "")}`
+                : calendar.isWorkingDay(date)
+                  ? "Not a recording day"
+                  : "Not a working day"}
+            </span>
+          }
+        >
           <Input
             id="dpr-date"
             type="date"
@@ -1064,6 +1159,31 @@ export function DprEntryView({
             max={today}
             onChange={(event) => onSheetChange({ date: event.target.value })}
           />
+          {!isRecordingDay ? (
+            // Off the schedule: still recordable, but say when this scope's sheet is expected.
+            <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+              <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate" title={`${scope} is recorded ${scheduleWords}`}>
+                {scope} is recorded {scheduleWords}
+              </span>
+              {jumpTarget && jumpTarget !== date ? (
+                <button
+                  type="button"
+                  className="ml-auto shrink-0 whitespace-nowrap rounded font-extrabold underline underline-offset-2 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onSheetChange({ date: jumpTarget })}
+                >
+                  Go to {dprShortDate(jumpTarget)}
+                </button>
+              ) : null}
+            </div>
+          ) : coverWindow ? (
+            <div
+              className="mt-1.5 truncate text-[11px] font-semibold text-muted-foreground"
+              title={`Planned on this sheet is the plan for ${coverText}, the days since the last recording day.`}
+            >
+              Covers {coverText}
+            </div>
+          ) : null}
         </SheetTile>
 
         <SheetTile
@@ -1175,7 +1295,7 @@ export function DprEntryView({
           <fieldset disabled={!editable} className="min-w-0">
             {plannedItems.length === 0 && !existing ? (
               <p className="border-b border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground sm:px-[18px]">
-                Nothing is planned for {scope} on this date. Record what was actually done — a
+                Nothing is planned for {scope} {coverWindow ? `in ${coverText}` : "on this date"}. Record what was actually done — a
                 projection is a reference, not a precondition. Plans are set in{" "}
                 <Link
                   href={dprHref(`${DPR_BASE_PATH}/targets`, mappingId)}
@@ -1188,14 +1308,17 @@ export function DprEntryView({
             ) : null}
             {plannedItems.length > 0 && openPlannedCount === 0 && !locked ? (
               <p className="border-b border-border/60 bg-muted/30 px-4 py-2 text-xs text-muted-foreground sm:px-[18px]">
-                Everything planned for {scope} on this date was already finished before it — see
+                Everything planned for {scope} {coverWindow ? `in ${coverText}` : "on this date"} was already finished before it — see
                 Already complete below. Record anything else that was done.
               </p>
             ) : null}
             {/* One line per BOQ line, all of it inside the table: fixed columns (the same first
                 five as Already complete below), a bounded height under a pinned header, and a
                 narrow screen scrolls it sideways. */}
-            <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[1252px] table-fixed">
+            {/* No Location or Agency (user, 2026-11-21: "not required"); a value an older sheet
+                carries is kept as it was and written back unchanged. Fixed columns sum to 766px;
+                the BOQ line keeps at least 300px of the minimum width. */}
+            <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[1066px] table-fixed">
               <colgroup>
                 <col className="w-[72px]" />
                 <col />
@@ -1203,9 +1326,7 @@ export function DprEntryView({
                 <col className="w-[100px]" />
                 <col className="w-[150px]" />
                 <col className="w-[120px]" />
-                <col className="w-[150px]" />
-                <col className="w-[150px]" />
-                <col className="w-[150px]" />
+                <col className="w-[200px]" />
                 <col className="w-[48px]" />
               </colgroup>
               <TableHeader>
@@ -1213,7 +1334,14 @@ export function DprEntryView({
                   <TableHead className="truncate">SL No</TableHead>
                   <TableHead className="truncate">BOQ line</TableHead>
                   <TableHead className="truncate">Unit</TableHead>
-                  <TableHead className="truncate text-right" title="Planned for this day, from Projections">
+                  <TableHead
+                    className="truncate text-right"
+                    title={
+                      coverWindow
+                        ? `Planned ${coverText}, since the last recording day, from Projections`
+                        : "Planned for this day, from Projections"
+                    }
+                  >
                     Planned
                   </TableHead>
                   <TableHead
@@ -1223,8 +1351,6 @@ export function DprEntryView({
                     Done / BOQ
                   </TableHead>
                   <TableHead className="truncate text-right">Actual</TableHead>
-                  <TableHead className="truncate">Location</TableHead>
-                  <TableHead className="truncate">Agency</TableHead>
                   <TableHead className="truncate">Remarks</TableHead>
                   <TableHead className="text-right">
                     <span className="sr-only">Remove</span>
@@ -1234,7 +1360,7 @@ export function DprEntryView({
               <TableBody>
                 {sheet.rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
                       No lines yet. Add the BOQ lines worked on this day.
                     </TableCell>
                   </TableRow>
@@ -1242,7 +1368,7 @@ export function DprEntryView({
                   sheet.rows.map((row, index) => {
                     const item = itemById.get(row.boqItemId);
                     const decimals = decimalsFor(item?.unit ?? "");
-                    const planned = row.boqItemId ? plan.onDate(row.boqItemId, date) : 0;
+                    const planned = row.boqItemId ? plannedFor(row.boqItemId) : 0;
                     const doneBefore = row.boqItemId ? actualsBefore.total(row.boqItemId) : 0;
                     const label = item?.boqSlNo || `row ${index + 1}`;
                     const standing = item
@@ -1384,28 +1510,6 @@ export function DprEntryView({
                           {actualNote ? <span className="sr-only">{actualNote}</span> : null}
                         </TableCell>
                         <TableCell className="py-1.5">
-                          <ConfiguredListPick
-                            value={row.location}
-                            options={settings.locations}
-                            disabled={!editable}
-                            placeholder="Choose a location"
-                            ariaLabel={`Location for ${label}`}
-                            fallbackListId="dpr-locations"
-                            onChange={(location) => editRow(row.id, { location })}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          <ConfiguredListPick
-                            value={row.agency}
-                            options={settings.agencies}
-                            disabled={!editable}
-                            placeholder="Choose an agency"
-                            ariaLabel={`Agency for ${label}`}
-                            fallbackListId="dpr-agencies"
-                            onChange={(agency) => editRow(row.id, { agency })}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5">
                           <Input
                             className="h-8 w-full min-w-0"
                             placeholder="Note"
@@ -1433,31 +1537,13 @@ export function DprEntryView({
                 )}
               </TableBody>
             </Table>
-            {editable && (noLocations || noAgencies) ? (
-              <p className="border-t border-border/60 px-4 py-2 text-[11.5px] font-semibold text-muted-foreground sm:px-[18px]">
-                {noLocations && noAgencies
-                  ? "No locations or agencies are"
-                  : noLocations
-                    ? "No locations are"
-                    : "No agencies are"}{" "}
-                set up in{" "}
-                <Link
-                  href={dprHref(`${DPR_BASE_PATH}/settings`, mappingId)}
-                  className="underline underline-offset-2"
-                >
-                  Daily Progress › Settings
-                </Link>{" "}
-                yet, so {noLocations && noAgencies ? "both are" : "it is"} typed here, with the values
-                used on earlier sheets suggested.
-              </p>
-            ) : null}
             {editable && completedOffSheet.length > 0 ? (
               <DprCompletedLines
                 items={completedOffSheet}
                 completed={completed}
                 open={showCompleted}
                 onToggle={() => setShowCompleted((value) => !value)}
-                planned={(id) => plan.onDate(id, date)}
+                planned={plannedFor}
                 doneBefore={(id) => actualsBefore.total(id)}
                 decimalsFor={decimalsFor}
                 onAdd={(boqItemId) =>
@@ -1955,17 +2041,6 @@ export function DprEntryView({
         </div>
       </div>
 
-      {/* Values already used on this project's sheets, offered as the recorder types. */}
-      <datalist id="dpr-locations">
-        {suggestions.locations.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
-      <datalist id="dpr-agencies">
-        {suggestions.agencies.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
     </DprPageShell>
   );
 }

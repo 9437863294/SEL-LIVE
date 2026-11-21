@@ -22,6 +22,13 @@ export interface DprTodaySheet {
   status: DprStatus | "none";
   /** Whether today is a working day in the project calendar. */
   working: boolean;
+  /**
+   * Whether the scope's recording schedule expects a sheet today (a working day on its weekly or
+   * specific-days schedule; every working day on a daily one). Absent: the same as `working`.
+   */
+  recordingDay?: boolean;
+  /** The scope's schedule in words, "weekly on Sat" — said when today is not a recording day. */
+  scheduleText?: string;
 }
 
 const RING = { size: 112, stroke: 10 };
@@ -100,6 +107,7 @@ export function DprDashboardHero({
   daysReported,
   workingDaysElapsed,
   workingDaysInPeriod,
+  dayNoun = "working day",
   periodLabel,
   periodNote,
   today,
@@ -112,8 +120,11 @@ export function DprDashboardHero({
   linesBehind: number;
   linesDue: number;
   daysReported: number;
+  /** Days a sheet was expected on so far, and in the whole period (recording days by the schedule). */
   workingDaysElapsed: number;
   workingDaysInPeriod: number;
+  /** "recording day" when a weekly or specific-days schedule sets the expected days. */
+  dayNoun?: string;
   periodLabel: string;
   /** Shown instead of the planned/done bars when there is no reading (not started, nothing planned). */
   periodNote: string;
@@ -165,8 +176,8 @@ export function DprDashboardHero({
             <div className="rounded-lg bg-white/10 px-3 py-2 text-xs text-white/80">{periodNote}</div>
           )}
           <div className="text-xs text-white/75 tabular-nums">
-            {daysReported} of {workingDaysElapsed} working day{workingDaysElapsed === 1 ? "" : "s"} so far
-            reported · {workingDaysInPeriod} in the period
+            {daysReported} of {workingDaysElapsed} {dayNoun}
+            {workingDaysElapsed === 1 ? "" : "s"} so far reported · {workingDaysInPeriod} in the period
           </div>
         </div>
 
@@ -174,7 +185,11 @@ export function DprDashboardHero({
           <div className="text-xs font-medium uppercase tracking-wide text-white/70">Today</div>
           {todaySheets.map((sheet) => {
             const state = SHEET_STATE[sheet.status];
-            const quiet = sheet.status === "none" && !sheet.working;
+            const expected = sheet.recordingDay ?? sheet.working;
+            const quiet = sheet.status === "none" && !expected;
+            const quietText = !sheet.working
+              ? "Not a working day"
+              : `Not a recording day${sheet.scheduleText ? ` · recorded ${sheet.scheduleText}` : ""}`;
             return (
               <div
                 key={sheet.scope}
@@ -190,7 +205,7 @@ export function DprDashboardHero({
                         style={{ backgroundColor: quiet ? "rgb(255 255 255 / 0.5)" : state.colour }}
                         aria-hidden="true"
                       />
-                      {quiet ? "Not a working day" : state.label}
+                      {quiet ? <span className="truncate">{quietText}</span> : state.label}
                     </div>
                   </div>
                 </div>

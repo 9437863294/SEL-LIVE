@@ -1,9 +1,14 @@
 "use client";
 
 /**
- * The BOQ progress report, from the user's mock-up (`sel-dpr-reports-colour`): four figures, a card
- * per line with its plan, actual and share of BOQ as bars, the findings worth checking, and the
- * full table (the same rows as Export CSV) underneath.
+ * The BOQ progress report, from the user's mock-up (`sel-dpr-reports-colour`): four figures, the
+ * same period in money (planned value, value done, value to date, balance value), the value scope by
+ * scope when every scope is shown, a card per line with its plan, actual and share of BOQ as bars and
+ * its value, the findings worth checking, and the full table (the same rows as Export CSV) underneath.
+ *
+ * Value = quantity × the BOQ line's rate (`project-management-dpr-values.ts`), so lines in Cum and
+ * Nos add up. A line with no rate is never given a value: it is left out of the money figures and
+ * counted ("1 line has no rate").
  *
  * A line's colour is decorative — one of three gradients, picked by a stable hash of its id, so it
  * never changes with the order or filter. Figures stay in text colours; status (behind, ahead,
@@ -11,11 +16,35 @@
  */
 
 import type { ReactNode } from "react";
-import { Activity, AlertTriangle, Check, List, Table, TrendingDown, TrendingUp } from "lucide-react";
-import type { DprPeriodRow } from "@/lib/project-management-dpr";
+import {
+  Activity,
+  AlertTriangle,
+  Banknote,
+  Check,
+  IndianRupee,
+  Layers,
+  List,
+  Scale,
+  Table as TableIcon,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
+import type { DprPeriodRow, DprScope } from "@/lib/project-management-dpr";
 import { dprShortDate } from "@/lib/project-management-dpr-plan";
 import { buildDprProgressChecks, summariseDprProgress } from "@/lib/project-management-dpr-progress-checks";
-import { formatPct, formatQtyAt } from "@/components/project-management/dpr/dpr-shell";
+import {
+  dprPeriodRowValue,
+  dprPeriodValuesByScope,
+  dprUnpricedText,
+  formatDprRate,
+  formatDprValue,
+  formatDprValueCompact,
+  summariseDprPeriodValues,
+  type DprPeriodRowValue,
+  type DprPeriodValueSummary,
+  type DprRateLookup,
+} from "@/lib/project-management-dpr-values";
+import { dprScopeTone, formatPct, formatQtyAt } from "@/components/project-management/dpr/dpr-shell";
 import {
   DprFigureRow,
   DprFigureTile,
@@ -25,6 +54,9 @@ import {
   DprReportZero,
   type DprGradient,
 } from "@/components/project-management/dpr/reports-parts";
+import { InfoTip } from "@/components/shared/info-tip";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 const LINE_GRADIENTS: readonly DprGradient[] = [
@@ -60,8 +92,12 @@ export function DprBoqProgressView({
   periodNoun,
   workingDays,
   workingDaysToDate,
+  dayNoun = "working day",
   progressDays,
   fullDetail,
+  rates,
+  scopeOf,
+  showScopes,
 }: {
   /** Leaf lines, in the report's order. */
   rows: readonly DprPeriodRow[];
@@ -72,12 +108,21 @@ export function DprBoqProgressView({
   periodLabel: string;
   periodChoiceLabel: string;
   periodNoun: string;
+  /** Days a sheet was expected on in the period (recording days by the schedule), and up to today. */
   workingDays: number;
   workingDaysToDate: number;
+  /** "recording day" when a weekly or specific-days schedule sets the expected days. */
+  dayNoun?: string;
   /** Dates in the period, up to today, with any work recorded. */
   progressDays: number;
   /** The full table, as exported. */
   fullDetail: ReactNode;
+  /** BOQ rates by line id (`buildDprRateLookup(boqItems)`), for the value figures. */
+  rates: DprRateLookup;
+  /** A line's scope, for the value-by-scope table. */
+  scopeOf: (boqItemId: string) => DprScope | undefined;
+  /** "All scopes" is chosen: show the value-by-scope table. */
+  showScopes: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -99,7 +144,27 @@ export function DprBoqProgressView({
   }
 
   const summary = summariseDprProgress(rows);
-  const checks = buildDprProgressChecks(rows, { workingDays, workingDaysToDate, progressDays, periodNoun, decimalsFor });
+  const checks = buildDprProgressChecks(rows, {
+    workingDays,
+    workingDaysToDate,
+    progressDays,
+    periodNoun,
+    decimalsFor,
+    dayNoun,
+  });
+  const values = summariseDprPeriodValues(rows, rates);
+  const unpriced = dprUnpricedText(values.unpriced);
+  const byScope = showScopes ? dprPeriodValuesByScope(rows, rates, scopeOf) : [];
+  /** A compact amount, with the exact one on hover. "—" when no line in the figure has a rate. */
+  const money = (value: number) =>
+    values.priced === 0 ? (
+      "—"
+    ) : (
+      <span title={formatDprValue(value)} className="tabular-nums">
+        {formatDprValueCompact(value)}
+      </span>
+    );
+  const noRates = values.priced === 0 ? "No line here has a rate" : "";
 
   return (
     <div className="space-y-4">
@@ -145,6 +210,51 @@ export function DprBoqProgressView({
         />
       </DprFigureRow>
 
+      {/* The same period in money: quantity × the BOQ rate, so lines in different units add up. */}
+      <DprFigureRow>
+        <DprFigureTile
+          icon={IndianRupee}
+          colours={["#93c5fd", "#2563eb"]}
+          label="Planned value"
+          value={money(values.planned)}
+          detail={noRates || periodLabel}
+        />
+        <DprFigureTile
+          icon={Banknote}
+          colours={["#6ee7b7", "#059669"]}
+          label="Value done"
+          value={money(values.actual)}
+          detail={
+            noRates ||
+            [
+              values.achievementPct === null ? "nothing priced was planned" : `${formatPct(values.achievementPct)} of planned`,
+              unpriced,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          }
+        />
+        <DprFigureTile
+          icon={Layers}
+          colours={["#c4b5fd", "#7c3aed"]}
+          label="Value to date"
+          value={money(values.toDate)}
+          detail={
+            noRates ||
+            (values.progressPct === null ? "No BOQ value to measure against" : `${formatPct(values.progressPct)} of BOQ value`)
+          }
+        />
+        <DprFigureTile
+          icon={Scale}
+          colours={["#fcd34d", "#d97706"]}
+          label="Balance value"
+          value={money(values.balance)}
+          detail={noRates || `of ${formatDprValueCompact(values.boq)} BOQ value`}
+        />
+      </DprFigureRow>
+
+      {byScope.length > 1 ? <ValueByScope rows={byScope} total={values} /> : null}
+
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         <DprReportCard
           icon={Activity}
@@ -159,7 +269,13 @@ export function DprBoqProgressView({
         >
           <div className="grid max-h-[70vh] gap-3 overflow-y-auto p-4 sm:p-5">
             {rows.map((row) => (
-              <LineCard key={row.id} row={row} path={pathOf(row.id)} decimals={decimalsFor(row.unit)} />
+              <LineCard
+                key={row.id}
+                row={row}
+                path={pathOf(row.id)}
+                decimals={decimalsFor(row.unit)}
+                value={dprPeriodRowValue(row, rates)}
+              />
             ))}
           </div>
         </DprReportCard>
@@ -174,7 +290,7 @@ export function DprBoqProgressView({
             {checks.length === 0 ? (
               <DprReportCallout tone="success" title="Nothing stands out">
                 No line is planned above its BOQ, none was worked without a plan, and progress is
-                recorded on every working day so far this {periodNoun}.
+                recorded on every {dayNoun} so far this {periodNoun}.
               </DprReportCallout>
             ) : (
               checks.map((check) => (
@@ -187,15 +303,105 @@ export function DprBoqProgressView({
         </DprReportCard>
       </div>
 
-      <DprReportCard icon={Table} colours={["#93c5fd", "#2563eb"]} title="Full detail" subtitle="Same as Export CSV">
+      <DprReportCard icon={TableIcon} colours={["#93c5fd", "#2563eb"]} title="Full detail" subtitle="Same as Export CSV">
         {fullDetail}
       </DprReportCard>
     </div>
   );
 }
 
-/** One line: its SL No tile, description and facts, and plan / actual / share-of-BOQ bars. */
-function LineCard({ row, path, decimals }: { row: DprPeriodRow; path: string; decimals: number }) {
+/** "3", or "3 (1 no rate)" when some of the scope's lines carry no rate. */
+const linesText = (lines: number, unpriced: number) => (unpriced > 0 ? `${lines} (${unpriced} no rate)` : String(lines));
+
+/**
+ * The period's value scope by scope — shown with "All scopes", when more than one scope has lines.
+ * One line per scope, every figure in whole rupees, and a total row over every line in the report.
+ */
+function ValueByScope({ rows, total }: { rows: ReturnType<typeof dprPeriodValuesByScope>; total: DprPeriodValueSummary }) {
+  const totalLines = total.priced + total.unpriced;
+  const head = "whitespace-nowrap text-right";
+  const cell = "whitespace-nowrap text-right text-sm tabular-nums";
+  return (
+    <DprReportCard
+      icon={IndianRupee}
+      colours={["#93c5fd", "#2563eb"]}
+      title="Value by scope"
+      subtitle="This period, quantity × BOQ rate"
+      aside={
+        <InfoTip label="About “Value by scope”">
+          Each line&apos;s quantity times its BOQ rate, added up per scope. Planned value is what the
+          projections put in this period; value done is what submitted sheets recorded in it; value to
+          date is everything recorded up to the period&apos;s end, against the BOQ value. A line with no
+          rate is left out of every figure and counted beside its scope&apos;s lines.
+        </InfoTip>
+      }
+    >
+      <Table className="min-w-full">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[72px] whitespace-nowrap">SL No</TableHead>
+            <TableHead className="whitespace-nowrap">Scope</TableHead>
+            <TableHead className={head}>Lines</TableHead>
+            <TableHead className={head}>Planned value</TableHead>
+            <TableHead className={head}>Value done</TableHead>
+            <TableHead className={head} title="Value done ÷ planned value">
+              Achieved
+            </TableHead>
+            <TableHead className={head}>Value to date</TableHead>
+            <TableHead className={head}>BOQ value</TableHead>
+            <TableHead className={head} title="Value to date ÷ BOQ value">
+              % of BOQ
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((row, index) => {
+            const priced = row.priced > 0;
+            return (
+              <TableRow key={row.scope}>
+                <TableCell className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{index + 1}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <StatusBadge status={row.scope} tone={dprScopeTone(row.scope)} />
+                </TableCell>
+                <TableCell className={cell}>{linesText(row.lines, row.unpriced)}</TableCell>
+                <TableCell className={cell}>{priced ? formatDprValue(row.planned) : "—"}</TableCell>
+                <TableCell className={`${cell} font-semibold`}>{priced ? formatDprValue(row.actual) : "—"}</TableCell>
+                <TableCell className={cell}>{formatPct(row.achievementPct)}</TableCell>
+                <TableCell className={cell}>{priced ? formatDprValue(row.toDate) : "—"}</TableCell>
+                <TableCell className={cell}>{priced ? formatDprValue(row.boq) : "—"}</TableCell>
+                <TableCell className={cell}>{formatPct(row.progressPct)}</TableCell>
+              </TableRow>
+            );
+          })}
+          <TableRow className="bg-muted/40 font-semibold">
+            <TableCell className="whitespace-nowrap text-sm" />
+            <TableCell className="whitespace-nowrap text-sm font-bold">Total</TableCell>
+            <TableCell className={cell}>{linesText(totalLines, total.unpriced)}</TableCell>
+            <TableCell className={cell}>{total.priced > 0 ? formatDprValue(total.planned) : "—"}</TableCell>
+            <TableCell className={`${cell} font-bold`}>{total.priced > 0 ? formatDprValue(total.actual) : "—"}</TableCell>
+            <TableCell className={cell}>{formatPct(total.achievementPct)}</TableCell>
+            <TableCell className={cell}>{total.priced > 0 ? formatDprValue(total.toDate) : "—"}</TableCell>
+            <TableCell className={cell}>{total.priced > 0 ? formatDprValue(total.boq) : "—"}</TableCell>
+            <TableCell className={cell}>{formatPct(total.progressPct)}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </DprReportCard>
+  );
+}
+
+/** One line: its SL No tile, description and facts, its value, and plan / actual / share-of-BOQ bars. */
+function LineCard({
+  row,
+  path,
+  decimals,
+  value,
+}: {
+  row: DprPeriodRow;
+  path: string;
+  decimals: number;
+  value: DprPeriodRowValue;
+}) {
   const gradient = gradientFor(row.id);
   const qty = (value: number) => formatQtyAt(value, decimals);
   const scale = Math.max(row.plannedQty, row.actualQty, 0);
@@ -269,6 +475,24 @@ function LineCard({ row, path, decimals }: { row: DprPeriodRow; path: string; de
               Achieved {formatPct(achieved)}
             </span>
           ) : null}
+          {value.rate === null ? (
+            <span className={cn(CHIP, "bg-muted text-muted-foreground")} title="This BOQ line carries no rate, so it has no value">
+              No rate
+            </span>
+          ) : (
+            <>
+              <span className={cn(CHIP, "bg-blue-50 text-blue-700")} title={`Rate ${formatDprRate(value.rate)} per ${row.unit || "unit"}`}>
+                Rate {formatDprRate(value.rate)}
+              </span>
+              <span
+                className={cn(CHIP, "bg-blue-50 text-blue-700")}
+                title={`Value done ${formatDprValue(value.actual)} · planned ${formatDprValue(value.planned)} · to date ${formatDprValue(value.toDate)} of ${formatDprValue(value.boq)}`}
+              >
+                Value {formatDprValue(value.actual)}
+                {(value.planned ?? 0) > 0 ? ` of ${formatDprValue(value.planned)} planned` : ""}
+              </span>
+            </>
+          )}
         </div>
       </div>
 

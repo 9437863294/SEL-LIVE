@@ -18,6 +18,12 @@ import {
   type DprScope,
 } from "./project-management-dpr.ts";
 import { dprShortDate, type DprCalendar } from "./project-management-dpr-plan.ts";
+import {
+  dprExpectedDaysIn,
+  dprScheduleIsDaily,
+  dprScopeScheduleOf,
+  type DprRecordingSchedule,
+} from "./project-management-dpr-schedule.ts";
 
 /* ── One sheet ──────────────────────────────────────────────────────────────────────────────── */
 
@@ -96,6 +102,13 @@ export interface DprLogCheckContext {
   backdateDays: number;
   /** The scope the sheets were filtered to; with "All", a day with a sheet of either scope is covered. */
   scope?: DprScope | "All";
+  /**
+   * The recording schedule (Daily Progress › Settings). A sheet is then expected only on its scope's
+   * recording days — with "All", on a day any of `scopes` records. Absent: every working day.
+   */
+  schedule?: DprRecordingSchedule;
+  /** With "All" and a schedule, the scopes whose recording days count (default: every scope). */
+  scopes?: readonly DprScope[];
 }
 
 /** Individual findings of one kind before the rest are summed into one. */
@@ -118,7 +131,8 @@ const pairText = (a: string, b: string) =>
  * Findings over the sheets shown, worst first:
  *  - danger: drafts past the backdating window — only a DPR approver can now submit them;
  *  - warning: sheets with work recorded and no manpower;
- *  - info: working days between the first and last sheet shown with no sheet at all.
+ *  - info: recording days (every working day, unless the schedule says otherwise) between the
+ *    first and last sheet shown with no sheet at all.
  */
 export function buildDprLogChecks(entries: readonly DprEntry[], context: DprLogCheckContext): DprLogCheck[] {
   const { calendar, today, backdateDays } = context;
@@ -180,13 +194,25 @@ export function buildDprLogChecks(entries: readonly DprEntry[], context: DprLogC
     }),
   );
 
-  // Working days between the first and last sheet shown that have no sheet.
+  // Recording days between the first and last sheet shown that have no sheet. Without a schedule,
+  // or with every scope that counts on a daily one, those are simply the working days.
   const dates = [...new Set(entries.map((entry) => entry.date))].filter(Boolean).sort();
   if (dates.length >= 2) {
     const first = dates[0];
     const last = dates[dates.length - 1] < today ? dates[dates.length - 1] : today;
     const covered = new Set(dates);
-    const missing = eachDayInRange(first, last).filter((date) => calendar.isWorkingDay(date) && !covered.has(date));
+    const scopes: readonly DprScope[] =
+      context.scope && context.scope !== "All" ? [context.scope] : (context.scopes ?? []);
+    const expected = context.schedule
+      ? dprExpectedDaysIn(context.schedule, scopes, calendar, { startDate: first, endDate: last })
+      : eachDayInRange(first, last).filter((date) => calendar.isWorkingDay(date));
+    const allDaily =
+      !context.schedule ||
+      (scopes.length > 0 ? scopes : (Object.keys(context.schedule) as DprScope[])).every((scope) =>
+        dprScheduleIsDaily(dprScopeScheduleOf(context.schedule, scope)),
+      );
+    const dayNoun = allDaily ? "working day" : "recording day";
+    const missing = expected.filter((date) => !covered.has(date));
     if (missing.length > 0) {
       const scopeText = context.scope && context.scope !== "All" ? `${context.scope} sheet` : "sheet";
       checks.push({
@@ -194,12 +220,12 @@ export function buildDprLogChecks(entries: readonly DprEntry[], context: DprLogC
         tone: "info",
         mark: "i",
         dates: missing,
-        title: missing.length === 1 ? `No ${scopeText} for ${dprShortDate(missing[0])}` : `No ${scopeText} on ${plural(missing.length, "working day")}`,
+        title: missing.length === 1 ? `No ${scopeText} for ${dprShortDate(missing[0])}` : `No ${scopeText} on ${plural(missing.length, dayNoun)}`,
         detail:
           missing.length === 1 && dates.length === 2
             ? `Sheets exist for ${pairText(dates[0], dates[1])} only.`
             : missing.length === 1
-              ? `It is a working day between ${dprShortDate(first)} and ${dprShortDate(last)} with no sheet.`
+              ? `It is a ${dayNoun} between ${dprShortDate(first)} and ${dprShortDate(last)} with no sheet.`
               : `Between ${dprShortDate(first)} and ${dprShortDate(last)}: ${listDates(missing)}.`,
       });
     }

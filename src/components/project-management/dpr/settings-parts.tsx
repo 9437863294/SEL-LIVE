@@ -3,7 +3,8 @@
 /**
  * The pieces of the Daily Progress Settings page, after the user's mock-up
  * (`sel-dpr-register-log-settings`): a titled section with its count pill, the weekly-off day
- * toggles, a tinted limit tile with a large number input, and a list editor of coloured tags.
+ * toggles, a scope's recording-day toggles, a tinted limit tile with a large number input, and a
+ * list editor of coloured tags.
  *
  * Tints on the limit tiles are low-alpha rgba so they read in both themes (inline styles are not
  * remapped by dark-compat.css); the list tags use light utility tints that dark-compat.css remaps.
@@ -89,6 +90,62 @@ export function DprWeekdayToggles({
             style={off ? { backgroundImage: "linear-gradient(135deg, #fb7185, #e11d48)" } : undefined}
           >
             {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A scope's recording weekdays, Monday first: one pick for a weekly schedule, several for specific
+ * days. A weekly-off day can still be pressed (the calendar may change), but it is shown struck and
+ * says why — a sheet is never expected on a day off.
+ */
+export function DprScheduleDayToggles({
+  value,
+  multiple,
+  offDays,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: readonly number[];
+  /** Specific days: any number of days. Weekly: exactly one. */
+  multiple: boolean;
+  /** The project's weekly off days. */
+  offDays: readonly number[];
+  onChange: (next: number[]) => void;
+  disabled?: boolean;
+  /** Names the group for a screen reader ("Supply recording days"). */
+  label: string;
+}) {
+  return (
+    <div className="flex gap-1" role="group" aria-label={label}>
+      {DPR_WEEKDAYS.map(({ day, label: dayLabel }) => {
+        const on = value.includes(day);
+        const off = offDays.includes(day);
+        return (
+          <button
+            key={day}
+            type="button"
+            aria-pressed={on}
+            disabled={disabled}
+            title={off ? `${dayLabel} is a weekly off — no sheet is expected on it` : undefined}
+            onClick={() => {
+              if (!multiple) onChange([day]);
+              else onChange(on ? value.filter((candidate) => candidate !== day) : [...value, day]);
+            }}
+            className={cn(
+              "h-9 w-[38px] shrink-0 rounded-[10px] border text-xs font-extrabold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
+              on
+                ? "keep-light border-transparent text-white shadow-sm"
+                : "border-border/70 bg-background text-muted-foreground hover:bg-muted/50 disabled:bg-muted/40 disabled:opacity-70",
+              off && "line-through decoration-2",
+            )}
+            style={on ? { backgroundImage: "linear-gradient(135deg, #a78bfa, #7c3aed)" } : undefined}
+          >
+            {dayLabel}
           </button>
         );
       })}

@@ -18,7 +18,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Building2,
+  CalendarClock,
   CalendarDays,
   Clock,
   CloudSun,
@@ -29,7 +29,6 @@ import {
   ListChecks,
   Loader2,
   Lock,
-  MapPin,
   Percent,
   Plus,
   RotateCcw,
@@ -49,17 +48,26 @@ import {
   DPR_SCOPES,
   dprNumber,
   parseIsoDate,
+  type DprScope,
 } from "@/lib/project-management-dpr";
 import {
   DPR_SETTINGS_COLLECTION,
   DPR_SETTINGS_DOC_ID,
   DPR_WEEKDAYS,
   dprProjectDates,
-  dprSuggestions,
   sanitizeDprSettings,
   type DprHoliday,
   type DprSettings,
 } from "@/lib/project-management-dpr-plan";
+import {
+  DPR_DEFAULT_WEEKLY_DAY,
+  DPR_RECORDING_FREQUENCIES,
+  DPR_RECORDING_FREQUENCY_LABELS,
+  describeDprSchedule,
+  dprScopeScheduleOf,
+  type DprRecordingFrequency,
+  type DprRecordingSchedule,
+} from "@/lib/project-management-dpr-schedule";
 import type { DprDataState } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DPR_TABS,
@@ -78,6 +86,7 @@ import { DprReportCard, DprReportPill } from "@/components/project-management/dp
 import {
   DprLimitTile,
   DprListEditor,
+  DprScheduleDayToggles,
   DprSettingsBlock,
   DprTag,
   DprWeekdayToggles,
@@ -89,6 +98,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -123,6 +139,7 @@ interface SettingsForm {
   equipmentTypes: string[];
   locations: string[];
   agencies: string[];
+  recordingSchedule: DprRecordingSchedule;
 }
 
 const toForm = (settings: DprSettings): SettingsForm => ({
@@ -140,6 +157,12 @@ const toForm = (settings: DprSettings): SettingsForm => ({
   equipmentTypes: [...settings.equipmentTypes],
   locations: [...settings.locations],
   agencies: [...settings.agencies],
+  recordingSchedule: Object.fromEntries(
+    DPR_SCOPES.map((scope) => {
+      const schedule = dprScopeScheduleOf(settings.recordingSchedule, scope);
+      return [scope, { frequency: schedule.frequency, weekdays: [...schedule.weekdays] }];
+    }),
+  ) as DprRecordingSchedule,
 });
 
 /** The stored shape. `sanitizeDprSettings` then clamps it, exactly as every reader does. */
@@ -180,6 +203,15 @@ function validateForm(
   number(form.shiftHours, "Shift length", { min: 1, max: 24 });
   number(form.spikeMultiple, "The multiple of plan that is queried", { min: 1, max: 100 });
   if (form.weatherOptions.length === 0) errors.push("Keep at least one weather option.");
+  for (const scope of DPR_SCOPES) {
+    const schedule = form.recordingSchedule[scope];
+    if (!schedule || schedule.frequency === "daily") continue;
+    if (schedule.weekdays.length === 0) {
+      errors.push(`${scope}: pick the day${schedule.frequency === "days" ? "s" : ""} its sheet is recorded on.`);
+    } else if (schedule.weekdays.every((day) => form.weeklyOff.includes(day))) {
+      errors.push(`${scope}: its recording day${schedule.weekdays.length === 1 ? " is a weekly off" : "s are all weekly offs"} — pick a working day.`);
+    }
+  }
   return errors;
 }
 
@@ -237,7 +269,9 @@ const LIMITS: ReadonlyArray<{
   },
 ];
 
-type ListKey = "weatherOptions" | "wholeNumberUnits" | "trades" | "equipmentTypes" | "locations" | "agencies";
+// Locations and agencies left the daily sheet on 2026-11-21 (user: "not required"), so their lists
+// are no longer edited here; whatever a project saved is kept as it was.
+type ListKey = "weatherOptions" | "wholeNumberUnits" | "trades" | "equipmentTypes";
 
 const LISTS: ReadonlyArray<{
   key: ListKey;
@@ -246,15 +280,11 @@ const LISTS: ReadonlyArray<{
   placeholder: string;
   tone: DprListTone;
   icon: LucideIcon;
-  /** Values typed on past sheets, offered in one click. */
-  suggest?: "locations" | "agencies";
 }> = [
   { key: "weatherOptions", id: "dpr-weather", label: "Weather options", placeholder: "Add a weather option", tone: "sky", icon: CloudSun },
   { key: "wholeNumberUnits", id: "dpr-whole-units", label: "Units counted in whole numbers", placeholder: "Add a unit (Nos, Set…)", tone: "violet", icon: Hash },
   { key: "trades", id: "dpr-trades", label: "Trades (manpower)", placeholder: "Add a trade (Mason, Fitter…)", tone: "blue", icon: Users },
   { key: "equipmentTypes", id: "dpr-equipment-types", label: "Plant and equipment", placeholder: "Add equipment (Excavator, Crane…)", tone: "amber", icon: Truck },
-  { key: "locations", id: "dpr-locations", label: "Locations (work lines)", placeholder: "Add a location (Tower 12, Zone A…)", tone: "emerald", icon: MapPin, suggest: "locations" },
-  { key: "agencies", id: "dpr-agencies", label: "Agencies (work lines)", placeholder: "Add an agency (Departmental, a subcontractor…)", tone: "pink", icon: Building2, suggest: "agencies" },
 ];
 
 export function DprSettingsView({
@@ -278,15 +308,12 @@ export function DprSettingsView({
     projectRecordDates,
     boqLines,
     breakdown,
-    entries,
     isLoading,
     loadError,
     reload,
   } = data;
   const canEdit = canEditSettings;
 
-  /** Locations and agencies already typed on this project's sheets, for one-click adding. */
-  const pastValues = useMemo(() => dprSuggestions(entries), [entries]);
 
   const [form, setForm] = useState<SettingsForm>(() => toForm(settings));
   /**
@@ -334,6 +361,28 @@ export function DprSettingsView({
   const missingRate = boqSummary.reduce((sum, row) => sum + (row.lines - row.withRate), 0);
 
   const patch = (next: Partial<SettingsForm>) => setForm((previous) => ({ ...previous, ...next }));
+
+  /** A scope's schedule changed: a new frequency keeps what still fits of the days already picked. */
+  const setSchedule = (scope: DprScope, frequency: DprRecordingFrequency, weekdays?: number[]) =>
+    setForm((previous) => {
+      const current = previous.recordingSchedule[scope];
+      const kept = weekdays ?? current?.weekdays ?? [];
+      // A weekly scope with no day yet reports at the end of the site week — the last working day
+      // on or before Saturday.
+      const endOfWeek =
+        [DPR_DEFAULT_WEEKLY_DAY, 5, 4, 3, 2, 1, 0].find((day) => !previous.weeklyOff.includes(day)) ??
+        DPR_DEFAULT_WEEKLY_DAY;
+      const next =
+        frequency === "daily"
+          ? []
+          : frequency === "weekly"
+            ? [kept[0] ?? endOfWeek]
+            : weekdays ?? (kept.length > 0 ? kept : [endOfWeek]);
+      return {
+        ...previous,
+        recordingSchedule: { ...previous.recordingSchedule, [scope]: { frequency, weekdays: next } },
+      };
+    });
 
   const toggleWeeklyOff = (day: number, off: boolean) =>
     setForm((previous) => ({
@@ -394,6 +443,9 @@ export function DprSettingsView({
           backdateDays: clean.backdateDays,
           shiftHours: clean.shiftHours,
           spikeMultiple: clean.spikeMultiple,
+          recordingSchedule: DPR_SCOPES.map(
+            (scope) => `${scope}: ${describeDprSchedule(clean.recordingSchedule[scope])}`,
+          ).join("; "),
         },
       });
       setShowErrors(false);
@@ -522,6 +574,92 @@ export function DprSettingsView({
         </div>
       ) : (
         <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+          {/* Full width: one row per scope, every control on that row. */}
+          <DprReportCard
+            className="lg:col-span-2"
+            icon={CalendarClock}
+            colours={["#c4b5fd", "#7c3aed"]}
+            title="Recording schedule"
+            subtitle="The days each scope is expected to file its sheet"
+            aside={
+              <InfoTip label="About the recording schedule">
+                Sheets stay one per scope per day. The schedule only says on which days a sheet is
+                expected: daily is every working day; weekly is one day a week; specific days are the
+                weekdays picked. A picked day that is a weekly off or a holiday is skipped. On a weekly or
+                specific-days scope a sheet covers the days since the previous recording day, so its
+                Planned is the plan for those days. The log, the dashboard, the reports and the Record
+                badge look for sheets on these days only. A sheet can still be recorded on any other day.
+              </InfoTip>
+            }
+          >
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[72px]">SL No</TableHead>
+                  <TableHead className="w-[110px]">Scope</TableHead>
+                  <TableHead className="w-[170px]">Frequency</TableHead>
+                  <TableHead className="w-[310px]">Days</TableHead>
+                  <TableHead>Expected</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {DPR_SCOPES.map((scope, index) => {
+                  const schedule = form.recordingSchedule[scope] ?? { frequency: "daily" as const, weekdays: [] };
+                  const lines = boqSummary.find((row) => row.scope === scope)?.lines ?? 0;
+                  return (
+                    <TableRow key={scope}>
+                      <TableCell className="py-2 tabular-nums text-muted-foreground">{index + 1}</TableCell>
+                      <TableCell className="py-2">
+                        <span className="block truncate font-extrabold" title={`${lines} BOQ line${lines === 1 ? "" : "s"}`}>
+                          {scope}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <Select
+                          value={schedule.frequency}
+                          disabled={disabled}
+                          onValueChange={(next) => setSchedule(scope, next as DprRecordingFrequency)}
+                        >
+                          <SelectTrigger aria-label={`${scope} recording frequency`} className="h-9 w-[150px] text-left">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DPR_RECORDING_FREQUENCIES.map((frequency) => (
+                              <SelectItem key={frequency} value={frequency}>
+                                {DPR_RECORDING_FREQUENCY_LABELS[frequency]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell className="py-2">
+                        {schedule.frequency === "daily" ? (
+                          <span className="text-xs text-muted-foreground">Every working day — no days to pick</span>
+                        ) : (
+                          <DprScheduleDayToggles
+                            value={schedule.weekdays}
+                            multiple={schedule.frequency === "days"}
+                            offDays={form.weeklyOff}
+                            disabled={disabled}
+                            label={`${scope} recording days`}
+                            onChange={(weekdays) => setSchedule(scope, schedule.frequency, weekdays)}
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell className="py-2">
+                        <span className="block truncate text-sm font-semibold" title={describeDprSchedule(schedule)}>
+                          {schedule.frequency === "days" && schedule.weekdays.length === 0
+                            ? "Pick at least one day"
+                            : describeDprSchedule(schedule)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </DprReportCard>
+
           <div className="min-w-0 space-y-4">
             <DprReportCard
               icon={CalendarDays}
@@ -734,11 +872,11 @@ export function DprSettingsView({
                 </ul>
               ) : boqSummary.some((row) => row.lines > 0) ? (
                 <p className="border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
-                  Every Civil and Erection line has a quantity and a rate.
+                  Every Civil, Erection and Supply line has a quantity and a rate.
                 </p>
               ) : (
                 <p className="border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
-                  No Civil or Erection BOQ lines on this project yet.
+                  No Civil, Erection or Supply BOQ lines on this project yet.
                 </p>
               )}
             </DprReportCard>
@@ -755,8 +893,7 @@ export function DprSettingsView({
                 are counted in whole numbers — projections spread as 1s and 2s and actuals cannot take a
                 fraction. Every other unit takes up to three decimals. Units match ignoring case, dots and
                 spaces, so “Nos.” matches “NOS”. Trades and plant are the dropdowns on every daily
-                sheet&apos;s manpower and equipment rows, and locations and agencies the dropdowns on its
-                work lines; an empty list is typed instead, with earlier values suggested.
+                sheet&apos;s manpower and equipment rows; an empty list is typed instead.
               </InfoTip>
             }
           >
@@ -772,7 +909,6 @@ export function DprSettingsView({
                 tone={list.tone}
                 readOnly={!canEdit}
                 disabled={isSaving}
-                suggestions={list.suggest ? pastValues[list.suggest] : undefined}
               />
             ))}
           </DprReportCard>

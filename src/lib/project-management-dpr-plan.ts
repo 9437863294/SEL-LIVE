@@ -48,6 +48,13 @@ import {
   type DprTarget,
   type DprTargetFilter,
 } from "./project-management-dpr.ts";
+import {
+  defaultDprRecordingSchedule,
+  dprCoverIsWindow,
+  dprExpectedDaysIn,
+  sanitizeDprRecordingSchedule,
+  type DprRecordingSchedule,
+} from "./project-management-dpr-schedule.ts";
 
 /* ── Settings ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -99,6 +106,11 @@ export interface DprSettings {
   locations: string[];
   /** Who did a work line (own workforce, a subcontractor…). Empty: typed instead. */
   agencies: string[];
+  /**
+   * On which days each scope is expected to file its sheet: daily (every working day), weekly on
+   * one weekday, or on chosen weekdays. See `project-management-dpr-schedule.ts`.
+   */
+  recordingSchedule: DprRecordingSchedule;
 }
 
 /**
@@ -146,6 +158,8 @@ export const defaultDprSettings = (): DprSettings => ({
   // there is nothing sensible to start them with; Settings offers the values already typed.
   locations: [],
   agencies: [],
+  // Every scope daily — how sheets were expected before the schedule existed.
+  recordingSchedule: defaultDprRecordingSchedule(),
 });
 
 const readNumber = (
@@ -231,6 +245,7 @@ export function sanitizeDprSettings(raw: unknown): DprSettings {
     equipmentTypes: readList(source.equipmentTypes, defaults.equipmentTypes),
     locations: readList(source.locations, defaults.locations),
     agencies: readList(source.agencies, defaults.agencies),
+    recordingSchedule: sanitizeDprRecordingSchedule(source.recordingSchedule),
   };
 }
 
@@ -772,11 +787,25 @@ export function checkDprSheet(input: {
   today: string;
   /** A DPR approver may record past the backdating limit. */
   canRecordAnyDate: boolean;
+  /**
+   * The days the sheet covers (`dprSheetCover`): on a weekly or specific-days scope, the days since
+   * the previous recording day. Planned is then the plan over that window, so a weekly sheet is
+   * read against the week's plan. Absent, or one day: the sheet's own day, as always.
+   */
+  cover?: DprDateRange;
 }): DprCheckResult {
   const { sheet, items, plan, actuals, settings, projectDates, today, canRecordAnyDate } = input;
   const errors: string[] = [];
   const warnings: string[] = [];
   const calendar = dprCalendar(settings);
+  const coverWindow = input.cover && dprCoverIsWindow(input.cover) ? input.cover : null;
+  const plannedOf = (boqItemId: string): number =>
+    coverWindow ? plan.qtyInRange(boqItemId, coverWindow) : plan.onDate(boqItemId, sheet.date);
+  // Completion is read as of the window's first day: work finished before the window owes nothing.
+  const completionDate = coverWindow ? coverWindow.startDate : sheet.date;
+  const windowText = coverWindow
+    ? `${dprShortDate(coverWindow.startDate)} – ${dprShortDate(coverWindow.endDate)}`
+    : "";
 
   if (!parseIsoDate(sheet.date)) {
     errors.push("Pick the date this progress was recorded on.");
@@ -811,10 +840,13 @@ export function checkDprSheet(input: {
     }
     const label = item.boqSlNo || item.erpSlNo || `Row ${index + 1}`;
     const decimals = dprUnitDecimals(item.unit, settings);
-    const planned = plan.onDate(item.id, sheet.date);
+    const planned = plannedOf(item.id);
+    // The sheet no longer asks for a location (user, 2026-11-21), so a line is entered once. A
+    // location is still read where an older sheet carries one: two rows of one line at two
+    // locations filed before then stay valid.
     const key = `${item.id}|${String(line.location ?? "").trim().toLowerCase()}`;
     if (seen.has(key)) {
-      errors.push(`${label}: entered twice for the same location. Merge the rows or give each a location.`);
+      errors.push(`${label}: entered twice. Merge the rows into one.`);
     }
     seen.add(key);
 
@@ -838,18 +870,26 @@ export function checkDprSheet(input: {
       planned > 0 &&
       !String(line.remarks ?? "").trim() &&
       !hindrances &&
-      !dprCompletionOn({ item, isoDate: sheet.date, plan, actuals })
+      !dprCompletionOn({ item, isoDate: completionDate, plan, actuals })
     ) {
       errors.push(
-        `${label}: ${fmtQty(planned)} ${item.unit} was planned but nothing was done. Add a row remark or a hindrance.`,
+        `${label}: ${fmtQty(planned)} ${item.unit} was planned${coverWindow ? ` for ${windowText}` : ""} but nothing was done. Add a row remark or a hindrance.`,
       );
     }
     if (planned > 0 && actual > settings.spikeMultiple * planned) {
       warnings.push(
-        `${label}: ${fmtQty(actual)} ${item.unit} is more than ${settings.spikeMultiple}× the day’s plan of ${fmtQty(planned)}. Check the figure.`,
+        coverWindow
+          ? `${label}: ${fmtQty(actual)} ${item.unit} is more than ${settings.spikeMultiple}× the plan of ${fmtQty(planned)} for ${windowText}. Check the figure.`
+          : `${label}: ${fmtQty(actual)} ${item.unit} is more than ${settings.spikeMultiple}× the day’s plan of ${fmtQty(planned)}. Check the figure.`,
       );
     }
-    if (planned === 0 && actual > 0) warnings.push(`${label}: no quantity was planned for this day.`);
+    if (planned === 0 && actual > 0) {
+      warnings.push(
+        coverWindow
+          ? `${label}: no quantity was planned for ${windowText}.`
+          : `${label}: no quantity was planned for this day.`,
+      );
+    }
   });
 
   for (const [boqItemId, qty] of sheetTotals) {
@@ -951,7 +991,12 @@ export interface DprBoardStats {
   linesWorked: number;
   linesInPeriod: number;
   daysReported: number;
+  /**
+   * Recording days so far — the days a sheet was expected on by the recording schedule (the union
+   * over the scopes shown). With every scope daily these are the working days, as the name says.
+   */
   workingDaysElapsed: number;
+  /** Recording days in the whole period, read the same way. */
   workingDaysInPeriod: number;
   manDays: number;
   lostTimeHours: number;
@@ -1066,6 +1111,11 @@ export function buildDprBoard(input: {
     planned.length > 0 && planned.every((row) => hasRate(row.item)) ? "value" : "average";
 
   const sheets = filterDprEntries(entries, { scope, range });
+  // The scopes whose schedule says which days a sheet was expected: the one shown, else every
+  // scope this board has lines in.
+  const boardScopes: DprScope[] = scope
+    ? [scope]
+    : DPR_SCOPES.filter((candidate) => items.some((item) => item.scope === candidate));
   const stats: DprBoardStats = {
     achievementToDatePct: shareAcross(
       due.map((row) => ({ item: row.item, numerator: row.actual, denominator: row.planToDate })),
@@ -1081,8 +1131,8 @@ export function buildDprBoard(input: {
     linesWorked: rows.filter((row) => row.actual > 0).length,
     linesInPeriod: rows.length,
     daysReported: new Set(sheets.map((entry) => entry.date)).size,
-    workingDaysElapsed: toDate ? calendar.workingDays(toDate.startDate, toDate.endDate).length : 0,
-    workingDaysInPeriod: calendar.workingDays(range.startDate, range.endDate).length,
+    workingDaysElapsed: toDate ? dprExpectedDaysIn(settings.recordingSchedule, boardScopes, calendar, toDate).length : 0,
+    workingDaysInPeriod: dprExpectedDaysIn(settings.recordingSchedule, boardScopes, calendar, range).length,
     manDays: tidy(
       sheets.reduce(
         (sum, entry) =>

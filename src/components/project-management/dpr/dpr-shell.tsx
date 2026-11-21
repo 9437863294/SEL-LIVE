@@ -45,6 +45,7 @@ import { neighbourAnchor, shiftDprRange } from "@/lib/project-management-dpr-rep
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import { PageHeader } from "@/components/shared/page-header";
 import type { ModuleNavTone } from "@/components/shared/module-shell";
+import type { StatusTone } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -462,7 +463,11 @@ export function DprPeriodPicker({
   );
 }
 
-/** Civil / Erection, with an "All" option where a screen reports across both. */
+/** Civil / Erection / Supply, with an "All" option where a screen reports across them. */
+/** A scope's badge colour, the same on every Daily Progress screen. */
+export const dprScopeTone = (scope: string): StatusTone =>
+  scope === "Civil" ? "info" : scope === "Erection" ? "progress" : "warning";
+
 export function DprScopeTabs({
   value,
   onChange,
@@ -554,7 +559,7 @@ export const DPR_TABS: ReadonlyArray<{
     path: `${DPR_BASE_PATH}/boq`,
     icon: ListTree,
     description:
-      "This project's Civil and Erection BOQ lines, with the sub-items each is broken into — down to sub-items of sub-items — so work is planned and recorded at the level it is done.",
+      "This project's Civil, Erection and Supply BOQ lines, with the sub-items each is broken into — down to sub-items of sub-items — so work is planned and recorded at the level it is done.",
   },
   {
     key: "log",

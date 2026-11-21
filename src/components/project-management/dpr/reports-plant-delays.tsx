@@ -18,7 +18,7 @@ import type {
   DprLostTimeRow,
   DprScope,
 } from "@/lib/project-management-dpr";
-import { formatDisplayDate, formatPct, formatQty } from "@/components/project-management/dpr/dpr-shell";
+import { dprScopeTone, formatDisplayDate, formatPct, formatQty } from "@/components/project-management/dpr/dpr-shell";
 import {
   DprFigureRow,
   DprFigureTile,
@@ -40,7 +40,7 @@ import { cn } from "@/lib/utils";
 const TABLE_PROPS = { stickyHeader: true, containerClassName: "max-h-[65vh]" } as const;
 const lineCell = "truncate text-sm";
 const numberCell = "truncate text-right text-sm tabular-nums";
-const scopeTone = (scope: DprScope) => (scope === "Civil" ? "info" : "progress");
+const scopeTone = (scope: DprScope) => dprScopeTone(scope);
 
 const PLANT = ["#fcd34d", "#d97706"] as const;
 const LOST = ["#fda4af", "#e11d48"] as const;

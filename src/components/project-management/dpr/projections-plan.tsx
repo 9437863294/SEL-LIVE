@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Plan several lines — pick the period once, then fill a quantity against each BOQ line of a
- * scope. Every row is checked as it is typed (rules P1–P6), so a save only ever writes rows that
- * pass; rows that do not stay on screen with their messages.
+ * Plan several lines — pick the period once, add the BOQ lines to plan ("Add projection" opens a
+ * picker of the scope's lines), then fill a quantity against each. Only the lines picked are shown:
+ * the planner opens empty rather than listing the whole BOQ. Copy previous period, Spread remaining
+ * balance and Paste from Excel add the lines they fill. Every row is checked as it is typed (rules
+ * P1–P6), so a save only ever writes rows that pass; saved lines leave the planner, and rows that
+ * do not pass stay on screen with their messages.
  */
 
 import { useMemo, useState } from "react";
@@ -18,12 +21,14 @@ import {
   ListPlus,
   Loader2,
   Pencil,
+  Plus,
   Save,
   Search,
   Sigma,
   Table2,
   Target,
   TriangleAlert,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -72,6 +77,7 @@ import {
   type SubItemDialogRequest,
 } from "@/components/project-management/dpr/breakdown-dialogs";
 import { PasteQuantitiesDialog } from "@/components/project-management/dpr/projections-dialogs";
+import { DprBoqLinePickerDialog } from "@/components/project-management/dpr/boq-line-picker-dialog";
 import {
   candidateFor,
   createProjections,
@@ -160,6 +166,9 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
   const [distribution, setDistribution] = useState<DprDistribution>("even");
   const [policy, setPolicy] = useState<DprOverlapPolicy>("block");
   const [rows, setRows] = useState<Record<string, PlanRow>>({});
+  /** The BOQ lines picked to plan, per scope, in the order they were added. */
+  const [picked, setPicked] = useState<Partial<Record<DprScope, string[]>>>({});
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -178,33 +187,103 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     () => data.boqItems.filter((item) => item.scope === scope),
     [data.boqItems, scope],
   );
+  const itemById = useMemo(() => new Map(scopeItems.map((item) => [item.id, item])), [scopeItems]);
+  const pickedIds = useMemo(() => picked[scope] ?? [], [picked, scope]);
   /**
-   * The rows in breakdown order: a BOQ line with sub-items is a read-only heading over them, and
-   * only leaves take a quantity. A filter match keeps the lines above it (so it reads in context)
-   * and everything under it.
+   * The picked lines as plannable leaves, in the order they were added. A line picked and then split
+   * into sub-items stands for the leaves under it.
+   */
+  const pickedItems = useMemo(() => {
+    const seen = new Set<string>();
+    const list: DprBoqItem[] = [];
+    for (const id of pickedIds) {
+      const node = data.breakdown.nodes.get(id);
+      const leafIds = node && !node.isLeaf ? data.breakdown.leavesUnder(id).map((leaf) => leaf.id) : [id];
+      for (const leafId of leafIds) {
+        const item = itemById.get(leafId);
+        if (!item || seen.has(leafId)) continue;
+        seen.add(leafId);
+        list.push(item);
+      }
+    }
+    return list;
+  }, [pickedIds, itemById, data.breakdown]);
+  const pickedSet = useMemo(() => new Set(pickedItems.map((item) => item.id)), [pickedItems]);
+
+  /** Add lines to the plan (once each), keeping the order they arrive in. */
+  const pick = (ids: readonly string[]) =>
+    setPicked((previous) => {
+      const current = previous[scope] ?? [];
+      const known = new Set(current);
+      return { ...previous, [scope]: [...current, ...ids.filter((id) => !known.has(id))] };
+    });
+  /**
+   * Take lines off the plan, with whatever was typed against them. Read from the latest picks (a
+   * save may finish after more lines were added), and for the scope given — the one a save began in.
+   */
+  const unpick = (ids: readonly string[], forScope: DprScope = scope) => {
+    const gone = new Set(ids);
+    setPicked((previous) => {
+      const kept: string[] = [];
+      for (const id of previous[forScope] ?? []) {
+        // A line split into sub-items since it was picked stands for its leaves.
+        const node = data.breakdown.nodes.get(id);
+        const leafIds = node && !node.isLeaf ? data.breakdown.leavesUnder(id).map((leaf) => leaf.id) : [id];
+        for (const leafId of leafIds) if (!gone.has(leafId) && !kept.includes(leafId)) kept.push(leafId);
+      }
+      return { ...previous, [forScope]: kept };
+    });
+    setRows((previous) => {
+      const next = { ...previous };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+  };
+
+  /** The scope's plannable lines not picked yet, in breakdown order — what the picker offers. */
+  const pickable = useMemo(
+    () =>
+      data.breakdown.ordered
+        .filter((node) => node.scope === scope && node.isLeaf && !pickedSet.has(node.id))
+        .map((node) => itemById.get(node.id))
+        .filter((item): item is DprBoqItem => Boolean(item)),
+    [data.breakdown, scope, pickedSet, itemById],
+  );
+
+  /**
+   * The rows in breakdown order: the picked lines, each under the lines above it as read-only
+   * headings (so a sub-item reads in context); only leaves take a quantity. A filter narrows the
+   * picked rows, keeping the lines above a match.
    */
   const displayRows = useMemo<PlanDisplayRow[]>(() => {
     const { breakdown } = data;
-    const itemById = new Map(scopeItems.map((item) => [item.id, item]));
-    const inScope = breakdown.ordered.filter((node) => node.scope === scope);
+    const shown = new Set<string>();
+    for (const id of pickedSet) {
+      shown.add(id);
+      for (let parentId = breakdown.nodes.get(id)?.parentId ?? null; parentId; parentId = breakdown.nodes.get(parentId)?.parentId ?? null) {
+        shown.add(parentId);
+      }
+    }
+    const inScope = breakdown.ordered.filter((node) => node.scope === scope && shown.has(node.id));
     const needle = filter.trim().toLowerCase();
     let visible: Set<string> | null = null;
     if (needle) {
       visible = new Set<string>();
       for (const node of inScope) {
-        if (!`${node.slNo} ${node.erpSlNo ?? ""} ${node.description}`.toLowerCase().includes(needle)) continue;
+        if (!node.isLeaf) continue;
+        const words = [node.slNo, node.erpSlNo ?? "", node.description, ...node.ancestors.map((a) => `${a.slNo} ${a.description}`)];
+        if (!words.join(" ").toLowerCase().includes(needle)) continue;
         visible.add(node.id);
         for (let parentId = node.parentId; parentId; parentId = breakdown.nodes.get(parentId)?.parentId ?? null) {
           visible.add(parentId);
         }
-        for (const id of breakdown.descendantIds(node.id)) visible.add(id);
       }
     }
     return inScope
       .filter((node) => !visible || visible.has(node.id))
       .map((node) => ({ node, item: node.isLeaf ? (itemById.get(node.id) ?? null) : null }))
       .filter((row) => !row.node.isLeaf || row.item !== null);
-  }, [data, scopeItems, scope, filter]);
+  }, [data, scope, filter, pickedSet, itemById]);
 
   /** Done and planned rolled up to every group, in the group's own unit. */
   const rolledDone = useMemo(
@@ -243,7 +322,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
   /** Live checks for every row with something typed in it. */
   const checks = useMemo(() => {
     const results = new Map<string, DprCheckResult>();
-    for (const item of scopeItems) {
+    for (const item of pickedItems) {
       const text = rows[item.id]?.qty ?? "";
       if (!text.trim()) continue;
       const qty = readQtyText(text);
@@ -269,9 +348,9 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
       );
     }
     return results;
-  }, [scopeItems, rows, periodType, range, distribution, data, actuals, today, policy]);
+  }, [pickedItems, rows, periodType, range, distribution, data, actuals, today, policy]);
 
-  const filledCount = scopeItems.filter((item) => (rows[item.id]?.qty ?? "").trim()).length;
+  const filledCount = pickedItems.filter((item) => (rows[item.id]?.qty ?? "").trim()).length;
   const blockedCount = [...checks.values()].filter((check) => check.errors.length > 0).length;
 
   /** Each row's problems, named by its BOQ number, for the list above the table. */
@@ -293,13 +372,16 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     const previous = previousPeriodRange(periodType, range);
     let copied = 0;
     const next = { ...rows };
+    const added: string[] = [];
     for (const item of scopeItems) {
       const qty = roundToDecimals(data.plan.qtyInRange(item.id, previous), data.decimalsFor(item.unit));
       if (qty <= 0) continue;
       next[item.id] = { ...(next[item.id] ?? EMPTY_ROW), qty: String(qty) };
+      added.push(item.id);
       copied += 1;
     }
     setRows(next);
+    pick(added);
     toast({
       title: copied
         ? `Copied ${copied} line${copied === 1 ? "" : "s"}`
@@ -312,7 +394,9 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     let filled = 0;
     let noQuantity = 0;
     const next = { ...rows };
-    for (const item of scopeItems) {
+    const added: string[] = [];
+    // The lines picked; with none picked yet, every line of the scope with a balance left.
+    for (const item of pickedItems.length > 0 ? pickedItems : scopeItems) {
       const balance = unplannedBalance({ item, plan: data.plan, actuals, settings: data.settings, today });
       if (balance === null) {
         noQuantity += 1;
@@ -321,9 +405,11 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
       const qty = floorToDecimals(balance, data.decimalsFor(item.unit));
       if (qty <= 0) continue;
       next[item.id] = { ...(next[item.id] ?? EMPTY_ROW), qty: String(qty) };
+      added.push(item.id);
       filled += 1;
     }
     setRows(next);
+    pick(added);
     toast({
       title: filled
         ? `Filled the unplanned balance on ${filled} line${filled === 1 ? "" : "s"}`
@@ -347,6 +433,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     const pasted = parsePastedQuantities(text);
     const next = { ...rows };
     const notFound: string[] = [];
+    const added: string[] = [];
     let matched = 0;
     for (const { key, qty } of pasted) {
       const wanted = key.trim().toLowerCase();
@@ -358,9 +445,11 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
         continue;
       }
       next[item.id] = { ...(next[item.id] ?? EMPTY_ROW), qty: String(qty) };
+      added.push(item.id);
       matched += 1;
     }
     setRows(next);
+    pick(added);
     toast({
       title: `${matched} matched${pasted.length === 0 ? " — no rows with a number were found" : ""}`,
       description: notFound.length
@@ -374,7 +463,7 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     if (!canEdit) return;
     const toSave: NewProjection[] = [];
     let needAttention = 0;
-    for (const item of scopeItems) {
+    for (const item of pickedItems) {
       const row = rows[item.id];
       if (!row?.qty.trim()) continue;
       const check = checks.get(item.id);
@@ -393,13 +482,14 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
       return;
     }
     setIsSaving(true);
+    const savingScope = scope;
     try {
       await createProjections(context, toSave);
-      setRows((previous) => {
-        const next = { ...previous };
-        for (const { item } of toSave) delete next[item.id];
-        return next;
-      });
+      // Saved lines are projections now: they leave the planner; the rest stay to be fixed.
+      unpick(
+        toSave.map(({ item }) => item.id),
+        savingScope,
+      );
       toast({
         title: `${toSave.length} projection${toSave.length === 1 ? "" : "s"} saved`,
         description: needAttention ? `${needAttention} need attention.` : undefined,
@@ -417,7 +507,20 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
     }
   };
 
-  const missingQuantities = scopeItems.filter((item) => !(item.boqQty > 0)).length;
+  const missingQuantities = pickedItems.filter((item) => !(item.boqQty > 0)).length;
+
+  /** The planner's main action: pick the BOQ lines to plan for the period. */
+  const addProjectionButton = (
+    <Button
+      size="sm"
+      className={GRADIENT_BUTTON}
+      style={gradientButton("#818cf8", "#4f46e5")}
+      onClick={() => setIsPickerOpen(true)}
+      disabled={!canEdit || scopeItems.length === 0}
+    >
+      <Plus className="mr-1.5 h-4 w-4" /> Add projection
+    </Button>
+  );
 
   return (
     <div className="space-y-4">
@@ -425,13 +528,16 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
         icon={Target}
         colours={["#93c5fd", "#2563eb"]}
         title="Plan several BOQ lines for one period"
-        subtitle="Type a quantity against each line — the rest is worked out for you"
+        subtitle="Add the lines to plan, then type a quantity against each — the rest is worked out for you"
         aside={
           <>
             <InfoTip label="About planning several lines">
-              Pick the period once, then fill a quantity against each line. Reports spread it over
-              working days only, in the spread you choose.
+              Pick the period once, then Add projection to choose the BOQ lines to plan — only the
+              lines you pick are shown — and fill a quantity against each. Copy previous period,
+              Spread remaining balance and Paste from Excel add the lines they fill. Reports spread
+              each quantity over working days only, in the spread you choose.
             </InfoTip>
+            {addProjectionButton}
             <Button
               size="sm"
               className={GRADIENT_BUTTON}
@@ -555,19 +661,19 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
             role="progressbar"
             aria-label="Lines filled"
             aria-valuemin={0}
-            aria-valuemax={scopeItems.length}
+            aria-valuemax={pickedItems.length}
             aria-valuenow={filledCount}
           >
             <span
               className="block h-full rounded-full transition-[width] duration-200"
               style={{
-                width: `${scopeItems.length > 0 ? Math.min(100, (filledCount / scopeItems.length) * 100) : 0}%`,
+                width: `${pickedItems.length > 0 ? Math.min(100, (filledCount / pickedItems.length) * 100) : 0}%`,
                 backgroundImage: "linear-gradient(90deg, #60a5fa, #7c3aed)",
               }}
             />
           </span>
           <span className="whitespace-nowrap text-sm font-bold tabular-nums text-muted-foreground">
-            {filledCount} line{filledCount === 1 ? "" : "s"} filled
+            {filledCount} of {pickedItems.length} line{pickedItems.length === 1 ? "" : "s"} filled
             {blockedCount > 0 ? (
               <span className="text-rose-600"> · {blockedCount} need attention</span>
             ) : null}
@@ -586,15 +692,20 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
               Open BOQ register
             </Link>
           </span>
-          <div className="relative w-full sm:ml-auto sm:w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              aria-label="Filter BOQ lines"
-              placeholder="Filter BOQ lines…"
-              className="h-9 rounded-[11px] pl-9 font-semibold"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-            />
+          <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+            {pickedItems.length > 0 ? (
+              <div className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="Filter the lines picked"
+                  placeholder="Filter the lines picked…"
+                  className="h-9 rounded-[11px] pl-9 font-semibold"
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value)}
+                />
+              </div>
+            ) : null}
+            {addProjectionButton}
           </div>
         </div>
 
@@ -610,8 +721,15 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
               title={`No ${scope} BOQ lines on this project`}
               description={`BOQ items are read as ${scope} when their Scope 2 column says so.`}
             />
+          ) : pickedItems.length === 0 ? (
+            <PmEmptyState
+              icon={ListPlus}
+              title="No BOQ lines added yet"
+              description={`Add projection to choose the ${scope} lines to plan for this period. Only the lines you add are shown here.`}
+              action={canEdit ? addProjectionButton : undefined}
+            />
           ) : displayRows.length === 0 ? (
-            <PmEmptyState icon={Search} title="No BOQ line matches the filter" />
+            <PmEmptyState icon={Search} title="No picked line matches the filter" />
           ) : (
             // One line per BOQ line, every cell single-line, and all of it inside the table: a
             // bounded height that scrolls under a pinned header, and a narrow screen scrolls the
@@ -730,6 +848,19 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                                     onClick={() => setSubItemRequest({ mode: "edit", id: node.id })}
                                   >
                                     <Pencil className="h-4 w-4" />
+                                  </Button>
+                                ) : null}
+                                {item ? (
+                                  <Button
+                                    type="button"
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-8 w-8 text-muted-foreground hover:text-rose-600"
+                                    aria-label={`Take ${sl} off this plan`}
+                                    title={`Take ${sl} off this plan`}
+                                    onClick={() => unpick([item.id])}
+                                  >
+                                    <X className="h-4 w-4" />
                                   </Button>
                                 ) : null}
                               </div>
@@ -943,12 +1074,14 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
           <div className="min-w-0 flex-1 text-sm font-bold text-muted-foreground">
             <span className="tabular-nums">
               {filledCount > 0
-                ? `${filledCount} of ${scopeItems.length} line${scopeItems.length === 1 ? "" : "s"} planned${
+                ? `${filledCount} of ${pickedItems.length} line${pickedItems.length === 1 ? "" : "s"} planned${
                     rangeOk ? ` for ${formatRangeCompact(range.startDate, range.endDate)}` : ""
                   }.`
-                : "Nothing typed yet."}
+                : pickedItems.length > 0
+                  ? "Nothing typed yet."
+                  : "Add projection to choose the lines to plan."}
             </span>
-            {missingQuantities > 0 && scopeItems.length > 0 ? (
+            {missingQuantities > 0 && pickedItems.length > 0 ? (
               <span className="block text-xs font-normal">
                 {missingQuantities} {scope} line{missingQuantities === 1 ? " has" : "s have"} no BOQ quantity,
                 so the balance check is off for {missingQuantities === 1 ? "it" : "them"}.
@@ -956,7 +1089,12 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
             ) : null}
           </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            <Button variant="outline" onClick={() => setRows({})} disabled={isSaving || filledCount === 0}>
+            <Button
+              variant="outline"
+              title="Take every line off this plan, with what was typed"
+              onClick={() => unpick(pickedItems.map((item) => item.id))}
+              disabled={isSaving || pickedItems.length === 0}
+            >
               Clear
             </Button>
             <Button
@@ -973,6 +1111,24 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
       </section>
 
       <PasteQuantitiesDialog open={isPasteOpen} onOpenChange={setIsPasteOpen} onApply={applyPaste} />
+      <DprBoqLinePickerDialog
+        open={isPickerOpen}
+        onOpenChange={setIsPickerOpen}
+        title="Add projection"
+        description={`Choose the ${scope} BOQ lines to plan${
+          rangeOk ? ` for ${formatRangeCompact(range.startDate, range.endDate)}` : ""
+        }. Each joins the planner with a blank quantity for you to fill.`}
+        emptyText={`Every ${scope} BOQ line is already in the planner.`}
+        candidates={pickable}
+        decimalsFor={data.decimalsFor}
+        balanceOf={(item) => (item.boqQty > 0 ? item.boqQty - actuals.total(item.id) : null)}
+        planned={
+          rangeOk
+            ? { of: (item) => data.plan.qtyInRange(item.id, range), title: "Already planned in this period" }
+            : undefined
+        }
+        onAdd={pick}
+      />
       {/* The BOQ register's own add / edit dialog, so a sub-item made here is the same record. */}
       <SubItemDialog
         request={subItemRequest}

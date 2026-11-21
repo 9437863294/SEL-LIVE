@@ -16,6 +16,8 @@ import { useSearchParams } from "next/navigation";
 import { Activity, ArrowLeft, LayoutDashboard } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { DPR_PERMISSION_RESOURCE, DPR_SCOPES } from "@/lib/project-management-dpr";
+import { dprCalendar } from "@/lib/project-management-dpr-plan";
+import { dprIsRecordingDay, dprScopeScheduleOf } from "@/lib/project-management-dpr-schedule";
 import { DprDataProvider, useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import { DPR_TABS, dprHref, todayIso, type DprTabKey } from "@/components/project-management/dpr/dpr-shell";
 import {
@@ -44,17 +46,22 @@ function DprModuleFrame({
   children: ReactNode;
 }) {
   // The shared register (the provider above), so these figures cost no read of their own.
-  const { projectName, boqItems, entries } = useDprData(mappingId, canView);
+  const { projectName, boqItems, entries, settings } = useDprData(mappingId, canView);
 
-  /** Scopes this project progresses that have no sheet at all for today. */
+  /**
+   * Scopes this project progresses that owe a sheet today — today is one of their recording days
+   * (Daily Progress › Settings: every working day, weekly, or chosen weekdays) — and have none.
+   */
   const unrecordedToday = useMemo(() => {
     const today = todayIso();
+    const calendar = dprCalendar(settings);
     return DPR_SCOPES.filter(
       (scope) =>
         boqItems.some((item) => item.scope === scope) &&
+        dprIsRecordingDay(dprScopeScheduleOf(settings.recordingSchedule, scope), calendar, today) &&
         !entries.some((entry) => entry.date === today && entry.scope === scope),
     ).length;
-  }, [boqItems, entries]);
+  }, [boqItems, entries, settings]);
 
   const groups = useMemo<ModuleNavGroup[]>(
     () =>

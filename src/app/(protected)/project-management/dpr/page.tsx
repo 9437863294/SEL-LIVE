@@ -10,8 +10,13 @@
  * are never added: anything read across lines is each line's share of its own plan —
  * value-weighted when every line has a BOQ rate, the average of line percentages otherwise.
  *
- * Only real register data is shown. Drafts are not counted anywhere; the filing calendar is the one
- * place a draft appears, as a draft.
+ * Only real register data is shown. Drafts are not counted anywhere; the filing calendar and the
+ * recording status are the places a draft appears, as a draft.
+ *
+ * Recording status (under the headline) answers "when is the next actual due, and what was missed":
+ * per scope, its recording schedule (Daily Progress › Settings), the last sheet, the next due day
+ * and the gaps — rules in `src/lib/project-management-dpr-due.ts`. It follows the scope filter but
+ * not the period: a gap is a gap whatever period is being read.
  */
 
 import { useMemo, useState } from "react";
@@ -20,6 +25,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Activity,
   BarChart3,
+  CalendarClock,
   CalendarDays,
   CalendarRange,
   ClipboardList,
@@ -48,6 +54,12 @@ import {
   isValidRange,
 } from "@/lib/project-management-dpr-plan";
 import {
+  describeDprScheduleShort,
+  dprIsRecordingDay,
+  dprScheduleIsDaily,
+  dprScopeScheduleOf,
+} from "@/lib/project-management-dpr-schedule";
+import {
   buildDprComingUp,
   buildDprDiaryDays,
   buildDprFilingCalendar,
@@ -56,7 +68,9 @@ import {
   furthestBehind,
   lineAchievementBars,
 } from "@/lib/project-management-dpr-dashboard";
+import { buildDprRecordingStatus } from "@/lib/project-management-dpr-due";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
+import { DprRecordingStatusTable } from "@/components/project-management/dpr/dashboard-recording-status";
 import {
   DprAccessDenied,
   DprHeader,
@@ -115,6 +129,7 @@ export default function DailyProgressDashboardPage() {
     boqItems,
     breakdown,
     entries,
+    targets,
     settings,
     plan,
     projectDates,
@@ -123,11 +138,11 @@ export default function DailyProgressDashboardPage() {
     loadError,
   } = useDprData(mappingId, canView);
 
-  // The Civil and Erection workspaces link in with their own scope, so arriving from one opens
+  // The scope workspaces link in with their own scope, so arriving from one opens
   // already filtered to it rather than on a mixed view the user then has to narrow.
   const linkedScope = searchParams?.get("scope");
   const [scope, setScope] = useState<DprScope | "All">(
-    linkedScope === "Civil" || linkedScope === "Erection" ? linkedScope : "All",
+    DPR_SCOPES.includes(linkedScope as DprScope) ? (linkedScope as DprScope) : "All",
   );
   const [period, setPeriod] = useState<DprPeriodSelection>(() => defaultPeriodSelection("Week"));
 
@@ -179,8 +194,8 @@ export default function DailyProgressDashboardPage() {
   );
   const filing = useMemo(
     () =>
-      buildDprFilingCalendar({ entries, settings, range, scopes: shownScopes, today, projectDates }),
-    [entries, settings, range, shownScopes, today, projectDates],
+      buildDprFilingCalendar({ entries, settings, range, scopes: shownScopes, today, projectDates, targets }),
+    [entries, settings, range, shownScopes, today, projectDates, targets],
   );
   const split = useMemo(
     () =>
@@ -200,12 +215,33 @@ export default function DailyProgressDashboardPage() {
 
   /** Today's sheet per scope — the question a site office opens this screen to answer. */
   const todaySheets = useMemo<DprTodaySheet[]>(() => {
-    const working = dprCalendar(settings).isWorkingDay(today);
+    const calendar = dprCalendar(settings);
+    const working = calendar.isWorkingDay(today);
     return shownScopes.map((candidate) => {
       const sheet = entries.find((item) => item.date === today && item.scope === candidate);
-      return { scope: candidate, status: sheet?.status ?? "none", working };
+      const schedule = dprScopeScheduleOf(settings.recordingSchedule, candidate);
+      return {
+        scope: candidate,
+        status: sheet?.status ?? "none",
+        working,
+        recordingDay: dprIsRecordingDay(schedule, calendar, today),
+        scheduleText: describeDprScheduleShort(schedule),
+      };
     });
   }, [entries, settings, today, shownScopes]);
+
+  /** Per scope: its schedule, last sheet, next due day and gaps — whatever the period. */
+  const recording = useMemo(
+    () => buildDprRecordingStatus({ entries, targets, settings, scopes: shownScopes, today, projectDates }),
+    [entries, targets, settings, shownScopes, today, projectDates],
+  );
+
+  /** "working day" while every scope shown records daily, else "recording day". */
+  const dayNoun = shownScopes.every((candidate) =>
+    dprScheduleIsDaily(dprScopeScheduleOf(settings.recordingSchedule, candidate)),
+  )
+    ? "working day"
+    : "recording day";
 
   if (isAuthLoading || isResolving) return <DprLoadingState blocks={2} />;
   if (!canView) {
@@ -293,12 +329,26 @@ export default function DailyProgressDashboardPage() {
             daysReported={stats.daysReported}
             workingDaysElapsed={stats.workingDaysElapsed}
             workingDaysInPeriod={stats.workingDaysInPeriod}
+            dayNoun={dayNoun}
             periodLabel={periodLabel}
             periodNote={periodNote}
             today={today}
             todaySheets={todaySheets}
             mappingId={mappingId}
           />
+
+          <DprDashboardCard
+            title="Recording status"
+            info="When each scope's actuals are due, by its recording schedule (Daily Progress › Settings): today, if today is a recording day and nothing is submitted yet, else the next recording day. Gaps are past recording days with no submitted sheet — a draft never submitted counts, marked as a draft — counted from the scope's first projection or sheet up to yesterday; today is due, not yet a gap. A scope with no projection or sheet has not started. Select a date to record it."
+            icon={CalendarClock}
+            actions={
+              <Button asChild variant="outline" size="sm">
+                <Link href={dprHref(`${DPR_BASE_PATH}/settings`, mappingId)}>Change schedule</Link>
+              </Button>
+            }
+          >
+            <DprRecordingStatusTable rows={recording} mappingId={mappingId} />
+          </DprDashboardCard>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
             <DprStatTile
@@ -324,8 +374,8 @@ export default function DailyProgressDashboardPage() {
             />
             <DprStatTile
               value={`${stats.daysReported} / ${stats.workingDaysElapsed}`}
-              label="Working days reported"
-              detail={`${stats.workingDaysInPeriod} working day${stats.workingDaysInPeriod === 1 ? "" : "s"} in period`}
+              label={dayNoun === "working day" ? "Working days reported" : "Recording days reported"}
+              detail={`${stats.workingDaysInPeriod} ${dayNoun}${stats.workingDaysInPeriod === 1 ? "" : "s"} in period`}
               icon={CalendarDays}
               tone="bg-indigo-500/10 text-indigo-600"
             />
@@ -390,7 +440,7 @@ export default function DailyProgressDashboardPage() {
 
             <DprDashboardCard
               title="Daily sheets filed"
-              info="One mark per scope per day: submitted, a draft, not recorded on a working day, not expected (a non-working day or outside the project's dates), or not yet due. Select a mark to open that day's sheet."
+              info="One mark per scope per day: submitted; a draft; missing — a past recording day with nothing submitted (a gap); due today; upcoming — a recording day ahead; or not expected — a non-working day, a day off the scope's recording schedule, or outside the project's dates. Select a mark to open that day's sheet."
               icon={CalendarRange}
             >
               <DprFilingCalendarView calendar={filing} mappingId={mappingId} />
@@ -416,7 +466,7 @@ export default function DailyProgressDashboardPage() {
           <div className={split.length > 0 ? "grid grid-cols-1 gap-4 xl:grid-cols-2" : "space-y-4"}>
             {split.length > 0 ? (
               <DprDashboardCard
-                title="Civil against Erection"
+                title="Scope by scope"
                 info="Each scope read on its own: achievement to date and against the full period, and how many of its lines are behind."
                 icon={HardHat}
               >

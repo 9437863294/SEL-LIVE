@@ -19,11 +19,11 @@
 
 import { useMemo, useState } from "react";
 import {
-  AlignJustify,
   ArrowLeft,
   CalendarDays,
   CircleAlert,
   History,
+  IndianRupee,
   ListChecks,
   ListEnd,
   ListPlus,
@@ -31,7 +31,6 @@ import {
   Lock,
   Pencil,
   Save,
-  Search,
   Trash2,
   TriangleAlert,
   Undo2,
@@ -56,6 +55,15 @@ import {
   type DprRecordEditPlan,
   type DprRecordRowDraft,
 } from "@/lib/project-management-dpr-records";
+import {
+  buildDprRateLookup,
+  dprPlannedValue,
+  dprRateOf,
+  dprUnpricedText,
+  formatDprRate,
+  formatDprValue,
+  formatDprValueCompact,
+} from "@/lib/project-management-dpr-values";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import {
   DprMessages,
@@ -74,18 +82,10 @@ import {
   DprSlNoPill,
 } from "@/components/project-management/dpr/reports-parts";
 import { ScopeBadge, type ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
+import { DprBoqLinePickerDialog } from "@/components/project-management/dpr/boq-line-picker-dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InfoTip } from "@/components/shared/info-tip";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -142,6 +142,46 @@ const perDayFigure = (qty: number, decimals: number, workingDays: number): strin
 };
 
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
+
+/**
+ * A line's Rate and Value cells: quantity × the BOQ line's rate. No rate, no value — never a
+ * guessed one. While editing, `wasQty` is the stored quantity, so the value says what it was.
+ */
+function ValueCells({
+  rate,
+  qty,
+  struck = false,
+  wasQty = null,
+}: {
+  rate: number | null;
+  /** null while an added line has no quantity yet. */
+  qty: number | null;
+  struck?: boolean;
+  wasQty?: number | null;
+}) {
+  const value = rate !== null && qty !== null ? qty * rate : null;
+  const title =
+    rate === null
+      ? "This BOQ line has no rate, so it has no value."
+      : value === null
+        ? undefined
+        : `${formatQtyAt(qty ?? 0, 3)} × ${formatDprRate(rate)} = ${formatDprValue(value)}${
+            wasQty !== null ? `; was ${formatDprValue(wasQty * rate)}` : ""
+          }`;
+  return (
+    <>
+      <TableCell className={cn("truncate text-right text-sm tabular-nums text-muted-foreground", struck && "line-through")}>
+        {formatDprRate(rate)}
+      </TableCell>
+      <TableCell
+        className={cn("truncate text-right text-sm font-bold tabular-nums", struck && "line-through text-muted-foreground")}
+        title={title}
+      >
+        {value === null ? <span className="font-extrabold text-muted-foreground/60">—</span> : formatDprValue(value)}
+      </TableCell>
+    </>
+  );
+}
 
 /** "2 quantities changed · 1 line added · 1 taken off". */
 export function changeSummary(plan: DprRecordEditPlan): string {
@@ -265,6 +305,9 @@ function RecordBody({
     () => new Map(data.boqItems.map((item) => [item.id, { unit: item.unit, boqQty: item.boqQty }])),
     [data.boqItems],
   );
+  /** Planned quantity × the BOQ line's rate; a line with no rate is counted, never priced. */
+  const rates = useMemo(() => buildDprRateLookup(data.boqItems), [data.boqItems]);
+  const storedValue = useMemo(() => dprPlannedValue(record.targets, rates), [record, rates]);
 
   const rowOf = (target: DprTarget): DprRecordRowDraft =>
     rows.get(target.id) ?? {
@@ -372,6 +415,28 @@ function RecordBody({
     record.status === "running" ? calendar.workingDays(record.startDate, today).length : 0;
   const daysToStart = record.status === "upcoming" ? daysInRange(today, record.startDate) - 1 : 0;
   const lineCount = record.targets.length;
+
+  /**
+   * The record's value as it would save: an edited quantity counts as typed, a line taken off
+   * drops out, an added line counts once it has a quantity. Outside the editor it is the stored value.
+   */
+  const liveValue = (() => {
+    if (!editing) return storedValue;
+    const lines: Array<{ boqItemId: string; plannedQty: number }> = [];
+    for (const target of record.targets) {
+      const row = rowOf(target);
+      if (row.removed) continue;
+      const typed = readDprQtyText(row.qty);
+      const qty = typed !== null && Number.isFinite(typed) && typed >= 0 ? typed : dprNumber(target.plannedQty);
+      lines.push({ boqItemId: target.boqItemId, plannedQty: qty });
+    }
+    for (const line of added) {
+      const typed = readDprQtyText(line.qty);
+      lines.push({ boqItemId: line.boqItemId, plannedQty: typed !== null && Number.isFinite(typed) && typed > 0 ? typed : 0 });
+    }
+    return dprPlannedValue(lines, rates);
+  })();
+  const valueChanged = editing && Math.abs(liveValue.value - storedValue.value) > 0.005;
   const editTitle = locked
     ? "This period has ended. Past periods are locked."
     : !canEdit
@@ -407,7 +472,18 @@ function RecordBody({
           label="Period"
           value={formatRangeCompact(record.startDate, record.endDate)}
           valueClassName="text-xl"
-          detail={`${periodLabel} · ${daysInRange(record.startDate, record.endDate)} days, ${workingDays} working`}
+          detail={
+            <span
+              title={
+                record.distribution === "mixed"
+                  ? `Mixed spread — new lines take ${DPR_DISTRIBUTION_LABELS[record.spreadForNew]}`
+                  : `${spreadLabel} spread across working days`
+              }
+            >
+              {periodLabel} · {daysInRange(record.startDate, record.endDate)} days, {workingDays} working ·{" "}
+              {spreadLabel} spread
+            </span>
+          }
         />
         <DprFigureTile
           icon={ListChecks}
@@ -417,12 +493,16 @@ function RecordBody({
           detail={`${record.revisedCount} revised · ${lineCount - record.revisedCount} on baseline`}
         />
         <DprFigureTile
-          icon={AlignJustify}
+          icon={IndianRupee}
           colours={["#6ee7b7", "#059669"]}
-          label="Spread"
-          value={spreadLabel}
+          label="Planned value"
+          value={
+            <span title={`${formatDprValue(storedValue.value)} planned`}>
+              {storedValue.priced > 0 ? formatDprValueCompact(storedValue.value) : "—"}
+            </span>
+          }
           valueClassName="text-xl"
-          detail={record.distribution === "mixed" ? `new lines take ${DPR_DISTRIBUTION_LABELS[record.spreadForNew]}` : "across working days"}
+          detail={dprUnpricedText(storedValue.unpriced) || "planned quantity × BOQ rate"}
         />
         <DprFigureTile
           icon={locked ? Lock : History}
@@ -521,19 +601,22 @@ function RecordBody({
             <Table
               stickyHeader
               containerClassName="max-h-[65vh]"
-              className={cn("table-fixed", editing ? "min-w-[1290px]" : "min-w-[1220px]")}
+              // The fixed columns sum to 1118px (1206px editing); the rest is the BOQ line's.
+              className={cn("table-fixed", editing ? "min-w-[1442px]" : "min-w-[1372px]")}
             >
               <colgroup>
                 <col className="w-[72px]" />
                 <col />
                 <col className="w-[64px]" />
-                <col className="w-[88px]" />
+                <col className="w-[84px]" />
                 <col className="w-[80px]" />
-                <col className="w-[100px]" />
+                <col className="w-[92px]" />
                 <col className="w-[140px]" />
-                <col className="w-[168px]" />
+                <col className="w-[80px]" />
+                <col className="w-[112px]" />
+                <col className="w-[160px]" />
                 <col className="w-[104px]" />
-                <col className="w-[150px]" />
+                <col className="w-[130px]" />
                 {editing ? <col className="w-[88px]" /> : null}
               </colgroup>
               <TableHeader>
@@ -549,6 +632,12 @@ function RecordBody({
                     In period
                   </TableHead>
                   <TableHead className="truncate text-right">{editing ? "Quantity" : "Planned"}</TableHead>
+                  <TableHead className="truncate text-right" title="The BOQ line's rate, per unit">
+                    Rate
+                  </TableHead>
+                  <TableHead className="truncate text-right" title="Planned quantity × rate">
+                    Value
+                  </TableHead>
                   <TableHead className="truncate">{editing ? "Works out at" : "Per working day"}</TableHead>
                   <TableHead className="truncate">Revision</TableHead>
                   <TableHead className="truncate">Remarks</TableHead>
@@ -608,6 +697,12 @@ function RecordBody({
                           </span>
                         )}
                       </TableCell>
+                      <ValueCells
+                        rate={dprRateOf(rates, target.boqItemId)}
+                        qty={shownQty}
+                        struck={row.removed}
+                        wasQty={changed ? currentQty : null}
+                      />
                       <TableCell
                         className="truncate text-xs tabular-nums text-muted-foreground"
                         title={hasErrors ? check?.errors.join(" ") : undefined}
@@ -720,6 +815,7 @@ function RecordBody({
                               onChange={(value) => setAddedRow(line.boqItemId, { qty: value })}
                             />
                           </TableCell>
+                          <ValueCells rate={dprRateOf(rates, item.id)} qty={typedOk ? (typed ?? 0) : null} />
                           <TableCell
                             className="truncate text-xs tabular-nums text-muted-foreground"
                             title={hasErrors ? check?.errors.join(" ") : undefined}
@@ -790,6 +886,27 @@ function RecordBody({
                       );
                     })
                   : null}
+
+                {/* The record's value: what it is, and — while editing — what it will be. */}
+                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableCell colSpan={8} className="py-2 text-right text-xs font-extrabold uppercase tracking-wide text-muted-foreground">
+                    {editing ? "Planned value on save" : "Planned value"}
+                    {liveValue.unpriced > 0 ? (
+                      <span className="ml-2 font-semibold normal-case tracking-normal">
+                        ({dprUnpricedText(liveValue.unpriced)} — left out)
+                      </span>
+                    ) : null}
+                  </TableCell>
+                  <TableCell
+                    className="py-2 text-right text-sm font-extrabold tabular-nums"
+                    title={`${formatDprValue(liveValue.value)}${valueChanged ? `, was ${formatDprValue(storedValue.value)}` : ""}`}
+                  >
+                    {liveValue.priced > 0 ? formatDprValue(liveValue.value) : "—"}
+                  </TableCell>
+                  <TableCell colSpan={editing ? 4 : 3} className="truncate py-2 text-xs tabular-nums text-muted-foreground">
+                    {valueChanged ? `was ${formatDprValue(storedValue.value)}` : ""}
+                  </TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           </TooltipProvider>
@@ -844,10 +961,12 @@ function RecordBody({
         </div>
       ) : null}
 
-      <AddRecordLinesDialog
+      <DprBoqLinePickerDialog
         open={isPickerOpen}
         onOpenChange={setIsPickerOpen}
-        scope={record.scope}
+        title="Add BOQ lines to this record"
+        description={`${record.scope} lines not in the record yet. Each joins with a blank quantity for you to fill.`}
+        emptyText={`Every ${record.scope} BOQ line is already in this record.`}
         candidates={candidates}
         decimalsFor={data.decimalsFor}
         balanceOf={(item) => {
@@ -1010,175 +1129,5 @@ function RevisionPill({
         ))}
       </TooltipContent>
     </Tooltip>
-  );
-}
-
-/* ── Add BOQ lines ──────────────────────────────────────────────────────────────────────────── */
-
-/** Picks BOQ lines of the record's scope that are not in it yet; they join with a blank quantity. */
-function AddRecordLinesDialog({
-  open,
-  onOpenChange,
-  scope,
-  candidates,
-  decimalsFor,
-  balanceOf,
-  onAdd,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  scope: string;
-  candidates: readonly DprBoqItem[];
-  decimalsFor: (unit: string) => number;
-  /** BOQ quantity less what is done, or null when the line has no BOQ quantity. */
-  balanceOf: (item: DprBoqItem) => number | null;
-  onAdd: (ids: string[]) => void;
-}) {
-  const [filter, setFilter] = useState("");
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-
-  const close = (next: boolean) => {
-    if (!next) {
-      setFilter("");
-      setPicked(new Set());
-    }
-    onOpenChange(next);
-  };
-
-  const shown = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!needle) return candidates;
-    return candidates.filter((item) =>
-      `${item.boqSlNo} ${item.erpSlNo ?? ""} ${item.description} ${item.path ?? ""}`.toLowerCase().includes(needle),
-    );
-  }, [candidates, filter]);
-  const allShownPicked = shown.length > 0 && shown.every((item) => picked.has(item.id));
-
-  const toggle = (id: string, on: boolean) =>
-    setPicked((previous) => {
-      const next = new Set(previous);
-      if (on) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-
-  return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent size="xl" className="flex flex-col gap-4 overflow-hidden">
-        <DialogHeader>
-          <DialogTitle>Add BOQ lines to this record</DialogTitle>
-          <DialogDescription>
-            {scope} lines not in the record yet. Each joins with a blank quantity for you to fill.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Filter BOQ lines"
-            placeholder="Filter by SL No or description…"
-            className="h-9 rounded-[11px] pl-9 font-semibold"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-        </div>
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60">
-          {shown.length === 0 ? (
-            <p className="p-6 text-center text-sm text-muted-foreground">
-              {candidates.length === 0 ? `Every ${scope} BOQ line is already in this record.` : "No BOQ line matches the filter."}
-            </p>
-          ) : (
-            <Table stickyHeader containerClassName="max-h-[50vh]" className="min-w-[760px] table-fixed">
-              <colgroup>
-                <col className="w-[44px]" />
-                <col className="w-[72px]" />
-                <col />
-                <col className="w-[76px]" />
-                <col className="w-[120px]" />
-              </colgroup>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <Checkbox
-                      aria-label="Select every line shown"
-                      checked={allShownPicked}
-                      onCheckedChange={(checked) =>
-                        setPicked((previous) => {
-                          const next = new Set(previous);
-                          for (const item of shown) {
-                            if (checked === true) next.add(item.id);
-                            else next.delete(item.id);
-                          }
-                          return next;
-                        })
-                      }
-                    />
-                  </TableHead>
-                  <TableHead className="truncate">SL No</TableHead>
-                  <TableHead className="truncate">BOQ line</TableHead>
-                  <TableHead className="truncate">Unit</TableHead>
-                  <TableHead className="truncate text-right" title="BOQ quantity less what is done">
-                    Balance
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {shown.map((item) => {
-                  const on = picked.has(item.id);
-                  const balance = balanceOf(item);
-                  return (
-                    <TableRow
-                      key={item.id}
-                      className={cn("cursor-pointer", on && "bg-violet-50")}
-                      onClick={() => toggle(item.id, !on)}
-                    >
-                      <TableCell className="py-1.5" onClick={(event) => event.stopPropagation()}>
-                        <Checkbox
-                          aria-label={`Add ${item.boqSlNo || item.description}`}
-                          checked={on}
-                          onCheckedChange={(checked) => toggle(item.id, checked === true)}
-                        />
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <DprSlNoPill slNo={item.boqSlNo || item.erpSlNo || ""} seed={item.id} />
-                      </TableCell>
-                      <TableCell className="text-sm" title={breakdownTitle(item)}>
-                        <DprIndentedText text={item.description} depth={item.depth ?? 0} />
-                      </TableCell>
-                      <TableCell className="truncate text-sm" title={item.unit}>
-                        {item.unit || "—"}
-                      </TableCell>
-                      <TableCell className="truncate text-right text-sm tabular-nums">
-                        {balance === null ? "—" : formatQtyAt(balance, decimalsFor(item.unit))}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </div>
-        <DialogFooter className="items-center gap-2 sm:justify-between">
-          <span className="text-sm font-bold tabular-nums text-muted-foreground">
-            {picked.size === 0 ? "Nothing picked yet" : `${plural(picked.size, "line")} picked`}
-          </span>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button variant="ghost" onClick={() => close(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={picked.size === 0}
-              onClick={() => {
-                // Keep the list's order, whatever order they were ticked in.
-                onAdd(candidates.filter((item) => picked.has(item.id)).map((item) => item.id));
-                close(false);
-              }}
-            >
-              <ListPlus className="mr-2 h-4 w-4" />
-              {picked.size === 0 ? "Add lines" : `Add ${plural(picked.size, "line")}`}
-            </Button>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

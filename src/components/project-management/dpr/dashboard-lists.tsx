@@ -11,7 +11,7 @@ import type { DprBoardRow } from "@/lib/project-management-dpr-plan";
 import type { DprComingUp, DprScopeSplitRow } from "@/lib/project-management-dpr-dashboard";
 import type { DprHindranceRow } from "@/lib/project-management-dpr";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
-import { formatDisplayDate, formatPct } from "@/components/project-management/dpr/dpr-shell";
+import { dprScopeTone, formatDisplayDate, formatPct } from "@/components/project-management/dpr/dpr-shell";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -84,7 +84,7 @@ export function DprFurthestBehindList({
   );
 }
 
-/* ── Civil against Erection ─────────────────────────────────────────────────────────────────── */
+/* ── Scope by scope (Civil, Erection, Supply) ─────────────────────────────────────────────────────────────────── */
 
 function ShareBar({ value, tone }: { value: number | null; tone: "primary" | "danger" }) {
   const width = Math.min(100, Math.max(0, value ?? 0));
@@ -100,7 +100,8 @@ function ShareBar({ value, tone }: { value: number | null; tone: "primary" | "da
 
 export function DprScopeSplitPanel({ rows }: { rows: DprScopeSplitRow[] }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    // Civil, Erection and Supply side by side where there is room; two across, then one, below.
+    <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2", rows.length >= 3 && "xl:grid-cols-3")}>
       {rows.map((row) => (
         <div key={row.scope} className="space-y-2 rounded-lg border border-border/60 p-3">
           <div className="flex items-center justify-between gap-2">
@@ -244,7 +245,7 @@ export function DprHindranceList({ rows, limit = 6 }: { rows: DprHindranceRow[];
           <li key={`${row.date}-${row.scope}`} className="space-y-1 py-2.5 first:pt-0 last:pb-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium tabular-nums">{formatDisplayDate(row.date)}</span>
-              <StatusBadge status={row.scope} tone={row.scope === "Civil" ? "info" : "progress"} />
+              <StatusBadge status={row.scope} tone={dprScopeTone(row.scope)} />
             </div>
             <div className="line-clamp-3 whitespace-pre-wrap text-sm text-muted-foreground" title={row.hindrances}>
               {row.hindrances}

@@ -486,14 +486,14 @@ test('D3/D4: weather is optional; a BOQ line and an actual on every row are not'
   );
 });
 
-test('D5: the same line twice only when the location differs', () => {
+test('D5: a line is entered once; an older sheet with two locations for it stays valid', () => {
   const twice = sheetCheck({
     lines: [
       { boqItemId: 'pcc', actual: '1', location: 'Bay 1' },
       { boqItemId: 'pcc', actual: '1', location: ' bay 1 ' },
     ],
   });
-  assert.match(twice.errors.join(), /entered twice for the same location/);
+  assert.match(twice.errors.join(), /entered twice\. Merge the rows into one\./);
   const apart = sheetCheck({
     lines: [
       { boqItemId: 'pcc', actual: '1', location: 'Bay 1' },

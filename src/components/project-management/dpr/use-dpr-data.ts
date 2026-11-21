@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The data every DPR screen needs: the project mapping, this project's Civil/Erection BOQ lines,
+ * The data every DPR screen needs: the project mapping, this project's Civil/Erection/Supply BOQ lines,
  * and the register's entries and projections.
  *
  * Resolving `?project={mappingId}` to the global project id takes a read of its own, so the
@@ -90,7 +90,7 @@ export interface DprDataState {
    * sub-items of those that have them. A BOQ line with sub-items is a group and is not listed here.
    */
   boqItems: DprBoqItem[];
-  /** Every Civil/Erection BOQ line, groups included — the roots of the work breakdown. */
+  /** Every Civil/Erection/Supply BOQ line, groups included — the roots of the work breakdown. */
   boqLines: DprBoqItem[];
   subItems: DprSubItem[];
   /** The work breakdown: the tree, each node's share, and the roll-up of leaf figures to groups. */
@@ -110,12 +110,15 @@ const readText = (item: Record<string, unknown>, keys: string[]): string => {
   return "";
 };
 
-/** `Scope 2` carries Civil / Erection, the same column the execution workspaces filter on. */
-const readScope = (item: Record<string, unknown>): DprScope | null => {
+/**
+ * `Scope 2` carries Civil / Erection, the same column the execution workspaces filter on; every
+ * other line is Supply, as Project Control reads it (`detectLane`), so the two never disagree.
+ */
+const readScope = (item: Record<string, unknown>): DprScope => {
   const value = String(item["Scope 2"] ?? "").trim().toLowerCase();
   if (value === "civil") return "Civil";
   if (value === "erection") return "Erection";
-  return null;
+  return "Supply";
 };
 
 /**
@@ -251,9 +254,7 @@ function useDprDataSource(mappingId: string, canRead: boolean): DprDataState {
       for (const boqDoc of boqSnapshot.docs) {
         const raw = { id: boqDoc.id, ...boqDoc.data() } as Record<string, unknown> & { id: string };
         const scope = readScope(raw);
-        // Only the two execution scopes are progressed daily, and a section header is a caption
-        // with no quantity behind it.
-        if (!scope) continue;
+        // A section header is a caption with no quantity behind it.
         if (isBoqSectionHeader(raw as { Unit?: unknown; QTY?: unknown })) continue;
         items.push({
           id: raw.id,

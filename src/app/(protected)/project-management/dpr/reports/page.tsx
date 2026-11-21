@@ -3,12 +3,15 @@
 /**
  * Daily Progress reports.
  *
- * Five views over the same register, each scoped to Civil, Erection or both and read at whatever
- * period the picker is set to. Projections come from the planning engine (working calendar, spread,
- * shorter period owning overlapped days), so a monthly plan and a weekly question still line up.
+ * Five views over the same register, each scoped to Civil, Erection, Supply or all of them and read
+ * at whatever period the picker is set to. Projections come from the planning engine (working
+ * calendar, spread, shorter period owning overlapped days), so a monthly plan and a weekly question
+ * still line up.
  *
  * The plan-vs-actual view is unit-free: each bucket is a share of the period's plan, so lines in
- * Cum and Nos sit on one axis without their quantities ever being added together.
+ * Cum and Nos sit on one axis without their quantities ever being added together. Its value mode,
+ * and the value figures on BOQ progress, put the same quantities in money instead — quantity × the
+ * BOQ line's rate (`project-management-dpr-values.ts`); a line with no rate is counted, not valued.
  *
  * Every table keeps its data inside itself, as the Projections views do: one line per row, fixed
  * columns with the long text cut short (full text on hover), a bounded height under a pinned
@@ -29,6 +32,7 @@ import {
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   DPR_PERMISSION_RESOURCE,
+  DPR_SCOPES,
   buildDprEquipmentSummary,
   buildDprHindrances,
   buildDprLostTime,
@@ -43,6 +47,11 @@ import {
   dprShortDate,
   isValidRange,
 } from "@/lib/project-management-dpr-plan";
+import {
+  dprExpectedDaysIn,
+  dprScheduleIsDaily,
+  dprScopeScheduleOf,
+} from "@/lib/project-management-dpr-schedule";
 import {
   buildDprManpowerReport,
   dprProgressDates,
@@ -61,6 +70,13 @@ import {
   arrangeByBreakdown,
   type DprBreakdownNode,
 } from "@/lib/project-management-dpr-breakdown";
+import {
+  buildDprRateLookup,
+  buildDprValueTrend,
+  dprPeriodRowValue,
+  formatDprRate,
+  formatDprValue,
+} from "@/lib/project-management-dpr-values";
 import { cn } from "@/lib/utils";
 import { useDprData } from "@/components/project-management/dpr/use-dpr-data";
 import {
@@ -224,17 +240,26 @@ export default function DprReportsPage() {
     [boqItems, entries, plan, range, granularity, scopeFilter],
   );
 
-  /** Counted per date, so two scopes on one day are one day for a trade. */
-  const manpower = useMemo(
-    () =>
-      buildDprManpowerReport(entries, {
-        scope: scopeFilter,
-        range,
-        calendar: dprCalendar(settings),
-        today: todayIso(),
-      }),
-    [entries, scopeFilter, range, settings],
-  );
+  /**
+   * Counted per date, so two scopes on one day are one day for a trade. The days manpower is looked
+   * for are the recording days (a weekly Supply sheet is not missing manpower on the other days).
+   */
+  const manpower = useMemo(() => {
+    const calendar = dprCalendar(settings);
+    const scopes = scopeFilter
+      ? [scopeFilter]
+      : DPR_SCOPES.filter((candidate) => boqItems.some((item) => item.scope === candidate));
+    return buildDprManpowerReport(entries, {
+      scope: scopeFilter,
+      range,
+      calendar: {
+        isWorkingDay: calendar.isWorkingDay,
+        workingDays: (startDate, endDate) =>
+          dprExpectedDaysIn(settings.recordingSchedule, scopes, calendar, { startDate, endDate }),
+      },
+      today: todayIso(),
+    });
+  }, [entries, scopeFilter, range, settings, boqItems]);
   /** Read over the whole register, so a trade keeps its colour whatever the period or scope. */
   const tradeOrder = useMemo(() => dprTradeOrder(entries, settings.trades), [entries, settings.trades]);
 
@@ -245,16 +270,64 @@ export default function DprReportsPage() {
       buildDprShareTrend({ items: boqItems, entries, plan, range, periodType: "Day", scope: scopeFilter }),
     [boqItems, entries, plan, range, scopeFilter],
   );
+  /**
+   * The days a sheet was expected on in the period — each scope's recording days (Daily Progress ›
+   * Settings), every working day while the scopes shown record daily.
+   */
   const calendarDays = useMemo(() => {
-    if (!isValidRange(range)) return { working: 0, toDate: 0 };
-    const working = dprCalendar(settings).workingDays(range.startDate, range.endDate);
-    return { working: working.length, toDate: working.filter((date) => date <= today).length };
-  }, [range, settings, today]);
+    const scopes = scopeFilter
+      ? [scopeFilter]
+      : DPR_SCOPES.filter((candidate) => boqItems.some((item) => item.scope === candidate));
+    const allDaily = scopes.every((candidate) =>
+      dprScheduleIsDaily(dprScopeScheduleOf(settings.recordingSchedule, candidate)),
+    );
+    const dayNoun = allDaily ? "working day" : "recording day";
+    if (!isValidRange(range)) return { working: 0, toDate: 0, dayNoun };
+    const expected = dprExpectedDaysIn(settings.recordingSchedule, scopes, dprCalendar(settings), range);
+    return { working: expected.length, toDate: expected.filter((date) => date <= today).length, dayNoun };
+  }, [range, settings, today, scopeFilter, boqItems]);
   const progressDays = useMemo(
     () => dprProgressDates(entries, { scope: scopeFilter, range, today }).length,
     [entries, scopeFilter, range, today],
   );
   const pathById = useMemo(() => new Map(boqItems.map((item) => [item.id, item.path ?? ""])), [boqItems]);
+
+  /* ── Values: quantity × the BOQ line's rate ─────────────────────────────────────────────── */
+
+  const rates = useMemo(() => buildDprRateLookup(boqItems), [boqItems]);
+  const scopeById = useMemo(() => new Map(boqItems.map((item) => [item.id, item.scope])), [boqItems]);
+  const valueTrend = useMemo(
+    () => buildDprValueTrend({ items: boqItems, entries, plan, range, periodType: granularity, scope: scopeFilter }),
+    [boqItems, entries, plan, range, granularity, scopeFilter],
+  );
+  const dailyValue = useMemo(
+    () => buildDprValueTrend({ items: boqItems, entries, plan, range, periodType: "Day", scope: scopeFilter }),
+    [boqItems, entries, plan, range, scopeFilter],
+  );
+  /**
+   * A group row's value: the sum of the values of the leaf lines under it. Money adds up across
+   * units, so a group is never valued from its rolled-up quantity in its own unit.
+   */
+  const groupValues = useMemo(() => {
+    const rowById = new Map(report.rows.map((row) => [row.id, row]));
+    const totals = new Map<string, { planned: number; actual: number; toDate: number; priced: number }>();
+    for (const entry of progressRows) {
+      if (entry.row || !entry.node) continue;
+      const total = { planned: 0, actual: 0, toDate: 0, priced: 0 };
+      for (const leaf of breakdown.leavesUnder(entry.node.id)) {
+        const row = rowById.get(leaf.id);
+        if (!row) continue;
+        const value = dprPeriodRowValue(row, rates);
+        if (value.rate === null) continue;
+        total.planned += value.planned ?? 0;
+        total.actual += value.actual ?? 0;
+        total.toDate += value.toDate ?? 0;
+        total.priced += 1;
+      }
+      totals.set(entry.node.id, total);
+    }
+    return totals;
+  }, [report.rows, progressRows, rates, breakdown]);
 
   const equipment = useMemo(
     () => buildDprEquipmentSummary(entries, { scope: scopeFilter, range }),
@@ -276,9 +349,31 @@ export default function DprReportsPage() {
   /** The open report as CSV: the rows on screen, in the order they are shown. */
   const csvFor = (): { headers: string[]; rows: Array<Array<string | number>> } => {
     if (view === "trend") {
+      // Shares and values side by side, bucket for bucket — both trends use the same buckets.
       return {
-        headers: [`${granularity} starting`, "Label", "Planned % of period plan", "Actual % of period plan"],
-        rows: trend.points.map((point) => [point.bucketStart, point.label, round2(point.plannedPct), round2(point.actualPct)]),
+        headers: [
+          `${granularity} starting`,
+          "Label",
+          "Planned % of period plan",
+          "Actual % of period plan",
+          "Planned Value",
+          "Actual Value",
+          "Cumulative Planned Value",
+          "Cumulative Actual Value",
+        ],
+        rows: trend.points.map((point, index) => {
+          const value = valueTrend.points[index];
+          return [
+            point.bucketStart,
+            point.label,
+            round2(point.plannedPct),
+            round2(point.actualPct),
+            value ? round2(value.plannedValue) : "",
+            value ? round2(value.actualValue) : "",
+            value ? round2(value.cumulativePlannedValue) : "",
+            value ? round2(value.cumulativeActualValue) : "",
+          ];
+        }),
       };
     }
     if (view === "manpower") {
@@ -336,24 +431,39 @@ export default function DprReportsPage() {
         "Balance Qty",
         "Days Worked",
         "Last Worked",
+        "Rate",
+        "Projected Value",
+        "Actual Value",
+        "Cumulative Value",
+        "Balance Value",
       ],
-      rows: report.rows.map((row) => [
-        row.erpSlNo ?? "",
-        row.boqSlNo,
-        pathById.get(row.id) ?? "",
-        row.description,
-        row.unit,
-        round2(row.boqQty),
-        round2(row.plannedQty),
-        round2(row.actualQty),
-        round2(row.varianceQty),
-        row.achievementPct === null ? "" : round2(row.achievementPct),
-        round2(row.cumulativeQty),
-        row.progressPct === null ? "" : round2(row.progressPct),
-        round2(row.balanceQty),
-        row.workedDays,
-        row.lastWorkedDate,
-      ]),
+      rows: report.rows.map((row) => {
+        // Blank, not 0, for a line with no rate: it has no value, which is not the same as none.
+        const value = dprPeriodRowValue(row, rates);
+        const money = (amount: number | null) => (amount === null ? "" : round2(amount));
+        return [
+          row.erpSlNo ?? "",
+          row.boqSlNo,
+          pathById.get(row.id) ?? "",
+          row.description,
+          row.unit,
+          round2(row.boqQty),
+          round2(row.plannedQty),
+          round2(row.actualQty),
+          round2(row.varianceQty),
+          row.achievementPct === null ? "" : round2(row.achievementPct),
+          round2(row.cumulativeQty),
+          row.progressPct === null ? "" : round2(row.progressPct),
+          round2(row.balanceQty),
+          row.workedDays,
+          row.lastWorkedDate,
+          money(value.rate),
+          money(value.planned),
+          money(value.actual),
+          money(value.toDate),
+          money(value.balance),
+        ];
+      }),
     };
   };
   const exportRows = csvFor();
@@ -449,9 +559,14 @@ export default function DprReportsPage() {
           periodNoun={periodWords.noun}
           workingDays={calendarDays.working}
           workingDaysToDate={calendarDays.toDate}
+          dayNoun={calendarDays.dayNoun}
           progressDays={progressDays}
+          rates={rates}
+          scopeOf={(id) => scopeById.get(id)}
+          showScopes={scope === "All"}
           fullDetail={
-              <Table {...TABLE_PROPS} className="min-w-[1272px] table-fixed">
+              // Fixed columns sum to 1528px; the BOQ line keeps at least 280px of the minimum width.
+              <Table {...TABLE_PROPS} className="min-w-[1808px] table-fixed">
                 <colgroup>
                   <col className="w-[72px]" />
                   <col />
@@ -464,6 +579,10 @@ export default function DprReportsPage() {
                   <col className="w-[100px]" />
                   <col className="w-[84px]" />
                   <col className="w-[100px]" />
+                  <col className="w-[96px]" />
+                  <col className="w-[124px]" />
+                  <col className="w-[124px]" />
+                  <col className="w-[124px]" />
                   <col className="w-[64px]" />
                   <col className="w-[96px]" />
                 </colgroup>
@@ -491,6 +610,18 @@ export default function DprReportsPage() {
                     </TableHead>
                     <TableHead className="truncate text-right" title="BOQ quantity less cumulative">
                       Balance
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="The BOQ line's rate">
+                      Rate
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Planned quantity × rate">
+                      Planned value
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Actual quantity in the period × rate">
+                      Value done
+                    </TableHead>
+                    <TableHead className="truncate text-right" title="Cumulative quantity up to the period end × rate">
+                      Value to date
                     </TableHead>
                     <TableHead className="truncate text-right" title="Days the line was worked in the period">
                       Days
@@ -552,6 +683,20 @@ export default function DprReportsPage() {
                             {formatPct(boqQty > 0 ? (cumulative / boqQty) * 100 : null)}
                           </TableCell>
                           <TableCell className={numberCell}>{qty(Math.max(boqQty - cumulative, 0))}</TableCell>
+                          {/* A group has no rate of its own: its values are its lines' values added up. */}
+                          <TableCell className={`${numberCell} text-muted-foreground`}>—</TableCell>
+                          {(() => {
+                            const value = node ? groupValues.get(node.id) : undefined;
+                            const money = (amount: number | undefined) =>
+                              value && value.priced > 0 ? formatDprValue(amount ?? 0) : "—";
+                            return (
+                              <>
+                                <TableCell className={`${numberCell} font-medium`}>{money(value?.planned)}</TableCell>
+                                <TableCell className={`${numberCell} font-semibold`}>{money(value?.actual)}</TableCell>
+                                <TableCell className={`${numberCell} font-medium`}>{money(value?.toDate)}</TableCell>
+                              </>
+                            );
+                          })()}
                           <TableCell className={`${numberCell} text-muted-foreground`}>—</TableCell>
                           <TableCell className={`${lineCell} text-muted-foreground`}>—</TableCell>
                         </TableRow>
@@ -616,6 +761,26 @@ export default function DprReportsPage() {
                         <TableCell className={numberCell} title={qty(row.balanceQty)}>
                           {qty(row.balanceQty)}
                         </TableCell>
+                        {(() => {
+                          const value = dprPeriodRowValue(row, rates);
+                          const noRate = value.rate === null ? "This BOQ line has no rate" : undefined;
+                          return (
+                            <>
+                              <TableCell className={`${numberCell} text-muted-foreground`} title={noRate}>
+                                {formatDprRate(value.rate)}
+                              </TableCell>
+                              <TableCell className={numberCell} title={noRate}>
+                                {formatDprValue(value.planned)}
+                              </TableCell>
+                              <TableCell className={`${numberCell} font-medium`} title={noRate}>
+                                {formatDprValue(value.actual)}
+                              </TableCell>
+                              <TableCell className={numberCell} title={noRate}>
+                                {formatDprValue(value.toDate)}
+                              </TableCell>
+                            </>
+                          );
+                        })()}
                         <TableCell className={numberCell}>{row.workedDays || "—"}</TableCell>
                         <TableCell
                           className={`${lineCell} tabular-nums`}
@@ -634,6 +799,8 @@ export default function DprReportsPage() {
         <DprTrendView
           points={trend.points}
           daily={dailyTrend.points}
+          valueTrend={valueTrend}
+          dailyValue={dailyValue}
           basis={trend.basis}
           granularity={granularity}
           range={range}
@@ -650,6 +817,7 @@ export default function DprReportsPage() {
           periodLabel={periodLabel}
           periodChoiceLabel={periodWords.choice}
           periodNoun={periodWords.noun}
+          dayNoun={calendarDays.dayNoun}
         />
       ) : view === "equipment" ? (
         <DprPlantView rows={equipment} subtitle="Machines deployed on the daily sheets, with utilisation" />

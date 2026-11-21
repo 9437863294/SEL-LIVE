@@ -162,9 +162,14 @@ test('the filing calendar marks each day per scope and pads Monday-first weeks',
   assert.equal(days[0].states.Civil, 'submitted');
   assert.equal(days[1].states.Civil, 'draft');
   assert.equal(days[1].states.Erection, 'missing');
-  assert.equal(days[6].states.Civil, 'future', 'a Sunday ahead of today is future, not off');
+  // Today with nothing filed is due, not yet a gap; ahead of today, a recording day is upcoming and
+  // a day off the schedule (Sunday) is not expected, so the calendar shows when sheets are owed.
+  assert.equal(days[3].states.Civil, 'due', 'today, nothing filed yet');
+  assert.equal(days[4].states.Civil, 'future', 'Friday ahead of today: an upcoming recording day');
+  assert.equal(days[6].states.Civil, 'off', 'a Sunday ahead of today is not expected');
   assert.equal(wide.counts.Civil.submitted, 1);
-  assert.equal(wide.counts.Civil.missing, 2, '11th and 12th');
+  assert.equal(wide.counts.Civil.missing, 1, 'the 11th — the 12th is today');
+  assert.equal(wide.counts.Civil.due, 1);
 });
 
 test('non-working days and days outside the project read as not expected', () => {

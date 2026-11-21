@@ -19,7 +19,7 @@ import {
 import type { DprActualIndex, DprProjectionCandidate } from "@/lib/project-management-dpr-plan";
 import type { DprProjectionRecord, DprRecordEditPlan } from "@/lib/project-management-dpr-records";
 import type { DprBoqItem, DprDataState } from "@/components/project-management/dpr/use-dpr-data";
-import { formatQtyAt } from "@/components/project-management/dpr/dpr-shell";
+import { dprScopeTone, formatQtyAt } from "@/components/project-management/dpr/dpr-shell";
 import { StatusBadge } from "@/components/shared/status-badge";
 
 export interface ProjectionsUser {
@@ -252,7 +252,7 @@ export function worksOutAt(
 }
 
 export function ScopeBadge({ scope }: { scope: DprScope }) {
-  return <StatusBadge status={scope} tone={scope === "Civil" ? "info" : "progress"} />;
+  return <StatusBadge status={scope} tone={dprScopeTone(scope)} />;
 }
 
 /** A projection being planned on screen, before it has an id. */

@@ -359,7 +359,7 @@ export function DprBoqRegisterView({
         }`}
         aside={
           <InfoTip label="About the BOQ register">
-            Every Civil and Erection BOQ line of this project, with the sub-items it is broken into —
+            Every Civil, Erection and Supply BOQ line of this project, with the sub-items it is broken into —
             and theirs under those, up to {DPR_MAX_BREAKDOWN_DEPTH} levels down. Progress is planned
             and recorded on the lowest level; a line with sub-items becomes a group whose figures
             roll up from them in its own unit, each sub-item counting for its share — a 1 LOT line

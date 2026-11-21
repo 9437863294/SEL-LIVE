@@ -3,7 +3,7 @@
 /**
  * The Manpower report, from the user's mock-up (`sel-dpr-reports-manpower-colour`): four figures,
  * a coloured card per trade, a sortable table with a total, the share of man-days as a donut with
- * its legend, and a warning when working days have no manpower recorded.
+ * its legend, and a warning when working (or recording) days have no manpower recorded.
  *
  * Colour follows the trade, never its rank: `tradeOrder` (every trade in the register, in the
  * configured list's order) gives each trade its slot in the dataviz reference palette — validated
@@ -115,6 +115,7 @@ export function DprManpowerView({
   periodLabel,
   periodChoiceLabel,
   periodNoun,
+  dayNoun = "working day",
 }: {
   report: DprManpowerReport;
   /** Every trade in the register, in colour order (`dprTradeOrder`). */
@@ -128,6 +129,8 @@ export function DprManpowerView({
   periodChoiceLabel: string;
   /** "week" — for "This week". */
   periodNoun: string;
+  /** "working day", or "recording day" when a scope shown is not recorded daily (Settings). */
+  dayNoun?: string;
 }) {
   const { resolvedMode } = useTheme();
   const dark = resolvedMode === "dark";
@@ -182,8 +185,8 @@ export function DprManpowerView({
             workingDaysToDate === 0
               ? "This period has not started"
               : report.workingDays > workingDaysToDate
-                ? "working days so far"
-                : "working days"
+                ? `${dayNoun}s so far`
+                : `${dayNoun}s`
           }
         />
       </DprFigureRow>
@@ -223,6 +226,7 @@ export function DprManpowerView({
               report={report}
               recordedWorking={recordedWorking}
               periodNoun={periodNoun}
+              dayNoun={dayNoun}
               entryHref={(date) =>
                 dprHref(`${DPR_BASE_PATH}/entry`, mappingId, scope === "All" ? { date } : { date, scope })
               }
@@ -531,24 +535,26 @@ function ShareDonut({
   );
 }
 
-/** Whether every working day so far has manpower on it — and if not, which ones are missing. */
+/** Whether every working (or recording) day so far has manpower on it — and if not, which ones are missing. */
 function Coverage({
   report,
   recordedWorking,
   periodNoun,
+  dayNoun,
   entryHref,
 }: {
   report: DprManpowerReport;
   recordedWorking: number;
   periodNoun: string;
+  dayNoun: string;
   entryHref: (date: string) => string;
 }) {
   const { workingDaysToDate, missingDates } = report;
   if (workingDaysToDate === 0) return null;
-  const days = `working day${workingDaysToDate === 1 ? "" : "s"}`;
+  const days = `${dayNoun}${workingDaysToDate === 1 ? "" : "s"}`;
   if (missingDates.length === 0) {
     return (
-      <DprReportCallout tone="success" title="Every working day so far has manpower recorded">
+      <DprReportCallout tone="success" title={`Every ${dayNoun} so far has manpower recorded`}>
         {recordedWorking} of {workingDaysToDate} {days} this {periodNoun}.
       </DprReportCallout>
     );

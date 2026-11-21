@@ -2,19 +2,22 @@
 
 /**
  * The filing calendar: one cell per day of the period, one mark per scope — submitted, draft,
- * missing on a working day, not expected, or not yet due.
+ * missing (a past recording day with nothing filed: a gap), due (today, nothing filed yet),
+ * upcoming (a recording day ahead), or not expected (off the scope's recording schedule, a
+ * non-working day, or outside the project's dates).
  *
- * Status is never colour alone: every mark carries a glyph (✓ ✎ !), the legend names each one,
- * and each cell's label reads the day out in words. A mark for a day that has happened opens that
- * scope's sheet for the date.
+ * Status is never colour alone: every mark carries a glyph (✓ ✎ ! • or an outline), the legend
+ * names each one, and each cell's label reads the day out in words. A mark for a day that has
+ * happened, or for today, opens that scope's sheet for the date.
  */
 
 import Link from "next/link";
 import { DPR_BASE_PATH, formatPeriodLabel, type DprScope } from "@/lib/project-management-dpr";
-import type {
-  DprFilingCalendar,
-  DprFilingDay,
-  DprFilingState,
+import {
+  DPR_FILING_STATES,
+  type DprFilingCalendar,
+  type DprFilingDay,
+  type DprFilingState,
 } from "@/lib/project-management-dpr-dashboard";
 import { dprHref } from "@/components/project-management/dpr/dpr-shell";
 import { DPR_STATUS_COLOURS, useDprChartPalette } from "@/components/project-management/dpr/dashboard-charts";
@@ -25,18 +28,23 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const STATE_TEXT: Record<DprFilingState, string> = {
   submitted: "Submitted",
   draft: "Draft",
-  missing: "Not recorded",
+  missing: "Missing (gap)",
+  due: "Due today",
+  future: "Upcoming",
   off: "Not expected",
-  future: "Not yet due",
 };
 
 const STATE_GLYPH: Record<DprFilingState, string> = {
   submitted: "✓",
   draft: "✎",
   missing: "!",
-  off: "",
+  due: "•",
   future: "",
+  off: "",
 };
+
+/** Due today: an outline in the app's blue — something to do, not yet a problem. */
+const DUE_BLUE = "#2563eb";
 
 function useStateStyle() {
   const palette = useDprChartPalette();
@@ -48,6 +56,8 @@ function useStateStyle() {
         return { backgroundColor: DPR_STATUS_COLOURS.warning, color: "#0b0b0b" };
       case "missing":
         return { backgroundColor: DPR_STATUS_COLOURS.critical, color: "#ffffff" };
+      case "due":
+        return { borderColor: DUE_BLUE, color: palette.mode === "dark" ? "#93c5fd" : DUE_BLUE };
       case "off":
         return { backgroundColor: palette.neutral };
       default:
@@ -55,6 +65,10 @@ function useStateStyle() {
     }
   };
 }
+
+/** The outline a mark without a fill draws: solid for due today, dashed for upcoming. */
+const outlineClass = (state: DprFilingState) =>
+  state === "future" ? "border border-dashed" : state === "due" ? "border-[1.5px] border-solid" : "";
 
 function DayCell({
   day,
@@ -87,7 +101,7 @@ function DayCell({
             <span
               className={cn(
                 "flex h-4 items-center justify-center gap-0.5 rounded-sm text-[10px] font-semibold leading-none",
-                state === "future" && "border border-dashed",
+                outlineClass(state),
               )}
               style={styleFor(state)}
             >
@@ -95,7 +109,8 @@ function DayCell({
               <span aria-hidden="true">{STATE_GLYPH[state]}</span>
             </span>
           );
-          // A day that has happened links to its sheet — to record it, finish the draft, or read it.
+          // A day that has happened, or today, links to its sheet — to record it, finish the draft,
+          // or read it. Upcoming and not-expected days have nothing to open.
           return state === "future" || state === "off" ? (
             <div key={scope} aria-hidden="true">
               {mark}
@@ -152,12 +167,12 @@ export function DprFilingCalendarView({
       </div>
 
       <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-        {(["submitted", "draft", "missing", "off", "future"] as const).map((state) => (
+        {DPR_FILING_STATES.map((state) => (
           <span key={state} className="inline-flex items-center gap-1.5">
             <span
               className={cn(
                 "inline-flex h-4 w-4 items-center justify-center rounded-sm text-[10px] font-semibold",
-                state === "future" && "border border-dashed",
+                outlineClass(state),
               )}
               style={styleFor(state)}
               aria-hidden="true"
@@ -169,7 +184,7 @@ export function DprFilingCalendarView({
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className={cn("grid grid-cols-1 gap-2 sm:grid-cols-2", calendar.scopes.length >= 3 && "xl:grid-cols-3")}>
         {calendar.scopes.map((scope) => {
           const counts = calendar.counts[scope];
           if (!counts) return null;
@@ -177,7 +192,11 @@ export function DprFilingCalendarView({
             <div key={scope} className="rounded-md bg-muted/40 px-3 py-2 text-xs">
               <span className="font-semibold">{scope}</span>{" "}
               <span className="text-muted-foreground tabular-nums">
-                {counts.submitted} submitted · {counts.draft} draft · {counts.missing} not recorded
+                {counts.submitted} submitted · {counts.draft} draft ·{" "}
+                <span className={counts.missing > 0 ? "font-semibold text-rose-600" : undefined}>
+                  {counts.missing} missing
+                </span>
+                {counts.due > 0 ? " · due today" : ""}
               </span>
             </div>
           );

@@ -19,8 +19,11 @@ export const DPR_TARGET_COLLECTION = "dprTargets";
 export const DPR_PERMISSION_RESOURCE = "Project Management.DPR";
 export const DPR_BASE_PATH = "/project-management/dpr";
 
-/** The BOQ scopes a DPR covers. Matches the `Scope 2` values the execution workspaces filter on. */
-export const DPR_SCOPES = ["Civil", "Erection"] as const;
+/**
+ * The BOQ scopes a DPR covers. Civil and Erection are the `Scope 2` values the execution workspaces
+ * filter on; every other BOQ line is Supply — the same split Project Control makes (`detectLane`).
+ */
+export const DPR_SCOPES = ["Civil", "Erection", "Supply"] as const;
 export type DprScope = (typeof DPR_SCOPES)[number];
 
 export const DPR_PERIOD_TYPES = ["Day", "Week", "Month"] as const;
@@ -482,8 +485,8 @@ export interface DprBoqLike {
   unit: string;
   boqQty: number;
   /**
-   * The BOQ rate, where the line carries one. Used only to weight achievement across lines of
-   * different units — never shown as money on a DPR screen.
+   * The BOQ rate, where the line carries one. Weights achievement across lines of different units,
+   * and turns quantities into values (planned and done, in ₹) — `project-management-dpr-values.ts`.
    */
   rate?: number;
 }
@@ -825,7 +828,7 @@ export function buildDprHeadline(input: {
     manDays,
     lostTimeHours: scoped.reduce((sum, entry) => sum + dprNumber(entry.lostTimeHours), 0),
     openHindrances: scoped.filter((entry) => String(entry.hindrances ?? "").trim()).length,
-    // Distinct dates, because Civil and Erection each file their own entry for the same day.
+    // Distinct dates, because each scope files its own entry for the same day.
     daysReported: new Set(scoped.map((entry) => entry.date)).size,
     daysInPeriod: daysInRange(input.range.startDate, input.range.endDate),
   };
@@ -844,7 +847,7 @@ export function validateDprEntry(draft: DprEntryDraft): DprValidationError[] {
     errors.push({ field: "date", message: "Pick the date this progress was recorded on." });
   }
   if (!DPR_SCOPES.includes(draft.scope)) {
-    errors.push({ field: "scope", message: "Choose Civil or Erection." });
+    errors.push({ field: "scope", message: "Choose a scope: Civil, Erection or Supply." });
   }
   const lines = draft.lines ?? [];
   if (lines.length === 0) {
@@ -856,8 +859,8 @@ export function validateDprEntry(draft: DprEntryDraft): DprValidationError[] {
   if (lines.some((line) => dprNumber(line.actualQty) < 0 || dprNumber(line.plannedQty) < 0)) {
     errors.push({ field: "lines", message: "Quantities cannot be negative." });
   }
-  // The same BOQ item may appear on two rows only when each row names a different location — two
-  // gangs on one item at two places is a real day. Same item, same (or no) location is a double.
+  // A BOQ item appears once on a sheet. Older sheets may carry two rows of one item at two
+  // different locations (the sheet asked for one until 2026-11-21) — those stay valid.
   const seen = new Set<string>();
   for (const line of lines) {
     if (!line.boqItemId) continue;
@@ -866,7 +869,7 @@ export function validateDprEntry(draft: DprEntryDraft): DprValidationError[] {
       errors.push({
         field: "lines",
         message:
-          "A BOQ item appears twice for the same location — merge the rows, or give each its own location.",
+          "A BOQ item appears twice on the sheet — merge the rows into one.",
       });
       break;
     }
@@ -887,7 +890,7 @@ export function validateDprTarget(draft: DprTargetDraft): DprValidationError[] {
     errors.push({ field: "boqItemId", message: "Choose the BOQ item being projected." });
   }
   if (!DPR_SCOPES.includes(draft.scope)) {
-    errors.push({ field: "scope", message: "Choose Civil or Erection." });
+    errors.push({ field: "scope", message: "Choose a scope: Civil, Erection or Supply." });
   }
   if (!DPR_PROJECTION_PERIODS.includes(draft.periodType)) {
     errors.push({ field: "periodType", message: "Choose a day, week, month or custom range." });

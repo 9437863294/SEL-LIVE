@@ -52,9 +52,8 @@ test('the mock-up sheet: whole BOQ in a day with no plan, a reason with no time 
   assert.equal(reason.title, 'Reason “ok” with no time lost');
   assert.match(reason.detail, /Time lost is blank/);
   assert.equal(blanks.tone, 'info');
-  assert.equal(blanks.title, 'Weather, location and agency not recorded');
-  // One line: no "on 1 of 1 lines".
-  assert.equal(blanks.detail, 'Left blank: weather; location; agency. Optional, but it backs a delay or a hindrance later.');
+  assert.equal(blanks.title, 'Weather not recorded');
+  assert.equal(blanks.detail, 'Left blank: weather. Optional, but it backs a delay or a hindrance later.');
 });
 
 test('a zero or blank actual on an unplanned line is not work done without a plan', () => {
@@ -117,11 +116,10 @@ test('a long reason is cut short in the title', () => {
   assert.equal(finding.title, 'Reason “Power failure across the whole site for…” with no time lost');
 });
 
-test('blanks count the lines they are missing on', () => {
+test('location and agency are no longer asked for, so a blank one is not flagged', () => {
   const rows = [row({ boqItemId: 'a', location: '' }), row({ boqItemId: 'b', slNo: '3', location: '', agency: '' }), row({ boqItemId: 'c', slNo: '4' })];
-  const [finding] = buildDprSheetChecks(input({ rows }));
-  assert.equal(finding.title, 'Location and agency not recorded');
-  assert.equal(finding.detail, 'Left blank: location on 2 of 3 lines; agency on 1 of 3 lines. Optional, but it backs a delay or a hindrance later.');
+  const findings = buildDprSheetChecks(input({ rows }));
+  assert.deepEqual(keys(findings), ['clear']);
 });
 
 test('rows with no BOQ line chosen are left to the submit checks', () => {

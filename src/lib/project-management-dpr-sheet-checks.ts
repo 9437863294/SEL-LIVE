@@ -107,7 +107,7 @@ export interface DprSheetCheckRow {
   decimals: number;
   /** 0 when the line has no BOQ quantity. */
   boqQty: number;
-  /** Planned for the day, from Projections. */
+  /** Planned for the days the sheet covers (its own day on a daily scope), from Projections. */
   planned: number;
   /** Submitted before this sheet, this sheet left out. */
   doneBefore: number;
@@ -123,6 +123,11 @@ export interface DprSheetChecksInput {
   lostTimeHours: string;
   lostTimeReason: string;
   tolerancePct: number;
+  /**
+   * The days the sheet covers, in words, when more than its own day ("15 Nov – 21 Nov", on a weekly
+   * or specific-days scope). Absent: the day.
+   */
+  coverText?: string;
 }
 
 /** How many lines one finding names before it says "and N more". */
@@ -152,6 +157,7 @@ const lineName = (row: DprSheetCheckRow): string => row.slNo || "A line";
  */
 export function buildDprSheetChecks(input: DprSheetChecksInput): DprSheetFinding[] {
   const { weather, lostTimeHours, lostTimeReason, tolerancePct } = input;
+  const forPeriod = input.coverText ? `for ${input.coverText}` : "for the day";
   const rows = input.rows.filter((row) => row.boqItemId);
   const findings: DprSheetFinding[] = [];
 
@@ -170,8 +176,8 @@ export function buildDprSheetChecks(input: DprSheetChecksInput): DprSheetFinding
       tone: "danger",
       mark: row.slNo || undefined,
       title: "Done without a plan",
-      detail: `${amount(onSheet, row.decimals, row.unit)} recorded on a line with no projection for the day${
-        wholeBoq ? " — the whole BOQ quantity in one day" : ""
+      detail: `${amount(onSheet, row.decimals, row.unit)} recorded on a line with no projection ${forPeriod}${
+        wholeBoq ? (input.coverText ? " — the whole BOQ quantity on one sheet" : " — the whole BOQ quantity in one day") : ""
       }.`,
     });
   } else if (unplannedLines.length > 1) {
@@ -180,7 +186,7 @@ export function buildDprSheetChecks(input: DprSheetChecksInput): DprSheetFinding
       tone: "danger",
       mark: String(unplannedLines.length),
       title: "Done without a plan",
-      detail: `${nameList(unplannedLines.map(lineName))} have work recorded but nothing projected for the day.`,
+      detail: `${nameList(unplannedLines.map(lineName))} have work recorded but nothing projected ${forPeriod}.`,
     });
   }
 
@@ -250,24 +256,14 @@ export function buildDprSheetChecks(input: DprSheetChecksInput): DprSheetFinding
     });
   }
 
-  // The optional fields left blank.
-  const blanks: string[] = [];
-  if (!weather.trim()) blanks.push("weather");
-  const noLocation = rows.filter((row) => !row.location.trim()).length;
-  const noAgency = rows.filter((row) => !row.agency.trim()).length;
-  const of = (count: number) => (rows.length === 1 ? "" : ` on ${count} of ${rows.length} lines`);
-  if (noLocation > 0) blanks.push(`location${of(noLocation)}`);
-  if (noAgency > 0) blanks.push(`agency${of(noAgency)}`);
-  if (blanks.length > 0) {
-    const names = [!weather.trim() && "Weather", noLocation > 0 && "location", noAgency > 0 && "agency"].filter(
-      (name): name is string => Boolean(name),
-    );
-    const title = `${nameList(names)} not recorded`;
+  // The optional field left blank. (Location and agency were dropped from the sheet on
+  // 2026-11-21 at the user's request, so they are no longer looked for.)
+  if (!weather.trim()) {
     findings.push({
       key: "blanks",
       tone: "info",
-      title: title.charAt(0).toUpperCase() + title.slice(1),
-      detail: `Left blank: ${blanks.join("; ")}. Optional, but it backs a delay or a hindrance later.`,
+      title: "Weather not recorded",
+      detail: "Left blank: weather. Optional, but it backs a delay or a hindrance later.",
     });
   }
 

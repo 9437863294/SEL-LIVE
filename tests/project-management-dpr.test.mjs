@@ -424,7 +424,9 @@ const draftEntry = (over = {}) => ({
 test('an entry needs a real date, a scope and at least one BOQ line', () => {
   assert.deepEqual(validateDprEntry(draftEntry()), []);
   assert.equal(validateDprEntry(draftEntry({ date: '2026-02-31' })).some((e) => e.field === 'date'), true);
-  assert.equal(validateDprEntry(draftEntry({ scope: 'Supply' })).some((e) => e.field === 'scope'), true);
+  // Supply is progressed like Civil and Erection (2026-11-21); a scope outside the three is refused.
+  assert.deepEqual(validateDprEntry(draftEntry({ scope: 'Supply' })), []);
+  assert.equal(validateDprEntry(draftEntry({ scope: 'Design' })).some((e) => e.field === 'scope'), true);
   assert.equal(validateDprEntry(draftEntry({ lines: [] })).some((e) => e.field === 'lines'), true);
 });
 

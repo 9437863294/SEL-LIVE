@@ -21,6 +21,7 @@ import {
   type DprDateRange,
   type DprEntry,
   type DprScope,
+  type DprTarget,
 } from "./project-management-dpr.ts";
 import {
   buildDprBoard,
@@ -35,6 +36,8 @@ import {
   type DprPlan,
   type DprSettings,
 } from "./project-management-dpr-plan.ts";
+import { dprIsRecordingDay, dprScopeScheduleOf } from "./project-management-dpr-schedule.ts";
+import { dprScopeFirstUse } from "./project-management-dpr-due.ts";
 
 const tidy = (value: number): number => Math.round(value * 1e6) / 1e6;
 
@@ -165,12 +168,18 @@ export function buildDprDiaryDays(input: {
 /* ── Filing calendar ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * One scope's sheet for one day: filed, still a draft, missing on a working day, not expected
- * (a non-working day, or outside the project's dates), or not yet due.
+ * One scope's sheet for one day:
+ *  - `submitted`, or still a `draft`;
+ *  - `missing` — a past recording day with nothing filed (a gap);
+ *  - `due` — today is a recording day and nothing is filed yet (not a gap until the day is over);
+ *  - `future` — an upcoming recording day;
+ *  - `off` — not expected: not one of the scope's recording days (a non-working day, a day off its
+ *    weekly or specific-days schedule) or outside the project's dates, past or future.
  */
-export type DprFilingState = "submitted" | "draft" | "missing" | "off" | "future";
+export type DprFilingState = "submitted" | "draft" | "missing" | "due" | "future" | "off";
 
-export const DPR_FILING_STATES: readonly DprFilingState[] = ["submitted", "draft", "missing", "off", "future"];
+/** In the order the legend lists them. */
+export const DPR_FILING_STATES: readonly DprFilingState[] = ["submitted", "draft", "missing", "due", "future", "off"];
 
 export interface DprFilingDay {
   date: string;
@@ -197,8 +206,9 @@ const emptyCounts = (): Record<DprFilingState, number> => ({
   submitted: 0,
   draft: 0,
   missing: 0,
-  off: 0,
+  due: 0,
   future: 0,
+  off: 0,
 });
 
 /** The window a long period is cut to: `maxDays` ending today (or the period's end). */
@@ -214,14 +224,20 @@ function filingWindow(range: DprDateRange, today: string, maxDays: number): DprD
 
 export function buildDprFilingCalendar(input: {
   entries: readonly DprEntry[];
-  settings: Pick<DprSettings, "weeklyOff" | "holidays">;
+  /** The recording schedule, where given, decides each scope's expected days; else every working day. */
+  settings: Pick<DprSettings, "weeklyOff" | "holidays"> & Partial<Pick<DprSettings, "recordingSchedule">>;
   range: DprDateRange;
   scopes: readonly DprScope[];
   today: string;
   projectDates?: DprDateRange;
   maxDays?: number;
+  /**
+   * The projections. Given, a scope's days before its first projection or sheet are not expected
+   * (it had not started), as the recording status counts them — so the two never disagree.
+   */
+  targets?: readonly Pick<DprTarget, "scope" | "startDate">[];
 }): DprFilingCalendar {
-  const { entries, settings, range, today, projectDates } = input;
+  const { entries, settings, range, today, projectDates, targets } = input;
   const scopes = DPR_SCOPES.filter((scope) => input.scopes.includes(scope));
   const counts: DprFilingCalendar["counts"] = Object.fromEntries(
     scopes.map((scope) => [scope, emptyCounts()]),
@@ -231,6 +247,10 @@ export function buildDprFilingCalendar(input: {
   }
   const shown = filingWindow(range, today, input.maxDays ?? 91);
   const calendar = dprCalendar(settings);
+  // When each scope started being used; without the projections, every day counts as before.
+  const firstUse = new Map(
+    scopes.map((scope) => [scope, targets ? dprScopeFirstUse(scope, targets, entries) : ""] as const),
+  );
   // Latest status per scope and date. Drafts count here — that a draft exists is the point.
   const sheets = new Map<string, DprEntry["status"]>();
   for (const entry of entries) {
@@ -247,16 +267,27 @@ export function buildDprFilingCalendar(input: {
     const states: DprFilingDay["states"] = {};
     for (const scope of scopes) {
       const status = sheets.get(`${scope}|${date}`);
+      const recording =
+        !outside && dprIsRecordingDay(dprScopeScheduleOf(settings.recordingSchedule, scope), calendar, date);
+      // A past day before the scope's first projection or sheet was not a gap: it had not started.
+      const started = firstUse.get(scope);
+      const notStarted = started === null || (started !== undefined && started !== "" && date < started);
       const state: DprFilingState =
         date > today
-          ? "future"
+          ? recording
+            ? "future"
+            : "off"
           : status === "Submitted"
             ? "submitted"
             : status === "Draft"
               ? "draft"
-              : outside || !calendar.isWorkingDay(date)
+              : !recording
                 ? "off"
-                : "missing";
+                : date === today
+                  ? "due"
+                  : notStarted
+                    ? "off"
+                    : "missing";
       states[scope] = state;
       counts[scope]![state] += 1;
     }
@@ -286,7 +317,7 @@ export function buildDprFilingCalendar(input: {
   return { range: shown, truncated: shown.startDate !== range.startDate || shown.endDate !== range.endDate, scopes, weeks, counts };
 }
 
-/* ── Civil against Erection ─────────────────────────────────────────────────────────────────── */
+/* ── Scope by scope (Civil, Erection, Supply) ─────────────────────────────────────────────────────────────────── */
 
 export interface DprScopeSplitRow {
   scope: DprScope;
