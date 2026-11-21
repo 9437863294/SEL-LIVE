@@ -3,6 +3,7 @@ import test from 'node:test';
 
 const {
   buildDprRateLookup,
+  buildDprValueToDate,
   buildDprValueTrend,
   dprPeriodRowValue,
   dprPeriodValuesByScope,
@@ -194,4 +195,22 @@ test('the value trend adds planned and submitted value per bucket, with running 
   assert.equal(trend.priced, 1);
   assert.equal(trend.unpriced, 1);
   assert.deepEqual(buildDprValueTrend({ items: [], entries: [], plan, range: { startDate: 'x', endDate: 'y' }, periodType: 'Day' }).points, []);
+});
+
+test('value to date stops each scope at its last recording day, and says when scopes differ', async () => {
+  const { sanitizeDprSettings } = await import('../src/lib/project-management-dpr-plan.ts');
+  // 1 a day on every day; Civil daily, Supply weekly on Saturday (14 Nov). Wednesday 18 Nov.
+  const plan = { qtyInRange: (id, range) => (Date.parse(range.endDate) - Date.parse(range.startDate)) / 86400000 + 1 };
+  const settings = sanitizeDprSettings({ weeklyOff: [], recordingSchedule: { Supply: { frequency: 'weekly', weekdays: [6] } } });
+  const items = [{ id: 'pcc', scope: 'Civil', rate: 100 }, { id: 'steel', scope: 'Supply', rate: 1000 }, { id: 'none', scope: 'Civil' }];
+  const entries = [{ id: 'Supply-2026-11-14', scope: 'Supply', date: '2026-11-14', status: 'Submitted', lines: [{ boqItemId: 'steel', actualQty: 14 }] }];
+  const range = { startDate: '2026-11-01', endDate: '2026-11-30' };
+  const reading = buildDprValueToDate({ items, entries, plan, range, settings, today: '2026-11-18' });
+  // Civil to the 18th (18 × 100) + Supply to the 14th (14 × 1000); the unpriced line is left out.
+  assert.equal(reading.plannedValue, 1800 + 14000);
+  assert.equal(reading.actualValue, 14000);
+  assert.equal(reading.mixed, true);
+  assert.equal(reading.asOf, '2026-11-18');
+  const supplyOnly = buildDprValueToDate({ items, entries, plan, range, scope: 'Supply', settings, today: '2026-11-18' });
+  assert.deepEqual(supplyOnly, { asOf: '2026-11-14', mixed: false, plannedValue: 14000, actualValue: 14000 });
 });

@@ -1,15 +1,20 @@
 "use client";
 
 /**
- * Projections — the planned side of the DPR, in three views:
+ * Projections — the planned side of the DPR. No tabs (as on Record progress, user 2026-11-21):
  *
- *  - **Projection list**: every projection record — the BOQ lines planned for one scope over the
- *    same dates. A record opens to show its lines, and can be edited: quantities changed (each a
- *    revision with a reason, baseline kept — rule P7), lines added, lines taken off.
- *  - **Plan several lines**: one period, a quantity against each BOQ line of a scope, checked as
- *    it is typed (rules P1–P6) and saved together.
- *  - **Six-week look-ahead**: planned per week whatever period each projection was set at, with
- *    work done for started weeks; a week can be planned from its cell.
+ *  - The page lands on the **projection list**: every projection record — the BOQ lines planned
+ *    for one scope over the same dates. A record opens to show its lines, and can be edited:
+ *    quantities changed (each a revision with a reason, baseline kept — rule P7), lines added,
+ *    lines taken off.
+ *  - **Add projection** (the band's main button) opens **Plan several lines** with its line picker
+ *    already open: one period, a quantity against each line picked, checked as it is typed (rules
+ *    P1–P6) and saved together.
+ *  - **Six-week look-ahead** (the band's second button): planned per week whatever period each
+ *    projection was set at, with work done for started weeks; a week can be planned from its cell.
+ *
+ * Both open under a back button to the list; `view=plan` / `view=look` in the address still land
+ * on them.
  *
  * The period is always stored as explicit dates, and the planning engine
  * (`project-management-dpr-plan.ts`) spreads it over working days and lets the shorter of two
@@ -18,7 +23,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarRange, ListChecks, Target } from "lucide-react";
+import { ArrowLeft, CalendarRange, Plus } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
@@ -40,7 +45,12 @@ import {
   formatRangeCompact,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
-import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
+import {
+  DPR_HERO_PRIMARY,
+  DPR_HERO_SECONDARY,
+  DprReportsHero,
+} from "@/components/project-management/dpr/reports-hero";
+import { Button } from "@/components/ui/button";
 import { ProjectionList } from "@/components/project-management/dpr/projections-list";
 import { ProjectionPlanner } from "@/components/project-management/dpr/projections-plan";
 import { ProjectionLookAhead } from "@/components/project-management/dpr/projections-look-ahead";
@@ -64,10 +74,10 @@ import { Card, CardContent } from "@/components/ui/card";
 type ViewId = "list" | "plan" | "look";
 
 /** The three views, as tabs in the headline band, each with the mock-up's chip colours. */
-const VIEWS: readonly DprReportTab<ViewId>[] = [
-  { id: "list", label: "Projection list", icon: ListChecks, colours: ["#c4b5fd", "#7c3aed"] },
-  { id: "plan", label: "Plan several lines", icon: Target, colours: ["#93c5fd", "#2563eb"] },
-  { id: "look", label: "Six-week look-ahead", icon: CalendarRange, colours: ["#6ee7b7", "#059669"] },
+const VIEWS: ReadonlyArray<{ id: ViewId; label: string }> = [
+  { id: "list", label: "Projection list" },
+  { id: "plan", label: "Plan several lines" },
+  { id: "look", label: "Six-week look-ahead" },
 ];
 
 const PROJECTIONS_TAB = DPR_TABS.find((tab) => tab.key === "projections")!;
@@ -93,6 +103,8 @@ export default function DprProjectionsPage() {
   const requestedView = searchParams?.get("view");
   const [view, setView] = useState<ViewId>(isViewId(requestedView) ? requestedView : "list");
   const [revising, setRevising] = useState<DprTarget | null>(null);
+  /** The planner's line picker, opened straight away by Add projection. */
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [planningWeek, setPlanningWeek] = useState<PlanWeekRequest | null>(null);
   /** The open projection record (its key is in the address too), and whether it is being edited. */
   const [recordKey, setRecordKey] = useState<string | null>(searchParams?.get("record") || null);
@@ -128,8 +140,17 @@ export default function DprProjectionsPage() {
     setView(next);
     setRecordKey(null);
     setRecordMode("view");
-    // Kept in the address so a reload, or a link from the dashboard, lands on the same view.
-    router.replace(dprHref(`${DPR_BASE_PATH}/targets`, mappingId, { view: next }), { scroll: false });
+    // Kept in the address so a reload, or a link from the dashboard, lands on the same view; the
+    // list is the page itself.
+    router.replace(dprHref(`${DPR_BASE_PATH}/targets`, mappingId, next === "list" ? {} : { view: next }), {
+      scroll: false,
+    });
+  };
+
+  /** Add projection: Plan several lines, with its line picker already open. */
+  const openPlanner = () => {
+    changeView("plan");
+    setIsPickerOpen(true);
   };
 
   const handleSaveRecord = async (
@@ -202,10 +223,33 @@ export default function DprProjectionsPage() {
         title={PROJECTIONS_TAB.label}
         description={PROJECTIONS_TAB.description}
         icon={PROJECTIONS_TAB.icon}
-        tabs={VIEWS}
-        active={view}
-        onTabChange={changeView}
+        actions={
+          view === "list" && !recordKey ? (
+            <>
+              {canEdit ? (
+                <Button className={DPR_HERO_PRIMARY} onClick={openPlanner}>
+                  <Plus className="mr-2 h-4 w-4" /> Add projection
+                </Button>
+              ) : null}
+              <Button className={DPR_HERO_SECONDARY} onClick={() => changeView("look")}>
+                <CalendarRange className="mr-2 h-4 w-4" /> Six-week look-ahead
+              </Button>
+            </>
+          ) : undefined
+        }
       />
+
+      {view !== "list" ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 gap-1.5 font-bold" onClick={() => changeView("list")}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            All projection records
+          </Button>
+          <span className="truncate text-sm font-extrabold text-muted-foreground">
+            {VIEWS.find((candidate) => candidate.id === view)?.label}
+          </span>
+        </div>
+      ) : null}
 
       {data.loadError ? (
         <Card className="border-destructive/40">
@@ -230,14 +274,14 @@ export default function DprProjectionsPage() {
         <ProjectionList
           context={context}
           onOpen={(record, mode) => showRecord(record.key, mode)}
-          onPlan={() => changeView("plan")}
+          onPlan={openPlanner}
           onDeleteRecord={handleDeleteRecord}
         />
       ) : null}
       {/* Kept mounted while hidden, so quantities typed into the planner survive a look at the
           list or the look-ahead. */}
       <div hidden={view !== "plan"}>
-        <ProjectionPlanner context={context} />
+        <ProjectionPlanner context={context} pickerOpen={isPickerOpen} onPickerOpenChange={setIsPickerOpen} />
       </div>
       {view === "look" ? (
         <ProjectionLookAhead

@@ -52,6 +52,9 @@ import {
   defaultDprRecordingSchedule,
   dprCoverIsWindow,
   dprExpectedDaysIn,
+  dprLatestRecordingDay,
+  dprScopeScheduleOf,
+  dprSheetCover,
   sanitizeDprRecordingSchedule,
   type DprRecordingSchedule,
 } from "./project-management-dpr-schedule.ts";
@@ -590,6 +593,46 @@ export function dprCompletionOn(input: {
     : null;
 }
 
+/**
+ * The day a scope's actuals are recorded up to, as of `today`: its latest recording day on or
+ * before today (Daily Progress › Settings › Recording schedule). A projection is set at any period
+ * (a month, say) and spread over working days, but actuals arrive on the scope's schedule — so a
+ * scope recorded weekly on Saturday is recorded up to last Saturday on a Wednesday, and the plan
+ * since is still to be recorded, not overdue. A daily scope's is today on a working day, so nothing
+ * changes for it.
+ */
+export function dprRecordedThrough(
+  settings: Pick<DprSettings, "weeklyOff" | "holidays" | "recordingSchedule">,
+  scope: DprScope,
+  today: string,
+): string {
+  return dprLatestRecordingDay(dprScopeScheduleOf(settings.recordingSchedule, scope), dprCalendar(settings), today) ?? today;
+}
+
+/**
+ * The first day whose plan is still open — still to be recorded — for a scope: the day after it was
+ * last recorded up to, or, while that day's sheet is not in, the first day that sheet covers (the
+ * days since the previous recording day). For a daily scope: tomorrow once today's sheet is in,
+ * else today — as it always was.
+ */
+export function dprOpenPlanFrom(
+  settings: Pick<DprSettings, "weeklyOff" | "holidays" | "recordingSchedule">,
+  scope: DprScope,
+  today: string,
+  actuals: Pick<DprActualIndex, "hasSheet">,
+): string {
+  const through = dprRecordedThrough(settings, scope, today);
+  if (actuals.hasSheet(scope, through)) return addDays(through, 1);
+  return dprSheetCover(dprScopeScheduleOf(settings.recordingSchedule, scope), dprCalendar(settings), through).startDate;
+}
+
+/** The plan still to come: every day from `from` on. */
+export function openPlanQtyFrom(daily: ReadonlyMap<string, number>, from: string): number {
+  let sum = 0;
+  for (const [day, qty] of daily) if (day >= from) sum += qty;
+  return tidy(sum);
+}
+
 /** Still to come: days after today, plus today while today's sheet is not in. */
 export function openPlanQty(
   daily: ReadonlyMap<string, number>,
@@ -718,10 +761,11 @@ export function checkDprProjection(input: {
       (target) => target.boqItemId === candidate.boqItemId && target.id !== ownId,
     );
     const plan = buildDprPlan([...others, proposed], { calendar, decimalsFor: () => decimals });
-    const open = openPlanQty(
+    // Open = still to be recorded, by the scope's recording schedule (a weekly scope's plan since
+    // its last recording day is open, not past).
+    const open = openPlanQtyFrom(
       plan.daily(candidate.boqItemId),
-      today,
-      actuals.hasSheet(candidate.scope, today),
+      dprOpenPlanFrom(settings, candidate.scope, today, actuals),
     );
     const left = limit - actuals.total(candidate.boqItemId);
     if (open > left + 1e-9) {
@@ -966,7 +1010,11 @@ export type DprLineStatus = "not-due" | "on-plan" | "behind" | "unplanned";
 
 export interface DprBoardRow {
   item: DprBoardItem;
-  /** Planned from the period start up to today (or the period end, if that is sooner). */
+  /**
+   * Planned from the period start up to the day the line's scope is recorded up to — today for a
+   * daily scope, its last recording day for one recorded weekly or on set days — or the period
+   * end, if that is sooner. So a line is never "behind" for work not yet due to be recorded.
+   */
   planToDate: number;
   actual: number;
   /** actual ÷ plan to date, in percent. null while nothing is due yet. */
@@ -984,6 +1032,12 @@ export type DprAchievementBasis = "value" | "average";
 
 export interface DprBoardStats {
   achievementToDatePct: number | null;
+  /**
+   * Where the period stands: the plan to date, and the actual, as shares of the period plan (the
+   * same basis as achievement). null when nothing is planned in the period.
+   */
+  plannedToDatePct: number | null;
+  actualToDatePct: number | null;
   achievementFullPct: number | null;
   basis: DprAchievementBasis;
   linesDue: number;
@@ -1040,6 +1094,8 @@ const shareAcross = (
 
 const emptyStats = (): DprBoardStats => ({
   achievementToDatePct: null,
+  plannedToDatePct: null,
+  actualToDatePct: null,
   achievementFullPct: null,
   basis: "average",
   linesDue: 0,
@@ -1071,6 +1127,18 @@ export function buildDprBoard(input: {
   const started = range.startDate <= today;
   const cutOff = range.endDate < today ? range.endDate : today;
   const toDate: DprDateRange | null = started ? { startDate: range.startDate, endDate: cutOff } : null;
+  /** Each scope's plan counts as due up to the day it is recorded up to (its schedule). */
+  const dueThrough = new Map<DprScope, string>();
+  const planDueRange = (scope: DprScope): DprDateRange | null => {
+    if (!toDate) return null;
+    let through = dueThrough.get(scope);
+    if (through === undefined) {
+      through = dprRecordedThrough(settings, scope, today);
+      dueThrough.set(scope, through);
+    }
+    const endDate = through < toDate.endDate ? through : toDate.endDate;
+    return endDate < toDate.startDate ? null : { startDate: toDate.startDate, endDate };
+  };
   const remainingFrom = range.startDate > today ? range.startDate : today;
   const remainingDays =
     range.endDate < today ? [] : calendar.workingDays(remainingFrom, range.endDate);
@@ -1081,7 +1149,8 @@ export function buildDprBoard(input: {
     const fullPlan = plan.qtyInRange(item.id, range);
     const actual = actuals.total(item.id, range);
     if (fullPlan <= 0 && actual <= 0) continue;
-    const planToDate = toDate ? plan.qtyInRange(item.id, toDate) : 0;
+    const dueRange = planDueRange(item.scope);
+    const planToDate = dueRange ? plan.qtyInRange(item.id, dueRange) : 0;
     const todayIn = actuals.hasSheet(item.scope, today);
     const daysLeft = remainingDays.filter((day) => day > today || !todayIn).length;
     const balance = Math.max(0, tidy(fullPlan - actual));
@@ -1122,6 +1191,14 @@ export function buildDprBoard(input: {
       basis,
     ),
     achievementFullPct: shareAcross(
+      planned.map((row) => ({ item: row.item, numerator: row.actual, denominator: row.fullPlan })),
+      basis,
+    ),
+    plannedToDatePct: shareAcross(
+      planned.map((row) => ({ item: row.item, numerator: row.planToDate, denominator: row.fullPlan })),
+      basis,
+    ),
+    actualToDatePct: shareAcross(
       planned.map((row) => ({ item: row.item, numerator: row.actual, denominator: row.fullPlan })),
       basis,
     ),
@@ -1290,6 +1367,75 @@ export function buildDprShareTrend(input: {
   return { basis, points };
 }
 
+/** Where a period stands to date, with each scope's plan counted up to the day it is recorded up to. */
+export interface DprToDateReading {
+  /** The latest of the scopes' recorded-up-to days (never after today or the period end). */
+  asOf: string;
+  /** The scopes shown stop on different days (one daily, one weekly, say). */
+  mixed: boolean;
+  /** Plan to date as a share of the period plan, in percent (the share trend's basis). */
+  plannedPct: number;
+  /** Actual so far as a share of the period plan, in percent. */
+  actualPct: number;
+}
+
+/**
+ * The share trend's figures to date, schedule-aware: a line's plan counts up to the day its scope
+ * is recorded up to (`dprRecordedThrough`) — today for a daily scope, the last recording day for
+ * one recorded weekly or on set days — so a monthly projection recorded weekly is not behind
+ * mid-week. null before the period starts.
+ */
+export function buildDprShareToDate(input: {
+  items: readonly DprBoardItem[];
+  entries: readonly DprEntry[];
+  plan: DprPlan;
+  range: DprDateRange;
+  scope?: DprScope;
+  settings: Pick<DprSettings, "weeklyOff" | "holidays" | "recordingSchedule">;
+  today: string;
+}): DprToDateReading | null {
+  const { items, entries, plan, range, scope, settings, today } = input;
+  if (!isValidRange(range) || today < range.startDate) return null;
+  const last = range.endDate < today ? range.endDate : today;
+  const actuals = indexDprActuals(entries);
+  const lines = items
+    .filter((item) => !scope || item.scope === scope)
+    .map((item) => ({ item, full: plan.qtyInRange(item.id, range) }))
+    .filter((line) => line.full > 0);
+  const basis: DprAchievementBasis =
+    lines.length > 0 && lines.every((line) => hasRate(line.item)) ? "value" : "average";
+  const ends = new Map<DprScope, string>();
+  const endFor = (lineScope: DprScope): string => {
+    let end = ends.get(lineScope);
+    if (end === undefined) {
+      const through = dprRecordedThrough(settings, lineScope, today);
+      end = through < last ? through : last;
+      ends.set(lineScope, end);
+    }
+    return end;
+  };
+  const planned = lines.map((line) => {
+    const end = endFor(line.item.scope);
+    return {
+      item: line.item,
+      numerator: end < range.startDate ? 0 : plan.qtyInRange(line.item.id, { startDate: range.startDate, endDate: end }),
+      denominator: line.full,
+    };
+  });
+  const done = lines.map((line) => ({
+    item: line.item,
+    numerator: actuals.total(line.item.id, { startDate: range.startDate, endDate: last }),
+    denominator: line.full,
+  }));
+  const stops = [...new Set(ends.values())];
+  return {
+    asOf: stops.length > 0 ? stops.reduce((latest, day) => (day > latest ? day : latest)) : last,
+    mixed: stops.length > 1,
+    plannedPct: shareAcross(planned, basis) ?? 0,
+    actualPct: shareAcross(done, basis) ?? 0,
+  };
+}
+
 /* ── Planning helpers ───────────────────────────────────────────────────────────────────────── */
 
 /** The period before this one: the previous month for a month, else the same length earlier. */
@@ -1319,7 +1465,7 @@ export function unplannedBalance(input: {
   const { item, plan, actuals, settings, today } = input;
   const limit = boqLimit(item.boqQty, settings);
   if (limit === null) return null;
-  const open = openPlanQty(plan.daily(item.id), today, actuals.hasSheet(item.scope, today));
+  const open = openPlanQtyFrom(plan.daily(item.id), dprOpenPlanFrom(settings, item.scope, today, actuals));
   return tidy(limit - actuals.total(item.id) - open);
 }
 

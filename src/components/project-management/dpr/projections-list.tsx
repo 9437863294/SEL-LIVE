@@ -103,7 +103,7 @@ export function ProjectionList({
   context: ProjectionsContext;
   /** Opens a record's screen — to read it, or straight into editing. */
   onOpen: (record: DprProjectionRecord, mode: "view" | "edit") => void;
-  /** Switches to "Plan several lines" — the empty state's next step. */
+  /** Opens Plan several lines with its line picker — the empty state's next step. */
   onPlan: () => void;
   /** Deletes every projection in the record; resolves true when it was deleted. The page owns the write, toast and reload. */
   onDeleteRecord: (record: DprProjectionRecord) => Promise<boolean>;
@@ -272,7 +272,7 @@ export function ProjectionList({
             {canEdit ? (
               <div className="flex justify-center pb-8">
                 <Button onClick={onPlan}>
-                  <Target className="mr-2 h-4 w-4" /> Plan several lines
+                  <Target className="mr-2 h-4 w-4" /> Add projection
                 </Button>
               </div>
             ) : null}

@@ -27,7 +27,13 @@ import {
   type DprScope,
   type DprTarget,
 } from "./project-management-dpr.ts";
-import { indexDprActuals, isValidRange, type DprPlan } from "./project-management-dpr-plan.ts";
+import {
+  dprRecordedThrough,
+  indexDprActuals,
+  isValidRange,
+  type DprPlan,
+  type DprSettings,
+} from "./project-management-dpr-plan.ts";
 import { formatINR, formatINRCompact } from "./bill-tracking/money.ts";
 
 /* ── Display ────────────────────────────────────────────────────────────────────────────────── */
@@ -255,6 +261,62 @@ export function dprPeriodValuesByScope(
     const inScope = rows.filter((row) => scopeOf(row.id) === scope);
     return { scope, lines: inScope.length, ...summariseDprPeriodValues(inScope, rates) };
   }).filter((row) => row.lines > 0);
+}
+
+/* ── Planned against actual value to date ───────────────────────────────────────────────────── */
+
+export interface DprValueToDate {
+  /** The latest of the scopes' recorded-up-to days (never after today or the period end). */
+  asOf: string;
+  /** The scopes shown stop on different days (one daily, one weekly, say). */
+  mixed: boolean;
+  plannedValue: number;
+  actualValue: number;
+}
+
+/**
+ * Planned and done value to date, schedule-aware: a line's planned value counts up to the day its
+ * scope is recorded up to (`dprRecordedThrough`) — today for a daily scope, the last recording
+ * day for one recorded weekly or on set days. Priced lines with anything planned or submitted in
+ * the range; null before the period starts.
+ */
+export function buildDprValueToDate(input: {
+  items: ReadonlyArray<{ id: string; scope: DprScope; rate?: number | null }>;
+  entries: readonly DprEntry[];
+  plan: Pick<DprPlan, "qtyInRange">;
+  range: DprDateRange;
+  scope?: DprScope;
+  settings: Pick<DprSettings, "weeklyOff" | "holidays" | "recordingSchedule">;
+  today: string;
+}): DprValueToDate | null {
+  const { items, entries, plan, range, scope, settings, today } = input;
+  if (!isValidRange(range) || today < range.startDate) return null;
+  const last = range.endDate < today ? range.endDate : today;
+  const actuals = indexDprActuals(entries);
+  const ends = new Map<DprScope, string>();
+  let plannedValue = 0;
+  let actualValue = 0;
+  for (const item of items) {
+    if (scope && item.scope !== scope) continue;
+    const rate = dprNumber(item.rate);
+    if (rate <= 0) continue;
+    if (!(plan.qtyInRange(item.id, range) > 0 || actuals.total(item.id, range) > 0)) continue;
+    let end = ends.get(item.scope);
+    if (end === undefined) {
+      const through = dprRecordedThrough(settings, item.scope, today);
+      end = through < last ? through : last;
+      ends.set(item.scope, end);
+    }
+    if (end >= range.startDate) plannedValue += plan.qtyInRange(item.id, { startDate: range.startDate, endDate: end }) * rate;
+    actualValue += actuals.total(item.id, { startDate: range.startDate, endDate: last }) * rate;
+  }
+  const stops = [...new Set(ends.values())];
+  return {
+    asOf: stops.length > 0 ? stops.reduce((latest, day) => (day > latest ? day : latest)) : last,
+    mixed: stops.length > 1,
+    plannedValue,
+    actualValue,
+  };
 }
 
 /* ── Planned against actual value over time ─────────────────────────────────────────────────── */

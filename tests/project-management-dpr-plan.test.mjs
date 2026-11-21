@@ -10,12 +10,15 @@ const {
   buildDprBoard,
   buildDprLookAhead,
   buildDprPlan,
+  buildDprShareToDate,
   buildDprShareTrend,
   checkDprProjection,
   checkDprSheet,
   defaultDprSettings,
   dprCalendar,
   dprProjectDates,
+  dprOpenPlanFrom,
+  dprRecordedThrough,
   dprUnitDecimals,
   fitsUnitPrecision,
   indexDprActuals,
@@ -829,4 +832,69 @@ test('D6: a zero on a line whose work is already done needs no remark', () => {
   const done = indexDprActuals([entry('2026-11-05', 'Civil', [{ boqItemId: 'pcc', actualQty: 100 }])]);
   const result = sheetCheck({ lines: zero, manpower: [] }, { actuals: done });
   assert.doesNotMatch(result.errors.join(), /was planned but nothing was done/);
+});
+
+/* ── A monthly projection, recorded on a schedule ───────────────────────────────────────────── */
+
+test('a monthly projection recorded weekly is due up to the last recording day, not today', () => {
+  // Sundays off; Civil recorded weekly on Saturday. 25 Cum over November's 25 working days = 1 a day.
+  const weekly = sanitizeDprSettings({ weeklyOff: [0], recordingSchedule: { Civil: { frequency: 'weekly', weekdays: [6] } } });
+  const daily = sanitizeDprSettings({ weeklyOff: [0] });
+  const targets = [target({ plannedQty: 25 })];
+  const p = planFor(targets, { weeklyOff: [0] });
+  const range = { startDate: '2026-11-01', endDate: '2026-11-30' };
+  // Wednesday 18 Nov; the week to Saturday 14 Nov was recorded on the 14th: 12 working days, 12 Cum.
+  const entries = [entry('2026-11-14', 'Civil', [{ boqItemId: 'pcc', actualQty: 12 }])];
+  const today = '2026-11-18';
+
+  assert.equal(dprRecordedThrough(weekly, 'Civil', today), '2026-11-14');
+  assert.equal(dprRecordedThrough(daily, 'Civil', today), today);
+
+  const onWeekly = buildDprBoard({ items, entries, plan: p, settings: weekly, range, scope: 'Civil', today });
+  const row = onWeekly.rows.find((candidate) => candidate.item.id === 'pcc');
+  assert.equal(row.planToDate, 12);
+  assert.equal(row.status, 'on-plan');
+  assert.equal(round(onWeekly.stats.achievementToDatePct), 100);
+  assert.equal(round(onWeekly.stats.plannedToDatePct), 48); // 12 of 25
+  // Recorded daily, the same day would be behind: 15 Cum were due by the 18th.
+  const onDaily = buildDprBoard({ items, entries, plan: p, settings: daily, range, scope: 'Civil', today });
+  assert.equal(onDaily.rows.find((candidate) => candidate.item.id === 'pcc').planToDate, 15);
+  assert.equal(onDaily.rows.find((candidate) => candidate.item.id === 'pcc').status, 'behind');
+});
+
+test('the plan since the last recording day is still open in the balance check', () => {
+  const weekly = sanitizeDprSettings({ weeklyOff: [0], tolerancePct: 0, recordingSchedule: { Civil: { frequency: 'weekly', weekdays: [6] } } });
+  const p = planFor([target({ plannedQty: 25 })], { weeklyOff: [0] });
+  const recorded = indexDprActuals([entry('2026-11-14', 'Civil', [{ boqItemId: 'pcc', actualQty: 12 }])]);
+  // Saturday's sheet is in: open from Sunday 15th — the 16th and 17th are still to be recorded.
+  assert.equal(dprOpenPlanFrom(weekly, 'Civil', '2026-11-18', recorded), '2026-11-15');
+  const item = items.find((candidate) => candidate.id === 'pcc');
+  // 100 BOQ − 12 done − 13 open (16–21, 23–28, 30 November) = 75.
+  assert.equal(unplannedBalance({ item, plan: p, actuals: recorded, settings: weekly, today: '2026-11-18' }), 75);
+  // Saturday's sheet not in yet: the whole week it covers is open, from Sunday the 8th.
+  assert.equal(dprOpenPlanFrom(weekly, 'Civil', '2026-11-18', indexDprActuals([])), '2026-11-08');
+  // A daily scope is unchanged: open from today until today's sheet is in, then from tomorrow.
+  const daily = sanitizeDprSettings({ weeklyOff: [0] });
+  assert.equal(dprOpenPlanFrom(daily, 'Civil', '2026-11-18', indexDprActuals([])), '2026-11-18');
+  assert.equal(
+    dprOpenPlanFrom(daily, 'Civil', '2026-11-18', indexDprActuals([entry('2026-11-18', 'Civil', [{ boqItemId: 'pcc', actualQty: 1 }])])),
+    '2026-11-19',
+  );
+});
+
+test('the share figures to date stop each scope at its last recording day', () => {
+  const weekly = sanitizeDprSettings({ weeklyOff: [0], recordingSchedule: { Civil: { frequency: 'weekly', weekdays: [6] } } });
+  const p = planFor([target({ plannedQty: 25 })], { weeklyOff: [0] });
+  const range = { startDate: '2026-11-01', endDate: '2026-11-30' };
+  const entries = [entry('2026-11-14', 'Civil', [{ boqItemId: 'pcc', actualQty: 12 }])];
+  const reading = buildDprShareToDate({ items, entries, plan: p, range, scope: 'Civil', settings: weekly, today: '2026-11-18' });
+  assert.equal(reading.asOf, '2026-11-14');
+  assert.equal(reading.mixed, false);
+  assert.equal(round(reading.plannedPct), 48);
+  assert.equal(round(reading.actualPct), 48);
+  // Daily, the same Wednesday: 15 of 25 due.
+  const daily = buildDprShareToDate({ items, entries, plan: p, range, scope: 'Civil', settings: sanitizeDprSettings({ weeklyOff: [0] }), today: '2026-11-18' });
+  assert.equal(daily.asOf, '2026-11-18');
+  assert.equal(round(daily.plannedPct), 60);
+  assert.equal(buildDprShareToDate({ items, entries, plan: p, range, settings: weekly, today: '2026-10-31' }), null);
 });

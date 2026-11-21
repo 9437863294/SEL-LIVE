@@ -42,6 +42,7 @@ import {
   type DprScope,
 } from "@/lib/project-management-dpr";
 import {
+  buildDprShareToDate,
   buildDprShareTrend,
   dprCalendar,
   dprShortDate,
@@ -72,6 +73,7 @@ import {
 } from "@/lib/project-management-dpr-breakdown";
 import {
   buildDprRateLookup,
+  buildDprValueToDate,
   buildDprValueTrend,
   dprPeriodRowValue,
   formatDprRate,
@@ -299,6 +301,19 @@ export default function DprReportsPage() {
   const valueTrend = useMemo(
     () => buildDprValueTrend({ items: boqItems, entries, plan, range, periodType: granularity, scope: scopeFilter }),
     [boqItems, entries, plan, range, granularity, scopeFilter],
+  );
+  /**
+   * The figures to date, schedule-aware: each scope's plan counts up to the day it is recorded up to
+   * (today for a daily scope, its last recording day for one recorded weekly or on set days), so a
+   * monthly projection recorded weekly is not behind mid-week.
+   */
+  const shareToDate = useMemo(
+    () => buildDprShareToDate({ items: boqItems, entries, plan, range, scope: scopeFilter, settings, today: todayIso() }),
+    [boqItems, entries, plan, range, scopeFilter, settings],
+  );
+  const valueToDate = useMemo(
+    () => buildDprValueToDate({ items: boqItems, entries, plan, range, scope: scopeFilter, settings, today: todayIso() }),
+    [boqItems, entries, plan, range, scopeFilter, settings],
   );
   const dailyValue = useMemo(
     () => buildDprValueTrend({ items: boqItems, entries, plan, range, periodType: "Day", scope: scopeFilter }),
@@ -801,6 +816,8 @@ export default function DprReportsPage() {
           daily={dailyTrend.points}
           valueTrend={valueTrend}
           dailyValue={dailyValue}
+          toDate={shareToDate}
+          valueToDate={valueToDate}
           basis={trend.basis}
           granularity={granularity}
           range={range}

@@ -157,7 +157,16 @@ const perDayFigure = (qty: number, decimals: number, workingDays: number): strin
     : formatQtyAt(perDay, 3);
 };
 
-export function ProjectionPlanner({ context }: { context: ProjectionsContext }) {
+export function ProjectionPlanner({
+  context,
+  pickerOpen,
+  onPickerOpenChange,
+}: {
+  context: ProjectionsContext;
+  /** The line picker, when the page opens it (Add projection on the list); else the planner's own. */
+  pickerOpen?: boolean;
+  onPickerOpenChange?: (open: boolean) => void;
+}) {
   const { toast } = useToast();
   const { data, actuals, today, canEdit } = context;
 
@@ -168,7 +177,9 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
   const [rows, setRows] = useState<Record<string, PlanRow>>({});
   /** The BOQ lines picked to plan, per scope, in the order they were added. */
   const [picked, setPicked] = useState<Partial<Record<DprScope, string[]>>>({});
-  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [ownPickerOpen, setOwnPickerOpen] = useState(false);
+  const isPickerOpen = pickerOpen ?? ownPickerOpen;
+  const setIsPickerOpen = onPickerOpenChange ?? setOwnPickerOpen;
   const [filter, setFilter] = useState("");
   const [isPasteOpen, setIsPasteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

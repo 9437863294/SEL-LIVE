@@ -61,7 +61,14 @@ export function dprProgressAt(board: DprBoard, today: string): DprProgressReadin
   const date = board.range.endDate < today ? board.range.endDate : today;
   const point = board.curve.find((candidate) => candidate.date === date);
   if (!point) return null;
-  return { date, plannedPct: point.plannedPct, actualPct: point.actualPct ?? 0 };
+  // The board's own to-date shares, which count each scope's plan only up to the day it is
+  // recorded up to (its schedule) — the same as the curve's point for a daily scope.
+  const { plannedToDatePct, actualToDatePct } = board.stats;
+  return {
+    date,
+    plannedPct: plannedToDatePct ?? point.plannedPct,
+    actualPct: actualToDatePct ?? point.actualPct ?? 0,
+  };
 }
 
 /* ── Lines ──────────────────────────────────────────────────────────────────────────────────── */

@@ -20,7 +20,7 @@ import { db } from "@/lib/firebase";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
 import { DPR_BASE_PATH, type DprScope } from "@/lib/project-management-dpr";
-import { indexDprActuals, openPlanQty } from "@/lib/project-management-dpr-plan";
+import { dprOpenPlanFrom, indexDprActuals, openPlanQtyFrom } from "@/lib/project-management-dpr-plan";
 import {
   DPR_MAX_BREAKDOWN_DEPTH,
   DPR_SUB_ITEM_COLLECTION,
@@ -129,14 +129,17 @@ export function DprBoqRegisterView({
   const actuals = useMemo(() => indexDprActuals(entries), [entries]);
   /** Submitted work rolled up to every node, in that node's own unit. */
   const done = useMemo(() => breakdown.rollUp((id) => actuals.total(id)), [breakdown, actuals]);
-  /** What is still planned from today on — future days, and today until its sheet is in. */
+  /**
+   * What is still planned and not yet recorded: from the day after the scope was last recorded up to
+   * (its recording schedule) — for a daily scope, future days and today until its sheet is in.
+   */
   const openPlan = useMemo(() => {
     const today = todayProp ?? todayIso();
     return breakdown.rollUp((id) => {
       const node = breakdown.nodes.get(id);
-      return node ? openPlanQty(data.plan.daily(id), today, actuals.hasSheet(node.scope, today)) : 0;
+      return node ? openPlanQtyFrom(data.plan.daily(id), dprOpenPlanFrom(data.settings, node.scope, today, actuals)) : 0;
     });
-  }, [breakdown, data.plan, actuals, todayProp]);
+  }, [breakdown, data.plan, data.settings, actuals, todayProp]);
 
   const scopeNodes = useMemo(
     () =>

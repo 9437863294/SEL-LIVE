@@ -40,13 +40,19 @@ import {
   YAxis,
 } from "recharts";
 import type { DprPeriodType } from "@/lib/project-management-dpr";
-import { dprShortDate, type DprAchievementBasis, type DprShareBucket } from "@/lib/project-management-dpr-plan";
+import {
+  dprShortDate,
+  type DprAchievementBasis,
+  type DprShareBucket,
+  type DprToDateReading,
+} from "@/lib/project-management-dpr-plan";
 import {
   dprUnpricedText,
   dprValuePct,
   formatDprValue,
   formatDprValueCompact,
   type DprValueBucket,
+  type DprValueToDate,
   type DprValueTrend,
 } from "@/lib/project-management-dpr-values";
 import { formatPct } from "@/components/project-management/dpr/dpr-shell";
@@ -99,17 +105,26 @@ interface ShareTrendProps {
   range: { startDate: string; endDate: string };
   today: string;
   periodNoun: string;
+  /**
+   * The figures to date with each scope's plan counted up to the day it is recorded up to
+   * (`buildDprShareToDate`). Given, they replace the ones read off `daily` at today — so a
+   * scope recorded weekly is not behind mid-week.
+   */
+  toDate?: DprToDateReading | null;
 }
 
 export function DprTrendView({
   valueTrend,
   dailyValue,
+  valueToDate,
   ...share
 }: ShareTrendProps & {
   /** The same buckets in money (`buildDprValueTrend`, same granularity as `points`). */
   valueTrend: DprValueTrend;
   /** The range day by day in money, for exact "to date" value figures at any granularity. */
   dailyValue: DprValueTrend;
+  /** The value figures to date, schedule-aware (`buildDprValueToDate`); as `toDate` for shares. */
+  valueToDate?: DprValueToDate | null;
 }) {
   const [mode, setMode] = useState<TrendMode>("share");
   return (
@@ -148,6 +163,7 @@ export function DprTrendView({
         <ValueTrend
           valueTrend={valueTrend}
           dailyValue={dailyValue}
+          toDate={valueToDate}
           granularity={share.granularity}
           range={share.range}
           today={share.today}
@@ -159,16 +175,18 @@ export function DprTrendView({
 }
 
 /** The unit-free view: each bucket as a share of the period plan. */
-function ShareTrend({ points, daily, basis, granularity, range, today, periodNoun }: ShareTrendProps) {
+function ShareTrend({ points, daily, basis, granularity, range, today, periodNoun, toDate: scheduled }: ShareTrendProps) {
   const { resolvedMode } = useTheme();
   const colours = COLOURS[resolvedMode === "dark" ? "dark" : "light"];
 
   const figures = useMemo(() => {
-    const cutoff = today < range.endDate ? today : range.endDate;
+    // Up to the day the scopes are recorded up to, where the page says (a weekly scope's last
+    // recording day); else today.
+    const cutoff = scheduled?.asOf ?? (today < range.endDate ? today : range.endDate);
     const toDate = daily.filter((point) => point.bucketStart <= cutoff);
     const plannedTotal = daily.reduce((sum, point) => sum + point.plannedPct, 0);
-    const plannedToDate = toDate.reduce((sum, point) => sum + point.plannedPct, 0);
-    const actualToDate = toDate.reduce((sum, point) => sum + point.actualPct, 0);
+    const plannedToDate = scheduled ? scheduled.plannedPct : toDate.reduce((sum, point) => sum + point.plannedPct, 0);
+    const actualToDate = scheduled ? scheduled.actualPct : toDate.reduce((sum, point) => sum + point.actualPct, 0);
     return {
       cutoff,
       started: today >= range.startDate,
@@ -180,7 +198,7 @@ function ShareTrend({ points, daily, basis, granularity, range, today, periodNou
       actualDates: toDate.filter((point) => point.actualPct > 0).map((point) => point.bucketStart),
       gap: plannedToDate - actualToDate,
     };
-  }, [daily, range.startDate, range.endDate, today]);
+  }, [daily, range.startDate, range.endDate, today, scheduled]);
 
   /** The bucket today falls in, for the marker and the shaded elapsed stretch. */
   const todayBucket = useMemo(() => {
@@ -356,6 +374,7 @@ const onValuePlan = (done: number, planned: number) => done >= planned - Math.ma
 function ValueTrend({
   valueTrend,
   dailyValue,
+  toDate: scheduled,
   granularity,
   range,
   today,
@@ -363,6 +382,7 @@ function ValueTrend({
 }: {
   valueTrend: DprValueTrend;
   dailyValue: DprValueTrend;
+  toDate?: DprValueToDate | null;
   granularity: DprPeriodType;
   range: { startDate: string; endDate: string };
   today: string;
@@ -373,10 +393,10 @@ function ValueTrend({
   const { points } = valueTrend;
 
   const figures = useMemo(() => {
-    const cutoff = today < range.endDate ? today : range.endDate;
+    const cutoff = scheduled?.asOf ?? (today < range.endDate ? today : range.endDate);
     const toDate = dailyValue.points.filter((point) => point.bucketStart <= cutoff);
-    const plannedToDate = toDate.reduce((sum, point) => sum + point.plannedValue, 0);
-    const actualToDate = toDate.reduce((sum, point) => sum + point.actualValue, 0);
+    const plannedToDate = scheduled ? scheduled.plannedValue : toDate.reduce((sum, point) => sum + point.plannedValue, 0);
+    const actualToDate = scheduled ? scheduled.actualValue : toDate.reduce((sum, point) => sum + point.actualValue, 0);
     return {
       cutoff,
       started: today >= range.startDate,
@@ -386,7 +406,7 @@ function ValueTrend({
       actualDates: toDate.filter((point) => point.actualValue > 0).map((point) => point.bucketStart),
       achievedPct: dprValuePct(actualToDate, plannedToDate),
     };
-  }, [dailyValue, range.startDate, range.endDate, today]);
+  }, [dailyValue, range.startDate, range.endDate, today, scheduled]);
 
   const todayBucket = useMemo(() => {
     if (today < range.startDate) return null;
