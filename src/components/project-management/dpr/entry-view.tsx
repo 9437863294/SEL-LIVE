@@ -142,6 +142,7 @@ import {
   DprReportPill,
   DprReportZero,
   DprSlNoPill,
+  dprSlNoColumnWidth,
   type DprGradient,
 } from "@/components/project-management/dpr/reports-parts";
 import { PmEmptyState } from "@/components/project-management/pm-shell";
@@ -1320,7 +1321,8 @@ export function DprEntryView({
                 the BOQ line keeps at least 300px of the minimum width. */}
             <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[1066px] table-fixed">
               <colgroup>
-                <col className="w-[72px]" />
+                {/* Wide enough for the longest SL No, so a sub-item's number is never cut short. */}
+                <col style={{ width: dprSlNoColumnWidth(sheet.rows.map((row) => itemById.get(row.boqItemId)?.boqSlNo)) }} />
                 <col />
                 <col className="w-[76px]" />
                 <col className="w-[100px]" />

@@ -236,6 +236,18 @@ export function dprSlGradient(seed: string): DprGradient {
   return SL_GRADIENTS[Math.abs(hash) % SL_GRADIENTS.length];
 }
 
+/**
+ * The width (px) of a table's SL No column that shows every SL No in full — a sub-item's
+ * "27.1.1.2" as well as "5": the cell's and the pill's padding plus about 7.2px a character at the
+ * pill's size; never narrower than the usual 72px, never wider than 168px (past that the pill
+ * truncates, with the whole number on hover). Set it as the column's `style={{ width }}`.
+ */
+export function dprSlNoColumnWidth(slNos: Iterable<string | null | undefined>, minimum = 72): number {
+  let longest = 0;
+  for (const slNo of slNos) longest = Math.max(longest, String(slNo ?? "").trim().length);
+  return Math.min(168, Math.max(minimum, 48 + Math.ceil(longest * 7.2)));
+}
+
 export function DprSlNoPill({ slNo, seed, className }: { slNo: string; seed: string; className?: string }) {
   const [from, to] = dprSlGradient(seed);
   return (

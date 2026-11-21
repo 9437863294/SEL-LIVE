@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import type { DprBoqItem } from "@/components/project-management/dpr/use-dpr-data";
 import { formatQtyAt } from "@/components/project-management/dpr/dpr-shell";
 import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
-import { DprSlNoPill } from "@/components/project-management/dpr/reports-parts";
+import { DprSlNoPill, dprSlNoColumnWidth } from "@/components/project-management/dpr/reports-parts";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -83,6 +83,11 @@ export function DprBoqLinePickerDialog({
     );
   }, [candidates, filter]);
   const allShownPicked = shown.length > 0 && shown.every((item) => picked.has(item.id));
+  /** Wide enough for the longest SL No on the list (a sub-item's 27.1.1), so none is cut short. */
+  const slNoWidth = useMemo(
+    () => dprSlNoColumnWidth(candidates.map((item) => item.boqSlNo || item.erpSlNo)),
+    [candidates],
+  );
 
   const toggle = (id: string, on: boolean) =>
     setPicked((previous) => {
@@ -122,7 +127,7 @@ export function DprBoqLinePickerDialog({
             >
               <colgroup>
                 <col className="w-[44px]" />
-                <col className="w-[72px]" />
+                <col style={{ width: slNoWidth }} />
                 <col />
                 <col className="w-[76px]" />
                 <col className="w-[120px]" />

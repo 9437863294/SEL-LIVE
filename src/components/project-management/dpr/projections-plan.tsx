@@ -69,7 +69,7 @@ import {
   resolvePeriodRange,
   type DprPeriodSelection,
 } from "@/components/project-management/dpr/dpr-shell";
-import { DprReportCard, DprSlNoPill } from "@/components/project-management/dpr/reports-parts";
+import { DprReportCard, DprSlNoPill, dprSlNoColumnWidth } from "@/components/project-management/dpr/reports-parts";
 import { DprIndentedText, breakdownTitle } from "@/components/project-management/dpr/dpr-indent";
 import {
   SubItemDialog,
@@ -755,7 +755,8 @@ export function ProjectionPlanner({ context }: { context: ProjectionsContext }) 
                     className="min-w-[1336px] table-fixed"
                   >
                     <colgroup>
-                      <col className="w-[72px]" />
+                      {/* Wide enough for the longest SL No, so a sub-item's number is never cut short. */}
+                      <col style={{ width: dprSlNoColumnWidth(displayRows.map(({ node }) => node.slNo)) }} />
                       <col />
                       <col className="w-[76px]" />
                       <col className="w-[88px]" />

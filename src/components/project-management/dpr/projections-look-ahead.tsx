@@ -36,6 +36,7 @@ import {
   DprReportCard,
   DprReportZero,
   DprSlNoPill,
+  dprSlNoColumnWidth,
 } from "@/components/project-management/dpr/reports-parts";
 import { InfoTip } from "@/components/shared/info-tip";
 import {
@@ -214,7 +215,8 @@ export function ProjectionLookAhead({
           // carries its planned chip with the done chip under it, so every row has one height.
           <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[1252px] table-fixed">
             <colgroup>
-              <col className="w-[84px]" />
+              {/* Wide enough for the longest SL No, so a sub-item's number is never cut short. */}
+              <col style={{ width: dprSlNoColumnWidth(rows.map(({ item }) => item.boqSlNo), 84) }} />
               <col />
               <col className="w-[80px]" />
               {lookAhead.weeks.map((week) => (

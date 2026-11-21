@@ -62,6 +62,7 @@ import {
   DprReportCard,
   DprReportZero,
   DprSlNoPill,
+  dprSlNoColumnWidth,
   type DprGradient,
 } from "@/components/project-management/dpr/reports-parts";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -419,7 +420,14 @@ function RecordBody({
           // asking for them (user, 2026-11-21).
           <Table stickyHeader containerClassName="max-h-[65vh]" className="min-w-[1280px] table-fixed">
             <colgroup>
-              <col className="w-[72px]" />
+              {/* Wide enough for the longest SL No, so a sub-item's number is never cut short. */}
+              <col
+                style={{
+                  width: dprSlNoColumnWidth(
+                    lines.map((line) => line.boqSlNo || line.erpSlNo || itemById.get(line.boqItemId)?.boqSlNo),
+                  ),
+                }}
+              />
               <col />
               <col className="w-[60px]" />
               <col className="w-[96px]" />

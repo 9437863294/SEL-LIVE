@@ -80,6 +80,7 @@ import {
   DprReportPill,
   DprReportZero,
   DprSlNoPill,
+  dprSlNoColumnWidth,
 } from "@/components/project-management/dpr/reports-parts";
 import { ScopeBadge, type ProjectionsContext } from "@/components/project-management/dpr/projections-shared";
 import { DprBoqLinePickerDialog } from "@/components/project-management/dpr/boq-line-picker-dialog";
@@ -605,7 +606,15 @@ function RecordBody({
               className={cn("table-fixed", editing ? "min-w-[1442px]" : "min-w-[1372px]")}
             >
               <colgroup>
-                <col className="w-[72px]" />
+                {/* Wide enough for the longest SL No (added lines too), so none is cut short. */}
+                <col
+                  style={{
+                    width: dprSlNoColumnWidth([
+                      ...record.targets.map((target) => itemById.get(target.boqItemId)?.boqSlNo || target.boqSlNo),
+                      ...added.map((line) => itemById.get(line.boqItemId)?.boqSlNo),
+                    ]),
+                  }}
+                />
                 <col />
                 <col className="w-[64px]" />
                 <col className="w-[84px]" />
