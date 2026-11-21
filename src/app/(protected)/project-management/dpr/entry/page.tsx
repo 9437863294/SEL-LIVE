@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * Record progress — one sheet per scope per day — and every sheet filed so far.
+ * Record progress — every sheet filed so far, and one sheet per scope per day.
  *
- * Two views, as tabs in the headline band:
- *  - **Record a day**: the sheet editor, `DprEntryView` (`components/project-management/dpr/entry-view.tsx`),
- *    which holds the sheet and every rule about it and takes all it reads as props.
- *  - **Progress records**: every sheet, newest first, with the BOQ lines on it
- *    (`entry-records-list.tsx`). A record opens to show its lines, manpower, plant and diary
- *    (`entry-record.tsx`); Edit opens it in the sheet editor, where lines are changed, added and
- *    taken off. A submitted sheet is locked: a DPR approver (the `Reopen` action) reopens it as a
- *    draft first, after a confirm, because a draft stops counting until it is submitted again.
+ * No tabs (the user dropped "Record a day", 2026-11-21). The page lands on **Progress records**:
+ * every sheet, newest first, with the BOQ lines on it (`entry-records-list.tsx`). A record opens
+ * to show its lines, manpower, plant and diary (`entry-record.tsx`); Edit opens it in the sheet
+ * editor, where lines are changed, added and taken off. A submitted sheet is locked: a DPR approver
+ * (the `Reopen` action) reopens it as a draft first, after a confirm, because a draft stops
+ * counting until it is submitted again.
+ *
+ * **Record progress** (the list's button) opens the sheet editor, `DprEntryView`
+ * (`components/project-management/dpr/entry-view.tsx`), for a new day, with a way back to the
+ * list. A link that names a scope or a date — the dashboard's Record buttons, a report's — opens
+ * that sheet straight away, as does `view=sheet`.
  *
  * The view, the sheet's scope and date, and the open record (`record`, `edit=1`) live in the URL,
  * so a refresh or a shared link lands in the same place. This page resolves the project and the
@@ -20,7 +23,6 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ClipboardPen, ListChecks } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
@@ -51,17 +53,11 @@ import {
   dprHref,
   todayIso,
 } from "@/components/project-management/dpr/dpr-shell";
-import { DprReportsHero, type DprReportTab } from "@/components/project-management/dpr/reports-hero";
+import { DprReportsHero } from "@/components/project-management/dpr/reports-hero";
 import { Card, CardContent } from "@/components/ui/card";
 
 type ViewId = "sheet" | "records";
 type RecordMode = "view" | "edit";
-
-/** The two views, as tabs in the headline band. */
-const VIEWS: readonly DprReportTab<ViewId>[] = [
-  { id: "sheet", label: "Record a day", icon: ClipboardPen, colours: ["#c4b5fd", "#7c3aed"] },
-  { id: "records", label: "Progress records", icon: ListChecks, colours: ["#6ee7b7", "#059669"] },
-];
 
 const RECORD_TAB = DPR_TABS.find((tab) => tab.key === "record")!;
 
@@ -118,7 +114,12 @@ export default function RecordDailyProgressPage() {
   /** The sheet's place in the address: its scope, and its date only once one was chosen. */
   const sheetQuery = (nextScope: DprScope, nextChosen: string | null): Record<string, string> =>
     nextChosen ? { scope: nextScope, date: nextChosen } : { scope: nextScope };
-  const [view, setView] = useState<ViewId>(searchParams?.get("view") === "records" ? "records" : "sheet");
+  // Progress records is the landing view; a link naming a scope or a date opens that sheet.
+  const [view, setView] = useState<ViewId>(() => {
+    if (searchParams?.get("record")) return "records";
+    const wantsSheet = searchParams?.get("view") === "sheet" || searchParams?.get("scope") || searchParams?.get("date");
+    return wantsSheet ? "sheet" : "records";
+  });
   /** The open progress record (a sheet's id), and whether it is open in the sheet editor. */
   const [recordId, setRecordId] = useState<string | null>(searchParams?.get("record") || null);
   const [recordMode, setRecordMode] = useState<RecordMode>(searchParams?.get("edit") === "1" ? "edit" : "view");
@@ -154,7 +155,7 @@ export default function RecordDailyProgressPage() {
       setView("records");
       setRecordId(id);
       setRecordMode(mode);
-      const query: Record<string, string> = { view: "records" };
+      const query: Record<string, string> = {};
       if (id) query.record = id;
       if (id && mode === "edit") query.edit = "1";
       router.replace(dprHref(`${DPR_BASE_PATH}/entry`, mappingId, query), { scroll: true });
@@ -239,9 +240,6 @@ export default function RecordDailyProgressPage() {
             preparedByName={user?.name ?? ""}
             onSave={handleSave}
             onReopen={reopenSheet}
-            tabs={VIEWS}
-            activeTab="records"
-            onTabChange={changeView}
             onBack={() => showRecord(openRecord.id, "view")}
           />
         ) : (
@@ -262,9 +260,6 @@ export default function RecordDailyProgressPage() {
           description="Every sheet filed on this project, with the BOQ lines recorded on it. Open one to see it, or edit it in the sheet."
           icon={RECORD_TAB.icon}
           band="violet"
-          tabs={VIEWS}
-          active="records"
-          onTabChange={changeView}
         />
         {data.loadError ? (
           <Card className="border-destructive/40">
@@ -310,9 +305,8 @@ export default function RecordDailyProgressPage() {
       preparedByName={user?.name ?? ""}
       onSave={handleSave}
       onReopen={reopenSheet}
-      tabs={VIEWS}
-      activeTab="sheet"
-      onTabChange={changeView}
+      onBack={() => showRecord(null)}
+      backLabel="All progress records"
     />
   );
 }

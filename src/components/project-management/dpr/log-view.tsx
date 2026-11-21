@@ -169,7 +169,8 @@ export function DprLogView({
     [shown, settings, today, scope, boqItems],
   );
 
-  const recordHref = dprHref(`${DPR_BASE_PATH}/entry`, mappingId);
+  // Straight to the sheet editor: Record progress itself lands on its list of records.
+  const recordHref = dprHref(`${DPR_BASE_PATH}/entry`, mappingId, { view: "sheet" });
 
   return (
     <DprPageShell>

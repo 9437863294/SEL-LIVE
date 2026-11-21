@@ -636,7 +636,7 @@ export interface DprEntryViewProps {
   onSave: (request: DprEntrySaveRequest) => Promise<boolean>;
   /** Turn a submitted sheet back into a draft; resolve true once done. */
   onReopen: (existing: DprEntry) => Promise<boolean>;
-  /** The page's views (Record a day / Progress records), shown as tabs in the headline band. */
+  /** The page's views, shown as tabs in the headline band (none on Record progress today). */
   tabs?: readonly DprReportTab<string>[];
   activeTab?: string;
   onTabChange?: (next: string) => void;

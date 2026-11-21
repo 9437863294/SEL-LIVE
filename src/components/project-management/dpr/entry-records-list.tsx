@@ -333,7 +333,7 @@ export function ProgressRecordList({
             {access.canRecord ? (
               <Button className={FIELD_HEIGHT} onClick={onRecordDay}>
                 <Plus className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                Record a day
+                Record progress
               </Button>
             ) : null}
           </>
@@ -357,7 +357,7 @@ export function ProgressRecordList({
             {access.canRecord ? (
               <div className="flex justify-center pb-8">
                 <Button onClick={onRecordDay}>
-                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> Record a day
+                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> Record progress
                 </Button>
               </div>
             ) : null}
